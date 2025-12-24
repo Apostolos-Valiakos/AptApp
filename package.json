@@ -27,6 +27,7 @@
     "@fullcalendar/vue3": "^6.1.19",
     "@primevue/themes": "^4.4.1",
     "@vitejs/plugin-vue": "^5.2.4",
+    "bcrypt": "^6.0.0",
     "chart.js": "^4.5.1",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
@@ -34,11 +35,15 @@
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.1",
+    "multer": "^2.0.2",
     "pg": "^8.16.3",
     "pinia": "^3.0.4",
     "primeicons": "^7.0.0",
     "primevue": "^4.5.0",
+    "redis": "^5.10.0",
     "rrule": "^2.8.1",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1",
     "vue": "^3.5.25",
     "vue-router": "^4.6.3"
   }

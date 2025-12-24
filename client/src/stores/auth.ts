@@ -15,7 +15,7 @@ export const useAuthStore = defineStore("auth", () => {
 
   const login = async (username: string, password: string) => {
     try {
-      const res = await fetch("http://localhost:3000/api/auth/login", {
+      const res = await fetch("http://192.168.68.58:3000/api/auth/login", {
         // Ensure full URL if not proxied
         method: "POST",
         headers: { "Content-Type": "application/json" },

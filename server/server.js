@@ -1,19 +1,62 @@
 require("dotenv").config();
 const express = require("express");
+const http = require("http");
 const jwt = require("jsonwebtoken");
 const pool = require("./db");
 const path = require("path");
 const cors = require("cors");
-const crypto = require("crypto");
+const multer = require("multer");
+const fs = require("fs");
+const { Server } = require("socket.io");
 
 const app = express();
+const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
 
-app.use(cors({ origin: true, credentials: true }));
+// ==================== FILE UPLOAD SETUP ====================
+const uploadDir = path.join(__dirname, "../uploads");
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, uploadDir),
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, uniqueSuffix + "-" + file.originalname);
+  },
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /jpeg|jpg|png|gif|pdf|doc|docx|xls|xlsx/;
+    const extname = allowedTypes.test(
+      path.extname(file.originalname).toLowerCase()
+    );
+    const mimetype = allowedTypes.test(file.mimetype);
+    if (extname && mimetype) {
+      cb(null, true);
+    } else {
+      cb(new Error("Invalid file type"));
+    }
+  },
+});
+// ==================== MIDDLEWARE ====================
+app.use(
+  cors({
+    origin: true,
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
 app.use(express.json());
 
-const distPath = path.join(__dirname, "../client/dist");
+const distPath = path.join(__dirname, "../dist");
 app.use(express.static(distPath));
+app.use("/uploads", express.static(uploadDir));
 
 // --- HELPERS ---
 
@@ -59,7 +102,7 @@ const getVisibilityClause = (user, tableAlias = "a") => {
 
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers["authorization"];
-  const token = authHeader && authHeader.split(" ")[1];
+  const token = (authHeader && authHeader.split(" ")[1]) || req.query.token;
 
   if (!token) return res.sendStatus(401);
 
@@ -1078,14 +1121,586 @@ app.get("/api/v1/reports/finances", authenticateToken, async (req, res) => {
   }
 });
 
-// ... (other reports follow similar logic, omitted for brevity but principles apply) ...
+// 3️⃣ SOCKET.IO ΠΑΝΩ ΣΤΟ HTTP SERVER
+const io = new Server(server, {
+  cors: {
+    origin: ["http://localhost:5173", "http://192.168.68.58:5173"],
+    credentials: true,
+  },
+});
 
+// Socket.IO Authentication Middleware
+io.use((socket, next) => {
+  const token = socket.handshake.auth.token;
+  if (!token) return next(new Error("Authentication error"));
+
+  jwt.verify(token, process.env.JWT_SECRET || "secret", (err, user) => {
+    if (err) return next(new Error("Authentication error"));
+    socket.user = user;
+    next();
+  });
+});
+
+// Socket.IO Connection Handler
+io.on("connection", (socket) => {
+  socket.join(`shop:${socket.user.shopId}`);
+
+  socket.on("channel:join", ({ channelId }) => {
+    socket.join(`channel:${channelId}`);
+  });
+
+  socket.on("chat:message", async (data) => {
+    const {
+      channelId,
+      content,
+      messageType,
+      fileName,
+      fileSize,
+      fileType,
+      fileBase64, // The base64 string from the upload route
+    } = data;
+
+    try {
+      // Convert base64 back to Buffer for Postgres BYTEA
+      const binaryData = fileBase64 ? Buffer.from(fileBase64, "base64") : null;
+
+      const result = await pool.query(
+        `INSERT INTO chat_messages (
+          channel_id, user_id, content, message_type, 
+          file_name, file_size, file_type, file_blob, created_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+        RETURNING id, channel_id, user_id, content, message_type, file_name, file_size, file_type, created_at`,
+        [
+          channelId,
+          socket.user.userId,
+          content,
+          messageType || "text",
+          fileName || null,
+          fileSize || null,
+          fileType || null,
+          binaryData,
+        ]
+      );
+
+      const message = result.rows[0];
+
+      const userResult = await pool.query(
+        `SELECT u.id, u.username, s.name as staff_name 
+         FROM users u LEFT JOIN staff s ON u.staff_id = s.id 
+         WHERE u.id = $1`,
+        [socket.user.userId]
+      );
+
+      const messageWithUser = {
+        ...message,
+        user: userResult.rows[0],
+        read_by: [],
+        // IMPORTANT: We don't broadcast the huge BLOB over socket.
+        // We broadcast the ID, and frontend uses the /file/:id route to see it.
+      };
+
+      io.to(`channel:${channelId}`).emit("chat:message", messageWithUser);
+
+      await pool.query(
+        `UPDATE chat_channels SET updated_at = NOW() WHERE id = $1`,
+        [channelId]
+      );
+    } catch (err) {
+      console.error("Socket Message Error:", err);
+      socket.emit("chat:error", { error: "Failed to save message" });
+    }
+  });
+
+  socket.on("chat:typing", ({ channelId, isTyping }) => {
+    socket.to(`channel:${channelId}`).emit("chat:typing", {
+      userId: socket.user.userId,
+      isTyping,
+    });
+  });
+  // server.js - Inside io.on("connection", (socket) => { ... })
+
+  socket.on("chat:read:bulk", async ({ channelId, messageIds }) => {
+    if (!messageIds || messageIds.length === 0) return;
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      // 1. Insert receipts for all provided IDs
+      for (const msgId of messageIds) {
+        await client.query(
+          `INSERT INTO message_read_receipts (message_id, user_id, read_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (message_id, user_id) DO NOTHING`,
+          [msgId, socket.user.userId]
+        );
+      }
+
+      // 2. Update the last_read_at for the channel member
+      await client.query(
+        `UPDATE channel_members 
+       SET last_read_at = NOW() 
+       WHERE channel_id = $1 AND user_id = $2`,
+        [channelId, socket.user.userId]
+      );
+
+      await client.query("COMMIT");
+
+      // 3. Notify everyone in the channel that these messages were read
+      io.to(`channel:${channelId}`).emit("messages:read:bulk:update", {
+        messageIds,
+        userId: socket.user.userId,
+        channelId,
+      });
+    } catch (err) {
+      await client.query("ROLLBACK");
+      console.error("Bulk read error:", err);
+    } finally {
+      client.release();
+    }
+  });
+  socket.on("chat:read", async ({ channelId, messageId }) => {
+    try {
+      await pool.query(
+        `INSERT INTO message_read_receipts (message_id, user_id, read_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (message_id, user_id) DO UPDATE SET read_at = NOW()`,
+        [messageId, socket.user.userId]
+      );
+
+      await pool.query(
+        `UPDATE channel_members 
+         SET last_read_at = NOW() 
+         WHERE channel_id = $1 AND user_id = $2`,
+        [channelId, socket.user.userId]
+      );
+
+      io.to(`channel:${channelId}`).emit("chat:read", {
+        messageId,
+        userId: socket.user.userId,
+      });
+    } catch (err) {
+      console.error("Error marking as read:", err);
+    }
+  });
+
+  socket.on("disconnect", () => {
+    console.log(`User disconnected: ${socket.user.userId}`);
+  });
+});
+
+console.log("✅ Socket.IO initialized");
+// ==================== CHAT API ROUTES ====================
+
+// Get all channels for user's shop
+app.get("/api/v1/chat/channels", authenticateToken, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT c.*, 
+        (SELECT COUNT(*) FROM channel_members WHERE channel_id = c.id) as member_count,
+        (SELECT COUNT(*) 
+         FROM chat_messages m 
+         LEFT JOIN message_read_receipts r ON m.id = r.message_id AND r.user_id = $1
+         WHERE m.channel_id = c.id 
+         AND m.created_at > COALESCE((SELECT last_read_at FROM channel_members WHERE channel_id = c.id AND user_id = $1), '1970-01-01')
+         AND r.id IS NULL
+         AND m.user_id != $1
+        ) as unread_count
+       FROM chat_channels c
+       JOIN channel_members cm ON c.id = cm.channel_id
+       WHERE cm.user_id = $1 AND c.shop_id = $2
+       ORDER BY c.updated_at DESC`,
+      [req.user.userId, req.shopId]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error("Error fetching channels:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Create new channel
+app.post("/api/v1/chat/channels", authenticateToken, async (req, res) => {
+  const { name, description, memberIds = [] } = req.body;
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const channelResult = await client.query(
+      `INSERT INTO chat_channels (shop_id, name, description, created_by)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [req.shopId, name, description, req.user.userId]
+    );
+
+    const channel = channelResult.rows[0];
+
+    await client.query(
+      `INSERT INTO channel_members (channel_id, user_id) VALUES ($1, $2)`,
+      [channel.id, req.user.userId]
+    );
+
+    for (const userId of memberIds) {
+      if (userId !== req.user.userId) {
+        await client.query(
+          `INSERT INTO channel_members (channel_id, user_id) VALUES ($1, $2)`,
+          [channel.id, userId]
+        );
+      }
+    }
+
+    await client.query("COMMIT");
+    res.json(channel);
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Error creating channel:", err);
+    res.status(500).json({ error: "Failed to create channel" });
+  } finally {
+    client.release();
+  }
+});
+
+// Get messages for a channel
+app.get(
+  "/api/v1/chat/channels/:channelId/messages",
+  authenticateToken,
+  async (req, res) => {
+    const { channelId } = req.params;
+    const { limit = 100, before } = req.query;
+
+    try {
+      const memberCheck = await pool.query(
+        `SELECT 1 FROM channel_members WHERE channel_id = $1 AND user_id = $2`,
+        [channelId, req.user.userId]
+      );
+
+      if (memberCheck.rows.length === 0) {
+        return res.status(403).json({ error: "Not a member of this channel" });
+      }
+
+      let query = `
+      SELECT m.*, 
+        json_build_object(
+          'id', u.id,
+          'username', u.username,
+          'staff_name', s.name
+        ) as user,
+        COALESCE(
+          json_agg(
+            json_build_object('user_id', r.user_id, 'read_at', r.read_at)
+          ) FILTER (WHERE r.id IS NOT NULL),
+          '[]'
+        ) as read_by
+      FROM chat_messages m
+      JOIN users u ON m.user_id = u.id
+      LEFT JOIN staff s ON u.staff_id = s.id
+      LEFT JOIN message_read_receipts r ON m.id = r.message_id
+      WHERE m.channel_id = $1
+    `;
+
+      const params = [channelId];
+
+      if (before) {
+        params.push(before);
+        query += ` AND m.created_at < $${params.length}`;
+      }
+
+      query += ` GROUP BY m.id, u.id, u.username, s.name
+               ORDER BY m.created_at DESC
+               LIMIT $${params.length + 1}`;
+      params.push(limit);
+
+      const { rows } = await pool.query(query, params);
+
+      res.json(rows.reverse());
+    } catch (err) {
+      console.error("Error fetching messages:", err);
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+// Get all shop users for adding to channels
+app.get("/api/v1/chat/shop-users", authenticateToken, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT u.id, u.username, s.name as staff_name
+       FROM users u
+       LEFT JOIN staff s ON u.staff_id = s.id
+       WHERE u.shop_id = $1
+       ORDER BY s.name, u.username`,
+      [req.shopId]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error("Error fetching shop users:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Create new channel
+app.post("/api/v1/chat/channels", authenticateToken, async (req, res) => {
+  const { name, description, memberIds = [] } = req.body;
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const channelResult = await client.query(
+      `INSERT INTO chat_channels (shop_id, name, description, created_by)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [req.shopId, name, description, req.user.userId]
+    );
+
+    const channel = channelResult.rows[0];
+
+    await client.query(
+      `INSERT INTO channel_members (channel_id, user_id) VALUES ($1, $2)`,
+      [channel.id, req.user.userId]
+    );
+
+    for (const userId of memberIds) {
+      if (userId !== req.user.userId) {
+        await client.query(
+          `INSERT INTO channel_members (channel_id, user_id) VALUES ($1, $2)`,
+          [channel.id, userId]
+        );
+      }
+    }
+
+    await client.query("COMMIT");
+
+    // Notify all members via Socket.IO
+    io.to(`shop:${req.shopId}`).emit("chat:channel:created", channel);
+
+    res.json(channel);
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Error creating channel:", err);
+    res.status(500).json({ error: "Failed to create channel" });
+  } finally {
+    client.release();
+  }
+});
+
+// Get messages for a channel
+app.get(
+  "/api/v1/chat/channels/:channelId/messages",
+  authenticateToken,
+  async (req, res) => {
+    const { channelId } = req.params;
+    const { limit = 100, before } = req.query;
+
+    try {
+      const memberCheck = await pool.query(
+        `SELECT 1 FROM channel_members WHERE channel_id = $1 AND user_id = $2`,
+        [channelId, req.user.userId]
+      );
+
+      if (memberCheck.rows.length === 0) {
+        return res.status(403).json({ error: "Not a member of this channel" });
+      }
+
+      let query = `
+      SELECT m.*, 
+        json_build_object(
+          'id', u.id,
+          'username', u.username,
+          'staff_name', s.name
+        ) as user,
+        COALESCE(
+          json_agg(
+            json_build_object('user_id', r.user_id, 'read_at', r.read_at)
+          ) FILTER (WHERE r.id IS NOT NULL),
+          '[]'
+        ) as read_by
+      FROM chat_messages m
+      JOIN users u ON m.user_id = u.id
+      LEFT JOIN staff s ON u.staff_id = s.id
+      LEFT JOIN message_read_receipts r ON m.id = r.message_id
+      WHERE m.channel_id = $1
+    `;
+
+      const params = [channelId];
+
+      if (before) {
+        params.push(before);
+        query += ` AND m.created_at < $${params.length}`;
+      }
+
+      query += ` GROUP BY m.id, u.id, u.username, s.name
+               ORDER BY m.created_at DESC
+               LIMIT $${params.length + 1}`;
+      params.push(limit);
+
+      const { rows } = await pool.query(query, params);
+      res.json(rows.reverse());
+    } catch (err) {
+      console.error("Error fetching messages:", err);
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+const fileStorage = multer.memoryStorage();
+const fileUpload = multer({
+  storage: fileStorage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+});
+
+app.post(
+  "/api/v1/chat/upload",
+  authenticateToken,
+  fileUpload.single("file"),
+  (req, res) => {
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+
+    try {
+      // Correctly handle Greek/Special characters in filename
+      const originalName = Buffer.from(
+        req.file.originalname,
+        "latin1"
+      ).toString("utf8");
+
+      // We return the base64 for the frontend "Optimistic" UI
+      const base64Data = req.file.buffer.toString("base64");
+
+      res.json({
+        url: `data:${req.file.mimetype};base64,${base64Data}`,
+        name: originalName,
+        size: req.file.size,
+        type: req.file.mimetype,
+        // We pass the base64 string so the frontend can send it back via Socket.IO
+        base64: base64Data,
+      });
+    } catch (err) {
+      res.status(500).json({ error: "Upload processing failed" });
+    }
+  }
+);
+
+app.get("/api/v1/chat/file/:messageId", authenticateToken, async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    const { rows } = await pool.query(
+      "SELECT file_blob, file_type, file_name FROM chat_messages WHERE id = $1",
+      [messageId]
+    );
+
+    if (rows.length === 0 || !rows[0].file_blob) {
+      return res.status(404).json({ error: "File not found" });
+    }
+
+    const { file_blob, file_type, file_name } = rows[0];
+
+    // Handle filename with special characters for download
+    const encodedName = encodeURIComponent(file_name);
+
+    res.setHeader("Content-Type", file_type || "application/octet-stream");
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename*=UTF-8''${encodedName}`
+    );
+    res.send(file_blob);
+  } catch (err) {
+    res.status(500).send("Error retrieving file");
+  }
+});
+
+// Get channel members
+app.get(
+  "/api/v1/chat/channels/:channelId/members",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const { rows } = await pool.query(
+        `SELECT u.id, u.username, s.name as staff_name, cm.joined_at, cm.last_read_at
+       FROM channel_members cm
+       JOIN users u ON cm.user_id = u.id
+       LEFT JOIN staff s ON u.staff_id = s.id
+       WHERE cm.channel_id = $1
+       ORDER BY s.name, u.username`,
+        [req.params.channelId]
+      );
+      res.json(rows);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+// Add member to channel
+app.post(
+  "/api/v1/chat/channels/:channelId/members",
+  authenticateToken,
+  async (req, res) => {
+    const { userId } = req.body;
+
+    try {
+      await pool.query(
+        `INSERT INTO channel_members (channel_id, user_id)
+       VALUES ($1, $2)
+       ON CONFLICT (channel_id, user_id) DO NOTHING`,
+        [req.params.channelId, userId]
+      );
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+// Get all shop users for adding to channels
+app.get("/api/v1/chat/shop-users", authenticateToken, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT u.id, u.username, s.name as staff_name
+       FROM users u
+       LEFT JOIN staff s ON u.staff_id = s.id
+       WHERE u.shop_id = $1
+       ORDER BY s.name, u.username`,
+      [req.shopId]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error("Error fetching shop users:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==================== KEEP ALL YOUR OTHER ROUTES ====================
+// (Profile, Staff, Clients, Services, Appointments, Reports, etc.)
+// ... Copy all routes from your original server.js here ...
+
+app.get("/api/v1/profile", authenticateToken, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT u.id as user_id, u.username, u.role, 
+        s.name as shop_name, s.id as shop_id,
+        st.id as staff_id, st.name as staff_name,
+        st.email as staff_email, st.phone as staff_phone, st.specialty
+      FROM users u
+      LEFT JOIN shops s ON u.shop_id = s.id
+      LEFT JOIN staff st ON u.staff_id = st.id
+      WHERE u.id = $1`,
+      [req.user.userId]
+    );
+
+    if (rows.length === 0)
+      return res.status(404).json({ error: "User not found" });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 app.get(/(.*)/, (req, res) => {
-  if (req.path.startsWith("/api"))
-    return res.status(404).json({ error: "Not found" });
+  if (req.path.startsWith("/api")) {
+    return res.status(404).json({ error: "API Route Not Found" });
+  }
   res.sendFile(path.join(distPath, "index.html"));
 });
 
-app.listen(PORT, () =>
-  console.log(`Server running on http://localhost:${PORT}`)
-);
+server.listen(3000, "0.0.0.0", () => {
+  console.log("🚀 Server running on http://192.168.68.58:3000");
+});

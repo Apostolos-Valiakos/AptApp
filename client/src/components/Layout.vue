@@ -91,6 +91,7 @@
     <!-- CRITICAL: This is where your pages load -->
     <main class="mx-auto py-6 sm:px-6 lg:px-8">
       <router-view />
+      <FloatingChat />
     </main>
   </div>
 </template>
@@ -99,6 +100,7 @@
 import { ref, onMounted, computed } from "vue";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "../stores/auth";
+import FloatingChat from "../components/FloatingChat.vue";
 
 const router = useRouter();
 const authStore = useAuthStore();
@@ -107,7 +109,7 @@ const authStore = useAuthStore();
 const isOwner = computed(() => {
   const role = authStore.user?.role;
   console.log(authStore.user);
-  return role === "admin" || role === "manager";
+  return role === "admin" || role === "super_admin";
 });
 
 const logout = () => {
@@ -142,3 +144,9 @@ onMounted(() => {
   }
 });
 </script>
+<style scoped>
+.layout-container {
+  min-height: 100vh;
+  position: relative;
+}
+</style>

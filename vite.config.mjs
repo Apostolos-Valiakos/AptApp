@@ -10,9 +10,13 @@ export default defineConfig({
     proxy: {
       // This forwards any request starting with /api to your backend
       "/api": {
-        target: "http://localhost:3000",
+        target: "http://192.168.68.58:3000",
         changeOrigin: true,
         secure: false,
+      },
+      "/socket.io": {
+        target: "http://192.168.68.58:3000",
+        ws: true,
       },
     },
   },

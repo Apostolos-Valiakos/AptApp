@@ -28,6 +28,7 @@ import InputNumber from "primevue/inputnumber";
 import DatePicker from "primevue/datepicker";
 import Textarea from "primevue/textarea";
 import Checkbox from "primevue/checkbox";
+import { MultiSelect } from "primevue";
 
 import Chip from "primevue/chip";
 import Card from "primevue/card";
@@ -77,6 +78,7 @@ app.component("Calendar", DatePicker);
 
 app.component("Textarea", Textarea);
 app.component("Checkbox", Checkbox);
+app.component("MultiSelect", MultiSelect);
 
 app.component("Chip", Chip);
 app.component("Card", Card);
