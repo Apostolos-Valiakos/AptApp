@@ -6,6 +6,7 @@ import ServicesView from "../views/ServicesView.vue";
 import FinancialsView from "../components/FinancialsView.vue";
 import LoginView from "../views/LoginView.vue";
 import profileView from "../views/profileView.vue";
+import ProductsView from "../views/ProductsView.vue";
 import { useAuthStore } from "../stores/auth";
 
 const routes = [
@@ -19,6 +20,8 @@ const routes = [
   { path: "/staff", component: StaffView, meta: { requiresAuth: true } },
   { path: "/clients", component: ClientsView, meta: { requiresAuth: true } },
   { path: "/services", component: ServicesView, meta: { requiresAuth: true } },
+  { path: "/products", component: ProductsView, meta: { requiresAuth: true } },
+
   {
     path: "/financials",
     component: FinancialsView,

@@ -215,7 +215,74 @@
                 <i class="pi pi-plus-circle"></i> Add another service
               </button>
             </div>
+            <div class="space-y-3 pt-4 border-t border-gray-100">
+              <label
+                class="text-xs font-bold text-gray-500 uppercase tracking-wider"
+              >
+                Products
+              </label>
 
+              <div
+                v-for="(product, index) in productsList"
+                :key="'prod-' + index"
+                class="relative p-4 border border-gray-200 rounded-lg hover:border-emerald-300 transition-colors bg-white group"
+              >
+                <button
+                  @click="removeProduct(index)"
+                  class="absolute -right-2 -top-2 bg-white p-1 rounded-full shadow border border-gray-200 text-gray-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                >
+                  <i class="pi pi-times text-xs"></i>
+                </button>
+
+                <div class="flex gap-3">
+                  <div class="flex-grow">
+                    <label class="text-xs text-gray-500 block mb-1"
+                      >Product</label
+                    >
+                    <Dropdown
+                      v-model="product.product_id"
+                      :options="allProducts"
+                      optionLabel="name"
+                      optionValue="id"
+                      placeholder="Select Product"
+                      class="w-full p-inputtext-sm"
+                      filter
+                      @change="() => updateProductDetails(index)"
+                    />
+                  </div>
+
+                  <div class="w-24">
+                    <label class="text-xs text-gray-500 block mb-1">Qty</label>
+                    <InputNumber
+                      v-model="product.quantity"
+                      class="w-full p-inputtext-sm"
+                      inputClass="w-full"
+                      :min="1"
+                    />
+                  </div>
+
+                  <div class="w-32">
+                    <label class="text-xs text-gray-500 block mb-1"
+                      >Price</label
+                    >
+                    <InputNumber
+                      v-model="product.price_override"
+                      mode="currency"
+                      currency="EUR"
+                      class="w-full p-inputtext-sm"
+                      inputClass="w-full"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <button
+                @click="addProduct"
+                class="text-emerald-600 text-sm font-semibold hover:underline flex items-center gap-1 mt-2"
+              >
+                <i class="pi pi-plus-circle"></i> Add a product
+              </button>
+            </div>
             <div class="grid grid-cols-2 gap-4 pt-2">
               <div>
                 <label
@@ -254,12 +321,6 @@
                   >
                     Save Receipt
                   </label>
-                  <i
-                    class="pi pi-info-circle text-gray-400 text-xs"
-                    v-tooltip="
-                      'If unchecked, this will be hidden from reports when completed'
-                    "
-                  ></i>
                 </div>
 
                 <div class="flex items-center gap-2">
@@ -580,7 +641,9 @@ const props = defineProps([
   "clients",
   "services",
   "staff",
+  "allProducts",
 ]);
+
 const emit = defineEmits(["update:visible", "save"]);
 
 const dialogVisible = computed({
@@ -600,10 +663,11 @@ const form = ref<any>({
   payment_status: "unpaid",
   payment_method: "card",
   is_block: false,
-  save_receipt: false, // New Field
+  save_receipt: false,
 });
 
 const servicesList = ref<Array<any>>([]);
+const productsList = ref<Array<any>>([]); // Reactive products list
 const originalSnapshot = ref({ price: 0, deposit: 0 });
 const currentTab = ref("Details");
 const loading = ref(false);
@@ -634,12 +698,18 @@ const selectedClient = computed(() =>
   props.clients.find((c: any) => c.id === form.value.client_id)
 );
 
-const currentApptTotal = computed(() =>
-  servicesList.value.reduce(
+// Calculation including both Services and Products
+const currentApptTotal = computed(() => {
+  const servicesTotal = servicesList.value.reduce(
     (sum, s) => sum + (Number(s.price_override) || 0),
     0
-  )
-);
+  );
+  const productsTotal = productsList.value.reduce(
+    (sum, p) => sum + (Number(p.price_override) || 0) * (p.quantity || 1),
+    0
+  );
+  return servicesTotal + productsTotal;
+});
 
 const previousDebt = computed(() => {
   const dbBalance = Number(selectedClient.value?.outstanding_balance || 0);
@@ -676,6 +746,7 @@ watch(totalDueNow, (val) => {
   amountToPayNow.value = val;
 });
 
+// Watch appointment to fill form
 watch(
   () => props.appointment,
   (val) => {
@@ -691,9 +762,10 @@ watch(
         payment_status: val.payment_status || "unpaid",
         payment_method: val.payment_method || "card",
         is_block: !!val.is_block,
-        save_receipt: !!val.save_receipt, // Load value
+        save_receipt: !!val.save_receipt,
       };
 
+      // Handle Services
       if (val.services?.length > 0 && val.services[0].service_id) {
         servicesList.value = val.services.map((s: any) => ({
           service_id: s.service_id,
@@ -716,12 +788,28 @@ watch(
         ];
       }
 
-      const price = servicesList.value.reduce(
-        (sum, s) => sum + (Number(s.price_override) || 0),
-        0
-      );
-      originalSnapshot.value = { price, deposit: form.value.deposit_amount };
+      // Handle Products (FIXED INITIALIZATION)
+      if (
+        val.products &&
+        Array.isArray(val.products) &&
+        val.products.length > 0
+      ) {
+        productsList.value = val.products.map((p: any) => ({
+          product_id: p.product_id,
+          quantity: p.quantity || 1,
+          price_override: Number(p.price || 0),
+        }));
+      } else {
+        productsList.value = [];
+      }
+
+      // 2. Set the snapshot based on the new totals
+      originalSnapshot.value = {
+        price: currentApptTotal.value,
+        deposit: form.value.deposit_amount,
+      };
     } else {
+      // New Appointment Defaults
       form.value = {
         id: null,
         client_id: null,
@@ -729,9 +817,8 @@ watch(
         status: "new",
         deposit_amount: 0,
         payment_status: "unpaid",
-        payment_method: "card",
         is_block: false,
-        save_receipt: false, // Reset value
+        save_receipt: false,
       };
       servicesList.value = [
         {
@@ -742,6 +829,7 @@ watch(
           price_override: 0,
         },
       ];
+      productsList.value = [];
       originalSnapshot.value = { price: 0, deposit: 0 };
     }
     amountToPayNow.value = 0;
@@ -750,6 +838,28 @@ watch(
   { immediate: true }
 );
 
+const addProduct = () => {
+  productsList.value.push({
+    product_id: null,
+    quantity: 1,
+    price_override: 0,
+  });
+};
+
+const removeProduct = (index: number) => {
+  productsList.value.splice(index, 1);
+};
+
+const updateProductDetails = (index: number) => {
+  const item = productsList.value[index];
+  // Find the product in the master list to get its default price
+  const found = props.allProducts?.find((p: any) => p.id === item.product_id);
+  if (found) {
+    item.price_override = Number(found.price);
+  }
+};
+
+// ... Existing Service Helpers (addService, removeService, updateServiceDetails, recalcTimes) ...
 const addService = () => {
   let nextStart = new Date(form.value.start_time);
   if (servicesList.value.length > 0) {
@@ -807,6 +917,50 @@ const getFilteredStaff = (serviceId: any) => {
 
 const onClientSelect = () => {};
 
+const save = async (close = true) => {
+  loading.value = true;
+  const token = localStorage.getItem("token");
+  const url = form.value.id
+    ? `/api/v1/appointments/${form.value.id}`
+    : "/api/v1/appointments";
+  const method = form.value.id ? "PUT" : "POST";
+
+  try {
+    const res = await fetch(url, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        ...form.value,
+        services: servicesList.value,
+        products: productsList.value, // Sending products to backend
+      }),
+    });
+
+    if (method === "POST") {
+      const data = await res.json();
+      form.value.id = data.id;
+    }
+
+    originalSnapshot.value = {
+      price: currentApptTotal.value,
+      deposit: form.value.deposit_amount,
+    };
+
+    if (close) {
+      emit("save");
+      dialogVisible.value = false;
+    }
+  } catch (e) {
+    console.error(e);
+  } finally {
+    loading.value = false;
+  }
+};
+
+// ... Existing logic for saveNewClient, openClientInfoDialog, recordPayment, confirmDelete, formatters ...
 const saveNewClient = async () => {
   const token = localStorage.getItem("token");
   const res = await fetch("/api/v1/clients", {
@@ -875,17 +1029,11 @@ const recordPayment = async () => {
   if (amountToPayNow.value <= 0) return;
   paymentLoading.value = true;
   const token = localStorage.getItem("token");
-
-  // FIX: Always save the appointment details (including save_receipt flag) first
-  // We pass 'false' to keep the dialog open while we process the payment
   await save(false);
-
-  // If save failed or ID is missing, stop
   if (!form.value.id) {
     paymentLoading.value = false;
     return;
   }
-
   try {
     const res = await fetch("/api/v1/transactions", {
       method: "POST",
@@ -900,64 +1048,17 @@ const recordPayment = async () => {
         payment_method: selectedPaymentMethod.value,
       }),
     });
-
     if (res.ok) {
       form.value.deposit_amount += amountToPayNow.value;
       if (selectedClient.value)
         selectedClient.value.outstanding_balance -= amountToPayNow.value;
       originalSnapshot.value.deposit = form.value.deposit_amount;
-
-      // Emit save to refresh the calendar view immediately
       emit("save");
     }
   } catch (e) {
     console.error(e);
   } finally {
     paymentLoading.value = false;
-  }
-};
-
-const save = async (close = true) => {
-  loading.value = true;
-  const token = localStorage.getItem("token");
-  const url = form.value.id
-    ? `/api/v1/appointments/${form.value.id}`
-    : "/api/v1/appointments";
-  const method = form.value.id ? "PUT" : "POST";
-
-  if (form.value.is_block) {
-    servicesList.value = [];
-    form.value.client_id = null;
-    form.value.status = "confirmed";
-  }
-
-  try {
-    const res = await fetch(url, {
-      method,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ ...form.value, services: servicesList.value }),
-    });
-    if (method === "POST") {
-      const data = await res.json();
-      form.value.id = data.id;
-    }
-    const price = servicesList.value.reduce(
-      (sum, s) => sum + (Number(s.price_override) || 0),
-      0
-    );
-    originalSnapshot.value = { price, deposit: form.value.deposit_amount };
-
-    if (close) {
-      emit("save");
-      dialogVisible.value = false;
-    }
-  } catch (e) {
-    console.error(e);
-  } finally {
-    loading.value = false;
   }
 };
 
@@ -983,7 +1084,6 @@ const formatDate = (d: Date) =>
         minute: "2-digit",
       })
     : "";
-
 const getStatusColor = (s: string) => {
   const map: any = {
     new: "bg-blue-100 text-blue-800",
@@ -996,7 +1096,6 @@ const getStatusColor = (s: string) => {
   };
   return map[s] || "bg-gray-100";
 };
-
 const getStatusDot = (s: string) => {
   const map: any = {
     new: "bg-blue-500",
@@ -1009,6 +1108,7 @@ const getStatusDot = (s: string) => {
   };
   return map[s] || "bg-gray-400";
 };
+console.log(productsList.value);
 </script>
 
 <style scoped>

@@ -37,6 +37,7 @@ import ScrollPanel from "primevue/scrollpanel";
 import Divider from "primevue/divider";
 import FloatLabel from "primevue/floatlabel";
 
+import Tag from "primevue/tag";
 import Toast from "primevue/toast";
 import ConfirmDialog from "primevue/confirmdialog";
 import DataTable from "primevue/datatable";
@@ -77,6 +78,7 @@ app.component("DatePicker", DatePicker);
 app.component("Calendar", DatePicker);
 
 app.component("Textarea", Textarea);
+app.component("Tag", Tag);
 app.component("Checkbox", Checkbox);
 app.component("MultiSelect", MultiSelect);
 

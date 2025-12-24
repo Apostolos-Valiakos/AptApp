@@ -289,6 +289,7 @@
       :clients="calendarStore.clients"
       :services="calendarStore.services"
       :staff="calendarStore.resources"
+      :allProducts="calendarStore.products"
       @save="handleSave"
     />
     <AppointmentSwapDialog
@@ -479,7 +480,10 @@ const calendarEvents = computed(() => {
           isServiceEvent: true,
           appointmentId: appt.id,
           serviceIndex: index,
-          fullAppointment: appt, // Store the WHOLE appointment object
+          fullAppointment: {
+            ...appt,
+            products: appt.products || [],
+          },
           client_name: `${appt.first_name || "Unknown"} ${
             appt.last_name || ""
           }`,
