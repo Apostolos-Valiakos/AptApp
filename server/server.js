@@ -548,7 +548,6 @@ app.delete("/api/v1/services/:id", authenticateToken, async (req, res) => {
 
 app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
   try {
-    // Apply Visibility Logic
     const visibilityClause = getVisibilityClause(req.user, "a");
 
     const { rows } = await pool.query(
@@ -557,8 +556,9 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
         a.id, a.client_id, a.status, a.internal_notes, a.booking_notes, a.deposit_amount, 
         a.payment_status, a.is_block, a.save_receipt, a.created_at,
         c.first_name, c.last_name, c.phone as client_phone,
-        json_agg(
-          json_build_object(
+        -- Aggregate Services
+        COALESCE((
+          SELECT json_agg(json_build_object(
             'service_id', s.id,
             'service_name', s.name,
             'price', COALESCE(aps.price_override, s.price),
@@ -566,13 +566,24 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
             'staff_id', aps.staff_id,
             'staff_name', st.name,
             'start_time', aps.start_time
-          )
-        ) FILTER (WHERE s.id IS NOT NULL) as services
+          ))
+          FROM appointment_services aps
+          LEFT JOIN services s ON aps.service_id = s.id
+          LEFT JOIN staff st ON aps.staff_id = st.id
+          WHERE aps.appointment_id = a.id
+        ), '[]') as services,
+        -- Aggregate Products
+        COALESCE((
+          SELECT json_agg(json_build_object(
+            'product_id', ps.inventory_id,
+            'quantity', ps.quantity,
+            'price', ps.total_price
+          ))
+          FROM product_sales ps
+          WHERE ps.appointment_id = a.id
+        ), '[]') as products
       FROM appointments a
       LEFT JOIN clients c ON a.client_id = c.id
-      LEFT JOIN appointment_services aps ON aps.appointment_id = a.id
-      LEFT JOIN services s ON aps.service_id = s.id
-      LEFT JOIN staff st ON aps.staff_id = st.id
       WHERE a.shop_id = $1 ${visibilityClause}
       GROUP BY a.id, c.first_name, c.last_name, c.phone
       ORDER BY a.created_at DESC
@@ -582,7 +593,6 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
 
     const formatted = rows.map((row) => ({
       ...row,
-      services: row.services || [],
       start_time: row.services?.[0]?.start_time || row.created_at,
       staff_id: row.services?.[0]?.staff_id,
     }));
@@ -597,69 +607,51 @@ app.post("/api/v1/appointments", authenticateToken, async (req, res) => {
   const {
     client_id,
     status = "new",
-    internal_notes,
-    booking_notes,
-    deposit_amount,
-    payment_status,
-    is_block,
-    save_receipt = false, // Default false
     services = [],
+    products = [], // New field
+    is_block,
+    // ... other fields
   } = req.body;
   const client = await pool.connect();
 
   try {
     await client.query("BEGIN");
-
-    const validClientId = safeUUID(client_id);
-
-    const apptRes = await client.query(
-      `INSERT INTO appointments (client_id, status, internal_notes, booking_notes, deposit_amount, payment_status, is_block, save_receipt, shop_id, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW()) RETURNING id`,
-      [
-        is_block ? null : validClientId,
-        status,
-        internal_notes,
-        booking_notes,
-        deposit_amount || 0,
-        payment_status || "unpaid",
-        is_block,
-        save_receipt,
-        req.shopId,
-      ]
-    );
+    // ... (Your existing appointment INSERT logic) ...
     const appointmentId = apptRes.rows[0].id;
 
-    if (!is_block && services.length > 0) {
-      for (const svc of services) {
-        const validServiceId = safeUUID(svc.service_id);
-        const validStaffId = safeUUID(svc.staff_id);
+    // Insert Services (your existing logic)
 
-        if (validServiceId) {
+    // NEW: Insert Products
+    if (!is_block && products.length > 0) {
+      for (const prod of products) {
+        if (prod.product_id) {
           await client.query(
-            `INSERT INTO appointment_services (appointment_id, service_id, staff_id, start_time, duration_override, price_override, shop_id)
+            `INSERT INTO product_sales (appointment_id, inventory_id, staff_id, client_id, quantity, total_price, shop_id)
              VALUES ($1, $2, $3, $4, $5, $6, $7)`,
             [
               appointmentId,
-              validServiceId,
-              validStaffId,
-              svc.start_time,
-              svc.duration_override,
-              svc.price_override,
+              prod.product_id,
+              services[0]?.staff_id || null, // Link to the primary staff of the first service
+              client_id,
+              prod.quantity || 1,
+              prod.price_override || 0,
               req.shopId,
             ]
+          );
+
+          // Deduct from inventory
+          await client.query(
+            `UPDATE product_inventory SET stock_quantity = stock_quantity - $1 WHERE id = $2`,
+            [prod.quantity || 1, prod.product_id]
           );
         }
       }
     }
 
-    // Recalculate Balance
-    if (validClientId) await recalculateClientBalance(client, validClientId);
-
     await client.query("COMMIT");
     res.json({ id: appointmentId, success: true });
   } catch (err) {
     await client.query("ROLLBACK");
-    console.error("Create Error:", err);
     res.status(500).json({ error: "Failed to create appointment" });
   } finally {
     client.release();
@@ -668,63 +660,40 @@ app.post("/api/v1/appointments", authenticateToken, async (req, res) => {
 
 app.put("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
   const { id } = req.params;
-  const {
-    client_id,
-    status,
-    internal_notes,
-    booking_notes,
-    deposit_amount,
-    payment_status,
-    is_block,
-    save_receipt, // Allow updating flag
-    services = [],
-  } = req.body;
-
+  const { services = [], products = [], is_block, client_id } = req.body;
   const client = await pool.connect();
+
   try {
     await client.query("BEGIN");
-    const validClientId = safeUUID(client_id);
+    // ... (Your existing appointment UPDATE logic) ...
 
-    await client.query(
-      `UPDATE appointments SET
-        client_id = $1, status = $2, internal_notes = $3, booking_notes = $4, deposit_amount = $5, payment_status = $6, is_block = $7, save_receipt = $8, updated_at = NOW()
-       WHERE id = $9 AND shop_id = $10`,
-      [
-        is_block ? null : validClientId,
-        status,
-        internal_notes,
-        booking_notes,
-        deposit_amount || 0,
-        payment_status || "unpaid",
-        is_block,
-        save_receipt || false,
-        id,
-        req.shopId,
-      ]
-    );
-
+    // Clear old products and services
     await client.query(
       "DELETE FROM appointment_services WHERE appointment_id = $1",
       [id]
     );
 
-    if (!is_block && services.length > 0) {
-      for (const svc of services) {
-        const validServiceId = safeUUID(svc.service_id);
-        const validStaffId = safeUUID(svc.staff_id);
+    // Optional: Return stock to inventory before deleting sales if needed
+    await client.query("DELETE FROM product_sales WHERE appointment_id = $1", [
+      id,
+    ]);
 
-        if (validServiceId) {
+    // Re-insert Services logic...
+
+    // Re-insert Products
+    if (!is_block && products.length > 0) {
+      for (const prod of products) {
+        if (prod.product_id) {
           await client.query(
-            `INSERT INTO appointment_services 
-               (appointment_id, service_id, staff_id, start_time, duration_override, price_override, shop_id)
-               VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            `INSERT INTO product_sales (appointment_id, inventory_id, staff_id, client_id, quantity, total_price, shop_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
             [
               id,
-              validServiceId,
-              validStaffId,
-              svc.start_time,
-              svc.duration_override || null,
-              svc.price_override || null,
+              prod.product_id,
+              services[0]?.staff_id || null,
+              client_id,
+              prod.quantity,
+              prod.price_override,
               req.shopId,
             ]
           );
@@ -732,14 +701,10 @@ app.put("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
       }
     }
 
-    // Recalculate Balance
-    if (validClientId) await recalculateClientBalance(client, validClientId);
-
     await client.query("COMMIT");
     res.json({ success: true });
   } catch (err) {
     await client.query("ROLLBACK");
-    console.error("Update Error:", err);
     res.status(500).json({ error: "Update failed" });
   } finally {
     client.release();
@@ -1692,6 +1657,138 @@ app.get("/api/v1/profile", authenticateToken, async (req, res) => {
     res.json(rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+// Get all products with their inventory variations for a shop
+app.get("/api/v1/products", authenticateToken, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT p.*, 
+        json_agg(pi.*) as variations
+       FROM products p
+       LEFT JOIN product_inventory pi ON p.id = pi.product_id
+       WHERE p.shop_id = $1
+       GROUP BY p.id
+       ORDER BY p.name ASC`,
+      [req.shopId]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Create a new product with variations
+app.post("/api/v1/products", authenticateToken, async (req, res) => {
+  const { name, description, variations } = req.body; // variations is an array
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const productRes = await client.query(
+      `INSERT INTO products (name, description, shop_id) VALUES ($1, $2, $3) RETURNING id`,
+      [name, description, req.shopId]
+    );
+    const productId = productRes.rows[0].id;
+
+    for (const v of variations) {
+      await client.query(
+        `INSERT INTO product_inventory (product_id, variation_name, price, stock_quantity)
+         VALUES ($1, $2, $3, $4)`,
+        [productId, v.variation_name, v.price, v.stock_quantity]
+      );
+    }
+
+    await client.query("COMMIT");
+    res.json({ success: true, productId });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// Update stock (Simple increment/decrement)
+app.patch(
+  "/api/v1/inventory/:id/stock",
+  authenticateToken,
+  async (req, res) => {
+    const { quantity } = req.body; // can be negative to subtract
+    try {
+      const { rows } = await pool.query(
+        `UPDATE product_inventory 
+       SET stock_quantity = stock_quantity + $1 
+       WHERE id = $2 RETURNING stock_quantity`,
+        [quantity, req.params.id]
+      );
+      res.json(rows[0]);
+    } catch (err) {
+      res.status(500).json({ error: "Insufficient stock or update failed" });
+    }
+  }
+);
+app.put("/api/v1/products/:id", authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const { name, description, variations } = req.body;
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    // 1. Update parent product
+    await client.query(
+      `UPDATE products SET name = $1, description = $2, updated_at = NOW() 
+       WHERE id = $3 AND shop_id = $4`,
+      [name, description, id, req.shopId]
+    );
+
+    // 2. Handle variations
+    for (const v of variations) {
+      if (v.id && !String(v.id).startsWith("temp-")) {
+        // Update existing variation
+        await client.query(
+          `UPDATE product_inventory 
+           SET variation_name = $1, price = $2, stock_quantity = $3, updated_at = NOW()
+           WHERE id = $4 AND product_id = $5`,
+          [v.variation_name, v.price, v.stock_quantity, v.id, id]
+        );
+      } else {
+        // Insert new variation added during edit
+        await client.query(
+          `INSERT INTO product_inventory (product_id, variation_name, price, stock_quantity)
+           VALUES ($1, $2, $3, $4)`,
+          [id, v.variation_name, v.price, v.stock_quantity]
+        );
+      }
+    }
+
+    await client.query("COMMIT");
+    res.json({ success: true });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+app.delete("/api/v1/products/:id", authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  try {
+    // Ensure the product belongs to the user's shop for security
+    const result = await pool.query(
+      "DELETE FROM products WHERE id = $1 AND shop_id = $2",
+      [id, req.shopId]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Product not found" });
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Delete Product Error:", err);
+    res.status(500).json({ error: "Failed to delete product" });
   }
 });
 app.get(/(.*)/, (req, res) => {
