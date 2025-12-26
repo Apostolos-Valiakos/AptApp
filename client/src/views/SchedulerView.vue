@@ -1,10 +1,8 @@
 <template>
   <div class="flex flex-col h-[calc(100vh-64px)] bg-white" @click="closeMenus">
-    <!-- Custom Toolbar -->
     <div
       class="flex justify-between items-center px-6 py-4 border-b border-gray-200 flex-shrink-0"
     >
-      <!-- Left: Date Navigation -->
       <div class="flex items-center space-x-4">
         <div class="flex bg-gray-100 rounded-lg p-1">
           <button
@@ -59,9 +57,7 @@
         </div>
       </div>
 
-      <!-- Right: Actions -->
       <div class="flex items-center space-x-3">
-        <!-- Zoom Controls -->
         <div class="flex items-center bg-gray-100 rounded-lg p-1 mr-2">
           <button
             @click="zoomOut"
@@ -104,7 +100,6 @@
           </button>
         </div>
 
-        <!-- Settings Button -->
         <button
           @click.stop="toggleSettings"
           class="p-2.5 text-gray-500 hover:bg-gray-100 rounded-lg border border-gray-200 transition-colors relative"
@@ -130,7 +125,6 @@
             ></path>
           </svg>
 
-          <!-- Settings Dropdown -->
           <div
             v-if="showSettingsMenu"
             class="absolute right-0 top-12 w-56 bg-white rounded-xl shadow-xl border border-gray-100 z-50 py-2 text-left animate-fade-in"
@@ -154,7 +148,6 @@
           </div>
         </button>
 
-        <!-- View Switcher -->
         <div class="relative">
           <button
             @click.stop="toggleViewMenu"
@@ -176,7 +169,6 @@
             </svg>
           </button>
 
-          <!-- View Dropdown -->
           <div
             v-if="showViewMenu"
             class="absolute right-0 top-12 w-40 bg-white rounded-xl shadow-xl border border-gray-100 z-50 py-1 overflow-hidden animate-fade-in"
@@ -198,7 +190,6 @@
         </div>
         <ColorModelToggle />
 
-        <!-- Add Button -->
         <button
           @click="openNewAppointment"
           class="bg-gray-900 hover:bg-black text-white px-6 py-2.5 rounded-full text-sm font-medium shadow-lg transform active:scale-95 transition-all flex items-center gap-2"
@@ -240,7 +231,6 @@
       </div>
     </div>
 
-    <!-- Calendar Grid -->
     <div class="flex-grow overflow-auto relative bg-gray-50/50">
       <FullCalendar
         v-if="calendarResources.length > 0"
@@ -249,7 +239,6 @@
         class="h-full w-full"
       />
 
-      <!-- Empty State -->
       <div
         v-else
         class="h-full flex flex-col items-center justify-center bg-gray-50"
@@ -282,7 +271,6 @@
       </div>
     </div>
 
-    <!-- Booking Dialog -->
     <BookingDialog
       v-model:visible="dialogVisible"
       :appointment="selectedAppointment"
@@ -587,6 +575,21 @@ const toggleWeekends = () => {
   }
 };
 
+// Helper to map API 'price' -> 'price_override' for PUT requests
+// This fixes the bug where dragging resets price to 0
+const prepareServicesForUpdate = (services: any[]) => {
+  return services.map((s) => ({
+    ...s,
+    // If price_override missing, use price. If duration_override missing, use duration_minutes.
+    price_override:
+      s.price_override !== undefined ? s.price_override : Number(s.price || 0),
+    duration_override:
+      s.duration_override !== undefined
+        ? s.duration_override
+        : s.duration_minutes,
+  }));
+};
+
 // --- Calendar Options ---
 const calendarOptions = ref({
   schedulerLicenseKey: "CC-Attribution-NonCommercial-NoDerivatives",
@@ -669,19 +672,21 @@ const calendarOptions = ref({
     const newResourceId = info.newResource?.id;
 
     // 1. Calculate VISUAL duration from the dropped event
-    // This ensures that if the event was resized just before dragging (and props are stale), we use the visual size
     const start = info.event.start.getTime();
     const end = info.event.end.getTime();
     const currentDurationMinutes = (end - start) / 60000;
 
     // 2. Clone Services
-    const services = JSON.parse(JSON.stringify(fullAppointment.services));
+    let services = JSON.parse(JSON.stringify(fullAppointment.services));
 
-    // 3. Update Service with VISUAL Start Time AND Duration
+    // 3. FIX: Ensure all services have price_override set correctly BEFORE modification
+    services = prepareServicesForUpdate(services);
+
+    // 4. Update Service with VISUAL Start Time AND Duration
     if (services[serviceIndex]) {
       services[serviceIndex].start_time = info.event.start.toISOString();
 
-      // Sync duration to ensure we don't revert a previous resize
+      // Sync duration
       services[serviceIndex].duration_minutes = currentDurationMinutes;
       services[serviceIndex].duration_override = currentDurationMinutes;
 
@@ -691,7 +696,7 @@ const calendarOptions = ref({
       }
     }
 
-    // 4. Send the full payload
+    // 5. Send the full payload
     updateAppointment(appointmentId, {
       ...fullAppointment,
       services: services,
@@ -709,17 +714,19 @@ const calendarOptions = ref({
     const newDuration = (end - start) / 60000;
 
     // 2. Clone Services
-    const services = JSON.parse(JSON.stringify(fullAppointment.services));
+    let services = JSON.parse(JSON.stringify(fullAppointment.services));
 
-    // 3. Update ONLY the specific service duration AND Start Time
-    // (Start time is needed because resizing from the top changes the start time)
+    // 3. FIX: Ensure all services have price_override set correctly BEFORE modification
+    services = prepareServicesForUpdate(services);
+
+    // 4. Update ONLY the specific service duration AND Start Time
     if (services[serviceIndex]) {
       services[serviceIndex].start_time = info.event.start.toISOString();
       services[serviceIndex].duration_minutes = newDuration;
       services[serviceIndex].duration_override = newDuration;
     }
 
-    // 4. Send payload
+    // 5. Send payload
     updateAppointment(appointmentId, {
       ...fullAppointment,
       services: services,

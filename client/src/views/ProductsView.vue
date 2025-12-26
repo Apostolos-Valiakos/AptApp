@@ -255,12 +255,6 @@ const adjustStock = async (inventoryId: string, amount: number) => {
   }
 };
 
-const editStockManual = (variation: any) => {
-  selectedVariation.value = variation;
-  stockAdjustment.value = 0;
-  stockDialog.value = true;
-};
-
 const confirmStockAdjustment = async () => {
   if (selectedVariation.value && stockAdjustment.value !== 0) {
     await adjustStock(selectedVariation.value.id, stockAdjustment.value);

@@ -29,7 +29,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  limits: { fileSize: 5 * 1024 * 1024 }, // 10MB
   fileFilter: (req, file, cb) => {
     const allowedTypes = /jpeg|jpg|png|gif|pdf|doc|docx|xls|xlsx/;
     const extname = allowedTypes.test(
@@ -57,25 +57,35 @@ app.use(express.json());
 const distPath = path.join(__dirname, "../dist");
 app.use(express.static(distPath));
 app.use("/uploads", express.static(uploadDir));
+const dbFileStorage = multer.memoryStorage();
+const dbFileUpload = multer({
+  storage: dbFileStorage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB Limit
+});
 
 // --- HELPERS ---
 
 // Helper to validate UUIDs
+
 const safeUUID = (id) => {
-  return id && typeof id === "string" && id.length === 36 ? id : null;
+  if (!id || typeof id !== "string") return null;
+  const cleanId = id.trim();
+  return cleanId.length === 36 ? cleanId : null;
 };
 
-// Recalculate Balance Helper
 const recalculateClientBalance = async (client, clientId) => {
-  if (!clientId) return;
-  await client.query(
+  if (!clientId) return 0; // Return 0 instead of null
+
+  const res = await client.query(
     `
     UPDATE clients 
     SET outstanding_balance = (
       SELECT COALESCE(SUM(
-        (SELECT COALESCE(SUM(price_override), 0) 
-         FROM appointment_services aps 
-         WHERE aps.appointment_id = a.id) 
+        (
+          COALESCE((SELECT SUM(price_override) FROM appointment_services aps WHERE aps.appointment_id = a.id), 0) 
+          + 
+          COALESCE((SELECT SUM(total_price) FROM product_sales ps WHERE ps.appointment_id = a.id), 0)
+        ) 
         - a.deposit_amount
       ), 0)
       FROM appointments a
@@ -83,9 +93,13 @@ const recalculateClientBalance = async (client, clientId) => {
       AND a.status != 'cancelled'
     )
     WHERE id = $1
+    RETURNING outstanding_balance
   `,
     [clientId]
   );
+
+  // FIX: Force return of a Number, default to 0 if undefined/null
+  return Number(res.rows[0]?.outstanding_balance || 0);
 };
 
 // --- VISIBILITY HELPER ---
@@ -577,7 +591,7 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
           SELECT json_agg(json_build_object(
             'product_id', ps.inventory_id,
             'quantity', ps.quantity,
-            'price', ps.total_price
+            'price', CASE WHEN ps.quantity > 0 THEN ps.total_price / ps.quantity ELSE 0 END
           ))
           FROM product_sales ps
           WHERE ps.appointment_id = a.id
@@ -671,10 +685,14 @@ app.post("/api/v1/appointments", authenticateToken, async (req, res) => {
         }
       }
 
-      // 3. Insert Products and Update Stock
       if (products && products.length > 0) {
         for (const prod of products) {
           if (prod.product_id) {
+            // FIX: Use prod.price (unit price) * quantity
+            const unitPrice = Number(prod.price || 0);
+            const qty = Number(prod.quantity || 1);
+            const lineTotal = unitPrice * qty;
+
             await client.query(
               `INSERT INTO product_sales (
                 appointment_id, inventory_id, staff_id, client_id, 
@@ -684,20 +702,12 @@ app.post("/api/v1/appointments", authenticateToken, async (req, res) => {
               [
                 appointmentId,
                 prod.product_id,
-                services[0]?.staff_id || null, // Link to first staff from services
+                services[0]?.staff_id || null,
                 validClientId,
-                prod.quantity || 1,
-                prod.price_override || 0,
+                qty,
+                lineTotal, // FIX: Save calculated total, not undefined price_override
                 req.shopId,
               ]
-            );
-
-            // Deduct from stock_quantity in product_inventory
-            await client.query(
-              `UPDATE product_inventory 
-               SET stock_quantity = stock_quantity - $1 
-               WHERE id = $2`,
-              [prod.quantity || 1, prod.product_id]
             );
           }
         }
@@ -705,10 +715,12 @@ app.post("/api/v1/appointments", authenticateToken, async (req, res) => {
     }
 
     // 4. Recalculate Balance
-    if (validClientId) await recalculateClientBalance(client, validClientId);
-
+    let newBalance = 0; // Variable to hold the new balance
+    if (validClientId) {
+      newBalance = await recalculateClientBalance(client, validClientId);
+    }
     await client.query("COMMIT");
-    res.json({ id: appointmentId, success: true });
+    res.json({ id: appointmentId, success: true, new_balance: newBalance });
   } catch (err) {
     await client.query("ROLLBACK");
     console.error("Create Appointment Error:", err);
@@ -739,7 +751,10 @@ app.put("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const validClientId = safeUUID(client_id);
+    let validClientId = safeUUID(client_id);
+    if (!validClientId && !is_block) {
+      return res.status(400).json({ error: "Invalid Client ID" });
+    }
 
     // 1. Update the main appointment record
     await client.query(
@@ -795,6 +810,11 @@ app.put("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
     if (!is_block) {
       for (const prod of products) {
         if (prod.product_id) {
+          // FIX: Use prod.price (unit price) * quantity
+          const unitPrice = Number(prod.price || 0);
+          const qty = Number(prod.quantity || 1);
+          const lineTotal = unitPrice * qty;
+
           await client.query(
             `INSERT INTO product_sales (appointment_id, inventory_id, staff_id, client_id, quantity, total_price, shop_id, sale_date)
              VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
@@ -803,8 +823,8 @@ app.put("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
               prod.product_id,
               services[0]?.staff_id || null,
               validClientId,
-              prod.quantity || 1,
-              prod.price_override || 0,
+              qty,
+              lineTotal, // FIX: Save calculated total
               req.shopId,
             ]
           );
@@ -815,10 +835,12 @@ app.put("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
       }
     }
 
-    if (validClientId) await recalculateClientBalance(client, validClientId);
-
+    let newBalance = 0;
+    if (validClientId) {
+      newBalance = await recalculateClientBalance(client, validClientId);
+    }
     await client.query("COMMIT");
-    res.json({ success: true });
+    res.json({ success: true, new_balance: newBalance });
   } catch (err) {
     await client.query("ROLLBACK");
     console.error("Update Appointment Error:", err);
@@ -1915,6 +1937,169 @@ app.delete("/api/v1/products/:id", authenticateToken, async (req, res) => {
     res.status(500).json({ error: "Failed to delete product" });
   }
 });
+// GET FULL CLIENT PROFILE (Info + History + File Metadata)
+app.get("/api/v1/clients/:id/full", authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  try {
+    // 1. Fetch Client Details
+    const clientRes = await pool.query(
+      `SELECT * FROM clients WHERE id = $1 AND shop_id = $2`,
+      [id, req.shopId]
+    );
+
+    if (clientRes.rows.length === 0) {
+      return res.status(404).json({ error: "Client not found" });
+    }
+    const client = clientRes.rows[0];
+
+    // 2. Fetch Appointment History
+    // FIX: logic calculates start_time from subquery and orders by it safely
+    const historyRes = await pool.query(
+      `SELECT 
+          a.id, 
+          a.status, 
+          a.deposit_amount,
+          a.created_at,
+          -- Get the earliest service start time for this appointment
+          (
+            SELECT MIN(start_time) 
+            FROM appointment_services 
+            WHERE appointment_id = a.id
+          ) as start_time,
+          
+          -- Sum of services prices
+          COALESCE((
+            SELECT SUM(price_override) 
+            FROM appointment_services 
+            WHERE appointment_id = a.id
+          ), 0) as total_service_price,
+          
+          -- Sum of product sales linked to this appointment
+          COALESCE((
+            SELECT SUM(total_price) 
+            FROM product_sales 
+            WHERE appointment_id = a.id
+          ), 0) as total_product_price,
+          
+          -- Concatenate service names
+          (
+            SELECT string_agg(s.name, ', ') 
+            FROM appointment_services aps 
+            JOIN services s ON aps.service_id = s.id 
+            WHERE aps.appointment_id = a.id
+          ) as service_names
+
+       FROM appointments a
+       WHERE a.client_id = $1 AND a.shop_id = $2
+       
+       -- Order by the calculated start_time (using index 5 to avoid alias ambiguity)
+       ORDER BY 5 DESC`,
+      [id, req.shopId]
+    );
+
+    // 3. Fetch File Metadata
+    const filesRes = await pool.query(
+      `SELECT id, file_name, file_type, file_size, uploaded_at 
+       FROM client_files 
+       WHERE client_id = $1 ORDER BY uploaded_at DESC`,
+      [id]
+    );
+
+    res.json({
+      client: {
+        ...client,
+        full_name: `${client.first_name} ${client.last_name}`,
+      },
+      history: historyRes.rows,
+      files: filesRes.rows,
+    });
+  } catch (err) {
+    console.error("Profile Fetch Error:", err);
+    // Return JSON error so frontend doesn't crash with SyntaxError
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// UPLOAD CLIENT FILE (Saved as BLOB)
+app.post(
+  "/api/v1/clients/:id/files",
+  authenticateToken,
+  dbFileUpload.single("file"),
+  async (req, res) => {
+    const { id } = req.params;
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+
+    try {
+      // Fix encoding for special characters
+      const originalName = Buffer.from(
+        req.file.originalname,
+        "latin1"
+      ).toString("utf8");
+
+      await pool.query(
+        `INSERT INTO client_files (client_id, file_name, file_type, file_size, file_data)
+       VALUES ($1, $2, $3, $4, $5)`,
+        [id, originalName, req.file.mimetype, req.file.size, req.file.buffer]
+      );
+
+      res.json({ success: true });
+    } catch (err) {
+      console.error("File Upload Error:", err);
+      res.status(500).json({ error: "Failed to upload file" });
+    }
+  }
+);
+
+// DOWNLOAD CLIENT FILE
+app.get(
+  "/api/v1/clients/files/:fileId",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const { rows } = await pool.query(
+        `SELECT cf.file_data, cf.file_type, cf.file_name 
+       FROM client_files cf
+       JOIN clients c ON cf.client_id = c.id
+       WHERE cf.id = $1 AND c.shop_id = $2`,
+        [req.params.fileId, req.shopId]
+      );
+
+      if (rows.length === 0)
+        return res.status(404).json({ error: "File not found" });
+
+      const file = rows[0];
+      const encodedName = encodeURIComponent(file.file_name);
+
+      res.setHeader("Content-Type", file.file_type);
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename*=UTF-8''${encodedName}`
+      );
+      res.send(file.file_data);
+    } catch (err) {
+      res.status(500).json({ error: "Download failed" });
+    }
+  }
+);
+
+// DELETE CLIENT FILE
+app.delete(
+  "/api/v1/clients/files/:fileId",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      await pool.query(
+        `DELETE FROM client_files cf
+       USING clients c
+       WHERE cf.client_id = c.id AND cf.id = $1 AND c.shop_id = $2`,
+        [req.params.fileId, req.shopId]
+      );
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ error: "Delete failed" });
+    }
+  }
+);
 app.get(/(.*)/, (req, res) => {
   if (req.path.startsWith("/api")) {
     return res.status(404).json({ error: "API Route Not Found" });
