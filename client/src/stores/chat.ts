@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { io, Socket } from "socket.io-client";
+import { useAuthStore } from "./auth"; // Import auth store to access user info
 
 interface User {
   id: string;
@@ -41,6 +42,8 @@ interface TypingUser {
 }
 
 export const useChatStore = defineStore("chat", () => {
+  const authStore = useAuthStore(); // Initialize Auth Store
+
   const socket = ref<Socket | null>(null);
   const channels = ref<Channel[]>([]);
   const messages = ref<Map<string, Message[]>>(new Map());
@@ -125,25 +128,22 @@ export const useChatStore = defineStore("chat", () => {
         // Replace optimistic message with real one
         channelMessages[optimisticIndex] = message;
         messages.value.set(message.channel_id, [...channelMessages]);
-      } else if (!channelMessages.some((m) => m.id === message.id)) {
-        messages.value.set(message.channel_id, [...channelMessages, message]);
-      }
-      // 2. Check if message already exists (prevents duplicates from socket broadcast)
-      const isDuplicate = channelMessages.some((m) => m.id === message.id);
-
-      if (!isDuplicate) {
-        // Add the new message to the state
-        messages.value.set(message.channel_id, [...channelMessages, message]);
+      } else {
+        // Check if message already exists (prevents duplicates from socket broadcast)
+        const isDuplicate = channelMessages.some((m) => m.id === message.id);
+        if (!isDuplicate) {
+          messages.value.set(message.channel_id, [...channelMessages, message]);
+        }
       }
 
-      // 3. Update the channel list summary
+      // Update the channel list summary
       const channel = channels.value.find((ch) => ch.id === message.channel_id);
       if (channel) {
         // Update the timestamp so this channel moves to the top of the list
         channel.updated_at = message.created_at;
 
-        // 4. Handle Unread Counts
-        const currentUserId = localStorage.getItem("userId");
+        // Handle Unread Counts
+        const currentUserId = authStore.user?.id; // Use authStore.user here
         const isFromMe = message.user_id === currentUserId;
         const isChatOpen = message.channel_id === activeChannelId.value;
 
@@ -151,11 +151,11 @@ export const useChatStore = defineStore("chat", () => {
         // AND I don't have that specific chat window open
         if (!isFromMe && !isChatOpen) {
           channel.unread_count = (channel.unread_count || 0) + 1;
-          // playNotificationSound();
+          playNotificationSound();
         }
       }
 
-      // 5. Auto-scroll to bottom if the user is looking at this channel
+      // Auto-scroll to bottom if the user is looking at this channel
       if (message.channel_id === activeChannelId.value) {
         setTimeout(() => scrollToBottom(), 100);
       }
@@ -190,12 +190,12 @@ export const useChatStore = defineStore("chat", () => {
       }
     });
 
-    // chat.ts - Inside the connect function socket listeners
+    // Handle Bulk Read Receipts
     socket.value.on(
       "messages:read:bulk:update",
       ({ channelId, messageIds, userId }) => {
         // If I am the one who read the messages, ensure my local badge for this channel is 0
-        if (userId === localStorage.getItem("userId")) {
+        if (userId === authStore.user?.id) {
           const channel = channels.value.find((c) => c.id === channelId);
           if (channel) channel.unread_count = 0;
         }
@@ -219,8 +219,7 @@ export const useChatStore = defineStore("chat", () => {
     );
 
     // Initialize notification sound
-    // notificationSound.value = new Audio("/notification.mp3");
-    notificationSound.value = null;
+    notificationSound.value = new Audio("/notification.mp3");
   };
 
   const disconnect = () => {
@@ -229,7 +228,6 @@ export const useChatStore = defineStore("chat", () => {
     isConnected.value = false;
   };
 
-  // chat.ts update
   const fetchChannels = async () => {
     try {
       const token = localStorage.getItem("token");
@@ -248,13 +246,48 @@ export const useChatStore = defineStore("chat", () => {
   const fetchMessages = async (channelId: string) => {
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch(`/api/v1/chat/channels/${channelId}/messages`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const msgs = await res.json();
-      messages.value.set(channelId, msgs);
+      const res = await fetch(
+        `/api/v1/chat/channels/${channelId}/messages?limit=50`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      // SAFETY CHECK 1: If server errors, stop here.
+      if (!res.ok) {
+        console.error("Failed to fetch messages:", res.statusText);
+        return;
+      }
+
+      const data = await res.json();
+
+      // SAFETY CHECK 2: Ensure data is actually an array before filtering
+      if (Array.isArray(data)) {
+        messages.value.set(channelId, data);
+
+        // Update read status if window is focused
+        if (!isMinimized.value && activeChannelId.value === channelId) {
+          const unreadIds = data
+            .filter((m: any) => {
+              const hasRead = m.read_by?.some(
+                (r: any) => r.user_id === authStore.user?.id
+              );
+              return !hasRead && m.user_id !== authStore.user?.id;
+            })
+            .map((m: any) => m.id);
+
+          if (unreadIds.length > 0) {
+            socket.value?.emit("chat:read:bulk", {
+              channelId,
+              messageIds: unreadIds,
+            });
+          }
+        }
+      } else {
+        console.warn("API returned unexpected data format", data);
+      }
     } catch (err) {
-      console.error("Error fetching messages:", err);
+      console.error("Error loading messages:", err);
     }
   };
 
@@ -272,7 +305,7 @@ export const useChatStore = defineStore("chat", () => {
       const channelMessages = messages.value.get(channelId) || [];
       const unreadMessageIds = channelMessages
         .filter((m) => {
-          const currentUserId = localStorage.getItem("userId");
+          const currentUserId = authStore.user?.id;
           return (
             m.user_id !== currentUserId &&
             !m.read_by?.find((r) => r.user_id === currentUserId)
@@ -315,7 +348,7 @@ export const useChatStore = defineStore("chat", () => {
       fileName: fileData?.name || null,
       fileSize: fileData?.size || null,
       fileType: fileData?.type || null,
-      fileBase64: fileData?.base64 || null, // Add this to match server.js
+      fileBase64: fileData?.base64 || null,
     };
 
     socket.value?.emit("chat:message", messageData);
@@ -339,21 +372,22 @@ export const useChatStore = defineStore("chat", () => {
       if (typingTimeout) clearTimeout(typingTimeout);
     }
   };
+
   const addMessageLocally = (channelId: string, message: Message) => {
     const existing = messages.value.get(channelId) || [];
     messages.value.set(channelId, [...existing, message]);
   };
+
   // Upload file
   const uploadFile = async (file: File) => {
     try {
       const formData = new FormData();
-      formData.append("file", file); // 'file' must match upload.single("file") in Express
+      formData.append("file", file);
 
       const token = localStorage.getItem("token");
       const res = await fetch("/api/v1/chat/upload", {
         method: "POST",
         headers: {
-          // DO NOT set 'Content-Type': 'multipart/form-data' here
           Authorization: `Bearer ${token}`,
         },
         body: formData,
@@ -364,7 +398,7 @@ export const useChatStore = defineStore("chat", () => {
         throw new Error(errorData.error || "Upload failed");
       }
 
-      return await res.json(); // Returns { url, name, size, type }
+      return await res.json();
     } catch (err) {
       console.error("Error uploading file:", err);
       throw err;
@@ -391,7 +425,7 @@ export const useChatStore = defineStore("chat", () => {
         body: JSON.stringify({
           name,
           description,
-          memberIds: cleanMemberIds, // Send the cleaned UUID array
+          memberIds: cleanMemberIds,
         }),
       });
 
@@ -420,7 +454,7 @@ export const useChatStore = defineStore("chat", () => {
   };
 
   const playNotificationSound = () => {
-    if (!isMinimized.value) return; // Don't play if chat is open
+    if (!isMinimized.value) return;
 
     try {
       notificationSound.value?.play().catch((err) => {

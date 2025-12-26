@@ -8,15 +8,15 @@ export const useAuthStore = defineStore("auth", () => {
 
   const isAuthenticated = computed(() => !!token.value);
 
-  // Optional helper to check role directly in store
+  // Helper to check role (Matches server.js logic for super_admin/admin)
   const isOwner = computed(
-    () => user.value?.role === "admin" || user.value?.role === "manager"
+    () => user.value?.role === "admin" || user.value?.role === "super_admin"
   );
 
   const login = async (username: string, password: string) => {
     try {
-      const res = await fetch("http://192.168.68.58:3000/api/auth/login", {
-        // Ensure full URL if not proxied
+      // FIX: Changed endpoint to match server.js (/api/v1/login)
+      const res = await fetch("/api/v1/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password }),
@@ -29,7 +29,7 @@ export const useAuthStore = defineStore("auth", () => {
         token.value = data.token;
         localStorage.setItem("token", data.token);
 
-        // 3. Save User (This is the missing part you need)
+        // 3. Save User
         user.value = data.user;
         localStorage.setItem("user", JSON.stringify(data.user));
 
@@ -38,6 +38,7 @@ export const useAuthStore = defineStore("auth", () => {
         return { success: false, error: data.error };
       }
     } catch (e) {
+      console.error(e);
       return { success: false, error: "Network error" };
     }
   };
@@ -52,9 +53,9 @@ export const useAuthStore = defineStore("auth", () => {
 
   return {
     token,
-    user, // <-- Export this so Layout.vue can use it
+    user,
     isAuthenticated,
-    isOwner, // <-- Optional convenience
+    isOwner,
     login,
     logout,
   };

@@ -104,62 +104,25 @@
           </button>
         </div>
 
-        <button
-          @click.stop="toggleSettings"
-          class="p-2.5 text-gray-500 hover:bg-gray-100 rounded-lg border border-gray-200 transition-colors relative"
-          title="Settings"
-        >
-          <svg
-            class="w-5 h-5"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-            ></path>
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-            ></path>
-          </svg>
-
-          <div
-            v-if="showSettingsMenu"
-            class="absolute right-0 top-12 w-56 bg-white rounded-xl shadow-xl border border-gray-100 z-50 py-2 text-left animate-fade-in"
-          >
-            <div class="px-4 py-2 border-b border-gray-100">
-              <p
-                class="text-xs font-semibold text-gray-500 uppercase tracking-wider"
-              >
-                Display Options
-              </p>
-            </div>
-            <button
-              @click="toggleWeekends"
-              class="w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center justify-between"
-            >
-              <span>Show Weekends</span>
-              <span v-if="calendarOptions.weekends" class="text-indigo-600"
-                >✓</span
-              >
-            </button>
-          </div>
-        </button>
-
         <div class="relative">
-          <button
-            @click.stop="toggleViewMenu"
-            class="flex items-center space-x-2 px-4 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-all min-w-[100px] justify-between"
+          <select
+            :value="currentView"
+            @change="(e) => changeView((e.target as HTMLSelectElement).value)"
+            class="appearance-none pl-4 pr-10 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all min-w-[100px] cursor-pointer"
           >
-            <span class="truncate">{{ currentViewLabel }}</span>
+            <option
+              v-for="view in viewOptions"
+              :key="view.value"
+              :value="view.value"
+            >
+              {{ view.label }}
+            </option>
+          </select>
+          <div
+            class="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none"
+          >
             <svg
-              class="w-4 h-4 text-gray-400"
+              class="w-4 h-4 text-gray-500"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -171,27 +134,9 @@
                 d="M19 9l-7 7-7-7"
               ></path>
             </svg>
-          </button>
-
-          <div
-            v-if="showViewMenu"
-            class="absolute right-0 top-12 w-40 bg-white rounded-xl shadow-xl border border-gray-100 z-50 py-1 overflow-hidden animate-fade-in"
-          >
-            <button
-              v-for="view in viewOptions"
-              :key="view.value"
-              @click="changeView(view.value)"
-              class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 transition-colors flex items-center justify-between"
-              :class="{
-                'bg-indigo-50 text-indigo-600 font-medium':
-                  currentView === view.value,
-              }"
-            >
-              {{ view.label }}
-              <span v-if="currentView === view.value">✓</span>
-            </button>
           </div>
         </div>
+
         <ColorModelToggle />
 
         <button
@@ -203,12 +148,12 @@
         </button>
         <button
           @click="openSwapDialog"
-          class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 md:px-4 py-2 rounded-full text-sm font-medium shadow-lg transform active:scale-95 transition-all flex items-center gap-2 flex-shrink-0"
+          class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 md:px-6 py-2.5 rounded-full text-sm font-medium shadow-lg transform active:scale-95 transition-all flex items-center gap-2 flex-shrink-0"
         >
           <span class="hidden sm:inline">Swap</span>
-          <span class="sm:hidden"
-            ><i class="pi pi-arrow-right-arrow-left"></i
-          ></span>
+          <span class="sm:hidden">
+            <i class="pi pi-arrow-right-arrow-left"> </i>
+          </span>
         </button>
       </div>
     </div>
@@ -287,23 +232,24 @@ import ColorModelToggle from "../components/ColorModelToggle.vue";
 import { useAuthStore } from "../stores/auth";
 
 const authStore = useAuthStore();
-
 const toast = useToast();
-
 const calendarStore = useCalendarStore();
 const settings = useSettingsStore();
+
+// UI State
 const dialogVisible = ref(false);
 const swapDialogVisible = ref(false);
 const selectedAppointment = ref<any>(null);
 const fullCalendar = ref<any>(null);
 const currentTitle = ref("");
 const currentView = ref("resourceTimeGridDay");
+// showViewMenu is no longer needed with native select
 const showViewMenu = ref(false);
-const showSettingsMenu = ref(false);
 
 const openSwapDialog = () => {
   swapDialogVisible.value = true;
 };
+
 const handleSwap = async (swapData: {
   appointment1_id: number;
   appointment2_id: number;
@@ -326,12 +272,9 @@ const handleSwap = async (swapData: {
     const data = await res.json();
     if (!data.success) throw new Error("Swap failed");
 
-    // Close dialog
     swapDialogVisible.value = false;
-
     calendarStore.fetchAll();
 
-    // Show success
     toast.add({
       severity: "success",
       summary: "Swap Complete",
@@ -340,7 +283,6 @@ const handleSwap = async (swapData: {
     });
   } catch (err: any) {
     console.error("SWAP ERROR", err);
-
     toast.add({
       severity: "error",
       summary: "Swap Failed",
@@ -403,7 +345,6 @@ const calendarResources = computed(() => {
     filtered = filtered.filter((r: any) => r.id === authStore.user.staff_id);
   }
 
-  // 3. Map to Calendar Format
   return filtered.map((r: any) => ({
     id: r.id.toString(),
     title: r.name,
@@ -414,7 +355,6 @@ const calendarResources = computed(() => {
   }));
 });
 
-// FIX: Generate Separate Events for Each Service
 const calendarEvents = computed(() => {
   const appointments = calendarStore.events;
   if (!Array.isArray(appointments)) return [];
@@ -521,19 +461,13 @@ const updateSlotDuration = () => {
   }
 };
 
-const toggleSettings = () => {
-  showSettingsMenu.value = !showSettingsMenu.value;
-  showViewMenu.value = false;
-};
-
+// No longer needed
 const toggleViewMenu = () => {
   showViewMenu.value = !showViewMenu.value;
-  showSettingsMenu.value = false;
 };
 
 const closeMenus = () => {
   showViewMenu.value = false;
-  showSettingsMenu.value = false;
 };
 
 const changeView = (viewName: string) => {
@@ -544,15 +478,6 @@ const changeView = (viewName: string) => {
     currentTitle.value = api.view.title;
   }
   closeMenus();
-};
-
-const toggleWeekends = () => {
-  const api = calendarApi.value;
-  if (api) {
-    const current = api.getOption("weekends");
-    api.setOption("weekends", !current);
-    calendarOptions.value.weekends = !current;
-  }
 };
 
 const prepareServicesForUpdate = (services: any[]) => {
@@ -584,18 +509,10 @@ const calendarOptions = ref({
   slotMaxTime: "23:00:00",
   height: "100%",
   expandRows: true,
-
-  // === MOBILE RESPONSIVE FIX ===
-  // 1. Force a minimum width for day/resource columns.
-  // This ensures that on mobile, columns don't squish.
-  // Instead, the user can scroll horizontally to see other staff members.
   dayMinWidth: 150,
-
-  // 2. Keep header visible while scrolling vertically
   stickyHeaderDates: true,
-
   nowIndicator: true,
-  weekends: true,
+  weekends: true, // Default enabled, can be toggled by prop if needed
   headerToolbar: {
     left: "prev,next today",
     center: "title",
@@ -624,12 +541,47 @@ const calendarOptions = ref({
   eventContent: (arg: any) => {
     const timeText = arg.timeText;
     const props = arg.event.extendedProps;
+
+    // 1. Check if we are in Month View (Row layout)
+    const isMonthView = arg.view.type === "dayGridMonth";
+
+    // 2. Calculate Duration in Minutes
+    const start = arg.event.start;
+    const end = arg.event.end;
+    const durationMins =
+      end && start ? (end.getTime() - start.getTime()) / 60000 : 60;
+
+    // 3. Define "Short Event" (e.g., less than 45 mins)
+    const isShort = durationMins < 45;
+
+    // 4. Dynamic Classes
+    // If short: Use tiny padding (p-0.5) and small text
+    // If normal: Use standard padding (p-2)
+    const paddingClass = isShort && !isMonthView ? "p-0.5 pl-1" : "p-2";
+    const titleClass = isShort && !isMonthView ? "text-xs" : "text-sm";
+
+    // Hide secondary info if space is tight
+    const showTime = !isShort && !isMonthView;
+    const showService = !isShort || isMonthView;
+
     return {
       html: `
-        <div class="h-full w-full p-2 flex flex-col leading-tight overflow-hidden rounded-md hover:brightness-95 transition-all">
-          <div class="text-[11px] font-bold opacity-70 mb-0.5">${timeText}</div>
-          <div class="font-bold text-sm truncate text-gray-900">${props.client_name}</div>
-          <div class="text-xs font-medium opacity-80 truncate mt-0.5">${props.service_name}</div>
+        <div class="w-full ${paddingClass} flex flex-col leading-tight overflow-hidden rounded-md hover:brightness-95 transition-all ${
+        isMonthView ? "" : "h-full"
+      }">
+          ${
+            showTime
+              ? `<div class="text-[11px] font-bold opacity-70 mb-0.5">${timeText}</div>`
+              : ""
+          }
+          <div class="font-bold ${titleClass} truncate text-gray-900">${
+        props.client_name
+      }</div>
+          ${
+            showService
+              ? `<div class="text-xs font-medium opacity-80 truncate mt-0.5">${props.service_name}</div>`
+              : ""
+          }
         </div>
       `,
     };

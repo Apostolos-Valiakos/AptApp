@@ -8,17 +8,13 @@ const cors = require("cors");
 const multer = require("multer");
 const fs = require("fs");
 const { Server } = require("socket.io");
+const bcrypt = require("bcrypt");
 
 const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
 
 // ==================== FILE UPLOAD SETUP ====================
-const uploadDir = path.join(__dirname, "../uploads");
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
-
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
   filename: (req, file, cb) => {
@@ -56,7 +52,6 @@ app.use(express.json());
 
 const distPath = path.join(__dirname, "../dist");
 app.use(express.static(distPath));
-app.use("/uploads", express.static(uploadDir));
 const dbFileStorage = multer.memoryStorage();
 const dbFileUpload = multer({
   storage: dbFileStorage,
@@ -130,50 +125,76 @@ const authenticateToken = (req, res, next) => {
 
 // --- AUTH ROUTE ---
 
-app.post("/api/auth/login", async (req, res) => {
+app.post("/api/v1/login", async (req, res) => {
   const { username, password } = req.body;
-
   try {
-    const result = await pool.query("SELECT * FROM users WHERE username = $1", [
-      username,
-    ]);
+    // 1. Find user by username only (don't check password in SQL)
+    const result = await pool.query(
+      `SELECT u.*, s.name as shop_name 
+       FROM users u
+       LEFT JOIN shops s ON u.shop_id = s.id
+       WHERE u.username = $1`,
+      [username]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
 
     const user = result.rows[0];
 
-    // In production, compare hashed passwords
-    if (user && user.password_hash === password) {
-      const token = jwt.sign(
-        {
-          userId: user.id,
-          shopId: user.shop_id,
-          staffId: user.staff_id,
-          role: user.role, // Ensure role is in token
-        },
-        process.env.JWT_SECRET || "secret",
-        { expiresIn: "24h" }
-      );
+    // 2. Compare the provided password with the hashed password in DB
+    const match = await bcrypt.compare(password, user.password);
 
-      res.json({
-        token,
-        user: {
-          id: user.id,
-          name: user.username,
-          role: user.role,
-          shop_id: user.shop_id,
-          staff_id: user.staff_id,
-        },
-      });
-    } else {
-      res.status(401).json({ error: "Invalid credentials" });
+    if (!match) {
+      return res.status(401).json({ error: "Invalid credentials" });
     }
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: "Login error" });
+
+    // 3. Generate Token
+    const token = jwt.sign(
+      {
+        userId: user.id,
+        username: user.username,
+        role: user.role,
+        shopId: user.shop_id,
+        staffId: user.staff_id,
+      },
+      process.env.JWT_SECRET || "supersecret",
+      { expiresIn: "7d" }
+    );
+
+    res.json({ token, user });
+  } catch (err) {
+    console.error("Login Error:", err);
+    res.status(500).json({ error: "Login failed" });
   }
 });
 
 // --- PROFILE ROUTE ---
+app.put("/api/v1/profile", authenticateToken, async (req, res) => {
+  const { firstName, lastName, email, phone } = req.body;
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
 
+    // Update Staff Record if user is linked to staff
+    if (req.user.staffId) {
+      const fullName = `${firstName} ${lastName}`.trim();
+      await client.query(
+        `UPDATE staff SET name = $1, email = $2, phone = $3 WHERE id = $4`,
+        [fullName, email, phone || null, req.user.staffId]
+      );
+    }
+
+    await client.query("COMMIT");
+    res.json({ success: true });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
 app.get("/api/v1/profile", authenticateToken, async (req, res) => {
   try {
     const { rows } = await pool.query(
@@ -220,20 +241,28 @@ app.put("/api/v1/profile/password", authenticateToken, async (req, res) => {
     return res.status(400).json({ error: "New password is too short" });
   }
   try {
+    // 1. Fetch current hashed password
     const { rows } = await pool.query(
-      "SELECT password_hash FROM users WHERE id = $1",
+      "SELECT password FROM users WHERE id = $1",
       [req.user.userId]
     );
     if (rows.length === 0)
       return res.status(404).json({ error: "User not found" });
 
     const user = rows[0];
-    if (user.password_hash !== currentPassword) {
+
+    // 2. Securely compare current password
+    const match = await bcrypt.compare(currentPassword, user.password);
+    if (!match) {
       return res.status(400).json({ error: "Incorrect current password" });
     }
 
-    await pool.query("UPDATE users SET password_hash = $1 WHERE id = $2", [
-      newPassword,
+    // 3. Hash the NEW password
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+
+    // 4. Update DB
+    await pool.query("UPDATE users SET password = $1 WHERE id = $2", [
+      hashedPassword,
       req.user.userId,
     ]);
     res.json({ success: true });
@@ -270,46 +299,36 @@ app.get("/api/v1/staff", authenticateToken, async (req, res) => {
 });
 
 app.post("/api/v1/staff", authenticateToken, async (req, res) => {
-  const {
-    first_name,
-    last_name,
-    email,
-    phone,
-    hourly_rate,
-    color_code,
-    specialty,
-    service_ids = [],
-  } = req.body;
-  const client = await pool.connect();
+  const { name, email, phone, role, color, username, password } = req.body;
 
+  const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const fullName = `${first_name} ${last_name}`.trim();
-    const color = color_code || "#3b82f6";
 
+    // 1. Create Staff Entry
     const staffRes = await client.query(
-      `INSERT INTO staff (name, email, phone, hourly_rate, color_code, specialty, is_active, shop_id)
-       VALUES ($1, $2, $3, $4, $5, $6, true, $7)
-       RETURNING id`,
-      [fullName, email, phone, hourly_rate || 0, color, specialty, req.shopId]
+      "INSERT INTO staff (name, email, phone, color, shop_id) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+      [name, email, phone, color, req.shopId]
     );
+    const staffId = staffRes.rows[0].id;
 
-    const newStaffId = staffRes.rows[0].id;
+    // 2. Create User Entry (with Hashed Password)
+    if (username && password) {
+      // HASH THE PASSWORD HERE
+      const hashedPassword = await bcrypt.hash(password, 12);
 
-    if (service_ids.length > 0) {
-      for (const svcId of service_ids) {
-        await client.query(
-          `INSERT INTO staff_services (staff_id, service_id) VALUES ($1, $2)`,
-          [newStaffId, svcId]
-        );
-      }
+      await client.query(
+        "INSERT INTO users (username, password, role, staff_id, shop_id) VALUES ($1, $2, $3, $4, $5)",
+        [username, hashedPassword, role || "staff", staffId, req.shopId]
+      );
     }
 
     await client.query("COMMIT");
-    res.json({ success: true, id: newStaffId });
+    res.json({ success: true, id: staffId });
   } catch (err) {
     await client.query("ROLLBACK");
-    res.status(500).json({ error: "Failed to create staff" });
+    console.error(err);
+    res.status(500).json({ error: err.message });
   } finally {
     client.release();
   }
@@ -393,10 +412,12 @@ app.post("/api/v1/staff/:id/login", authenticateToken, async (req, res) => {
       return res.status(400).json({ error: "Username already taken" });
     }
 
+    const hashedPassword = await bcrypt.hash(password, 12);
+
     await client.query(
-      `INSERT INTO users (username, password_hash, shop_id, staff_id, role)
+      `INSERT INTO users (username, password, shop_id, staff_id, role)
        VALUES ($1, $2, $3, $4, 'staff')`,
-      [username, password, req.shopId, id]
+      [username, hashedPassword, req.shopId, id]
     );
 
     await client.query("COMMIT");
@@ -1270,20 +1291,23 @@ io.on("connection", (socket) => {
 
       const result = await pool.query(
         `INSERT INTO chat_messages (
-          channel_id, user_id, content, message_type, 
-          file_name, file_size, file_type, file_blob, created_at
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
-        RETURNING id, channel_id, user_id, content, message_type, file_name, file_size, file_type, created_at`,
+    channel_id, user_id, content, message_type, 
+    file_name, file_size, file_type, file_blob, created_at
+  )
+  VALUES ($1, $2, pgp_sym_encrypt($3, $9), $4, $5, $6, $7, $8, NOW())
+  RETURNING id, channel_id, user_id, 
+            pgp_sym_decrypt(content::bytea, $9) as content, 
+            message_type, file_name, file_size, file_type, created_at`,
         [
           channelId,
           socket.user.userId,
-          content,
+          content, // $3: Plain text content to be encrypted
           messageType || "text",
           fileName || null,
           fileSize || null,
           fileType || null,
           binaryData,
+          process.env.MESSAGE_ENCRYPTION_KEY || "SecretKey123", // $9: The Key
         ]
       );
 
@@ -1484,26 +1508,33 @@ app.get(
       }
 
       let query = `
-      SELECT m.*, 
-        json_build_object(
-          'id', u.id,
-          'username', u.username,
-          'staff_name', s.name
-        ) as user,
-        COALESCE(
-          json_agg(
-            json_build_object('user_id', r.user_id, 'read_at', r.read_at)
-          ) FILTER (WHERE r.id IS NOT NULL),
-          '[]'
-        ) as read_by
-      FROM chat_messages m
-      JOIN users u ON m.user_id = u.id
-      LEFT JOIN staff s ON u.staff_id = s.id
-      LEFT JOIN message_read_receipts r ON m.id = r.message_id
-      WHERE m.channel_id = $1
-    `;
+  SELECT m.id, m.channel_id, m.user_id, m.message_type,
+    -- Decrypt the content here
+    pgp_sym_decrypt(m.content::bytea, $1) as content,
+    m.file_name, m.file_size, m.file_type, m.created_at,
+    json_build_object(
+      'id', u.id,
+      'username', u.username,
+      'staff_name', s.name
+    ) as user,
+    COALESCE(
+      json_agg(
+        json_build_object('user_id', r.user_id, 'read_at', r.read_at)
+      ) FILTER (WHERE r.id IS NOT NULL),
+      '[]'
+    ) as read_by
+  FROM chat_messages m
+  JOIN users u ON m.user_id = u.id
+  LEFT JOIN staff s ON u.staff_id = s.id
+  LEFT JOIN message_read_receipts r ON m.id = r.message_id
+  WHERE m.channel_id = $2
+`;
 
-      const params = [channelId];
+      // Update params to include the key first
+      const params = [
+        process.env.MESSAGE_ENCRYPTION_KEY || "SecretKey123",
+        channelId,
+      ];
 
       if (before) {
         params.push(before);
@@ -1511,8 +1542,8 @@ app.get(
       }
 
       query += ` GROUP BY m.id, u.id, u.username, s.name
-               ORDER BY m.created_at DESC
-               LIMIT $${params.length + 1}`;
+           ORDER BY m.created_at DESC
+           LIMIT $${params.length + 1}`;
       params.push(limit);
 
       const { rows } = await pool.query(query, params);
