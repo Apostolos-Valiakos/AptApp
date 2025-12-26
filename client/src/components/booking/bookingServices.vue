@@ -1,8 +1,10 @@
 <template>
-  <div class="space-y-3">
-    <label class="text-xs font-bold text-gray-500 uppercase tracking-wider">
-      Services
-    </label>
+  <div class="space-y-4">
+    <div class="flex justify-between items-end">
+      <label class="text-xs font-bold text-gray-500 uppercase tracking-wider">
+        Services
+      </label>
+    </div>
 
     <div
       v-for="(service, index) in modelValue"
@@ -12,12 +14,12 @@
       <button
         v-if="modelValue.length > 1"
         @click="removeService(index)"
-        class="absolute -right-2 -top-2 bg-white p-1 rounded-full shadow border border-gray-200 text-gray-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity z-10"
+        class="absolute -right-2 -top-2 bg-white p-1 rounded-full shadow border border-gray-200 text-gray-400 hover:text-red-600 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity z-10"
       >
         <i class="pi pi-times text-xs"></i>
       </button>
 
-      <div class="flex gap-3 mb-3">
+      <div class="flex flex-col sm:flex-row gap-3 mb-3">
         <div class="flex-grow">
           <label class="text-xs text-gray-500 block mb-1">Service</label>
           <Dropdown
@@ -31,7 +33,7 @@
           />
         </div>
 
-        <div class="w-1/3">
+        <div class="w-full sm:w-1/3">
           <label class="text-xs text-gray-500 block mb-1">Staff</label>
           <Dropdown
             v-model="service.staff_id"
@@ -44,7 +46,7 @@
         </div>
       </div>
 
-      <div class="grid grid-cols-4 gap-4">
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div class="col-span-2 min-w-0">
           <label class="text-xs text-gray-500 block mb-1">Time</label>
           <Calendar
@@ -82,7 +84,7 @@
 
     <button
       @click="addService"
-      class="text-indigo-600 text-sm font-semibold hover:underline flex items-center gap-1 mt-2"
+      class="text-indigo-600 text-sm font-semibold hover:underline flex items-center gap-1 mt-2 w-full sm:w-auto justify-center sm:justify-start p-2 sm:p-0 border sm:border-none rounded sm:rounded-none border-dashed border-indigo-300"
     >
       <i class="pi pi-plus-circle"></i> Add another service
     </button>
@@ -135,7 +137,7 @@ const addService = () => {
 const removeService = (index: number) => {
   const list = [...props.modelValue];
   list.splice(index, 1);
-  recalcTimes(list); // Pass the mutated list to recalc
+  recalcTimes(list);
 };
 
 const updateServiceDetails = (index: number) => {
@@ -151,11 +153,9 @@ const updateServiceDetails = (index: number) => {
 };
 
 const recalcTimes = (existingList?: any[]) => {
-  // Use provided list or clone from props
   const list = existingList || [...props.modelValue];
 
   if (list.length <= 1) {
-    // If we passed a list (deletion/update), emit it
     if (existingList) emit("update:modelValue", list);
     return;
   }
@@ -163,10 +163,7 @@ const recalcTimes = (existingList?: any[]) => {
   let currentStart = new Date(list[0].start_time);
 
   for (let i = 0; i < list.length; i++) {
-    // Ensure start time is a Date object
     list[i].start_time = new Date(currentStart);
-
-    // Calculate next start
     currentStart = new Date(
       currentStart.getTime() + (list[i].duration_override || 60) * 60000
     );

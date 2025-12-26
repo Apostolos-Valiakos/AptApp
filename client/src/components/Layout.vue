@@ -3,12 +3,11 @@
     class="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-300"
   >
     <nav
-      class="bg-white dark:bg-gray-800 shadow-lg border-b border-gray-200 dark:border-gray-700"
+      class="bg-white dark:bg-gray-800 shadow-lg border-b border-gray-200 dark:border-gray-700 z-20 relative"
     >
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex justify-between h-16">
-          <!-- Navigation Links -->
-          <div class="flex space-x-8">
+          <div class="flex">
             <div class="flex-shrink-0 flex items-center mr-4">
               <span
                 class="text-xl font-bold text-indigo-600 dark:text-indigo-400"
@@ -17,76 +16,165 @@
               </span>
             </div>
 
-            <!-- 1. Calendar (Visible to ALL) -->
-            <router-link
-              to="/scheduler"
-              active-class="border-indigo-600 text-gray-900 dark:text-white"
-              class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-300 dark:hover:text-white transition-colors"
-            >
-              Calendar
-            </router-link>
+            <div class="hidden md:flex space-x-8">
+              <router-link
+                to="/scheduler"
+                active-class="border-indigo-600 text-gray-900 dark:text-white"
+                class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-300 dark:hover:text-white transition-colors"
+              >
+                Calendar
+              </router-link>
 
-            <!-- 2. Staff Management (Shop Owner ONLY) -->
-            <router-link
-              v-if="isOwner"
-              to="/staff"
-              active-class="border-indigo-600 text-gray-900 dark:text-white"
-              class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-300 dark:hover:text-white transition-colors"
-            >
-              Staff
-            </router-link>
+              <router-link
+                v-if="isOwner"
+                to="/staff"
+                active-class="border-indigo-600 text-gray-900 dark:text-white"
+                class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-300 dark:hover:text-white transition-colors"
+              >
+                Staff
+              </router-link>
 
-            <!-- 3. Clients (Visible to ALL - Staff need this to book & edit) -->
-            <router-link
-              to="/clients"
-              active-class="border-indigo-600 text-gray-900 dark:text-white"
-              class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-300 dark:hover:text-white transition-colors"
-            >
-              Clients
-            </router-link>
+              <router-link
+                v-if="isOwner"
+                to="/services"
+                active-class="border-indigo-600 text-gray-900 dark:text-white"
+                class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-300 dark:hover:text-white transition-colors"
+              >
+                Services
+              </router-link>
 
-            <!-- 4. Services Configuration (Visible to ALL - Staff need to see details) -->
-            <!-- Changed: Now visible to everyone so staff can check prices/durations or edit if allowed -->
-            <router-link
-              to="/services"
-              active-class="border-indigo-600 text-gray-900 dark:text-white"
-              class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-300 dark:hover:text-white transition-colors"
-            >
-              Services
-            </router-link>
-            <router-link
-              to="/products"
-              active-class="border-indigo-600 text-gray-900 dark:text-white"
-              class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-300 dark:hover:text-white transition-colors"
-            >
-              Products
-            </router-link>
+              <router-link
+                to="/products"
+                active-class="border-indigo-600 text-gray-900 dark:text-white"
+                class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-300 dark:hover:text-white transition-colors"
+              >
+                Products
+              </router-link>
 
-            <!-- 5. Financial Reports (Shop Owner ONLY) -->
-            <router-link
-              v-if="isOwner"
-              to="/financials"
-              active-class="border-indigo-600 text-gray-900 dark:text-white"
-              class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-300 dark:hover:text-white transition-colors"
-            >
-              Reports
-            </router-link>
+              <router-link
+                to="/clients"
+                active-class="border-indigo-600 text-gray-900 dark:text-white"
+                class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-300 dark:hover:text-white transition-colors"
+              >
+                Clients
+              </router-link>
 
-            <!-- 6. Profile (Visible to ALL) -->
-            <router-link
-              to="/profile"
-              active-class="border-indigo-600 text-gray-900 dark:text-white"
-              class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-300 dark:hover:text-white transition-colors"
-            >
-              Profile
-            </router-link>
+              <router-link
+                v-if="isOwner"
+                to="/analytics"
+                active-class="border-indigo-600 text-gray-900 dark:text-white"
+                class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-300 dark:hover:text-white transition-colors"
+              >
+                Analytics
+              </router-link>
+            </div>
           </div>
 
-          <!-- Right Side: Toggle & Logout -->
-          <div class="flex items-center space-x-4">
+          <div class="flex items-center gap-4">
+            <button
+              @click="toggleTheme"
+              class="p-2 rounded-full text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700 focus:outline-none transition-colors"
+              title="Toggle Theme"
+            >
+              <i v-if="isDark" class="pi pi-sun text-xl"></i>
+              <i v-else class="pi pi-moon text-xl"></i>
+            </button>
+
+            <div class="hidden md:flex items-center">
+              <span
+                class="text-sm text-gray-700 dark:text-gray-300 mr-4 font-medium"
+              >
+                {{ authStore.user?.username }}
+              </span>
+              <button
+                @click="logout"
+                class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors shadow-sm"
+              >
+                Logout
+              </button>
+            </div>
+
+            <div class="flex items-center md:hidden">
+              <button
+                @click="mobileMenuOpen = !mobileMenuOpen"
+                class="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500"
+              >
+                <i
+                  class="pi"
+                  :class="mobileMenuOpen ? 'pi-times' : 'pi-bars'"
+                  style="font-size: 1.5rem"
+                ></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div
+        v-if="mobileMenuOpen"
+        class="md:hidden bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700"
+      >
+        <div class="pt-2 pb-3 space-y-1 px-4">
+          <router-link
+            to="/scheduler"
+            class="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50 dark:text-gray-300 dark:hover:text-white dark:hover:bg-gray-700"
+            @click="mobileMenuOpen = false"
+          >
+            Calendar
+          </router-link>
+
+          <router-link
+            v-if="isOwner"
+            to="/staff"
+            class="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50 dark:text-gray-300 dark:hover:text-white dark:hover:bg-gray-700"
+            @click="mobileMenuOpen = false"
+          >
+            Staff
+          </router-link>
+
+          <router-link
+            v-if="isOwner"
+            to="/services"
+            class="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50 dark:text-gray-300 dark:hover:text-white dark:hover:bg-gray-700"
+            @click="mobileMenuOpen = false"
+          >
+            Services
+          </router-link>
+
+          <router-link
+            to="/products"
+            class="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50 dark:text-gray-300 dark:hover:text-white dark:hover:bg-gray-700"
+            @click="mobileMenuOpen = false"
+          >
+            Products
+          </router-link>
+
+          <router-link
+            to="/clients"
+            class="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50 dark:text-gray-300 dark:hover:text-white dark:hover:bg-gray-700"
+            @click="mobileMenuOpen = false"
+          >
+            Clients
+          </router-link>
+
+          <router-link
+            v-if="isOwner"
+            to="/analytics"
+            class="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50 dark:text-gray-300 dark:hover:text-white dark:hover:bg-gray-700"
+            @click="mobileMenuOpen = false"
+          >
+            Analytics
+          </router-link>
+
+          <div class="border-t border-gray-200 dark:border-gray-700 pt-4 mt-2">
+            <div class="flex items-center px-3 mb-3">
+              <div class="text-base font-medium text-gray-800 dark:text-white">
+                {{ authStore.user?.username }}
+              </div>
+            </div>
             <button
               @click="logout"
-              class="text-sm font-medium text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 transition-colors"
+              class="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-red-600 hover:bg-gray-50 dark:hover:bg-gray-700"
             >
               Logout
             </button>
@@ -95,8 +183,13 @@
       </div>
     </nav>
 
-    <!-- CRITICAL: This is where your pages load -->
-    <main class="mx-auto py-6 sm:px-6 lg:px-8">
+    <main
+      :class="
+        isFullWidthPage
+          ? 'w-full'
+          : 'max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8'
+      "
+    >
       <router-view />
       <FloatingChat />
     </main>
@@ -105,23 +198,30 @@
 
 <script setup lang="ts">
 import { ref, onMounted, computed } from "vue";
-import { useRouter } from "vue-router";
+import { useRouter, useRoute } from "vue-router";
 import { useAuthStore } from "../stores/auth";
 import FloatingChat from "../components/FloatingChat.vue";
 
 const router = useRouter();
+const route = useRoute();
 const authStore = useAuthStore();
+const mobileMenuOpen = ref(false);
 
-// Check if user is Admin or Manager (Not standard Staff)
+// Check if user is Admin or Manager
 const isOwner = computed(() => {
   const role = authStore.user?.role;
-  console.log(authStore.user);
   return role === "admin" || role === "super_admin";
+});
+
+// FIX: Determine if current page should be 100% width (Calendar)
+const isFullWidthPage = computed(() => {
+  return route.path.includes("/scheduler");
 });
 
 const logout = () => {
   authStore.logout();
   router.push("/login");
+  mobileMenuOpen.value = false;
 };
 
 const isDark = ref(false);
@@ -138,7 +238,6 @@ const toggleTheme = () => {
 };
 
 onMounted(() => {
-  // Check local storage or system preference on load
   const storedTheme = localStorage.getItem("theme");
   const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
 
@@ -151,9 +250,3 @@ onMounted(() => {
   }
 });
 </script>
-<style scoped>
-.layout-container {
-  min-height: 100vh;
-  position: relative;
-}
-</style>

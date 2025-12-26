@@ -3,26 +3,32 @@
     v-model:visible="isVisible"
     modal
     header="Client Profile"
-    :style="{ width: '800px', maxWidth: '90vw' }"
+    :style="{ width: '800px', maxWidth: '95vw' }"
     :draggable="false"
     class="client-profile-dialog"
+    :breakpoints="{ '960px': '100vw' }"
+    :contentStyle="{ height: '100%' }"
   >
     <div v-if="loading" class="p-8 text-center">
       <i class="pi pi-spin pi-spinner text-4xl text-gray-400"></i>
     </div>
 
-    <div v-else-if="clientData" class="flex flex-col h-[600px]">
-      <div class="flex items-center gap-4 mb-6 pb-6 border-b border-gray-100">
+    <div v-else-if="clientData" class="flex flex-col h-full sm:h-[600px]">
+      <div
+        class="flex flex-col sm:flex-row items-center sm:items-start gap-4 mb-6 pb-6 border-b border-gray-100"
+      >
         <div
-          class="w-16 h-16 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center text-2xl font-bold"
+          class="w-16 h-16 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center text-2xl font-bold flex-shrink-0"
         >
           {{ clientData.first_name?.[0] }}{{ clientData.last_name?.[0] }}
         </div>
-        <div>
-          <h2 class="text-2xl font-bold text-gray-900">
+        <div class="text-center sm:text-left flex-grow">
+          <h2 class="text-2xl font-bold text-gray-900 leading-tight">
             {{ clientData.first_name }} {{ clientData.last_name }}
           </h2>
-          <div class="text-gray-500 text-sm flex gap-4 mt-1">
+          <div
+            class="text-gray-500 text-sm flex flex-col sm:flex-row gap-1 sm:gap-4 mt-1 items-center sm:items-start"
+          >
             <span
               ><i class="pi pi-phone mr-1"></i>
               {{ clientData.phone || "No Phone" }}</span
@@ -33,8 +39,10 @@
             >
           </div>
         </div>
-        <div class="ml-auto text-right">
-          <div class="text-sm text-gray-500 uppercase tracking-wider font-bold">
+        <div
+          class="text-center sm:text-right mt-2 sm:mt-0 w-full sm:w-auto bg-gray-50 sm:bg-transparent p-2 sm:p-0 rounded-lg"
+        >
+          <div class="text-xs text-gray-500 uppercase tracking-wider font-bold">
             Balance
           </div>
           <div
@@ -50,12 +58,12 @@
         </div>
       </div>
 
-      <div class="flex gap-6 border-b border-gray-200 mb-6">
+      <div class="flex gap-6 border-b border-gray-200 mb-6 overflow-x-auto">
         <button
           v-for="tab in ['Info', 'History', 'Files']"
           :key="tab"
           @click="activeTab = tab"
-          class="pb-2 px-1 text-sm font-medium transition-colors border-b-2"
+          class="pb-2 px-1 text-sm font-medium transition-colors border-b-2 whitespace-nowrap"
           :class="
             activeTab === tab
               ? 'border-indigo-600 text-indigo-600'
@@ -66,9 +74,9 @@
         </button>
       </div>
 
-      <div class="flex-grow overflow-y-auto pr-2">
+      <div class="flex-grow overflow-y-auto pr-2 pb-4">
         <div v-if="activeTab === 'Info'" class="space-y-4">
-          <div class="grid grid-cols-2 gap-4">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label
                 class="block text-xs font-bold text-gray-500 uppercase mb-1"
@@ -84,7 +92,7 @@
               <InputText v-model="editForm.last_name" class="w-full" />
             </div>
           </div>
-          <div class="grid grid-cols-2 gap-4">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label
                 class="block text-xs font-bold text-gray-500 uppercase mb-1"
@@ -119,26 +127,38 @@
                 @click="addCustomField"
               />
             </div>
+
+            <div
+              v-if="editForm.custom_fields.length === 0"
+              class="text-center py-4 text-gray-400 text-sm italic"
+            >
+              No additional details added.
+            </div>
+
             <div
               v-for="(field, idx) in editForm.custom_fields"
               :key="idx"
-              class="flex gap-2 mb-2"
+              class="flex flex-col sm:flex-row gap-2 mb-3 sm:mb-2 border-b sm:border-none border-gray-200 pb-3 sm:pb-0 last:border-0"
             >
-              <InputText
-                v-model="field.title"
-                placeholder="Label"
-                class="w-1/3 font-bold p-inputtext-sm"
-              />
-              <InputText
-                v-model="field.value"
-                placeholder="Value"
-                class="flex-grow p-inputtext-sm"
-              />
-              <Button
-                icon="pi pi-trash"
-                class="p-button-danger p-button-text p-button-sm"
-                @click="editForm.custom_fields.splice(idx, 1)"
-              />
+              <div class="w-full sm:w-1/3">
+                <InputText
+                  v-model="field.title"
+                  placeholder="Label"
+                  class="w-full font-bold p-inputtext-sm bg-white"
+                />
+              </div>
+              <div class="flex-grow flex gap-2">
+                <InputText
+                  v-model="field.value"
+                  placeholder="Value"
+                  class="w-full p-inputtext-sm"
+                />
+                <Button
+                  icon="pi pi-trash"
+                  class="p-button-danger p-button-text p-button-sm flex-shrink-0"
+                  @click="editForm.custom_fields.splice(idx, 1)"
+                />
+              </div>
             </div>
           </div>
 
@@ -148,6 +168,7 @@
               icon="pi pi-check"
               @click="saveClientInfo"
               :loading="saving"
+              class="w-full sm:w-auto"
             />
           </div>
         </div>
@@ -162,7 +183,7 @@
           <div
             v-for="appt in history"
             :key="appt.id"
-            class="flex justify-between items-center p-4 border border-gray-100 rounded-lg bg-gray-50"
+            class="flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 border border-gray-100 rounded-lg bg-gray-50 gap-2"
           >
             <div>
               <div class="font-bold text-gray-900">
@@ -178,28 +199,31 @@
                 {{ appt.service_names || "No Services" }}
               </div>
             </div>
-            <div class="text-right">
-              <div class="font-bold">
-                €{{
-                  (
-                    Number(appt.total_service_price || 0) +
-                    Number(appt.total_product_price || 0)
-                  ).toFixed(2)
-                }}
-              </div>
+            <div
+              class="flex justify-between w-full sm:w-auto sm:block text-right"
+            >
               <span
-                class="text-xs px-2 py-0.5 rounded uppercase font-bold"
+                class="text-xs px-2 py-0.5 rounded uppercase font-bold mr-2"
                 :class="getStatusColor(appt.status)"
               >
                 {{ appt.status }}
               </span>
+              <span class="font-bold"
+                >€{{
+                  (
+                    Number(appt.total_service_price || 0) +
+                    Number(appt.total_product_price || 0)
+                  ).toFixed(2)
+                }}</span
+              >
             </div>
           </div>
         </div>
 
         <div v-if="activeTab === 'Files'" class="space-y-4">
           <div
-            class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:bg-gray-50 transition-colors"
+            class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:bg-gray-50 transition-colors cursor-pointer"
+            @click="$refs.fileInput.click()"
           >
             <input
               type="file"
@@ -213,12 +237,7 @@
                 Click to upload documents
               </p>
               <p class="text-xs text-gray-400 mt-1">Max 5MB per file</p>
-              <Button
-                label="Select File"
-                size="small"
-                class="mt-3"
-                @click="$refs.fileInput.click()"
-              />
+              <Button label="Select File" size="small" class="mt-3" />
             </div>
             <div v-else>
               <i class="pi pi-spin pi-spinner text-2xl text-indigo-600"></i>
@@ -248,7 +267,7 @@
                   </div>
                 </div>
               </div>
-              <div class="flex gap-2">
+              <div class="flex gap-1">
                 <a
                   :href="`/api/v1/clients/files/${file.id}?token=${token}`"
                   target="_blank"
@@ -292,7 +311,6 @@ const files = ref<any[]>([]);
 const editForm = ref<any>({});
 const fileInput = ref<any>(null);
 
-// Fetch Full Data
 const fetchClientData = async () => {
   if (!props.clientId) return;
   loading.value = true;
@@ -305,7 +323,6 @@ const fetchClientData = async () => {
     history.value = data.history;
     files.value = data.files;
 
-    // Init edit form
     editForm.value = JSON.parse(JSON.stringify(data.client));
     if (!editForm.value.custom_fields) editForm.value.custom_fields = [];
   } catch (e) {
@@ -325,8 +342,6 @@ watch(
   }
 );
 
-// --- ACTIONS ---
-
 const addCustomField = () =>
   editForm.value.custom_fields.push({ title: "", value: "" });
 
@@ -343,7 +358,7 @@ const saveClientInfo = async () => {
     });
     if (res.ok) {
       clientData.value = { ...clientData.value, ...editForm.value };
-      emit("refresh"); // Tell parent to update list
+      emit("refresh");
     }
   } finally {
     saving.value = false;
@@ -365,7 +380,7 @@ const handleFileUpload = async (event: any) => {
       body: formData,
     });
     if (res.ok) {
-      await fetchClientData(); // Refresh list
+      await fetchClientData();
     } else {
       alert("File upload failed. Ensure it is under 5MB.");
     }
@@ -381,10 +396,9 @@ const deleteFile = async (fileId: number) => {
     method: "DELETE",
     headers: { Authorization: `Bearer ${token}` },
   });
-  files.value = files.value.filter((f) => f.id !== fileId);
+  files.value = files.value.filter((f: any) => f.id !== fileId);
 };
 
-// --- HELPERS ---
 const formatSize = (bytes: number) => {
   if (bytes < 1024) return bytes + " B";
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";

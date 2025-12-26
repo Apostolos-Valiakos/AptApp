@@ -11,13 +11,13 @@
     >
       <button
         @click="removeProduct(index)"
-        class="absolute -right-2 -top-2 bg-white p-1 rounded-full shadow border border-gray-200 text-gray-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity z-10"
+        class="absolute -right-2 -top-2 bg-white p-1 rounded-full shadow border border-gray-200 text-gray-400 hover:text-red-600 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity z-10"
       >
         <i class="pi pi-times text-xs"></i>
       </button>
 
-      <div class="flex gap-3">
-        <div class="flex-grow">
+      <div class="flex flex-col sm:flex-row gap-3">
+        <div class="w-full sm:flex-grow">
           <label class="text-xs text-gray-500 block mb-1">Product</label>
           <Dropdown
             v-model="product.product_id"
@@ -31,9 +31,9 @@
           >
             <template #option="slotProps">
               <div class="flex justify-between items-center w-full gap-2">
-                <span>{{ slotProps.option.name }}</span>
+                <span class="truncate">{{ slotProps.option.name }}</span>
                 <span
-                  class="text-xs"
+                  class="text-xs whitespace-nowrap"
                   :class="
                     slotProps.option.stock < 5
                       ? 'text-red-500 font-bold'
@@ -47,32 +47,34 @@
           </Dropdown>
         </div>
 
-        <div class="w-24">
-          <label class="text-xs text-gray-500 block mb-1">Qty</label>
-          <InputNumber
-            v-model="product.quantity"
-            class="w-full p-inputtext-sm"
-            inputClass="w-full"
-            :min="1"
-          />
-        </div>
+        <div class="flex gap-3 w-full sm:w-auto">
+          <div class="w-1/2 sm:w-24">
+            <label class="text-xs text-gray-500 block mb-1">Qty</label>
+            <InputNumber
+              v-model="product.quantity"
+              class="w-full p-inputtext-sm"
+              inputClass="w-full"
+              :min="1"
+            />
+          </div>
 
-        <div class="w-32">
-          <label class="text-xs text-gray-500 block mb-1">Price</label>
-          <InputNumber
-            v-model="product.price"
-            mode="currency"
-            currency="EUR"
-            class="w-full p-inputtext-sm"
-            inputClass="w-full"
-          />
+          <div class="w-1/2 sm:w-32">
+            <label class="text-xs text-gray-500 block mb-1">Price</label>
+            <InputNumber
+              v-model="product.price"
+              mode="currency"
+              currency="EUR"
+              class="w-full p-inputtext-sm"
+              inputClass="w-full"
+            />
+          </div>
         </div>
       </div>
     </div>
 
     <button
       @click="addProduct"
-      class="text-emerald-600 text-sm font-semibold hover:underline flex items-center gap-1 mt-2"
+      class="text-emerald-600 text-sm font-semibold hover:underline flex items-center gap-1 mt-2 w-full sm:w-auto justify-center sm:justify-start p-2 sm:p-0"
     >
       <i class="pi pi-plus-circle"></i> Add a product
     </button>
@@ -95,9 +97,6 @@ const props = defineProps({
 
 const emit = defineEmits(["update:modelValue"]);
 
-// 1. FLATTEN PRODUCTS LOGIC
-// Transforms nested variations into a single list for the Dropdown.
-// This ensures the ID returned is the inventory_id (UUID), fixing the DB error.
 const flatProducts = computed(() => {
   if (!props.allProducts) return [];
   const list: any[] = [];
@@ -106,7 +105,7 @@ const flatProducts = computed(() => {
     if (p.variations && p.variations.length > 0) {
       p.variations.forEach((v: any) => {
         list.push({
-          id: v.id, // THE INVENTORY ID
+          id: v.id,
           name: `${p.name} (${v.variation_name || "Standard"})`,
           price: v.price,
           stock: v.stock_quantity,
@@ -119,7 +118,6 @@ const flatProducts = computed(() => {
 });
 
 const addProduct = () => {
-  // Create a new array to maintain reactivity
   const newList = [
     ...props.modelValue,
     {

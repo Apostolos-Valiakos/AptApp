@@ -2,14 +2,15 @@ import { defineStore } from "pinia";
 import { ref } from "vue";
 
 export const useSettingsStore = defineStore("settings", () => {
-  const colorMode = ref<"staff" | "category">(
-    (localStorage.getItem("colorMode") as any) || "staff"
-  );
+  // We only keep the resource filter now
+  const resourceFilter = ref<"all" | "me">("all");
 
-  const setColorMode = (mode: "staff" | "category") => {
-    colorMode.value = mode;
-    localStorage.setItem("colorMode", mode);
+  const setResourceFilter = (mode: "all" | "me") => {
+    resourceFilter.value = mode;
   };
 
-  return { colorMode, setColorMode };
+  return {
+    resourceFilter,
+    setResourceFilter,
+  };
 });

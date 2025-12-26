@@ -1,9 +1,9 @@
 <template>
   <div class="flex flex-col h-[calc(100vh-64px)] bg-white" @click="closeMenus">
     <div
-      class="flex justify-between items-center px-6 py-4 border-b border-gray-200 flex-shrink-0"
+      class="flex flex-col md:flex-row justify-between items-center px-4 md:px-6 py-4 border-b border-gray-200 flex-shrink-0 gap-4"
     >
-      <div class="flex items-center space-x-4">
+      <div class="flex items-center justify-between w-full md:w-auto space-x-2">
         <div class="flex bg-gray-100 rounded-lg p-1">
           <button
             @click="calendarApi?.today()"
@@ -32,7 +32,7 @@
             </svg>
           </button>
           <h2
-            class="text-lg font-semibold text-gray-800 min-w-[200px] text-center select-none"
+            class="text-sm md:text-lg font-semibold text-gray-800 min-w-[140px] md:min-w-[200px] text-center select-none"
           >
             {{ currentTitle }}
           </h2>
@@ -57,8 +57,12 @@
         </div>
       </div>
 
-      <div class="flex items-center space-x-3">
-        <div class="flex items-center bg-gray-100 rounded-lg p-1 mr-2">
+      <div
+        class="flex items-center gap-2 overflow-x-auto w-full md:w-auto pb-1 md:pb-0 scrollbar-hide"
+      >
+        <div
+          class="hidden sm:flex items-center bg-gray-100 rounded-lg p-1 mr-2"
+        >
           <button
             @click="zoomOut"
             class="p-1.5 text-gray-600 hover:bg-white hover:shadow-sm rounded-md transition-all"
@@ -153,7 +157,7 @@
             @click.stop="toggleViewMenu"
             class="flex items-center space-x-2 px-4 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-all min-w-[100px] justify-between"
           >
-            <span>{{ currentViewLabel }}</span>
+            <span class="truncate">{{ currentViewLabel }}</span>
             <svg
               class="w-4 h-4 text-gray-400"
               fill="none"
@@ -192,41 +196,19 @@
 
         <button
           @click="openNewAppointment"
-          class="bg-gray-900 hover:bg-black text-white px-6 py-2.5 rounded-full text-sm font-medium shadow-lg transform active:scale-95 transition-all flex items-center gap-2"
+          class="bg-gray-900 hover:bg-black text-white px-4 md:px-6 py-2.5 rounded-full text-sm font-medium shadow-lg transform active:scale-95 transition-all flex items-center gap-2 flex-shrink-0"
         >
-          Add New
-          <svg
-            class="w-4 h-4"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M12 4v16m8-8H4"
-            ></path>
-          </svg>
+          <span class="hidden sm:inline">Add New</span>
+          <span class="sm:hidden"><i class="pi pi-plus"></i></span>
         </button>
         <button
           @click="openSwapDialog"
-          class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-full text-sm font-medium shadow-lg transform active:scale-95 transition-all flex items-center gap-2"
+          class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 md:px-4 py-2 rounded-full text-sm font-medium shadow-lg transform active:scale-95 transition-all flex items-center gap-2 flex-shrink-0"
         >
-          Swap
-          <svg
-            class="w-4 h-4"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M4 4v6h6M20 20v-6h-6"
-            />
-          </svg>
+          <span class="hidden sm:inline">Swap</span>
+          <span class="sm:hidden"
+            ><i class="pi pi-arrow-right-arrow-left"></i
+          ></span>
         </button>
       </div>
     </div>
@@ -302,6 +284,9 @@ import BookingDialog from "../components/BookingDialog.vue";
 import AppointmentSwapDialog from "../components/AppointmentSwapDialog.vue";
 import { useToast } from "primevue/usetoast";
 import ColorModelToggle from "../components/ColorModelToggle.vue";
+import { useAuthStore } from "../stores/auth";
+
+const authStore = useAuthStore();
 
 const toast = useToast();
 
@@ -410,16 +395,23 @@ const calendarResources = computed(() => {
   const res = calendarStore.resources;
   if (!Array.isArray(res)) return [];
 
-  return res
-    .filter((r: any) => r.is_active)
-    .map((r: any) => ({
-      id: r.id.toString(),
-      title: r.name,
-      eventBackgroundColor: "#f3f4f6",
-      imageUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(
-        r.name
-      )}&background=random&color=fff&rounded=true&bold=true`,
-    }));
+  // 1. Filter Active Staff
+  let filtered = res.filter((r: any) => r.is_active);
+
+  // 2. Apply "My Schedule" Filter
+  if (settings.resourceFilter === "me" && authStore.user?.staff_id) {
+    filtered = filtered.filter((r: any) => r.id === authStore.user.staff_id);
+  }
+
+  // 3. Map to Calendar Format
+  return filtered.map((r: any) => ({
+    id: r.id.toString(),
+    title: r.name,
+    eventBackgroundColor: "#f3f4f6",
+    imageUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(
+      r.name
+    )}&background=random&color=fff&rounded=true&bold=true`,
+  }));
 });
 
 // FIX: Generate Separate Events for Each Service
@@ -430,18 +422,12 @@ const calendarEvents = computed(() => {
   const events: any[] = [];
 
   appointments.forEach((appt) => {
-    // Check if it's a legacy appointment or block without services
     if (!appt.services || appt.services.length === 0) {
-      // Handle Blocks or Legacy Data
-      // (This part might need adjustment if blocks store data elsewhere, assuming standard appt for now)
       return;
     }
 
-    // Flatten: Create one event for each service in the appointment
     appt.services.forEach((svc: any, index: number) => {
       const bgColor = getCategoryColor(svc.service_name || "General");
-
-      // Calculate end time specifically for this service
       const duration = svc.duration_minutes || 60;
       let endTime = null;
       if (svc.start_time) {
@@ -451,19 +437,15 @@ const calendarEvents = computed(() => {
       }
 
       events.push({
-        // Composite ID: ApptID_ServiceIndex (e.g., 105_0, 105_1)
         id: `${appt.id}_${index}`,
         resourceId: svc.staff_id?.toString(),
         title: `${appt.first_name} - ${svc.service_name}`,
         start: svc.start_time,
         end: endTime,
-
         backgroundColor: bgColor,
         borderColor: "transparent",
         textColor: "#1f2937",
         classNames: ["fresha-event"],
-
-        // CRITICAL: Store full appt data for the dialog + index for dragging
         extendedProps: {
           isServiceEvent: true,
           appointmentId: appt.id,
@@ -513,7 +495,6 @@ const updateAppointment = async (id: string, updates: any) => {
   }
 };
 
-// --- Zoom Logic ---
 const zoomIn = () => {
   if (slotDurationMinutes.value > 10) {
     slotDurationMinutes.value -= 10;
@@ -540,7 +521,6 @@ const updateSlotDuration = () => {
   }
 };
 
-// --- Toggles ---
 const toggleSettings = () => {
   showSettingsMenu.value = !showSettingsMenu.value;
   showViewMenu.value = false;
@@ -575,12 +555,9 @@ const toggleWeekends = () => {
   }
 };
 
-// Helper to map API 'price' -> 'price_override' for PUT requests
-// This fixes the bug where dragging resets price to 0
 const prepareServicesForUpdate = (services: any[]) => {
   return services.map((s) => ({
     ...s,
-    // If price_override missing, use price. If duration_override missing, use duration_minutes.
     price_override:
       s.price_override !== undefined ? s.price_override : Number(s.price || 0),
     duration_override:
@@ -607,8 +584,16 @@ const calendarOptions = ref({
   slotMaxTime: "23:00:00",
   height: "100%",
   expandRows: true,
-  dayMinWidth: 0,
+
+  // === MOBILE RESPONSIVE FIX ===
+  // 1. Force a minimum width for day/resource columns.
+  // This ensures that on mobile, columns don't squish.
+  // Instead, the user can scroll horizontally to see other staff members.
+  dayMinWidth: 150,
+
+  // 2. Keep header visible while scrolling vertically
   stickyHeaderDates: true,
+
   nowIndicator: true,
   weekends: true,
   headerToolbar: {
@@ -656,77 +641,49 @@ const calendarOptions = ref({
   },
 
   eventClick: (info: any) => {
-    // Open Dialog with the FULL appointment object, not just the single service
     const fullAppt = info.event.extendedProps.fullAppointment;
-
     if (fullAppt) {
       selectedAppointment.value = fullAppt;
       dialogVisible.value = true;
     }
   },
 
-  // FIX: Robust Independent Drag Logic
   eventDrop: (info: any) => {
     const { appointmentId, serviceIndex, fullAppointment } =
       info.event.extendedProps;
     const newResourceId = info.newResource?.id;
-
-    // 1. Calculate VISUAL duration from the dropped event
     const start = info.event.start.getTime();
     const end = info.event.end.getTime();
     const currentDurationMinutes = (end - start) / 60000;
-
-    // 2. Clone Services
     let services = JSON.parse(JSON.stringify(fullAppointment.services));
-
-    // 3. FIX: Ensure all services have price_override set correctly BEFORE modification
     services = prepareServicesForUpdate(services);
-
-    // 4. Update Service with VISUAL Start Time AND Duration
     if (services[serviceIndex]) {
       services[serviceIndex].start_time = info.event.start.toISOString();
-
-      // Sync duration
       services[serviceIndex].duration_minutes = currentDurationMinutes;
       services[serviceIndex].duration_override = currentDurationMinutes;
-
-      // If moved to a new staff column, update staff_id
       if (newResourceId) {
         services[serviceIndex].staff_id = newResourceId;
       }
     }
-
-    // 5. Send the full payload
     updateAppointment(appointmentId, {
       ...fullAppointment,
       services: services,
     });
   },
 
-  // FIX: Robust Independent Resize Logic
   eventResize: (info: any) => {
     const { appointmentId, serviceIndex, fullAppointment } =
       info.event.extendedProps;
-
-    // 1. Calculate new duration based on visual element
     const start = info.event.start.getTime();
     const end = info.event.end.getTime();
     const newDuration = (end - start) / 60000;
-
-    // 2. Clone Services
     let services = JSON.parse(JSON.stringify(fullAppointment.services));
-
-    // 3. FIX: Ensure all services have price_override set correctly BEFORE modification
     services = prepareServicesForUpdate(services);
-
-    // 4. Update ONLY the specific service duration AND Start Time
     if (services[serviceIndex]) {
       services[serviceIndex].start_time = info.event.start.toISOString();
       services[serviceIndex].duration_minutes = newDuration;
       services[serviceIndex].duration_override = newDuration;
     }
-
-    // 5. Send payload
     updateAppointment(appointmentId, {
       ...fullAppointment,
       services: services,
@@ -821,5 +778,15 @@ onMounted(async () => {
 }
 .animate-fade-in {
   animation: fadeIn 0.15s ease-out;
+}
+
+/* Hide scrollbar for chrome/safari/opera */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+/* Hide scrollbar for IE, Edge and Firefox */
+.scrollbar-hide {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
 }
 </style>

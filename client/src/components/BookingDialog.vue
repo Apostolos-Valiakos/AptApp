@@ -2,18 +2,26 @@
   <Dialog
     v-model:visible="dialogVisible"
     modal
-    class="fresha-dialog"
-    :style="{ width: '900px', maxWidth: '95vw' }"
+    class="fresha-dialog h-full md:h-auto"
+    :style="{ width: '100vw', maxWidth: '900px', margin: '0' }"
+    :breakpoints="{ '960px': '100vw' }"
     :showHeader="false"
-    :contentStyle="{ padding: '0', borderRadius: '12px', overflow: 'hidden' }"
+    :contentStyle="{
+      padding: '0',
+      borderRadius: '12px',
+      overflow: 'hidden',
+      height: '100%',
+    }"
   >
-    <div class="flex h-[750px] bg-white">
-      <div class="flex-grow flex flex-col w-2/3 border-r border-gray-200">
+    <div class="flex flex-col md:flex-row h-full md:h-[750px] bg-white">
+      <div
+        class="flex-grow flex flex-col w-full md:w-2/3 border-b md:border-b-0 md:border-r border-gray-200 order-2 md:order-1 h-full overflow-hidden"
+      >
         <div
-          class="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-white sticky top-0 z-10"
+          class="px-4 md:px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-white sticky top-0 z-10 flex-shrink-0"
         >
           <div>
-            <h2 class="text-xl font-bold text-gray-900">
+            <h2 class="text-lg md:text-xl font-bold text-gray-900">
               {{ isEditMode ? "Edit Appointment" : "New Appointment" }}
             </h2>
             <div class="text-sm text-gray-500 mt-1 flex items-center gap-2">
@@ -35,12 +43,14 @@
           </button>
         </div>
 
-        <div class="flex border-b border-gray-200 px-6">
+        <div
+          class="flex border-b border-gray-200 px-4 md:px-6 overflow-x-auto flex-shrink-0"
+        >
           <button
             v-for="tab in tabs"
             :key="tab"
             @click="currentTab = tab"
-            class="py-3 px-4 text-sm font-medium border-b-2 transition-colors"
+            class="py-3 px-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap"
             :class="
               currentTab === tab
                 ? 'border-black text-black'
@@ -51,7 +61,7 @@
           </button>
         </div>
 
-        <div class="flex-grow overflow-y-auto p-6 space-y-6">
+        <div class="flex-grow overflow-y-auto p-4 md:p-6 space-y-6">
           <div v-if="currentTab === 'Booking'" class="space-y-6">
             <div class="space-y-2">
               <label
@@ -118,7 +128,9 @@
               :baseStartTime="new Date(form.start_time)"
             />
 
-            <div class="grid grid-cols-2 gap-4 pt-4 border-t border-gray-100">
+            <div
+              class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-gray-100"
+            >
               <div>
                 <label
                   class="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-2"
@@ -231,17 +243,19 @@
         </div>
 
         <div
-          class="px-6 py-4 border-t border-gray-200 flex justify-between items-center bg-gray-50"
+          class="px-4 md:px-6 py-4 border-t border-gray-200 flex flex-col-reverse sm:flex-row justify-between items-center bg-gray-50 flex-shrink-0 gap-3"
         >
           <Button
             v-if="isEditMode"
             label="Cancel Appt"
             icon="pi pi-trash"
-            class="p-button-danger p-button-text p-button-sm"
+            class="p-button-danger p-button-text p-button-sm w-full sm:w-auto"
             @click="confirmDelete"
           />
-          <div class="flex gap-3 ml-auto">
-            <div class="flex items-center gap-2 mr-4">
+          <div class="flex flex-col sm:flex-row gap-3 ml-auto w-full sm:w-auto">
+            <div
+              class="flex items-center gap-2 justify-center sm:justify-start sm:mr-4 mb-2 sm:mb-0"
+            >
               <Checkbox v-model="notifyClient" binary inputId="notify" />
               <label for="notify" class="text-sm text-gray-600"
                 >Email client</label
@@ -251,23 +265,42 @@
               label="Save"
               @click="save"
               :loading="loading"
-              class="px-8"
+              class="w-full sm:w-auto px-8"
             />
           </div>
         </div>
       </div>
 
-      <BookingSidebar
-        class="w-full md:w-[35%] bg-gray-50"
-        :client="selectedClient"
-      />
+      <div
+        class="w-full md:w-[35%] bg-gray-50 order-1 md:order-2 border-b md:border-b-0 md:border-l border-gray-200 md:h-full md:overflow-y-auto flex-shrink-0"
+      >
+        <div
+          class="md:hidden p-4 flex justify-between items-center bg-gray-100 border-b border-gray-200 cursor-pointer"
+          @click="toggleMobileSidebar"
+        >
+          <span class="font-bold text-sm text-gray-700">
+            Client Details: {{ selectedClient?.full_name || "None selected" }}
+          </span>
+          <i
+            class="pi"
+            :class="showMobileSidebar ? 'pi-chevron-up' : 'pi-chevron-down'"
+          ></i>
+        </div>
+
+        <div v-show="showMobileSidebar || !isMobile" class="h-full">
+          <BookingSidebar
+            class="w-full bg-gray-50 h-full"
+            :client="selectedClient"
+          />
+        </div>
+      </div>
     </div>
 
     <Dialog
       v-model:visible="showQuickAddClient"
       header="Add New Client"
       modal
-      :style="{ width: '400px' }"
+      :style="{ width: '400px', maxWidth: '90vw' }"
     >
       <div class="space-y-4 pt-2">
         <span class="p-float-label">
@@ -299,13 +332,15 @@
     <ClientProfileDialog
       v-model:visible="showClientProfile"
       :clientId="currentProfileId"
-      @refresh="() => {}"
+      @refresh="
+        () => {} /* Optional: You can trigger a client list refresh here if needed */
+      "
     />
   </Dialog>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from "vue";
+import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import BookingProducts from "./booking/bookingProducts.vue";
 import BookingServices from "./booking/bookingServices.vue";
 import BookingPayments from "./booking/bookingPayments.vue";
@@ -349,7 +384,6 @@ const productsList = ref<Array<any>>([]);
 
 // UI State
 const currentTab = ref("Booking");
-// UPDATED TABS STRUCTURE
 const tabs = ["Booking", "Products", "Payment", "Notes"] as const;
 
 const loading = ref(false);
@@ -371,6 +405,27 @@ const statusOptions = [
   { label: "No-Show", value: "no-show" },
   { label: "Cancelled", value: "cancelled" },
 ];
+
+// Mobile Sidebar Logic
+const showMobileSidebar = ref(false);
+const isMobile = ref(false);
+
+const checkMobile = () => {
+  isMobile.value = window.innerWidth < 768;
+};
+
+const toggleMobileSidebar = () => {
+  showMobileSidebar.value = !showMobileSidebar.value;
+};
+
+onMounted(() => {
+  checkMobile();
+  window.addEventListener("resize", checkMobile);
+});
+
+onUnmounted(() => {
+  window.removeEventListener("resize", checkMobile);
+});
 
 // === COMPUTED ===
 const isEditMode = computed(() => !!form.value.id);
@@ -521,6 +576,7 @@ watch(
     amountToPayNow.value = 0;
     // Always start on Booking tab
     currentTab.value = "Booking";
+    showMobileSidebar.value = false; // Reset mobile sidebar
   },
   { immediate: true }
 );
@@ -536,10 +592,10 @@ const save = async (close = true) => {
   const method = form.value.id ? "PUT" : "POST";
 
   try {
-    // 1. Prepare Payload with Safe Price Mapping
+    // Prepare Payload
     const payload = {
       ...form.value,
-      // Ensure price_override is populated even if 'price' was used
+      // Safety mapping: ensure price_override is used
       services: servicesList.value.map((s) => ({
         ...s,
         price_override: Number(s.price_override) || Number(s.price) || 0,
@@ -562,7 +618,7 @@ const save = async (close = true) => {
       form.value.id = data.id;
     }
 
-    // 2. Update Balance (This will now work because new_balance is guaranteed to be a number)
+    // === BALANCE FIX ===
     if (data.new_balance !== undefined && selectedClient.value) {
       selectedClient.value.outstanding_balance = Number(data.new_balance);
     }
