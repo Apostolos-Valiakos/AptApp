@@ -241,7 +241,7 @@
                     >
                     <Dropdown
                       v-model="product.product_id"
-                      :options="allProducts"
+                      :options="flatProducts"
                       optionLabel="name"
                       optionValue="id"
                       placeholder="Select Product"
@@ -266,7 +266,7 @@
                       >Price</label
                     >
                     <InputNumber
-                      v-model="product.price_override"
+                      v-model="product.price"
                       mode="currency"
                       currency="EUR"
                       class="w-full p-inputtext-sm"
@@ -663,7 +663,7 @@ const form = ref<any>({
   payment_status: "unpaid",
   payment_method: "card",
   is_block: false,
-  save_receipt: false,
+  save_receipt: true,
 });
 
 const servicesList = ref<Array<any>>([]);
@@ -697,6 +697,25 @@ const isEditMode = computed(() => !!form.value.id);
 const selectedClient = computed(() =>
   props.clients.find((c: any) => c.id === form.value.client_id)
 );
+const flatProducts = computed(() => {
+  if (!props.allProducts) return [];
+  const list: any[] = [];
+
+  props.allProducts.forEach((p: any) => {
+    if (p.variations && p.variations.length > 0) {
+      p.variations.forEach((v: any) => {
+        list.push({
+          id: v.id, // THIS IS THE INVENTORY_ID
+          name: `${p.name} (${v.variation_name || "Standard"})`,
+          price: v.price,
+          stock: v.stock_quantity,
+        });
+      });
+    }
+  });
+
+  return list;
+});
 
 // Calculation including both Services and Products
 const currentApptTotal = computed(() => {
@@ -705,7 +724,7 @@ const currentApptTotal = computed(() => {
     0
   );
   const productsTotal = productsList.value.reduce(
-    (sum, p) => sum + (Number(p.price_override) || 0) * (p.quantity || 1),
+    (sum, p) => sum + (Number(p.price) || 0) * (p.quantity || 1),
     0
   );
   return servicesTotal + productsTotal;
@@ -797,7 +816,7 @@ watch(
         productsList.value = val.products.map((p: any) => ({
           product_id: p.product_id,
           quantity: p.quantity || 1,
-          price_override: Number(p.price || 0),
+          price: Number(p.price || 0),
         }));
       } else {
         productsList.value = [];
@@ -818,7 +837,7 @@ watch(
         deposit_amount: 0,
         payment_status: "unpaid",
         is_block: false,
-        save_receipt: false,
+        save_receipt: true,
       };
       servicesList.value = [
         {
@@ -842,7 +861,7 @@ const addProduct = () => {
   productsList.value.push({
     product_id: null,
     quantity: 1,
-    price_override: 0,
+    price: 0,
   });
 };
 
@@ -852,10 +871,11 @@ const removeProduct = (index: number) => {
 
 const updateProductDetails = (index: number) => {
   const item = productsList.value[index];
-  // Find the product in the master list to get its default price
-  const found = props.allProducts?.find((p: any) => p.id === item.product_id);
+  // Search in flatProducts instead of allProducts
+  const found = flatProducts.value.find((p: any) => p.id === item.product_id);
+
   if (found) {
-    item.price_override = Number(found.price);
+    item.price = Number(found.price);
   }
 };
 
