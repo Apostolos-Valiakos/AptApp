@@ -21,7 +21,7 @@
       sortField="last_name"
       :sortOrder="1"
       selectionMode="single"
-      @row-click="onRowClick"
+      @row-click="(e) => openProfile(e.data)"
     >
       <template #header>
         <div class="flex justify-between items-center">
@@ -75,7 +75,6 @@
         </template>
       </Column>
 
-      <!-- Indicator for custom fields -->
       <Column header="Info">
         <template #body="slotProps">
           <div
@@ -98,7 +97,7 @@
           <Button
             icon="pi pi-pencil"
             class="p-button-rounded p-button-info p-button-sm mr-2"
-            @click.stop="editClient(slotProps.data)"
+            @click.stop="openProfile(slotProps.data)"
           />
           <Button
             icon="pi pi-trash"
@@ -109,15 +108,13 @@
       </Column>
     </DataTable>
 
-    <!-- Edit / Add Client Dialog -->
     <Dialog
       v-model:visible="dialogVisible"
-      :header="editingClient?.id ? 'Client Details' : 'New Client'"
+      header="New Client"
       modal
       class="w-full max-w-3xl"
     >
       <div class="space-y-6 mt-4">
-        <!-- Main Info -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-2"
@@ -149,7 +146,6 @@
           </div>
         </div>
 
-        <!-- Dynamic Fields Section -->
         <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
           <div class="flex justify-between items-center mb-3">
             <label
@@ -167,16 +163,6 @@
           </div>
 
           <div
-            v-if="
-              !editingClient.custom_fields ||
-              editingClient.custom_fields.length === 0
-            "
-            class="text-sm text-gray-400 italic text-center py-2"
-          >
-            No custom details added yet.
-          </div>
-
-          <div
             v-for="(field, index) in editingClient.custom_fields"
             :key="index"
             class="flex gap-3 mb-2 items-center"
@@ -184,14 +170,14 @@
             <div class="w-1/3">
               <InputText
                 v-model="field.title"
-                placeholder="Title (e.g. Hair Type)"
+                placeholder="Title"
                 class="w-full p-inputtext-sm font-bold"
               />
             </div>
             <div class="flex-grow">
               <InputText
                 v-model="field.value"
-                placeholder="Value (e.g. Curly)"
+                placeholder="Value"
                 class="w-full p-inputtext-sm"
               />
             </div>
@@ -203,17 +189,11 @@
           </div>
         </div>
 
-        <!-- Notes -->
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-2"
             >Notes</label
           >
-          <Textarea
-            v-model="editingClient.notes"
-            placeholder="Allergies, preferences, VIP, etc..."
-            rows="3"
-            class="w-full"
-          />
+          <Textarea v-model="editingClient.notes" rows="3" class="w-full" />
         </div>
       </div>
 
@@ -225,13 +205,19 @@
           @click="dialogVisible = false"
         />
         <Button
-          :label="editingClient?.id ? 'Update' : 'Create'"
+          label="Create"
           icon="pi pi-check"
           class="p-button-success"
           @click="saveClient"
         />
       </template>
     </Dialog>
+
+    <ClientProfileDialog
+      v-model:visible="profileVisible"
+      :clientId="selectedClientId"
+      @refresh="fetchClients"
+    />
 
     <ConfirmDialog></ConfirmDialog>
   </div>
@@ -241,14 +227,19 @@
 import { ref, onMounted, computed } from "vue";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
+import ClientProfileDialog from "../components/ClientProfileDialog.vue"; // Ensure correct path
 
 const toast = useToast();
 const confirm = useConfirm();
 
 const clients = ref<any[]>([]);
 const loading = ref(true);
-const dialogVisible = ref(false);
+const dialogVisible = ref(false); // For creating NEW clients
 const search = ref("");
+
+// NEW: State for the Profile Dialog
+const profileVisible = ref(false);
+const selectedClientId = ref(null);
 
 const editingClient = ref<any>({
   id: null,
@@ -257,12 +248,12 @@ const editingClient = ref<any>({
   email: "",
   phone: "",
   notes: "",
-  custom_fields: [], // Array for dynamic fields
+  custom_fields: [],
 });
 
 onMounted(() => {
   fetchClients();
-  setInterval(fetchClients, 10000);
+  // Optional: setInterval(fetchClients, 10000);
 });
 
 const fetchClients = async () => {
@@ -273,17 +264,10 @@ const fetchClients = async () => {
     });
     if (res.ok) {
       clients.value = await res.json();
-    } else if (res.status === 401) {
-      console.error("Unauthorized: Please login.");
     }
     loading.value = false;
   } catch (err) {
-    toast.add({
-      severity: "error",
-      summary: "Error",
-      detail: "Failed to load clients",
-      life: 4000,
-    });
+    console.error(err);
   }
 };
 
@@ -298,13 +282,16 @@ const filteredClients = computed(() => {
   );
 });
 
-// Row Click Handler
-const onRowClick = (event: any) => {
-  editClient(event.data);
+// NEW: Open the full profile dialog
+const openProfile = (client: any) => {
+  selectedClientId.value = client.id;
+  profileVisible.value = true;
 };
 
+// Open the simple dialog for CREATION only
 const openNew = () => {
   editingClient.value = {
+    id: null, // Ensure ID is null so it posts to Create route
     first_name: "",
     last_name: "",
     email: "",
@@ -315,19 +302,7 @@ const openNew = () => {
   dialogVisible.value = true;
 };
 
-const editClient = (client: any) => {
-  // Deep Clone to avoid reference issues with arrays/objects
-  editingClient.value = JSON.parse(JSON.stringify(client));
-
-  // Ensure custom_fields exists
-  if (!editingClient.value.custom_fields) {
-    editingClient.value.custom_fields = [];
-  }
-
-  dialogVisible.value = true;
-};
-
-// Dynamic Field Logic
+// Existing logic for local dynamic fields (only used in Creation now)
 const addCustomField = () => {
   editingClient.value.custom_fields.push({ title: "", value: "" });
 };
@@ -336,6 +311,7 @@ const removeCustomField = (index: number) => {
   editingClient.value.custom_fields.splice(index, 1);
 };
 
+// Save logic (Only for Creation now)
 const saveClient = async () => {
   if (!editingClient.value.first_name || !editingClient.value.last_name) {
     toast.add({
@@ -348,14 +324,11 @@ const saveClient = async () => {
   }
 
   const token = localStorage.getItem("token");
-  const url = editingClient.value.id
-    ? `/api/v1/clients/${editingClient.value.id}`
-    : "/api/v1/clients";
-  const method = editingClient.value.id ? "PUT" : "POST";
 
+  // Since we use ClientProfileDialog for edits, this is strictly for POST (Create)
   try {
-    const res = await fetch(url, {
-      method,
+    const res = await fetch("/api/v1/clients", {
+      method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
@@ -368,7 +341,7 @@ const saveClient = async () => {
     toast.add({
       severity: "success",
       summary: "Success",
-      detail: editingClient.value.id ? "Client updated" : "Client created",
+      detail: "Client created",
       life: 3000,
     });
     dialogVisible.value = false;

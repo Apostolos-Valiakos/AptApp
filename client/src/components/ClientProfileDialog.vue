@@ -3,7 +3,7 @@
     v-model:visible="isVisible"
     modal
     header="Client Profile"
-    :style="{ width: '800px', maxWidth: '95vw' }"
+    :style="{ width: '800px', maxWidth: '95vw', maxHeight: '100%' }"
     :draggable="false"
     class="client-profile-dialog"
     :breakpoints="{ '960px': '100vw' }"
@@ -13,7 +13,7 @@
       <i class="pi pi-spin pi-spinner text-4xl text-gray-400"></i>
     </div>
 
-    <div v-else-if="clientData" class="flex flex-col h-full sm:h-[600px]">
+    <div v-else-if="clientData" class="flex flex-col h-full">
       <div
         class="flex flex-col sm:flex-row items-center sm:items-start gap-4 mb-6 pb-6 border-b border-gray-100"
       >

@@ -1,7 +1,9 @@
 <template>
   <div class="p-6 max-w-7xl mx-auto">
     <div class="mb-8">
-      <h1 class="text-3xl font-bold text-gray-900">Financial Reports</h1>
+      <h1 class="text-3xl font-bold text-gray-900 text-white">
+        Financial Reports
+      </h1>
       <p class="text-gray-500">
         View your business performance, sales, and payments.
       </p>
