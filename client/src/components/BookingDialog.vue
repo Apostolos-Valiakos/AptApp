@@ -3,7 +3,7 @@
     v-model:visible="dialogVisible"
     modal
     class="fresha-dialog h-full md:h-auto"
-    :style="{ width: '100vw', maxWidth: '900px', margin: '0' }"
+    :style="{ width: '150vw', maxWidth: '80%', margin: '0' }"
     :breakpoints="{ '960px': '100vw' }"
     :showHeader="false"
     :contentStyle="{
@@ -126,6 +126,7 @@
               :services="services"
               :staff="staff"
               :baseStartTime="new Date(form.start_time)"
+              :default-staff-id="currentStaffId"
             />
 
             <div
@@ -156,7 +157,7 @@
               </div>
 
               <div class="flex flex-col justify-end gap-3 pb-2">
-                <div class="flex items-center gap-2">
+                <!-- <div class="flex items-center gap-2">
                   <Checkbox
                     v-model="form.save_receipt"
                     binary
@@ -168,7 +169,7 @@
                   >
                     Save Receipt
                   </label>
-                </div>
+                </div> -->
 
                 <div class="flex items-center gap-2">
                   <Checkbox v-model="form.is_block" binary inputId="isBlock" />
@@ -357,6 +358,7 @@ const props = defineProps([
 ]);
 
 const emit = defineEmits(["update:visible", "save"]);
+const currentStaffId = ref<number | string | null>(null);
 
 const dialogVisible = computed({
   get: () => props.visible,
@@ -384,7 +386,7 @@ const productsList = ref<Array<any>>([]);
 
 // UI State
 const currentTab = ref("Booking");
-const tabs = ["Booking", "Products", "Payment", "Notes"] as const;
+const tabs = ["Booking", "Notes"] as const; // "Products", "Payment",
 
 const loading = ref(false);
 const paymentLoading = ref(false);
@@ -490,10 +492,16 @@ watch(totalDueNow, (val) => {
 watch(
   () => props.appointment,
   (val) => {
-    if (val) {
-      // EDIT MODE
+    let resolvedStaffId = null;
+    if (val?.staff_id && props.staff) {
+      const found = props.staff.find((s: any) => s.id == val.staff_id);
+      if (found) resolvedStaffId = found.id;
+    }
+
+    if (val && val.id) {
+      // === EDIT MODE ===
       form.value = {
-        id: val.id || null,
+        id: val.id,
         client_id: val.client_id || null,
         start_time: val.start_time ? new Date(val.start_time) : new Date(),
         status: val.status || "new",
@@ -507,8 +515,7 @@ watch(
           val.save_receipt !== undefined ? !!val.save_receipt : true,
       };
 
-      // Populate Services
-      if (val.services?.length > 0 && val.services[0].service_id) {
+      if (val.services?.length > 0) {
         servicesList.value = val.services.map((s: any) => ({
           service_id: s.service_id,
           staff_id: s.staff_id,
@@ -522,7 +529,7 @@ watch(
         servicesList.value = [
           {
             service_id: null,
-            staff_id: null,
+            staff_id: resolvedStaffId,
             start_time: new Date(form.value.start_time),
             duration_override: 60,
             price_override: 0,
@@ -530,53 +537,50 @@ watch(
         ];
       }
 
-      // Populate Products
-      if (
-        val.products &&
-        Array.isArray(val.products) &&
-        val.products.length > 0
-      ) {
-        productsList.value = val.products.map((p: any) => ({
-          product_id: p.product_id,
-          quantity: p.quantity || 1,
-          price: Number(p.price || 0),
-        }));
-      } else {
-        productsList.value = [];
-      }
+      productsList.value = Array.isArray(val.products)
+        ? val.products.map((p: any) => ({
+            product_id: p.product_id,
+            quantity: p.quantity || 1,
+            price: Number(p.price || 0),
+          }))
+        : [];
 
       originalSnapshot.value = {
         price: currentApptTotal.value,
         deposit: form.value.deposit_amount,
       };
     } else {
-      // NEW MODE
+      // === NEW MODE ===
+      const newStart = val?.start_time ? new Date(val.start_time) : new Date();
+
       form.value = {
         id: null,
         client_id: null,
-        start_time: new Date(),
+        start_time: newStart,
         status: "new",
         deposit_amount: 0,
         payment_status: "unpaid",
         is_block: false,
         save_receipt: true,
       };
+
       servicesList.value = [
         {
           service_id: null,
-          staff_id: null,
-          start_time: new Date(),
+          staff_id: resolvedStaffId,
+          start_time: newStart,
           duration_override: 60,
           price_override: 0,
         },
       ];
+
       productsList.value = [];
       originalSnapshot.value = { price: 0, deposit: 0 };
     }
+
     amountToPayNow.value = 0;
-    // Always start on Booking tab
     currentTab.value = "Booking";
-    showMobileSidebar.value = false; // Reset mobile sidebar
+    showMobileSidebar.value = false;
   },
   { immediate: true }
 );

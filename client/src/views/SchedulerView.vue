@@ -495,6 +495,10 @@ const prepareServicesForUpdate = (services: any[]) => {
 // --- Calendar Options ---
 const calendarOptions = ref({
   schedulerLicenseKey: "CC-Attribution-NonCommercial-NoDerivatives",
+  longPressDelay: 350,
+  eventLongPressDelay: 350,
+  selectLongPressDelay: 350,
+  eventResizableFromStart: true,
   plugins: [
     resourceTimeGridPlugin,
     scrollGridPlugin,
@@ -644,10 +648,13 @@ const calendarOptions = ref({
 
   select: (info: any) => {
     const resourceId = info.resource ? info.resource.id : null;
+    const resourceName = info.resource ? info.resource.title : "";
+
     selectedAppointment.value = {
       start_time: info.startStr,
       end_time: info.endStr,
       staff_id: resourceId,
+      staff_name: resourceName,
     };
     dialogVisible.value = true;
   },

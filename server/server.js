@@ -2131,6 +2131,105 @@ app.delete(
     }
   }
 );
+app.get("/api/v1/exercises", authenticateToken, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT * FROM exercises WHERE shop_id = $1 ORDER BY category, name`,
+      [req.shopId]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 2. Create a New Exercise (Master List)
+app.post("/api/v1/exercises", authenticateToken, async (req, res) => {
+  const { name, category, description } = req.body;
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO exercises (shop_id, name, category, description) 
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [req.shopId, name, category || "General", description]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 3. Get Exercises Completed by Specific Client
+app.get(
+  "/api/v1/clients/:id/exercises",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const { rows } = await pool.query(
+        `SELECT exercise_id FROM client_exercises WHERE client_id = $1`,
+        [req.params.id]
+      );
+      // Return simple array of IDs: ['uuid-1', 'uuid-2']
+      res.json(rows.map((r) => r.exercise_id));
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+// 4. Toggle Exercise Status (Check/Uncheck)
+app.post(
+  "/api/v1/clients/:id/exercises/toggle",
+  authenticateToken,
+  async (req, res) => {
+    const { id } = req.params; // Client ID
+    const { exerciseId, completed } = req.body;
+
+    try {
+      if (completed) {
+        // Check: Insert record
+        await pool.query(
+          `INSERT INTO client_exercises (client_id, exercise_id) 
+         VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+          [id, exerciseId]
+        );
+      } else {
+        // Uncheck: Delete record
+        await pool.query(
+          `DELETE FROM client_exercises WHERE client_id = $1 AND exercise_id = $2`,
+          [id, exerciseId]
+        );
+      }
+      res.json({ success: true });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Failed to update exercise status" });
+    }
+  }
+);
+app.delete("/api/v1/exercises/:id", authenticateToken, async (req, res) => {
+  const { id } = req.params;
+
+  // Security Check: Only allow Admins/Super Admins
+  if (req.user.role !== "admin" && req.user.role !== "super_admin") {
+    return res.status(403).json({ error: "Unauthorized: Admins only" });
+  }
+
+  try {
+    const result = await pool.query(
+      "DELETE FROM exercises WHERE id = $1 AND shop_id = $2 RETURNING *",
+      [id, req.shopId]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Exercise not found" });
+    }
+
+    res.json({ success: true, message: "Exercise deleted" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to delete exercise" });
+  }
+});
 app.get(/(.*)/, (req, res) => {
   if (req.path.startsWith("/api")) {
     return res.status(404).json({ error: "API Route Not Found" });

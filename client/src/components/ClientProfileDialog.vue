@@ -41,6 +41,7 @@
         </div>
         <div
           class="text-center sm:text-right mt-2 sm:mt-0 w-full sm:w-auto bg-gray-50 sm:bg-transparent p-2 sm:p-0 rounded-lg"
+          v-if="isOwner"
         >
           <div class="text-xs text-gray-500 uppercase tracking-wider font-bold">
             Balance
@@ -60,7 +61,7 @@
 
       <div class="flex gap-6 border-b border-gray-200 mb-6 overflow-x-auto">
         <button
-          v-for="tab in ['Info', 'History', 'Files']"
+          v-for="tab in ['Info', 'Ασκησιολόγιο', 'Αξιολογητικά', 'History']"
           :key="tab"
           @click="activeTab = tab"
           class="pb-2 px-1 text-sm font-medium transition-colors border-b-2 whitespace-nowrap"
@@ -208,19 +209,22 @@
               >
                 {{ appt.status }}
               </span>
-              <span class="font-bold"
-                >€{{
+              <span class="font-bold" v-if="isOwner">
+                {{ isOwner }}
+                €{{
                   (
                     Number(appt.total_service_price || 0) +
                     Number(appt.total_product_price || 0)
                   ).toFixed(2)
-                }}</span
-              >
+                }}
+              </span>
             </div>
           </div>
         </div>
-
-        <div v-if="activeTab === 'Files'" class="space-y-4">
+        <div v-if="activeTab === 'Ασκησιολόγιο'" class="space-y-4">
+          <Exercises :clientId="clientId" />
+        </div>
+        <div v-if="activeTab === 'Αξιολογητικά'" class="space-y-4">
           <div
             class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:bg-gray-50 transition-colors cursor-pointer"
             @click="$refs.fileInput.click()"
@@ -291,6 +295,10 @@
 
 <script setup lang="ts">
 import { ref, watch, computed } from "vue";
+import Exercises from "./Exercises.vue";
+import { useAuthStore } from "../stores/auth";
+const authStore = useAuthStore();
+const isOwner = authStore.isOwner;
 
 const props = defineProps(["visible", "clientId"]);
 const emit = defineEmits(["update:visible", "refresh"]);

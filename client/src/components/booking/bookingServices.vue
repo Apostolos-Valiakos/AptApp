@@ -97,6 +97,7 @@ const props = defineProps({
   services: { type: Array as () => any[], default: () => [] },
   staff: { type: Array as () => any[], default: () => [] },
   baseStartTime: { type: Date, default: () => new Date() },
+  defaultStaffId: { type: [Number, String], default: null },
 });
 
 const emit = defineEmits(["update:modelValue"]);
@@ -125,7 +126,7 @@ const addService = () => {
 
   list.push({
     service_id: null,
-    staff_id: null,
+    staff_id: props.defaultStaffId,
     start_time: nextStart,
     duration_override: 60,
     price_override: 0,
@@ -148,6 +149,11 @@ const updateServiceDetails = (index: number) => {
   if (found) {
     svc.price_override = Number(found.price);
     svc.duration_override = found.duration_minutes || 60;
+    const staffMember = props.staff.find((s) => s.id === svc.staff_id);
+    if (staffMember && staffMember.service_ids?.length > 0) {
+      if (!staffMember.service_ids.includes(svc.service_id)) {
+      }
+    }
   }
   recalcTimes(list);
 };
