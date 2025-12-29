@@ -491,7 +491,11 @@ const prepareServicesForUpdate = (services: any[]) => {
         : s.duration_minutes,
   }));
 };
-
+const getDayMinWidth = () => {
+  // If mobile (less than 768px), use 60px (tight columns)
+  // If desktop, use 160px (wide columns for names)
+  return window.innerWidth < 768 ? 60 : 160;
+};
 // --- Calendar Options ---
 const calendarOptions = ref({
   schedulerLicenseKey: "CC-Attribution-NonCommercial-NoDerivatives",
@@ -513,7 +517,16 @@ const calendarOptions = ref({
   slotMaxTime: "23:00:00",
   height: "100%",
   expandRows: true,
-  dayMinWidth: 150,
+  // dayMinWidth: 150,
+  dayMinWidth: getDayMinWidth(),
+
+  // 2. Add this listener to handle screen resizing/rotation
+  windowResize: (arg: any) => {
+    if (fullCalendar.value) {
+      const api = fullCalendar.value.getApi();
+      api.setOption("dayMinWidth", getDayMinWidth());
+    }
+  },
   stickyHeaderDates: true,
   nowIndicator: true,
   weekends: true, // Default enabled, can be toggled by prop if needed
@@ -536,7 +549,9 @@ const calendarOptions = ref({
           <div class="relative">
             <img src="${src}" class="w-8 h-8 rounded-full border-2 border-white shadow-sm mb-2 object-cover group-hover:scale-105 transition-transform" />
           </div>
-          <div class="font-bold text-gray-800 text-sm-2 mt-2 truncate w-full text-center px-2">${arg.resource.title}</div>
+          <div class="hidden md:block font-bold text-gray-800 text-sm mt-2 truncate w-full text-center px-2">
+            ${arg.resource.title}
+        </div>
         </div>
       `,
     };
