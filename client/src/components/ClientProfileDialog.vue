@@ -81,16 +81,26 @@
             <div>
               <label
                 class="block text-xs font-bold text-gray-500 uppercase mb-1"
-                >First Name</label
               >
-              <InputText v-model="editForm.first_name" class="w-full" />
+                First Name
+              </label>
+              <InputText
+                v-model="editForm.first_name"
+                :disabled="!isOwner"
+                class="w-full"
+              />
             </div>
             <div>
               <label
                 class="block text-xs font-bold text-gray-500 uppercase mb-1"
-                >Last Name</label
               >
-              <InputText v-model="editForm.last_name" class="w-full" />
+                Last Name
+              </label>
+              <InputText
+                v-model="editForm.last_name"
+                :disabled="!isOwner"
+                class="w-full"
+              />
             </div>
           </div>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -99,14 +109,23 @@
                 class="block text-xs font-bold text-gray-500 uppercase mb-1"
                 >Email</label
               >
-              <InputText v-model="editForm.email" class="w-full" />
+              <InputText
+                v-model="editForm.email"
+                :disabled="!isOwner"
+                class="w-full"
+              />
             </div>
             <div>
               <label
                 class="block text-xs font-bold text-gray-500 uppercase mb-1"
-                >Phone</label
               >
-              <InputText v-model="editForm.phone" class="w-full" />
+                Phone
+              </label>
+              <InputText
+                :disabled="!isOwner"
+                v-model="editForm.phone"
+                class="w-full"
+              />
             </div>
           </div>
           <div>
@@ -318,6 +337,14 @@ const history = ref<any[]>([]);
 const files = ref<any[]>([]);
 const editForm = ref<any>({});
 const fileInput = ref<any>(null);
+
+// Computed property for the Avatar initials
+const initials = computed(() => {
+  if (!clientData.value) return "";
+  const f = clientData.value.first_name?.[0] || "";
+  const l = clientData.value.last_name?.[0] || "";
+  return `${f}${l}`.toUpperCase();
+});
 
 const fetchClientData = async () => {
   if (!props.clientId) return;

@@ -219,9 +219,9 @@
 
           <div v-if="currentTab === 'Notes'" class="space-y-4">
             <div>
-              <label class="text-sm font-semibold text-gray-700 block mb-1"
-                >Booking Note (Visible to Client)</label
-              >
+              <label class="text-sm font-semibold text-gray-700 block mb-1">
+                Booking Note (Visible to Client)
+              </label>
               <Textarea
                 v-model="form.booking_notes"
                 rows="3"
@@ -230,9 +230,9 @@
               />
             </div>
             <div>
-              <label class="text-sm font-semibold text-gray-700 block mb-1"
-                >Internal Note (Staff Only)</label
-              >
+              <label class="text-sm font-semibold text-gray-700 block mb-1">
+                Internal Note (Staff Only)
+              </label>
               <Textarea
                 v-model="form.internal_notes"
                 rows="3"
@@ -258,9 +258,9 @@
               class="flex items-center gap-2 justify-center sm:justify-start sm:mr-4 mb-2 sm:mb-0"
             >
               <Checkbox v-model="notifyClient" binary inputId="notify" />
-              <label for="notify" class="text-sm text-gray-600"
-                >Email client</label
-              >
+              <label for="notify" class="text-sm text-gray-600">
+                Email client
+              </label>
             </div>
             <Button
               label="Save"
