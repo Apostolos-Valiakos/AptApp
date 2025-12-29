@@ -292,6 +292,7 @@
               </div>
               <div class="flex gap-1">
                 <a
+                  v-if="isOwner"
                   :href="`/api/v1/clients/files/${file.id}?token=${token}`"
                   target="_blank"
                   class="p-button p-component p-button-icon-only p-button-text p-button-rounded p-button-secondary"
@@ -299,6 +300,14 @@
                   <span class="pi pi-download"></span>
                 </a>
                 <Button
+                  icon="pi pi-eye"
+                  class="p-button-text p-button-secondary p-button-rounded"
+                  @click="viewFile(file)"
+                  v-tooltip="'View in new tab'"
+                  :loading="viewingFileId === file.id"
+                />
+                <Button
+                  v-if="isOwner"
                   icon="pi pi-trash"
                   class="p-button-text p-button-danger p-button-rounded"
                   @click="deleteFile(file.id)"
@@ -337,6 +346,7 @@ const history = ref<any[]>([]);
 const files = ref<any[]>([]);
 const editForm = ref<any>({});
 const fileInput = ref<any>(null);
+const viewingFileId = ref<number | null>(null); // Track which file is loading
 
 // Computed property for the Avatar initials
 const initials = computed(() => {
@@ -455,5 +465,33 @@ const getStatusColor = (s: string) => {
     "no-show": "bg-red-200 text-red-900",
   };
   return map[s] || "bg-gray-100";
+};
+const viewFile = async (file: any) => {
+  viewingFileId.value = file.id;
+  try {
+    const response = await fetch(`/api/v1/clients/files/${file.id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (!response.ok) throw new Error("Failed to fetch file");
+
+    const blob = await response.blob();
+    const fileType = file.file_type || "application/pdf";
+    const newBlob = new Blob([blob], { type: fileType });
+
+    const blobUrl = window.URL.createObjectURL(newBlob);
+
+    // Open the tab
+    window.open(blobUrl, "_blank");
+
+    setTimeout(() => {
+      window.URL.revokeObjectURL(blobUrl);
+    }, 100);
+  } catch (err) {
+    console.error(err);
+    alert("Could not open file preview.");
+  } finally {
+    viewingFileId.value = null;
+  }
 };
 </script>

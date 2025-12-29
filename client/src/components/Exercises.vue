@@ -49,10 +49,7 @@
             </div>
 
             <div class="flex-1 min-w-0">
-              <div
-                class="text-sm font-medium text-gray-900"
-                :class="{ 'line-through opacity-70': isCompleted(ex.id) }"
-              >
+              <div class="text-sm font-medium text-gray-900">
                 {{ ex.name }}
               </div>
               <div
