@@ -22,50 +22,72 @@
         >
           {{ category }}
         </h4>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <div
             v-for="ex in group"
             :key="ex.id"
-            class="group relative flex items-start gap-3 p-3 rounded-lg border transition-colors cursor-pointer"
+            class="group rounded-lg border transition-all duration-200 overflow-hidden"
             :class="
               isCompleted(ex.id)
                 ? 'bg-green-50 border-green-200'
                 : 'bg-white border-gray-200 hover:border-indigo-300'
             "
-            @click="toggleExercise(ex.id)"
           >
             <div
-              class="w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 mt-0.5 transition-colors"
-              :class="
-                isCompleted(ex.id)
-                  ? 'bg-green-500 border-green-500'
-                  : 'bg-white border-gray-300'
-              "
+              class="flex items-center gap-3 p-2 cursor-pointer select-none"
+              @click="toggleExercise(ex.id)"
             >
-              <i
-                v-if="isCompleted(ex.id)"
-                class="pi pi-check text-white text-xs font-bold"
-              ></i>
-            </div>
-
-            <div class="flex-1 min-w-0">
-              <div class="text-sm font-medium text-gray-900">
-                {{ ex.name }}
-              </div>
               <div
-                v-if="ex.description"
-                class="text-xs text-gray-500 mt-0.5 truncate"
+                class="w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 transition-colors"
+                :class="
+                  isCompleted(ex.id)
+                    ? 'bg-green-500 border-green-500'
+                    : 'bg-white border-gray-300'
+                "
               >
-                {{ ex.description }}
+                <i
+                  v-if="isCompleted(ex.id)"
+                  class="pi pi-check text-white text-xs font-bold"
+                ></i>
+              </div>
+
+              <div class="flex-1 min-w-0">
+                <div
+                  class="text-sm font-medium text-gray-900 truncate"
+                  style="text-wrap: auto"
+                >
+                  {{ ex.name }}
+                </div>
+              </div>
+
+              <div class="flex items-center gap-1">
+                <Button
+                  v-if="ex.description"
+                  :icon="
+                    isExpanded(ex.id)
+                      ? 'pi pi-chevron-up'
+                      : 'pi pi-chevron-down'
+                  "
+                  class="p-button-rounded p-button-text p-button-sm w-7 h-7 text-gray-400"
+                  @click.stop="toggleExpand(ex.id)"
+                />
+
+                <Button
+                  v-if="authStore.isOwner"
+                  icon="pi pi-trash"
+                  class="p-button-rounded p-button-danger p-button-text p-button-sm w-7 h-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                  @click.stop="deleteExercise(ex.id)"
+                />
               </div>
             </div>
 
-            <Button
-              v-if="authStore.isOwner"
-              icon="pi pi-trash"
-              class="p-button-rounded p-button-danger p-button-text p-button-sm opacity-0 group-hover:opacity-100 transition-opacity absolute top-1 right-1 h-8 w-8"
-              @click.stop="deleteExercise(ex.id)"
-            />
+            <div
+              v-if="isExpanded(ex.id) && ex.description"
+              class="px-10 pb-3 text-xs text-gray-500 animate-fade-in"
+            >
+              {{ ex.description }}
+            </div>
           </div>
         </div>
       </div>
@@ -134,20 +156,21 @@ import Button from "primevue/button";
 import Dialog from "primevue/dialog";
 import InputText from "primevue/inputtext";
 import Dropdown from "primevue/dropdown";
-// 1. Import Auth Store
 import { useAuthStore } from "../stores/auth";
 
 const props = defineProps(["clientId"]);
-// 2. Init Auth Store
 const authStore = useAuthStore();
 
 const exercises = ref<any[]>([]);
 const completedIds = ref<Set<string>>(new Set());
+// CHANGED: New state to track which descriptions are open
+const expandedIds = ref<Set<string>>(new Set());
+
 const loading = ref(false);
 const showAddDialog = ref(false);
 const newExercise = ref({ name: "", category: "", description: "" });
 
-// Fetch Data
+// ... [Existing loadData function remains exactly the same] ...
 const loadData = async () => {
   if (!props.clientId) return;
   loading.value = true;
@@ -177,6 +200,8 @@ watch(() => props.clientId, loadData);
 
 // Helpers
 const isCompleted = (id: string) => completedIds.value.has(id);
+// CHANGED: New Helper for expansion
+const isExpanded = (id: string) => expandedIds.value.has(id);
 
 const groupedExercises = computed(() => {
   const groups: any = {};
@@ -218,6 +243,15 @@ const toggleExercise = async (exerciseId: string) => {
   }
 };
 
+// CHANGED: New Action to toggle description visibility
+const toggleExpand = (id: string) => {
+  if (expandedIds.value.has(id)) {
+    expandedIds.value.delete(id);
+  } else {
+    expandedIds.value.add(id);
+  }
+};
+
 const createExercise = async () => {
   const token = localStorage.getItem("token");
   const payload = {
@@ -245,9 +279,7 @@ const createExercise = async () => {
   }
 };
 
-// 3. New Delete Action
 const deleteExercise = async (id: string) => {
-  // Simple browser confirm (or replace with PrimeVue ConfirmDialog if preferred)
   if (
     !confirm(
       "Are you sure you want to delete this exercise? This will remove it for ALL clients."
@@ -264,9 +296,7 @@ const deleteExercise = async (id: string) => {
     });
 
     if (res.ok) {
-      // Remove locally from the list
       exercises.value = exercises.value.filter((ex) => ex.id !== id);
-      // Remove from completed set if it was there
       completedIds.value.delete(id);
     } else {
       alert("Failed to delete exercise");
@@ -276,3 +306,20 @@ const deleteExercise = async (id: string) => {
   }
 };
 </script>
+
+<style scoped>
+/* Optional: Simple animation for the description appearing */
+.animate-fade-in {
+  animation: fadeIn 0.2s ease-in-out;
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+</style>

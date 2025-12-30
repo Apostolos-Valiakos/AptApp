@@ -107,8 +107,9 @@
             <div>
               <label
                 class="block text-xs font-bold text-gray-500 uppercase mb-1"
-                >Email</label
               >
+                Email
+              </label>
               <InputText
                 v-model="editForm.email"
                 :disabled="!isOwner"
@@ -129,9 +130,9 @@
             </div>
           </div>
           <div>
-            <label class="block text-xs font-bold text-gray-500 uppercase mb-1"
-              >Notes</label
-            >
+            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">
+              Notes
+            </label>
             <Textarea v-model="editForm.notes" rows="3" class="w-full" />
           </div>
 
@@ -255,12 +256,12 @@
               class="hidden"
             />
             <div v-if="!uploading">
-              <i class="pi pi-cloud-upload text-3xl text-gray-400 mb-2"></i>
+              <i class="pi pi-cloud-upload text-3xl text-gray-400"></i>
               <p class="text-sm text-gray-600 font-medium">
                 Click to upload documents
               </p>
               <p class="text-xs text-gray-400 mt-1">Max 5MB per file</p>
-              <Button label="Select File" size="small" class="mt-3" />
+              <Button label="Select File" size="small" class="mt-1" />
             </div>
             <div v-else>
               <i class="pi pi-spin pi-spinner text-2xl text-indigo-600"></i>
@@ -495,3 +496,9 @@ const viewFile = async (file: any) => {
   }
 };
 </script>
+<style>
+.p-dialog-close-button {
+  background-color: red;
+  color: red !important;
+}
+</style>

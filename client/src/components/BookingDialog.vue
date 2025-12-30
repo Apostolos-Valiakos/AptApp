@@ -2,10 +2,10 @@
   <Dialog
     v-model:visible="dialogVisible"
     modal
-    class="fresha-dialog h-full md:h-auto"
-    :style="{ width: '150vw', maxWidth: '80%', margin: '0' }"
-    :breakpoints="{ '960px': '100vw' }"
     :showHeader="false"
+    :breakpoints="{ '960px': '100vw' }"
+    :style="{ width: '80vw', margin: '0' }"
+    class="fresha-dialog h-full md:h-auto md:rounded-xl rounded-none"
     :contentStyle="{
       padding: '0',
       borderRadius: '12px',
@@ -37,7 +37,7 @@
           </div>
           <button
             @click="dialogVisible = false"
-            class="text-gray-400 hover:text-gray-600"
+            class="text-red-500 hover:text-red-700 transition-colors duration-200"
           >
             <i class="pi pi-times text-xl"></i>
           </button>
@@ -115,6 +115,7 @@
                 <Button
                   icon="pi pi-eye"
                   class="p-button-outlined p-button-secondary w-12"
+                  style="color: #4f46e5; border-color: #4f46e5"
                   v-tooltip.top="'View Full Profile'"
                   @click="openClientProfile"
                 />
