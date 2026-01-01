@@ -75,10 +75,7 @@
               @click="toggleTheme"
               class="p-2 rounded-full text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700 focus:outline-none transition-colors"
               title="Toggle Theme"
-            >
-              <i v-if="isDark" class="pi pi-sun text-xl"></i>
-              <i v-else class="pi pi-moon text-xl"></i>
-            </button>
+            ></button>
 
             <div class="hidden md:flex items-center">
               <span

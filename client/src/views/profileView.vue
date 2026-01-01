@@ -91,13 +91,13 @@
             <span class="text-sm text-gray-600">Email Notifications</span>
             <InputSwitch v-model="preferences.notifications" />
           </div>
-          <div class="flex items-center justify-between mt-4">
+          <!-- <div class="flex items-center justify-between mt-4">
             <span class="text-sm text-gray-600">Dark Mode</span>
             <InputSwitch
               v-model="preferences.darkMode"
               @change="toggleDarkMode"
             />
-          </div>
+          </div> -->
         </div>
       </div>
 
