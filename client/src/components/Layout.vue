@@ -1,206 +1,143 @@
 <template>
   <div
-    class="min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300"
+    class="min-h-screen bg-[#fff5f9] dark:bg-[#fff5f9] transition-colors duration-300"
   >
     <nav
-      class="bg-white dark:bg-pink-300 shadow-lg border-b border-pink-100 dark:border-pink-300 z-20 relative"
+      class="sticky top-0 z-50 bg-gradient-to-r from-[#ff93d4] to-[#ff7ec7] shadow-md"
     >
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex justify-between h-16">
-          <div class="flex">
-            <div class="flex-shrink-0 flex items-center mr-9">
-              <span
-                class="text-xl font-bold text-purple-500 dark:text-purple-900"
+          <div class="flex items-center">
+            <div
+              class="flex-shrink-0 flex items-center mr-8 group cursor-pointer"
+              @click="router.push('/')"
+            >
+              <div
+                class="w-9 h-9 bg-white rounded-xl flex items-center justify-center shadow-sm transition-transform group-hover:rotate-12"
               >
-                Petalouda Booking System
+                <svg
+                  viewBox="0 0 24 24"
+                  class="w-7 h-7"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  stroke="#ff7ec7"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path
+                    fill="#ff93d4"
+                    fill-opacity="0.4"
+                    d="M12 12.5C12 12.5 14.5 6 19 7C22 7.7 20.5 12.5 18 13.5C20.5 14.5 21 19 16.5 20.5C13.5 21.5 12 18 12 18"
+                  />
+
+                  <path
+                    fill="#ff93d4"
+                    fill-opacity="0.4"
+                    d="M12 12.5C12 12.5 9.5 6 5 7C2 7.7 3.5 12.5 6 13.5C3.5 14.5 3 19 7.5 20.5C10.5 21.5 12 18 12 18"
+                  />
+
+                  <path d="M12 8V19" stroke="#ff7ec7" stroke-width="2" />
+
+                  <path d="M12 8C12 8 10.5 3 8 4" />
+                  <path d="M12 8C12 8 13.5 3 16 4" />
+                </svg>
+              </div>
+              <span
+                class="ml-3 text-xl font-extrabold tracking-tight text-white"
+              >
+                Petalouda Booking
               </span>
             </div>
 
-            <div class="hidden md:flex space-x-8">
+            <div class="hidden md:flex items-center space-x-1">
               <router-link
-                to="/scheduler"
-                active-class="border-purple-500 text-purple-900 dark:text-white"
-                class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-purple-200 hover:text-purple-700 hover:border-purple-300 dark:text-purple-700 dark:hover:text-white transition-colors"
+                v-for="item in visibleNavItems"
+                :key="item.path"
+                :to="item.path"
+                active-class="bg-white/20 text-white shadow-inner"
+                class="px-4 py-2 rounded-xl text-sm font-bold text-pink-50 hover:bg-white/10 hover:text-white transition-all"
               >
-                Calendar
-              </router-link>
-
-              <router-link
-                v-if="isOwner"
-                to="/staff"
-                active-class="border-purple-500 text-purple-900 dark:text-white"
-                class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-purple-500 hover:text-purple-700 hover:border-purple-300 dark:text-purple-700 dark:hover:text-white transition-colors"
-              >
-                Staff
-              </router-link>
-
-              <router-link
-                v-if="isOwner"
-                to="/services"
-                active-class="border-purple-500 text-purple-900 dark:text-white"
-                class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-purple-500 hover:text-purple-700 hover:border-purple-300 dark:text-purple-700 dark:hover:text-white transition-colors"
-              >
-                Services
-              </router-link>
-
-              <router-link
-                to="/products"
-                active-class="border-purple-500 text-purple-900 dark:text-white"
-                class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-purple-500 hover:text-purple-700 hover:border-purple-300 dark:text-purple-700 dark:hover:text-white transition-colors"
-              >
-                Products
-              </router-link>
-
-              <router-link
-                to="/clients"
-                active-class="border-purple-500 text-purple-900 dark:text-white"
-                class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-purple-500 hover:text-purple-700 hover:border-purple-300 dark:text-purple-700 dark:hover:text-white transition-colors"
-              >
-                Clients
-              </router-link>
-
-              <router-link
-                v-if="isOwner"
-                to="/financials"
-                active-class="border-purple-500 text-purple-900 dark:text-white"
-                class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-purple-500 hover:text-purple-700 hover:border-purple-300 dark:text-purple-700 dark:hover:text-white transition-colors"
-              >
-                Analytics
+                {{ item.label }}
               </router-link>
             </div>
           </div>
 
           <div class="flex items-center gap-4">
-            <!-- <button
-              @click="toggleTheme"
-              class="p-2 rounded-full text-purple-500 hover:bg-purple-100 dark:text-purple-400 dark:hover:bg-purple-700 focus:outline-none transition-colors"
-              title="Toggle Theme"
-            >
-              <i v-if="isDark" class="pi pi-sun text-xl"></i>
-              <i v-else class="pi pi-moon text-xl"></i>
-            </button> -->
-
-            <div class="hidden md:flex items-center">
-              <span
-                class="text-sm text-purple-700 dark:text-purple-700 mr-4 font-medium"
+            <div class="hidden md:flex items-center gap-4">
+              <router-link
+                to="/profile"
+                class="text-sm font-bold text-white hover:text-pink-100 transition-colors"
               >
-                <a href="/profile">
-                  {{ authStore.user?.username }}
-                </a>
-              </span>
+                {{ authStore.user?.username }}
+              </router-link>
               <button
                 @click="logout"
-                class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors shadow-sm"
+                class="bg-white text-[#ff93d4] hover:bg-pink-50 px-5 py-2 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95"
               >
                 Logout
               </button>
             </div>
 
-            <div class="flex items-center md:hidden">
-              <button
-                @click="mobileMenuOpen = !mobileMenuOpen"
-                class="inline-flex items-center justify-center p-2 rounded-md text-purple-400 hover:text-purple-500 hover:bg-purple-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500"
-              >
-                <i
-                  class="pi"
-                  :class="mobileMenuOpen ? 'pi-times' : 'pi-bars'"
-                  style="font-size: 1.5rem"
-                ></i>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div
-        v-if="mobileMenuOpen"
-        class="md:hidden bg-white dark:bg-purple-800 border-t border-purple-200 dark:border-purple-700"
-      >
-        <div class="pt-2 pb-3 space-y-1 px-4">
-          <router-link
-            to="/scheduler"
-            class="block px-3 py-2 rounded-md text-base font-medium text-purple-700 hover:text-purple-900 hover:bg-purple-50 dark:text-purple-700 dark:hover:text-white dark:hover:bg-purple-700"
-            @click="mobileMenuOpen = false"
-          >
-            Calendar
-          </router-link>
-
-          <router-link
-            v-if="isOwner"
-            to="/staff"
-            class="block px-3 py-2 rounded-md text-base font-medium text-purple-700 hover:text-purple-900 hover:bg-purple-50 dark:text-purple-700 dark:hover:text-white dark:hover:bg-purple-700"
-            @click="mobileMenuOpen = false"
-          >
-            Staff
-          </router-link>
-
-          <router-link
-            v-if="isOwner"
-            to="/services"
-            class="block px-3 py-2 rounded-md text-base font-medium text-purple-700 hover:text-purple-900 hover:bg-purple-50 dark:text-purple-700 dark:hover:text-white dark:hover:bg-purple-700"
-            @click="mobileMenuOpen = false"
-          >
-            Services
-          </router-link>
-
-          <router-link
-            to="/products"
-            class="block px-3 py-2 rounded-md text-base font-medium text-purple-700 hover:text-purple-900 hover:bg-purple-50 dark:text-purple-700 dark:hover:text-white dark:hover:bg-purple-700"
-            @click="mobileMenuOpen = false"
-          >
-            Products
-          </router-link>
-
-          <router-link
-            to="/clients"
-            class="block px-3 py-2 rounded-md text-base font-medium text-purple-700 hover:text-purple-900 hover:bg-purple-50 dark:text-purple-700 dark:hover:text-white dark:hover:bg-purple-700"
-            @click="mobileMenuOpen = false"
-          >
-            Clients
-          </router-link>
-
-          <router-link
-            v-if="isOwner"
-            to="/financials"
-            class="block px-3 py-2 rounded-md text-base font-medium text-purple-700 hover:text-purple-900 hover:bg-purple-50 dark:text-purple-700 dark:hover:text-white dark:hover:bg-purple-700"
-            @click="mobileMenuOpen = false"
-          >
-            Analytics
-          </router-link>
-
-          <div
-            class="border-t border-purple-200 dark:border-purple-700 pt-4 mt-2"
-          >
-            <div class="flex items-center px-3 mb-3">
-              <div
-                class="text-base font-medium text-purple-800 dark:text-white"
-              >
-                <a href="/profile">
-                  {{ authStore.user?.username }}
-                </a>
-              </div>
-            </div>
             <button
-              @click="logout"
-              class="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-red-600 hover:bg-purple-50 dark:hover:bg-purple-700"
+              @click="mobileMenuOpen = !mobileMenuOpen"
+              class="md:hidden p-2 rounded-xl text-white hover:bg-white/10"
             >
-              Logout
+              <i
+                :class="mobileMenuOpen ? 'pi pi-times' : 'pi pi-bars'"
+                class="text-xl"
+              ></i>
             </button>
           </div>
         </div>
       </div>
+
+      <transition
+        enter-active-class="transition duration-200 ease-out"
+        enter-from-class="opacity-0 -translate-y-2"
+        enter-to-class="opacity-100 translate-y-0"
+        leave-active-class="transition duration-150 ease-in"
+        leave-from-class="opacity-100 translate-y-0"
+        leave-to-class="opacity-0 -translate-y-2"
+      >
+        <div
+          v-if="mobileMenuOpen"
+          class="md:hidden bg-[#ff93d4] border-b border-pink-400 shadow-xl"
+        >
+          <div class="px-4 py-4 space-y-1">
+            <router-link
+              v-for="item in visibleNavItems"
+              :key="item.path"
+              :to="item.path"
+              class="block px-4 py-3 rounded-xl text-base font-bold text-white hover:bg-white/10"
+              @click="mobileMenuOpen = false"
+            >
+              {{ item.label }}
+            </router-link>
+            <div class="pt-4 mt-4 border-t border-white/20">
+              <button
+                @click="logout"
+                class="w-full text-left px-4 py-3 rounded-xl text-base font-bold text-white hover:bg-white/10"
+              >
+                Logout ({{ authStore.user?.username }})
+              </button>
+            </div>
+          </div>
+        </div>
+      </transition>
     </nav>
 
     <main
-      :class="
+      :class="[
         isFullWidthPage
           ? 'w-full'
-          : 'max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8'
-      "
+          : 'max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8',
+      ]"
     >
       <router-view />
-      <FloatingChat />
     </main>
+
+    <FloatingChat />
   </div>
 </template>
 
@@ -215,16 +152,28 @@ const route = useRoute();
 const authStore = useAuthStore();
 const mobileMenuOpen = ref(false);
 
-// Check if user is Admin or Manager
+// Dark mode state kept for system preferences, though toggle is removed
+const isDark = ref(false);
+
+const navItems = [
+  { label: "Calendar", path: "/scheduler", ownerOnly: false },
+  { label: "Staff", path: "/staff", ownerOnly: true },
+  { label: "Services", path: "/services", ownerOnly: true },
+  { label: "Products", path: "/products", ownerOnly: false },
+  { label: "Clients", path: "/clients", ownerOnly: false },
+  { label: "Analytics", path: "/financials", ownerOnly: true },
+];
+
 const isOwner = computed(() => {
   const role = authStore.user?.role;
   return role === "admin" || role === "super_admin";
 });
 
-// FIX: Determine if current page should be 100% width (Calendar)
-const isFullWidthPage = computed(() => {
-  return route.path.includes("/scheduler");
+const visibleNavItems = computed(() => {
+  return navItems.filter((item) => !item.ownerOnly || isOwner.value);
 });
+
+const isFullWidthPage = computed(() => route.path.includes("/scheduler"));
 
 const logout = () => {
   authStore.logout();
@@ -232,29 +181,37 @@ const logout = () => {
   mobileMenuOpen.value = false;
 };
 
-const isDark = ref(false);
-
-const toggleTheme = () => {
-  isDark.value = !isDark.value;
-  if (isDark.value) {
-    document.documentElement.classList.add("dark");
-    localStorage.setItem("theme", "dark");
-  } else {
-    document.documentElement.classList.remove("dark");
-    localStorage.setItem("theme", "light");
-  }
-};
-
 onMounted(() => {
+  // Respect system or previously stored dark theme
   const storedTheme = localStorage.getItem("theme");
   const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-
-  if (storedTheme === "dark" || (!storedTheme && systemDark)) {
-    isDark.value = true;
-    document.documentElement.classList.add("dark");
-  } else {
-    isDark.value = false;
-    document.documentElement.classList.remove("dark");
-  }
+  isDark.value = storedTheme === "dark" || (!storedTheme && systemDark);
+  document.documentElement.classList.toggle("dark", isDark.value);
 });
 </script>
+
+<style>
+/* Global Pink Aesthetic */
+::selection {
+  background: #ff93d4;
+  color: white;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #fff5f9;
+}
+::-webkit-scrollbar-thumb {
+  background: #ff93d4;
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #ff7ec7;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+</style>

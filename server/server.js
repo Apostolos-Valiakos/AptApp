@@ -1833,7 +1833,7 @@ app.get("/api/v1/profile", authenticateToken, async (req, res) => {
 app.get("/api/v1/products", authenticateToken, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT p.id, p.name, 
+      `SELECT p.id, p.name, p.description, 
         json_agg(
           json_build_object(
             'id', pi.id, 

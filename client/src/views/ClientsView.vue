@@ -2,12 +2,7 @@
   <div class="p-6 bg-white rounded-xl shadow-lg">
     <div class="flex justify-between items-center mb-8">
       <h1 class="text-3xl font-bold text-gray-800">Clients Management</h1>
-      <Button
-        label="Add New Client"
-        icon="pi pi-plus"
-        class="p-button-success"
-        @click="openNew"
-      />
+      <Button label="Add New Client" icon="pi pi-plus" @click="openNew" />
     </div>
 
     <DataTable
@@ -26,7 +21,7 @@
       <template #header>
         <div class="flex justify-between items-center">
           <span class="p-input-icon-left">
-            <i class="pi pi-search" />
+            <i class="pi pi-search mr-3" />
             <InputText
               v-model="search"
               placeholder="Search by name, email, phone..."
@@ -96,12 +91,13 @@
         <template #body="slotProps">
           <Button
             icon="pi pi-pencil"
-            class="p-button-rounded p-button-info p-button-sm mr-2"
+            class="p-button-rounded p-button-text p-button-sm"
             @click.stop="openProfile(slotProps.data)"
           />
           <Button
             icon="pi pi-trash"
-            class="p-button-rounded p-button-danger p-button-sm"
+            class="p-button-rounded p-button-text p-button-sm"
+            severity="danger"
             @click.stop="confirmDelete(slotProps.data)"
           />
         </template>

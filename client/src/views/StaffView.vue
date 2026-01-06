@@ -16,7 +16,7 @@
       <template #header>
         <div class="flex justify-between items-center">
           <span class="p-input-icon-left">
-            <i class="pi pi-search" />
+            <i class="pi pi-search mr-3" />
             <InputText
               v-model="search"
               placeholder="Search staff..."

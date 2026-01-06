@@ -1,10 +1,10 @@
 <template>
   <div class="p-6 max-w-7xl mx-auto">
     <div class="mb-8">
-      <h1 class="text-3xl font-bold text-gray-900 text-white">
+      <h1 class="text-3xl font-bold text-pink-400 text-white">
         Financial Reports
       </h1>
-      <p class="text-gray-500">
+      <p class="text-pink-700">
         View your business performance, sales, and payments.
       </p>
     </div>

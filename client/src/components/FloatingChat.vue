@@ -23,9 +23,9 @@
       <div class="chat-header">
         <div class="flex items-center gap-2">
           <i class="pi pi-comments"></i>
-          <span class="font-semibold truncate max-w-[200px]">{{
-            chatStore.activeChannel?.name || "Messages"
-          }}</span>
+          <span class="font-semibold truncate max-w-[200px]">
+            {{ chatStore.activeChannel?.name || "Messages" }}
+          </span>
           <span v-if="!chatStore.isConnected" class="text-xs text-red-200"
             >(Offline)</span
           >
@@ -33,9 +33,8 @@
         <div class="flex gap-2">
           <Button
             :icon="isMobile ? 'pi pi-times' : 'pi pi-minus'"
-            text
             rounded
-            class="text-white hover:bg-white/20"
+            class="bg-white text-gray-700 hover:text-[#ff93d4] border-none"
             @click="chatStore.toggleMinimized()"
           />
         </div>
@@ -153,7 +152,7 @@
                     >
                       {{ message.user.staff_name || message.user.username }}
                     </span>
-                    <span class="text-[10px] text-gray-400">
+                    <span class="text-[10px] text-gray-400 mr-1">
                       {{ formatTime(message.created_at) }}
                     </span>
                   </div>
@@ -162,7 +161,7 @@
                     class="message-bubble"
                     :class="
                       message.user_id === currentUserId
-                        ? 'bg-indigo-600 text-white rounded-br-none'
+                        ? 'bg-[#ff93d4] text-white rounded-br-none'
                         : 'bg-white text-gray-800 border border-gray-200 rounded-bl-none'
                     "
                   >
@@ -217,7 +216,7 @@
                     </span>
                     <span
                       v-else-if="message.read_by && message.read_by.length > 0"
-                      class="text-blue-500 font-bold flex items-center gap-1"
+                      class="text-[#ff93d4] font-bold flex items-center gap-1"
                     >
                       <i class="pi pi-check-circle text-[9px]"></i> Read
                     </span>
@@ -244,9 +243,9 @@
             class="flex items-center gap-2 p-2 mx-2 mb-2 bg-gray-100 rounded-lg border border-gray-200"
           >
             <i class="pi pi-file text-gray-500"></i>
-            <span class="text-xs flex-1 truncate font-medium">{{
-              selectedFile.name
-            }}</span>
+            <span class="text-xs flex-1 truncate font-medium">
+              {{ selectedFile.name }}
+            </span>
             <button
               @click="selectedFile = null"
               class="p-1 hover:bg-gray-200 rounded-full"
@@ -604,7 +603,7 @@ watch(
 .chat-minimized {
   width: 60px;
   height: 60px;
-  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  background: #ff93d4;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -680,7 +679,7 @@ watch(
 /* --- COMPONENTS --- */
 .chat-header {
   padding: 16px;
-  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  background: #ff93d4;
   color: white;
   display: flex;
   justify-content: space-between;

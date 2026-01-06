@@ -81,13 +81,12 @@
         <template #body="slotProps">
           <Button
             icon="pi pi-pencil"
-            class="p-button-rounded p-button-sm mr-2"
-            severity="info"
+            class="p-button-rounded p-button-text p-button-sm"
             @click="editService(slotProps.data)"
           />
           <Button
             icon="pi pi-trash"
-            class="p-button-rounded p-button-sm"
+            class="p-button-rounded p-button-text p-button-sm"
             severity="danger"
             @click="confirmDelete(slotProps.data)"
           />
