@@ -1,25 +1,38 @@
 <template>
   <div class="space-y-4">
     <div class="flex justify-between items-end">
-      <label class="text-xs font-bold text-gray-500 uppercase tracking-wider">
-        Services
+      <label
+        class="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2"
+      >
+        <span class="w-1.5 h-1.5 rounded-full bg-[var(--p-primary-400)]"></span>
+        Service Selection
       </label>
+      <span
+        class="text-[11px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-medium"
+        style="background-color: #ff93d4; color: white"
+      >
+        {{ modelValue.length }}
+        {{ modelValue.length === 1 ? "Service" : "Services" }}
+      </span>
     </div>
 
     <div
       v-for="(service, index) in modelValue"
       :key="index"
-      class="relative p-4 border border-gray-200 rounded-lg hover:border-indigo-300 transition-colors bg-gray-50 group"
+      class="relative p-6 bg-white border border-transparent rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(255,147,212,0.12)] hover:border-[var(--p-primary-200)] transition-all duration-300 group"
     >
+      <div
+        class="absolute left-0 top-6 bottom-6 w-1 bg-[var(--p-primary-300)] rounded-r-full opacity-0 group-hover:opacity-100 transition-opacity"
+      ></div>
       <button
         v-if="modelValue.length > 1"
         @click="removeService(index)"
-        class="absolute -right-2 -top-2 bg-white p-1 rounded-full shadow border border-gray-200 text-gray-400 hover:text-red-600 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity z-10"
+        class="absolute -right-2 -top-2 bg-white p-1 rounded-full text-gray-400 hover:text-red-600 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity z-10"
       >
-        <i class="pi pi-times text-xs"></i>
+        <i class="pi pi-trash text-xs"></i>
       </button>
 
-      <div class="flex flex-col sm:flex-row gap-3 mb-3">
+      <div class="flex flex-col sm:flex-row gap-4 mb-5">
         <div class="flex-grow">
           <label class="text-xs text-gray-500 block mb-1">Service</label>
           <Dropdown
@@ -84,9 +97,12 @@
 
     <button
       @click="addService"
-      class="text-indigo-600 text-sm font-semibold hover:underline flex items-center gap-1 mt-2 w-full sm:w-auto justify-center sm:justify-start p-2 sm:p-0 border sm:border-none rounded sm:rounded-none border-dashed border-indigo-300"
+      class="group w-full py-4 border-2 border-dashed border-slate-200 rounded-2xl flex items-center justify-center gap-2 text-slate-500 font-semibold hover:border-[var(--p-primary-300)] hover:text-[var(--p-primary-600)] hover:bg-[var(--p-primary-50)] transition-all"
     >
-      <i class="pi pi-plus-circle"></i> Add another service
+      <i
+        class="pi pi-plus-circle transition-transform group-hover:rotate-90"
+      ></i>
+      Add Another Service
     </button>
   </div>
 </template>

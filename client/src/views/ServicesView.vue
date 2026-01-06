@@ -3,15 +3,15 @@
     <div class="flex justify-between items-center mb-8">
       <h1 class="text-3xl font-bold text-gray-800">Services Management</h1>
       <Button
+        color="primary"
         label="Add New Service"
         icon="pi pi-plus"
-        class="p-button-success"
         @click="openNew"
       />
     </div>
 
     <DataTable
-      :value="services"
+      :value="filteredServices"
       :paginator="true"
       :rows="10"
       :rowsPerPageOptions="[10, 25, 50]"
@@ -22,7 +22,7 @@
       <template #header>
         <div class="flex justify-between">
           <span class="p-input-icon-left">
-            <i class="pi pi-search" />
+            <i class="pi pi-search mr-3" />
             <InputText
               v-model="search"
               placeholder="Search services..."
@@ -41,8 +41,12 @@
       <Column field="category" header="Category" sortable>
         <template #body="slotProps">
           <span
-            class="px-3 py-1 rounded-full text-xs font-medium"
-            :class="getCategoryClass(slotProps.data.category)"
+            class="px-3 py-1 rounded-full text-xs font-medium border"
+            :style="{
+              backgroundColor: (slotProps.data.color_code || '#ff93d4') + '20',
+              color: slotProps.data.color_code || '#ff93d4',
+              borderColor: slotProps.data.color_code || '#ff93d4',
+            }"
           >
             {{ slotProps.data.category || "Uncategorized" }}
           </span>
@@ -60,17 +64,31 @@
           €{{ Number(slotProps.data.price).toFixed(2) }}
         </template>
       </Column>
+      <Column field="color_code" header="Color">
+        <template #body="slotProps">
+          <div class="flex items-center gap-2">
+            <div
+              class="w-6 h-6 rounded-full border border-gray-200"
+              :style="{
+                backgroundColor: slotProps.data.color_code || '#e5e7eb',
+              }"
+            ></div>
+          </div>
+        </template>
+      </Column>
 
       <Column header="Actions" style="width: 150px">
         <template #body="slotProps">
           <Button
             icon="pi pi-pencil"
-            class="p-button-rounded p-button-info p-button-sm mr-2"
+            class="p-button-rounded p-button-sm mr-2"
+            severity="info"
             @click="editService(slotProps.data)"
           />
           <Button
             icon="pi pi-trash"
-            class="p-button-rounded p-button-danger p-button-sm"
+            class="p-button-rounded p-button-sm"
+            severity="danger"
             @click="confirmDelete(slotProps.data)"
           />
         </template>
@@ -133,19 +151,45 @@
             class="w-full"
           />
         </div>
+        <div
+          class="md:col-span-2 flex items-center gap-4 p-4 bg-gray-50 rounded-lg"
+        >
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2"
+              >Service Color</label
+            >
+            <ColorPicker v-model="editingService.color_code" format="hex" />
+          </div>
+          <div class="flex-grow">
+            <p class="text-xs text-gray-500 mb-2">
+              This color will be used for appointment blocks in the calendar.
+            </p>
+            <div class="flex items-center gap-2">
+              <InputText
+                v-model="editingService.color_code"
+                class="p-inputtext-sm w-32"
+                placeholder="#000000"
+              />
+              <div
+                class="w-8 h-8 rounded border shadow-sm transition-colors"
+                :style="{ backgroundColor: editingService.color_code }"
+              ></div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <template #footer>
         <Button
           label="Cancel"
           icon="pi pi-times"
-          class="p-button-text"
+          variant="text"
           @click="dialogVisible = false"
         />
         <Button
           :label="editingService?.id ? 'Update' : 'Create'"
           icon="pi pi-check"
-          class="p-button-success"
+          severity="success"
           @click="saveService"
         />
       </template>
@@ -157,9 +201,19 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from "vue";
+import { ref, onMounted, computed, onUnmounted } from "vue";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
+
+let interval: any;
+onMounted(() => {
+  fetchServices();
+  interval = setInterval(fetchServices, 10000);
+});
+
+onUnmounted(() => {
+  clearInterval(interval);
+});
 
 const toast = useToast();
 const confirm = useConfirm();
@@ -175,6 +229,7 @@ const editingService = ref<any>({
   category: "",
   duration_minutes: 60,
   price: 0.0,
+  color_code: "#ff93d4",
 });
 
 const categories = [
@@ -186,11 +241,6 @@ const categories = [
   "Waxing",
   "Other",
 ];
-
-onMounted(() => {
-  fetchServices();
-  setInterval(fetchServices, 10000); // polling
-});
 
 const fetchServices = async () => {
   const token = localStorage.getItem("token");
@@ -229,6 +279,7 @@ const openNew = () => {
     category: "",
     duration_minutes: 60,
     price: 0.0,
+    color_code: "#ff93d4",
   };
   dialogVisible.value = true;
 };
@@ -249,6 +300,12 @@ const saveService = async () => {
     return;
   }
 
+  const payload = { ...editingService.value };
+
+  if (payload.color_code && !payload.color_code.startsWith("#")) {
+    payload.color_code = `#${payload.color_code}`;
+  }
+
   const token = localStorage.getItem("token");
   const url = editingService.value.id
     ? `/api/v1/services/${editingService.value.id}`
@@ -263,7 +320,7 @@ const saveService = async () => {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify(editingService.value),
+      body: JSON.stringify(payload),
     });
     toast.add({
       severity: "success",
@@ -321,19 +378,6 @@ const formatDuration = (minutes: number) => {
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
   return h > 0 ? `${h}h ${m}m` : `${m} minutes`;
-};
-
-const getCategoryClass = (category: string) => {
-  const map: any = {
-    Hair: "bg-red-100 text-red-800",
-    Nails: "bg-pink-100 text-pink-800",
-    Massage: "bg-green-100 text-green-800",
-    Facial: "bg-purple-100 text-purple-800",
-    Makeup: "bg-yellow-100 text-yellow-800",
-    Waxing: "bg-orange-100 text-orange-800",
-    Other: "bg-gray-100 text-gray-800",
-  };
-  return map[category] || "bg-gray-100 text-gray-800";
 };
 </script>
 

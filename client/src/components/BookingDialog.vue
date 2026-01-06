@@ -13,7 +13,7 @@
       height: '100%',
     }"
   >
-    <div class="flex flex-col md:flex-row h-full md:h-[750px] bg-white">
+    <div class="flex flex-col md:flex-row h-full md:h-[800px] bg-white">
       <div
         class="flex-grow flex flex-col w-full md:w-2/3 border-b md:border-b-0 md:border-r border-gray-200 order-2 md:order-1 h-full overflow-hidden"
       >
@@ -115,7 +115,7 @@
                 <Button
                   icon="pi pi-eye"
                   class="p-button-outlined p-button-secondary w-12"
-                  style="color: #4f46e5; border-color: #4f46e5"
+                  style="color: #ff93d4; border-color: #ff93d4"
                   v-tooltip.top="'View Full Profile'"
                   @click="openClientProfile"
                 />

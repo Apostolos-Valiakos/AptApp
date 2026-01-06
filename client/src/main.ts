@@ -11,7 +11,6 @@ import Aura from "@primevue/themes/aura"; // Ensure you ran: npm install @primev
 
 // Core Styles
 import "primeicons/primeicons.css";
-import "./assets/tailwind.css";
 
 // Services
 import ToastService from "primevue/toastservice";
@@ -36,6 +35,7 @@ import Avatar from "primevue/avatar";
 import ScrollPanel from "primevue/scrollpanel";
 import Divider from "primevue/divider";
 import FloatLabel from "primevue/floatlabel";
+import ColorPicker from "primevue/colorpicker";
 
 import Tag from "primevue/tag";
 import Toast from "primevue/toast";
@@ -43,7 +43,14 @@ import ConfirmDialog from "primevue/confirmdialog";
 import DataTable from "primevue/datatable";
 import Column from "primevue/column";
 import Chart from "primevue/chart";
+import "./assets/tailwind.css";
+import { definePreset, palette } from "@primeuix/themes";
 
+const MyPreset = definePreset(Aura, {
+  semantic: {
+    primary: palette("#ff93d4"), // Automatically generates all shades
+  },
+});
 const app = createApp(App);
 
 app.use(createPinia());
@@ -54,7 +61,7 @@ app.use(ConfirmationService);
 // Initialize PrimeVue with the v4 Theme Preset
 app.use(PrimeVue, {
   theme: {
-    preset: Aura,
+    preset: MyPreset,
     options: {
       // Toggle dark mode based on a class, or use 'system'
       darkModeSelector: ".my-app-dark",
@@ -73,6 +80,7 @@ app.component("Dropdown", Select);
 app.component("InputText", InputText);
 app.component("InputNumber", InputNumber);
 app.component("Chart", Chart);
+app.component("ColorPicker", ColorPicker);
 
 app.component("DatePicker", DatePicker);
 app.component("Calendar", DatePicker);
