@@ -86,12 +86,13 @@ export const useChatStore = defineStore("chat", () => {
   const connect = (token: string) => {
     if (socket.value?.connected) return;
 
-    const socketUrl =
-      process.env.NODE_ENV === "production"
-        ? window.location.origin
-        : "http://192.168.68.58:3000";
+    // const socketUrl = window.location.origin;
 
-    socket.value = io(socketUrl, {
+    // socket.value = io(socketUrl, {
+    //   auth: { token },
+    //   transports: ["websocket", "polling"],
+    // });
+    socket.value = io({
       auth: { token },
       transports: ["websocket", "polling"],
     });

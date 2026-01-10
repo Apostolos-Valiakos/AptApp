@@ -14,6 +14,8 @@ const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
 
+const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "http://localhost:5173";
+
 // ==================== FILE UPLOAD SETUP ====================
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
@@ -1246,10 +1248,10 @@ app.get("/api/v1/reports/finances", authenticateToken, async (req, res) => {
   }
 });
 
-// 3️⃣ SOCKET.IO ΠΑΝΩ ΣΤΟ HTTP SERVER
 const io = new Server(server, {
   cors: {
-    origin: ["http://localhost:5173", "http://192.168.68.58:5173"],
+    // You can use an array or a single string from your .env
+    origin: [ALLOWED_ORIGIN, "http://localhost:5173"],
     credentials: true,
   },
 });
@@ -2237,6 +2239,7 @@ app.get(/(.*)/, (req, res) => {
   res.sendFile(path.join(distPath, "index.html"));
 });
 
-server.listen(3000, "0.0.0.0", () => {
-  console.log("🚀 Server running on http://192.168.68.58:3000");
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`Allowed Origin: ${ALLOWED_ORIGIN}`);
 });

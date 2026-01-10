@@ -567,10 +567,15 @@ const resolveImageUrl = (message: any) => {
   }
   if (message.id && !String(message.id).startsWith("temp-")) {
     const token = localStorage.getItem("token");
+
+    const apiUrl = process.env.API_URL || "http://localhost";
+    const port = process.env.PORT || "3000";
+
     const baseUrl =
       process.env.NODE_ENV === "production"
         ? window.location.origin
-        : "http://192.168.68.58:3000";
+        : `${apiUrl}:${port}`;
+
     return `${baseUrl}/api/v1/chat/file/${message.id}?token=${token}`;
   }
   return "";
