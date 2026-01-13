@@ -1,33 +1,56 @@
 import { createRouter, createWebHistory } from "vue-router";
+import { useAuthStore } from "../stores/auth";
+
+// Views
+import Layout from "../components/Layout.vue";
+import IndexView from "../views/IndexView.vue";
+import LoginView from "../views/LoginView.vue";
 import SchedulerView from "../views/SchedulerView.vue";
 import StaffView from "../views/StaffView.vue";
 import ClientsView from "../views/ClientsView.vue";
 import ServicesView from "../views/ServicesView.vue";
-import FinancialsView from "../components/FinancialsView.vue";
-import LoginView from "../views/LoginView.vue";
-import profileView from "../views/profileView.vue";
 import ProductsView from "../views/ProductsView.vue";
-import { useAuthStore } from "../stores/auth";
+import FinancialsView from "../components/FinancialsView.vue";
+import profileView from "../views/profileView.vue";
 
 const routes = [
-  { path: "/", redirect: "/scheduler" },
-  { path: "/login", component: LoginView },
   {
-    path: "/scheduler",
-    component: SchedulerView,
-    meta: { requiresAuth: true },
+    path: "/",
+    component: Layout, // Το Layout αγκαλιάζει τα πάντα
+    children: [
+      {
+        path: "", // Αυτό είναι το "/"
+        name: "home",
+        component: IndexView,
+      },
+      {
+        path: "login", // Αυτό είναι το "/login"
+        name: "login",
+        component: LoginView,
+      },
+      {
+        path: "app", // Εσωτερικές σελίδες
+        meta: { requiresAuth: true },
+        children: [
+          { path: "scheduler", component: SchedulerView },
+          { path: "staff", component: StaffView },
+          { path: "clients", component: ClientsView },
+          { path: "services", component: ServicesView },
+          { path: "products", component: ProductsView },
+          { path: "financials", component: FinancialsView },
+          { path: "profile", component: profileView },
+        ],
+      },
+    ],
   },
-  { path: "/staff", component: StaffView, meta: { requiresAuth: true } },
-  { path: "/clients", component: ClientsView, meta: { requiresAuth: true } },
-  { path: "/services", component: ServicesView, meta: { requiresAuth: true } },
-  { path: "/products", component: ProductsView, meta: { requiresAuth: true } },
-
-  {
-    path: "/financials",
-    component: FinancialsView,
-    meta: { requiresAuth: true },
-  },
-  { path: "/profile", component: profileView, meta: { requiresAuth: true } },
+  // Redirects για να μη σπάνε τα παλιά links - ΠΡΟΣΟΧΗ ΣΤΑ "/"
+  { path: "/scheduler", redirect: "/app/scheduler" },
+  { path: "/staff", redirect: "/app/staff" },
+  { path: "/clients", redirect: "/app/clients" },
+  { path: "/services", redirect: "/app/services" },
+  { path: "/products", redirect: "/app/products" },
+  { path: "/financials", redirect: "/app/financials" },
+  { path: "/profile", redirect: "/app/profile" },
 ];
 
 const router = createRouter({

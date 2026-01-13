@@ -30,15 +30,12 @@
                     fill-opacity="0.4"
                     d="M12 12.5C12 12.5 14.5 6 19 7C22 7.7 20.5 12.5 18 13.5C20.5 14.5 21 19 16.5 20.5C13.5 21.5 12 18 12 18"
                   />
-
                   <path
                     fill="#ff93d4"
                     fill-opacity="0.4"
                     d="M12 12.5C12 12.5 9.5 6 5 7C2 7.7 3.5 12.5 6 13.5C3.5 14.5 3 19 7.5 20.5C10.5 21.5 12 18 12 18"
                   />
-
                   <path d="M12 8V19" stroke="#ff7ec7" stroke-width="2" />
-
                   <path d="M12 8C12 8 10.5 3 8 4" />
                   <path d="M12 8C12 8 13.5 3 16 4" />
                 </svg>
@@ -65,18 +62,29 @@
 
           <div class="flex items-center gap-4">
             <div class="hidden md:flex items-center gap-4">
-              <router-link
-                to="/profile"
-                class="text-sm font-bold text-white hover:text-pink-100 transition-colors"
-              >
-                {{ authStore.user?.username }}
-              </router-link>
-              <button
-                @click="logout"
-                class="bg-white text-[#ff93d4] hover:bg-pink-50 px-5 py-2 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95"
-              >
-                Logout
-              </button>
+              <template v-if="authStore.isAuthenticated">
+                <router-link
+                  to="/app/profile"
+                  class="text-sm font-bold text-white hover:text-pink-100 transition-colors"
+                >
+                  {{ authStore.user?.username }}
+                </router-link>
+                <button
+                  @click="logout"
+                  class="bg-white text-[#ff93d4] hover:bg-pink-50 px-5 py-2 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95"
+                >
+                  Logout
+                </button>
+              </template>
+
+              <template v-else>
+                <button
+                  @click="router.push('/login')"
+                  class="bg-white text-[#ff93d4] hover:bg-pink-50 px-6 py-2 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95"
+                >
+                  Login
+                </button>
+              </template>
             </div>
 
             <button
@@ -114,13 +122,27 @@
             >
               {{ item.label }}
             </router-link>
+
             <div class="pt-4 mt-4 border-t border-white/20">
-              <button
-                @click="logout"
-                class="w-full text-left px-4 py-3 rounded-xl text-base font-bold text-white hover:bg-white/10"
-              >
-                Logout ({{ authStore.user?.username }})
-              </button>
+              <template v-if="authStore.isAuthenticated">
+                <button
+                  @click="logout"
+                  class="w-full text-left px-4 py-3 rounded-xl text-base font-bold text-white hover:bg-white/10"
+                >
+                  Logout ({{ authStore.user?.username }})
+                </button>
+              </template>
+              <template v-else>
+                <button
+                  @click="
+                    router.push('/login');
+                    mobileMenuOpen = false;
+                  "
+                  class="w-full text-left px-4 py-3 rounded-xl text-base font-bold text-white hover:bg-white/10"
+                >
+                  Login
+                </button>
+              </template>
             </div>
           </div>
         </div>
@@ -137,7 +159,7 @@
       <router-view />
     </main>
 
-    <FloatingChat />
+    <FloatingChat v-if="authStore.isAuthenticated" />
   </div>
 </template>
 
@@ -156,12 +178,12 @@ const mobileMenuOpen = ref(false);
 const isDark = ref(false);
 
 const navItems = [
-  { label: "Calendar", path: "/scheduler", ownerOnly: false },
-  { label: "Staff", path: "/staff", ownerOnly: true },
-  { label: "Services", path: "/services", ownerOnly: true },
-  { label: "Products", path: "/products", ownerOnly: false },
-  { label: "Clients", path: "/clients", ownerOnly: false },
-  { label: "Analytics", path: "/financials", ownerOnly: true },
+  { label: "Calendar", path: "/app/scheduler", ownerOnly: false },
+  { label: "Staff", path: "/app/staff", ownerOnly: true },
+  { label: "Services", path: "/app/services", ownerOnly: true },
+  { label: "Products", path: "/app/products", ownerOnly: false },
+  { label: "Clients", path: "/app/clients", ownerOnly: false },
+  { label: "Analytics", path: "/app/financials", ownerOnly: true },
 ];
 
 const isOwner = computed(() => {
@@ -170,14 +192,15 @@ const isOwner = computed(() => {
 });
 
 const visibleNavItems = computed(() => {
+  if (!authStore.isAuthenticated) return [];
   return navItems.filter((item) => !item.ownerOnly || isOwner.value);
 });
 
-const isFullWidthPage = computed(() => route.path.includes("/scheduler"));
+const isFullWidthPage = computed(() => route.path.includes("/app/scheduler"));
 
 const logout = () => {
   authStore.logout();
-  router.push("/login");
+  router.push("/");
   mobileMenuOpen.value = false;
 };
 
