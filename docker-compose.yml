@@ -1,0 +1,70 @@
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD} # From .env
+      POSTGRES_DB: ${POSTGRES_DB} # e.g., fresha_clone
+      POSTGRES_USER: postgres # Or custom user
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      POSTGRES_URI: postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET}
+      PORT: 3000
+      NODE_ENV: production
+      MESSAGE_ENCRYPTION_KEY: ${MESSAGE_ENCRYPTION_KEY}
+      ALLOWED_ORIGIN: ${ALLOWED_ORIGIN} # Update to your domain in prod
+      # Add any other env vars from your .env (e.g., API_URL if needed)
+    ports:
+      - "3000:3000" # Expose to host (access http://your-vps-ip:3000)
+    volumes:
+      - uploads:/app/uploads # Persistent file uploads (adjust path if your uploadDir is different)
+
+volumes:
+  pgdata:
+  redisdata:
+  uploads:
+# docker compose up -d
+# docker compose exec -i db psql -U postgres -d fresha_clone < backup.sql
+# git pull → docker compose down && docker compose up -d --build
+
+# sudo docker compose exec -T db psql -U postgres -d fresha_clone -c "\dt"          # list all tables
+# sudo docker compose exec -T db psql -U postgres -d fresha_clone -c "SELECT count(*) FROM clients;"  # example table check
+
+# cat db_backup.sql | sudo docker compose exec -T db pg_restore \
+#   --verbose \
+#   --clean \
+#   --if-exists \
+#   --no-owner \
+#   --no-privileges \
+#   -U postgres \
+#   -d fresha_clone
