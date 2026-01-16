@@ -180,7 +180,7 @@ const navItems = [
   { label: "Calendar", path: "/app/scheduler", ownerOnly: false },
   { label: "Staff", path: "/app/staff", ownerOnly: true },
   { label: "Services", path: "/app/services", ownerOnly: true },
-  { label: "Products", path: "/app/products", ownerOnly: false },
+  // { label: "Products", path: "/app/products", ownerOnly: false },
   { label: "Clients", path: "/app/clients", ownerOnly: false },
   { label: "Analytics", path: "/app/financials", ownerOnly: true },
 ];
