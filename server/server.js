@@ -1805,7 +1805,55 @@ app.get("/api/v1/chat/shop-users", authenticateToken, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+app.get("/api/v1/shop", authenticateToken, async (req, res) => {
+  try {
+    // 2. Add the WHERE clause with the $1 placeholder
+    const { rows } = await pool.query(
+      `SELECT *
+       FROM shops
+       WHERE id = $1`, // <--- crucial fix
+      [req.shopId]
+    );
 
+    // 3. Handle case where shop isn't found
+    if (rows.length === 0) {
+      return res.status(404).json({ message: "Shop not found" });
+    }
+
+    // 5. Send the first item (since ID is unique), not the whole array
+    res.json(rows[0]);
+  } catch (err) {
+    console.error("Error fetching shop:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+// PUT: Update Shop Theme Color
+app.put("/api/v1/shop/theme", authenticateToken, async (req, res) => {
+  const { primaryColor } = req.body;
+
+  // Basic Hex Validation (7 characters, starts with #)
+  if (!primaryColor || !/^#[0-9A-F]{6}$/i.test(primaryColor)) {
+    return res.status(400).json({ error: "Invalid hex color format" });
+  }
+
+  try {
+    const { rowCount } = await pool.query(
+      `UPDATE shops
+       SET primary_color = $1 
+       WHERE id = $2`,
+      [primaryColor, req.shopId]
+    );
+
+    if (rowCount === 0) {
+      return res.status(404).json({ message: "Shop not found" });
+    }
+
+    res.json({ message: "Theme updated successfully", primaryColor });
+  } catch (err) {
+    console.error("Error updating theme:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
 // ==================== KEEP ALL YOUR OTHER ROUTES ====================
 // (Profile, Staff, Clients, Services, Appointments, Reports, etc.)
 // ... Copy all routes from your original server.js here ...

@@ -43,9 +43,10 @@
           <span
             class="px-3 py-1 rounded-full text-xs font-medium border"
             :style="{
-              backgroundColor: (slotProps.data.color_code || '#ff93d4') + '20',
-              color: slotProps.data.color_code || '#ff93d4',
-              borderColor: slotProps.data.color_code || '#ff93d4',
+              backgroundColor:
+                (slotProps.data.color_code || 'var(--p-primary-100)') + '20',
+              color: slotProps.data.color_code || 'var(--p-primary-100)',
+              borderColor: slotProps.data.color_code || 'var(--p-primary-100)',
             }"
           >
             {{ slotProps.data.category || "Uncategorized" }}
@@ -228,7 +229,7 @@ const editingService = ref<any>({
   category: "",
   duration_minutes: 60,
   price: 0.0,
-  color_code: "#ff93d4",
+  color_code: "var(--p-primary-100)",
 });
 
 const categories = [
@@ -278,7 +279,7 @@ const openNew = () => {
     category: "",
     duration_minutes: 60,
     price: 0.0,
-    color_code: "#ff93d4",
+    color_code: "var(--p-primary-100)",
   };
   dialogVisible.value = true;
 };

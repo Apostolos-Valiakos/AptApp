@@ -9,7 +9,7 @@
       </label>
       <span
         class="text-[11px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-medium"
-        style="background-color: #ff93d4; color: white"
+        style="background-color: var(--p-primary-color); color: white"
       >
         {{ modelValue.length }}
         {{ modelValue.length === 1 ? "Service" : "Services" }}

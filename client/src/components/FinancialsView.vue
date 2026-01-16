@@ -1,7 +1,7 @@
 <template>
   <div class="p-6 max-w-7xl mx-auto">
     <div class="mb-8">
-      <h1 class="text-3xl font-bold text-pink-400 text-primary">
+      <h1 class="text-3xl font-bold text-[var(--p-primary-400)] text-primary">
         Financial Reports
       </h1>
       <p class="text-primary-700">

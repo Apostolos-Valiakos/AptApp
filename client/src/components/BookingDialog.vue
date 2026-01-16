@@ -115,7 +115,10 @@
                 <Button
                   icon="pi pi-eye"
                   class="p-button-outlined p-button-secondary w-12"
-                  style="color: #ff93d4; border-color: #ff93d4"
+                  style="
+                    color: var(--p-primary-color);
+                    border-color: var(--p-primary-color);
+                  "
                   v-tooltip.top="'View Full Profile'"
                   @click="openClientProfile"
                 />

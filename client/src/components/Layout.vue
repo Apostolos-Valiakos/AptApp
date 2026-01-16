@@ -1,9 +1,9 @@
 <template>
   <div
-    class="min-h-screen bg-[#fff5f9] dark:bg-[#fff5f9] transition-colors duration-300"
+    class="min-h-screen bg-[var(--p-primary-100)] dark:bg-[var(--p-primary-100)] transition-colors duration-300"
   >
     <nav
-      class="sticky top-0 z-50 bg-gradient-to-r from-[#ff93d4] to-[#ff7ec7] shadow-md"
+      class="sticky top-0 z-50 bg-gradient-to-r from-[var(--p-primary-color)] to-[var(--p-primary-600)] shadow-md"
     >
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex justify-between h-16">
@@ -17,25 +17,24 @@
               >
                 <svg
                   viewBox="0 0 24 24"
-                  class="w-7 h-7"
+                  class="w-7 h-7 stroke-[var(--p-primary-600)]"
                   xmlns="http://www.w3.org/2000/svg"
                   fill="none"
-                  stroke="#ff7ec7"
                   stroke-width="1.5"
                   stroke-linecap="round"
                   stroke-linejoin="round"
                 >
                   <path
-                    fill="#ff93d4"
+                    class="fill-[var(--p-primary-color)]"
                     fill-opacity="0.4"
                     d="M12 12.5C12 12.5 14.5 6 19 7C22 7.7 20.5 12.5 18 13.5C20.5 14.5 21 19 16.5 20.5C13.5 21.5 12 18 12 18"
                   />
                   <path
-                    fill="#ff93d4"
+                    class="fill-[var(--p-primary-color)]"
                     fill-opacity="0.4"
                     d="M12 12.5C12 12.5 9.5 6 5 7C2 7.7 3.5 12.5 6 13.5C3.5 14.5 3 19 7.5 20.5C10.5 21.5 12 18 12 18"
                   />
-                  <path d="M12 8V19" stroke="#ff7ec7" stroke-width="2" />
+                  <path d="M12 8V19" stroke-width="2" />
                   <path d="M12 8C12 8 10.5 3 8 4" />
                   <path d="M12 8C12 8 13.5 3 16 4" />
                 </svg>
@@ -53,7 +52,7 @@
                 :key="item.path"
                 :to="item.path"
                 active-class="bg-white/20 text-white shadow-inner"
-                class="px-4 py-2 rounded-xl text-sm font-bold text-pink-50 hover:bg-white/10 hover:text-white transition-all"
+                class="px-4 py-2 rounded-xl text-sm font-bold text-white/90 hover:bg-white/10 hover:text-white transition-all"
               >
                 {{ item.label }}
               </router-link>
@@ -65,13 +64,13 @@
               <template v-if="authStore.isAuthenticated">
                 <router-link
                   to="/app/profile"
-                  class="text-sm font-bold text-white hover:text-pink-100 transition-colors"
+                  class="text-sm font-bold text-white hover:text-white/80 transition-colors"
                 >
                   {{ authStore.user?.username }}
                 </router-link>
                 <button
                   @click="logout"
-                  class="bg-white text-[#ff93d4] hover:bg-pink-50 px-5 py-2 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95"
+                  class="bg-white text-[var(--p-primary-color)] hover:bg-[var(--p-primary-50)] px-5 py-2 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95"
                 >
                   Logout
                 </button>
@@ -80,7 +79,7 @@
               <template v-else>
                 <button
                   @click="router.push('/login')"
-                  class="bg-white text-[#ff93d4] hover:bg-pink-50 px-6 py-2 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95"
+                  class="bg-white text-[var(--p-primary-color)] hover:bg-[var(--p-primary-50)] px-6 py-2 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95"
                 >
                   Login
                 </button>
@@ -110,7 +109,7 @@
       >
         <div
           v-if="mobileMenuOpen"
-          class="md:hidden bg-[#ff93d4] border-b border-pink-400 shadow-xl"
+          class="md:hidden bg-[var(--p-primary-color)] border-b border-white/20 shadow-xl"
         >
           <div class="px-4 py-4 space-y-1">
             <router-link
@@ -214,9 +213,8 @@ onMounted(() => {
 </script>
 
 <style>
-/* Global Pink Aesthetic */
 ::selection {
-  background: #ff93d4;
+  background: var(--p-primary-color);
   color: white;
 }
 
@@ -224,14 +222,16 @@ onMounted(() => {
   width: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: #fff5f9;
+  background: var(--p-primary-50);
 }
 ::-webkit-scrollbar-thumb {
-  background: #ff93d4;
+  background: var(
+    --p-primary-300
+  ); /* Slightly lighter than main for scrollbar */
   border-radius: 10px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #ff7ec7;
+  background: var(--p-primary-color);
 }
 
 .scrollbar-hide::-webkit-scrollbar {

@@ -45,15 +45,21 @@
 import { ref } from "vue";
 import { useAuthStore } from "../stores/auth";
 import { useRouter } from "vue-router";
+import { useThemeStore } from "../stores/themes";
 
 const username = ref("");
 const password = ref("");
 const authStore = useAuthStore();
 const router = useRouter();
+const themeStore = useThemeStore();
 
 const login = async () => {
-  const res = await authStore.login(username.value, password.value);
+  // 3. Perform login (this sets the token in localStorage)
+  await authStore.login(username.value, password.value);
+
   if (authStore.isAuthenticated) {
+    await themeStore.fetchAndApplyTheme();
+
     router.push("/app/scheduler");
   } else {
     alert("Invalid credentials");

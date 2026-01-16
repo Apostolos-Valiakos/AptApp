@@ -34,7 +34,7 @@
           <Button
             :icon="isMobile ? 'pi pi-times' : 'pi pi-minus'"
             rounded
-            class="bg-white text-gray-700 hover:text-[#ff93d4] border-none"
+            class="bg-white text-gray-700 hover:text-[var(--p-primary-color)] border-none"
             @click="chatStore.toggleMinimized()"
           />
         </div>
@@ -161,7 +161,7 @@
                     class="message-bubble"
                     :class="
                       message.user_id === currentUserId
-                        ? 'bg-[#ff93d4] text-white rounded-br-none'
+                        ? 'bg-[var(--p-primary-color)] text-white rounded-br-none'
                         : 'bg-white text-gray-800 border border-gray-200 rounded-bl-none'
                     "
                   >
@@ -216,7 +216,7 @@
                     </span>
                     <span
                       v-else-if="message.read_by && message.read_by.length > 0"
-                      class="text-[#ff93d4] font-bold flex items-center gap-1"
+                      class="text-[var(--p-primary-color)] font-bold flex items-center gap-1"
                     >
                       <i class="pi pi-check-circle text-[9px]"></i> Read
                     </span>
@@ -608,7 +608,7 @@ watch(
 .chat-minimized {
   width: 60px;
   height: 60px;
-  background: #ff93d4;
+  background: var(--p-primary-color); /* Changed here */
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -684,7 +684,7 @@ watch(
 /* --- COMPONENTS --- */
 .chat-header {
   padding: 16px;
-  background: #ff93d4;
+  background: var(--p-primary-color); /* Changed here */
   color: white;
   display: flex;
   justify-content: space-between;

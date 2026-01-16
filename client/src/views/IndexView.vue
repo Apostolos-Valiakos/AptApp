@@ -7,7 +7,7 @@
             <Tag
               value="Νέα Εποχή στο Management"
               severity="info"
-              class="mb-4 !bg-[#ff93d4] !text-white border-none"
+              class="mb-4 !bg-[var(--p-primary-color)] !text-white border-none"
             />
             <h1
               class="text-5xl lg:text-7xl font-extrabold text-gray-900 mb-6 leading-tight"
@@ -24,14 +24,14 @@
               <Button
                 label="Request a Demo"
                 icon="pi pi-calendar"
-                class="p-button-lg !bg-[#ff93d4] border-none hover:!bg-[#ff7ec7] transition-all shadow-lg"
+                class="p-button-lg !bg-[var(--p-primary-color)] border-none hover:!bg-[#ff7ec7] transition-all shadow-lg"
                 @click="openDemo"
               />
               <Button
                 label="Είσοδος"
                 icon="pi pi-sign-in"
                 outline
-                class="p-button-lg !text-white !border-[#ff93d4] hover:!bg-pink-50"
+                class="p-button-lg !text-white !border-[var(--p-primary-color)] hover:!bg-pink-50"
                 @click="router.push('/login')"
               />
             </div>
@@ -66,7 +66,9 @@
             <div
               class="w-12 h-12 bg-pink-100 rounded-lg flex items-center justify-center mb-4"
             >
-              <i class="pi pi-comments text-[#ff93d4] text-xl"></i>
+              <i
+                class="pi pi-comments text-[var(--p-primary-color)] text-xl"
+              ></i>
             </div>
             Real-time Chat
           </template>
@@ -83,7 +85,9 @@
             <div
               class="w-12 h-12 bg-pink-100 rounded-lg flex items-center justify-center mb-4"
             >
-              <i class="pi pi-chart-line text-[#ff93d4] text-xl"></i>
+              <i
+                class="pi pi-chart-line text-[var(--p-primary-color)] text-xl"
+              ></i>
             </div>
             Tracking Πελατών
           </template>
@@ -100,7 +104,9 @@
             <div
               class="w-12 h-12 bg-pink-100 rounded-lg flex items-center justify-center mb-4"
             >
-              <i class="pi pi-file-pdf text-[#ff93d4] text-xl"></i>
+              <i
+                class="pi pi-file-pdf text-[var(--p-primary-color)] text-xl"
+              ></i>
             </div>
             Ψηφιακό Αρχείο
           </template>
@@ -121,7 +127,7 @@
         </div>
         <div class="grid md:grid-cols-2 gap-8">
           <div
-            class="p-8 border-2 border-gray-100 rounded-3xl hover:border-[#ff93d4] transition-colors"
+            class="p-8 border-2 border-gray-100 rounded-3xl hover:border-[var(--p-primary-color)] transition-colors"
           >
             <h3 class="text-xl font-bold mb-2">Solo Pro</h3>
             <div class="text-4xl font-extrabold mb-6">
@@ -148,10 +154,10 @@
           </div>
 
           <div
-            class="p-8 border-2 border-[#ff93d4] bg-pink-50/30 rounded-3xl relative"
+            class="p-8 border-2 border-[var(--p-primary-color)] bg-pink-50/30 rounded-3xl relative"
           >
             <div
-              class="absolute top-0 right-8 transform -translate-y-1/2 bg-[#ff93d4] text-white px-4 py-1 rounded-full text-sm font-bold"
+              class="absolute top-0 right-8 transform -translate-y-1/2 bg-[var(--p-primary-color)] text-white px-4 py-1 rounded-full text-sm font-bold"
             >
               POPULAR
             </div>
@@ -178,7 +184,7 @@
             </ul>
             <Button
               label="Ξεκινήστε Τώρα"
-              class="w-full !bg-[#ff93d4] border-none py-3 shadow-lg shadow-pink-200"
+              class="w-full !bg-[var(--p-primary-color)] border-none py-3 shadow-lg shadow-pink-200"
             />
           </div>
         </div>
@@ -203,7 +209,7 @@
         <Button
           label="Αποστολή"
           @click="submitDemo"
-          class="!bg-[#ff93d4] border-none mt-2"
+          class="!bg-[var(--p-primary-color)] border-none mt-2"
         />
       </div>
     </Dialog>
@@ -211,17 +217,25 @@
     <footer class="py-12 bg-gray-900 text-white text-center">
       <div class="flex items-center justify-center mb-6">
         <span class="text-2xl font-bold tracking-tight"
-          >Petalouda<span class="text-[#ff93d4]">Booking</span></span
+          >Petalouda<span class="text-[var(--p-primary-color)]"
+            >Booking</span
+          ></span
         >
       </div>
       <div class="flex justify-center gap-6 mb-8">
-        <a href="#" class="text-gray-400 hover:text-[#ff93d4] text-2xl"
+        <a
+          href="#"
+          class="text-gray-400 hover:text-[var(--p-primary-color)] text-2xl"
           ><i class="pi pi-instagram"></i
         ></a>
-        <a href="#" class="text-gray-400 hover:text-[#ff93d4] text-2xl"
+        <a
+          href="#"
+          class="text-gray-400 hover:text-[var(--p-primary-color)] text-2xl"
           ><i class="pi pi-facebook"></i
         ></a>
-        <a href="#" class="text-gray-400 hover:text-[#ff93d4] text-2xl"
+        <a
+          href="#"
+          class="text-gray-400 hover:text-[var(--p-primary-color)] text-2xl"
           ><i class="pi pi-twitter"></i
         ></a>
       </div>
