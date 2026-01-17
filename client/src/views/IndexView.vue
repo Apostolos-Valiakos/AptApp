@@ -5,7 +5,7 @@
         <div class="grid lg:grid-cols-2 gap-12 items-center">
           <div class="text-left">
             <Tag
-              value="Νέα Εποχή στο Management"
+              value="Νέα Εποχή στη Διαχείριση"
               severity="info"
               class="mb-4 !bg-[var(--p-primary-color)] !text-white border-none"
             />
@@ -13,10 +13,10 @@
               class="text-5xl lg:text-7xl font-extrabold text-gray-900 mb-6 leading-tight"
             >
               Οργανώστε την επιχείρησή σας με τo
-              <span class="text-[#ff7ec7]">Booking</span>
+              <span class="text-[#ff7ec7]">Interventio</span>
             </h1>
             <p class="text-lg text-gray-600 mb-8 leading-relaxed">
-              Η απόλυτη πλατφόρμα για Salon, Spa και Κέντρα Ευεξίας.
+              Η απόλυτη πλατφόρμα για Θεραπευτήρια και ειδικά κέντρα θεραπειών.
               Διαχειριστείτε ραντεβού, προσωπικό και την πρόοδο των πελατών σας,
               όλα σε ένα μέρος.
             </p>
@@ -24,14 +24,14 @@
               <Button
                 label="Request a Demo"
                 icon="pi pi-calendar"
-                class="p-button-lg !bg-[var(--p-primary-color)] border-none hover:!bg-[#ff7ec7] transition-all shadow-lg"
+                class="p-button-lg !bg-[var(--p-primary-color)] border-none hover:!bg-pink-500 transition-all shadow-lg"
                 @click="openDemo"
               />
               <Button
                 label="Είσοδος"
                 icon="pi pi-sign-in"
                 outline
-                class="p-button-lg !text-white !border-[var(--p-primary-color)] hover:!bg-pink-50"
+                class="p-button-lg !text-white !border-[var(--p-primary-color)] hover:!bg-pink-500"
                 @click="router.push('/login')"
               />
             </div>
@@ -41,7 +41,7 @@
               class="absolute -top-20 -right-20 w-64 h-64 bg-pink-100 rounded-full blur-3xl opacity-50"
             ></div>
             <img
-              src="https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&q=80&w=800"
+              src="https://petaloudakids.gr/wp-content/uploads/2025/04/11.webp"
               alt="Salon Management"
               class="rounded-3xl shadow-2xl border-8 border-white transform hover:-rotate-2 transition-transform duration-500"
             />
@@ -129,18 +129,22 @@
           <div
             class="p-8 border-2 border-gray-100 rounded-3xl hover:border-[var(--p-primary-color)] transition-colors"
           >
-            <h3 class="text-xl font-bold mb-2">Solo Pro</h3>
+            <h3 class="text-xl font-bold mb-2">Starter</h3>
             <div class="text-4xl font-extrabold mb-6">
-              €29<span class="text-lg text-gray-400 font-medium">/μήνα</span>
+              €30<span class="text-lg text-gray-400 font-medium">/μήνα</span>
             </div>
             <ul class="space-y-4 mb-8">
               <li class="flex items-center gap-2">
-                <i class="pi pi-check-circle text-green-500"></i> 1 Χρήστης
-                (Owner)
+                <i class="pi pi-check-circle text-green-500"></i> Βασικές
+                Λειτουργίες
               </li>
               <li class="flex items-center gap-2">
                 <i class="pi pi-check-circle text-green-500"></i> Διαχείριση
-                Ραντεβού
+                απεριόριστων Ραντεβού
+              </li>
+              <li class="flex items-center gap-2">
+                <i class="pi pi-check-circle text-green-500"></i> Απεριόριστοι
+                Πελάτες
               </li>
               <li class="flex items-center gap-2">
                 <i class="pi pi-check-circle text-green-500"></i> Exercise
@@ -163,23 +167,24 @@
             </div>
             <h3 class="text-xl font-bold mb-2">Business Plus</h3>
             <div class="text-4xl font-extrabold mb-6">
-              €59<span class="text-lg text-gray-400 font-medium">/μήνα</span>
+              €50<span class="text-lg text-gray-400 font-medium">/μήνα</span>
             </div>
             <ul class="space-y-4 mb-8">
               <li class="flex items-center gap-2">
-                <i class="pi pi-check-circle text-green-500"></i> Απεριόριστο
-                Προσωπικό
+                <i class="pi pi-check-circle text-green-500"></i> Διαχείριση
+                απεριόριστων Ραντεβού
               </li>
               <li class="flex items-center gap-2">
-                <i class="pi pi-check-circle text-green-500"></i> Real-time Chat
+                <i class="pi pi-check-circle text-green-500"></i> Απεριόριστοι
+                Πελάτες
               </li>
               <li class="flex items-center gap-2">
-                <i class="pi pi-check-circle text-green-500"></i> File Uploads
-                (Client Records)
+                <i class="pi pi-check-circle text-green-500"></i> Πλήρης
+                διαμόρφωση με βάση την επιχείρησή σας
               </li>
               <li class="flex items-center gap-2">
-                <i class="pi pi-check-circle text-green-500"></i> Analytics &
-                Financials
+                <i class="pi pi-check-circle text-green-500"></i> Αναλυτικές
+                αναφορές απόδοσης
               </li>
             </ul>
             <Button

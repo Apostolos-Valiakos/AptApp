@@ -71,7 +71,7 @@
             )
           }}
         </div>
-        <div class="text-xs text-gray-400 mt-2">Outstanding from clients</div>
+        <div class="text-xs text-gray-400 mt-2">Pending from clients</div>
       </div>
     </div>
 

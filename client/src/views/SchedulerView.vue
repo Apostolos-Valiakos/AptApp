@@ -511,7 +511,7 @@ const calendarOptions = ref({
   ],
   initialView: "resourceTimeGridDay",
   allDaySlot: false,
-  slotDuration: "00:30:00",
+  slotDuration: "00:15:00",
   slotLabelInterval: "01:00",
   slotMinTime: "07:00:00",
   slotMaxTime: "23:00:00",

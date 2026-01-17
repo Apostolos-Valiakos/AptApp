@@ -301,16 +301,25 @@ app.get("/api/v1/staff", authenticateToken, async (req, res) => {
 });
 
 app.post("/api/v1/staff", authenticateToken, async (req, res) => {
-  const { name, email, phone, role, color, username, password } = req.body;
-
+  const {
+    first_name,
+    last_name,
+    email,
+    phone,
+    role,
+    color,
+    username,
+    password,
+  } = req.body;
+  const name = first_name + " " + last_name;
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
     // 1. Create Staff Entry
     const staffRes = await client.query(
-      "INSERT INTO staff (name, email, phone, color, shop_id) VALUES ($1, $2, $3, $4, $5) RETURNING id",
-      [name, email, phone, color, req.shopId]
+      "INSERT INTO staff (name, email, phone, shop_id) VALUES ($1, $2, $3, $4) RETURNING id",
+      [name, email, phone, req.shopId]
     );
     const staffId = staffRes.rows[0].id;
 
@@ -1209,7 +1218,7 @@ app.get("/api/v1/reports/finances", authenticateToken, async (req, res) => {
   const { from, to } = req.query;
   const params = [req.shopId];
 
-  let salesWhere = "WHERE a.shop_id = $1 AND a.status = 'completed'";
+  let salesWhere = "WHERE a.shop_id = $1"; // AND a.status = 'completed'";
   let payWhere = "WHERE t.shop_id = $1";
 
   // Visibility logic for non-super-admins
@@ -1217,7 +1226,7 @@ app.get("/api/v1/reports/finances", authenticateToken, async (req, res) => {
     salesWhere += " AND a.save_receipt = true";
     // For payments, we filter those attached to completed appointments without receipts
     payWhere +=
-      " AND NOT EXISTS (SELECT 1 FROM appointments a WHERE a.id = t.appointment_id AND a.status='completed' AND a.save_receipt = false)";
+      " AND NOT EXISTS (SELECT 1 FROM appointments a WHERE a.id = t.appointment_id AND a.save_receipt = false)"; //AND a.status='completed'
   }
 
   if (from) {
