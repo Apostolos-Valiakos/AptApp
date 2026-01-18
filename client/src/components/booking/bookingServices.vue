@@ -81,8 +81,7 @@
             @update:modelValue="recalcTimes"
           />
         </div>
-
-        <div class="col-span-1 min-w-0">
+        <div class="col-span-1 min-w-0" v-if="isOwner">
           <label class="text-xs text-gray-500 block mb-1">Price</label>
           <InputNumber
             v-model="service.price_override"
@@ -108,6 +107,10 @@
 </template>
 
 <script setup lang="ts">
+import { useAuthStore } from "../../stores/auth";
+const authStore = useAuthStore();
+const isOwner = authStore.isOwner;
+
 const props = defineProps({
   modelValue: { type: Array as () => any[], required: true },
   services: { type: Array as () => any[], default: () => [] },
@@ -124,7 +127,7 @@ const getFilteredStaff = (serviceId: any) => {
     (s: any) =>
       !s.service_ids ||
       s.service_ids.length === 0 ||
-      s.service_ids.includes(serviceId)
+      s.service_ids.includes(serviceId),
   );
 };
 
@@ -136,7 +139,7 @@ const addService = () => {
     const last = list[list.length - 1];
     nextStart = new Date(
       new Date(last.start_time).getTime() +
-        (last.duration_override || 60) * 60000
+        (last.duration_override || 60) * 60000,
     );
   }
 
@@ -187,7 +190,7 @@ const recalcTimes = (existingList?: any[]) => {
   for (let i = 0; i < list.length; i++) {
     list[i].start_time = new Date(currentStart);
     currentStart = new Date(
-      currentStart.getTime() + (list[i].duration_override || 60) * 60000
+      currentStart.getTime() + (list[i].duration_override || 60) * 60000,
     );
   }
 
