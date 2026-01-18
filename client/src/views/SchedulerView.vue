@@ -303,7 +303,7 @@ const viewOptions = [
 ];
 
 const currentViewLabel = computed(
-  () => viewOptions.find((v) => v.value === currentView.value)?.label || "Day"
+  () => viewOptions.find((v) => v.value === currentView.value)?.label || "Day",
 );
 
 const calendarApi = computed(() => fullCalendar.value?.getApi());
@@ -350,7 +350,7 @@ const calendarResources = computed(() => {
     title: r.name,
     eventBackgroundColor: "#f3f4f6",
     imageUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(
-      r.name
+      r.name,
     )}&background=random&color=fff&rounded=true&bold=true`,
   }));
 });
@@ -372,7 +372,7 @@ const calendarEvents = computed(() => {
       let endTime = null;
       if (svc.start_time) {
         endTime = new Date(
-          new Date(svc.start_time).getTime() + duration * 60000
+          new Date(svc.start_time).getTime() + duration * 60000,
         ).toISOString();
       }
 
@@ -549,7 +549,7 @@ const calendarOptions = ref({
           <div class="relative">
             <img src="${src}" class="w-8 h-8 rounded-full border-2 border-white shadow-sm mb-2 object-cover group-hover:scale-105 transition-transform" />
           </div>
-          <div class="hidden md:block font-bold text-gray-800 text-sm mt-2 truncate w-full text-center px-2">
+          <div style="text-wrap=auto" class="hidden md:block font-bold text-gray-800 text-sm mt-2 truncate w-full text-center px-2">
             ${arg.resource.title}
         </div>
         </div>
@@ -586,16 +586,16 @@ const calendarOptions = ref({
     return {
       html: `
         <div class="w-full ${paddingClass} flex flex-col leading-tight overflow-hidden rounded-md hover:brightness-95 transition-all ${
-        isMonthView ? "" : "h-full"
-      }">
+          isMonthView ? "" : "h-full"
+        }">
           ${
             showTime
               ? `<div class="text-[11px] font-bold opacity-70 mb-0.5">${timeText}</div>`
               : ""
           }
           <div class="font-bold ${titleClass} truncate text-gray-900">${
-        props.client_name
-      }</div>
+            props.client_name
+          }</div>
           ${
             showService
               ? `<div class="text-xs font-medium opacity-80 truncate mt-0.5">${props.service_name}</div>`
@@ -683,7 +683,7 @@ watch(
     api.setOption("resources", newResources);
     api.setOption("events", newEvents);
   },
-  { deep: true }
+  { deep: true },
 );
 
 onMounted(async () => {

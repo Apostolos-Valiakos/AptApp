@@ -11,7 +11,7 @@
       <p class="text-gray-500 text-sm mb-4">{{ client.phone }}</p>
 
       <div
-        v-if="Number(client.outstanding_balance) > 0"
+        v-if="Number(client.outstanding_balance) > 0 && authStore.isOwner"
         class="inline-block bg-red-100 text-red-800 text-xs font-bold px-3 py-1 rounded-full mb-6"
       >
         Balance: €{{ Number(client.outstanding_balance).toFixed(2) }}
@@ -44,6 +44,9 @@
 </template>
 
 <script setup lang="ts">
+import { useAuthStore } from "../../stores/auth";
+const authStore = useAuthStore();
+
 defineProps({
   client: {
     type: Object,
