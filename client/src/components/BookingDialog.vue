@@ -2,18 +2,21 @@
   <Dialog
     v-model:visible="dialogVisible"
     modal
+    class="fresha-dialog h-full md:h-auto md:rounded-xl rounded-none"
     :showHeader="false"
     :breakpoints="{ '960px': '100vw' }"
-    :style="{ width: '80vw', margin: '0' }"
-    class="fresha-dialog h-full md:h-auto md:rounded-xl rounded-none"
+    :style="{ width: '80vw', maxWidth: '1200px' }"
     :contentStyle="{
       padding: '0',
       borderRadius: '12px',
       overflow: 'hidden',
-      height: '100%',
+      display: 'flex',
+      flexDirection: 'column',
     }"
   >
-    <div class="flex flex-col md:flex-row h-full md:h-[800px] bg-white">
+    <div
+      class="flex flex-col md:flex-row h-full md:max-h-[90vh] md:h-[800px] bg-white"
+    >
       <div
         class="flex-grow flex flex-col w-full md:w-2/3 border-b md:border-b-0 md:border-r border-gray-200 order-2 md:order-1 h-full overflow-hidden"
       >
@@ -436,20 +439,20 @@ onUnmounted(() => {
 // === COMPUTED ===
 const isEditMode = computed(() => !!form.value.id);
 const selectedClient = computed(() =>
-  props.clients.find((c: any) => c.id === form.value.client_id)
+  props.clients.find((c: any) => c.id === form.value.client_id),
 );
 
 // Financial Calculations
 const currentApptTotal = computed(() => {
   const servicesTotal = servicesList.value.reduce(
     (sum, s) => sum + (Number(s.price_override) || 0),
-    0
+    0,
   );
   // Note: productsList is available even if the tab is not 'Products',
   // ensuring the Total is always accurate across tabs.
   const productsTotal = productsList.value.reduce(
     (sum, p) => sum + (Number(p.price) || 0) * (p.quantity || 1),
-    0
+    0,
   );
   return servicesTotal + productsTotal;
 });
@@ -462,7 +465,7 @@ const previousDebt = computed(() => {
 
   const originalDebtContribution = Math.max(
     0,
-    originalSnapshot.value.price - originalSnapshot.value.deposit
+    originalSnapshot.value.price - originalSnapshot.value.deposit,
   );
   return Math.max(0, dbBalance - originalDebtContribution);
 });
@@ -472,17 +475,17 @@ const totalDueNow = computed(() => {
   if (!form.value.id) {
     return Math.max(
       0,
-      dbBalance + currentApptTotal.value - form.value.deposit_amount
+      dbBalance + currentApptTotal.value - form.value.deposit_amount,
     );
   } else {
     const originalDebtContribution = Math.max(
       0,
-      originalSnapshot.value.price - originalSnapshot.value.deposit
+      originalSnapshot.value.price - originalSnapshot.value.deposit,
     );
     const trueHistoricalDebt = dbBalance - originalDebtContribution;
     const currentApptDebt = Math.max(
       0,
-      currentApptTotal.value - form.value.deposit_amount
+      currentApptTotal.value - form.value.deposit_amount,
     );
     return Math.max(0, trueHistoricalDebt + currentApptDebt);
   }
@@ -586,7 +589,7 @@ watch(
     currentTab.value = "Booking";
     showMobileSidebar.value = false;
   },
-  { immediate: true }
+  { immediate: true },
 );
 
 // === METHODS ===
