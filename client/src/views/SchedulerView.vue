@@ -561,48 +561,51 @@ const calendarOptions = ref({
     const timeText = arg.timeText;
     const props = arg.event.extendedProps;
 
-    // 1. Check if we are in Month View (Row layout)
-    const isMonthView = arg.view.type === "dayGridMonth";
+    // 1. Check if the appointment status is cancelled
+    const isCancelled = props.fullAppointment?.status === "cancelled";
 
-    // 2. Calculate Duration in Minutes
+    const isMonthView = arg.view.type === "dayGridMonth";
     const start = arg.event.start;
     const end = arg.event.end;
     const durationMins =
       end && start ? (end.getTime() - start.getTime()) / 60000 : 60;
-
-    // 3. Define "Short Event" (e.g., less than 45 mins)
     const isShort = durationMins < 45;
 
-    // 4. Dynamic Classes
-    // If short: Use tiny padding (p-0.5) and small text
-    // If normal: Use standard padding (p-2)
     const paddingClass = isShort && !isMonthView ? "p-0.5 pl-1" : "p-2";
     const titleClass = isShort && !isMonthView ? "text-xs" : "text-sm";
 
-    // Hide secondary info if space is tight
+    // 2. Define conditional styles for Cancelled status
+    // We use 'line-through' for strikethrough and 'text-red-600' for color
+    const cancelledClasses = isCancelled
+      ? "line-through text-red-600"
+      : "text-gray-900";
+    const cancelledServiceClasses = isCancelled ? "text-red-500" : "opacity-80";
+
     const showTime = !isShort && !isMonthView;
     const showService = !isShort || isMonthView;
 
     return {
       html: `
-        <div class="w-full ${paddingClass} flex flex-col leading-tight overflow-hidden rounded-md hover:brightness-95 transition-all ${
-          isMonthView ? "" : "h-full"
-        }">
-          ${
-            showTime
-              ? `<div class="text-[11px] font-bold opacity-70 mb-0.5">${timeText}</div>`
-              : ""
-          }
-          <div class="font-bold ${titleClass} truncate text-gray-900">${
-            props.client_name
-          }</div>
-          ${
-            showService
-              ? `<div class="text-xs font-medium opacity-80 truncate mt-0.5">${props.service_name}</div>`
-              : ""
-          }
+      <div class="w-full ${paddingClass} flex flex-col leading-tight overflow-hidden rounded-md hover:brightness-95 transition-all ${
+        isMonthView ? "" : "h-full"
+      }">
+        ${
+          showTime
+            ? `<div class="text-[11px] font-bold opacity-70 mb-0.5 ${isCancelled ? "text-red-400" : ""}">${timeText}</div>`
+            : ""
+        }
+        <div class="font-bold ${titleClass} truncate ${cancelledClasses}">
+          ${props.client_name}
         </div>
-      `,
+        ${
+          showService
+            ? `<div class="text-xs font-medium truncate mt-0.5 ${cancelledServiceClasses}">
+                ${props.service_name}
+               </div>`
+            : ""
+        }
+      </div>
+    `,
     };
   },
 
