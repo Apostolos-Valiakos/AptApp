@@ -84,11 +84,7 @@
               >
                 First Name
               </label>
-              <InputText
-                v-model="editForm.first_name"
-                :disabled="!isOwner"
-                class="w-full"
-              />
+              <InputText v-model="editForm.first_name" class="w-full" />
             </div>
             <div>
               <label
@@ -96,11 +92,7 @@
               >
                 Last Name
               </label>
-              <InputText
-                v-model="editForm.last_name"
-                :disabled="!isOwner"
-                class="w-full"
-              />
+              <InputText v-model="editForm.last_name" class="w-full" />
             </div>
           </div>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -110,11 +102,7 @@
               >
                 Email
               </label>
-              <InputText
-                v-model="editForm.email"
-                :disabled="!isOwner"
-                class="w-full"
-              />
+              <InputText v-model="editForm.email" class="w-full" />
             </div>
             <div>
               <label
@@ -122,11 +110,7 @@
               >
                 Phone
               </label>
-              <InputText
-                :disabled="!isOwner"
-                v-model="editForm.phone"
-                class="w-full"
-              />
+              <InputText v-model="editForm.phone" class="w-full" />
             </div>
           </div>
           <div>
@@ -385,7 +369,7 @@ watch(
       activeTab.value = "Info";
       fetchClientData();
     }
-  }
+  },
 );
 
 const addCustomField = () =>
