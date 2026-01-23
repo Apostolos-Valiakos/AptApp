@@ -155,6 +155,13 @@
             <i class="pi pi-arrow-right-arrow-left"> </i>
           </span>
         </button>
+        <button
+          @click="reorderDialogVisible = true"
+          class="p-2.5 text-gray-600 hover:bg-gray-100 rounded-full transition-colors flex-shrink-0"
+          title="Reorder Staff"
+        >
+          <i class="pi pi-sort-alt text-lg"></i>
+        </button>
       </div>
     </div>
 
@@ -214,6 +221,11 @@
       @swap="handleSwap"
     />
   </div>
+  <StaffReorderDialog
+    v-model:visible="reorderDialogVisible"
+    :staff-list="calendarStore.resources"
+    @save="handleReorderSave"
+  />
 </template>
 
 <script setup lang="ts">
@@ -231,6 +243,9 @@ import { useToast } from "primevue/usetoast";
 import ColorModelToggle from "../components/ColorModelToggle.vue";
 import { useAuthStore } from "../stores/auth";
 import elLocale from "@fullcalendar/core/locales/el";
+import StaffReorderDialog from "../components/StaffReorderDialog.vue";
+
+const reorderDialogVisible = ref(false);
 
 const authStore = useAuthStore();
 const toast = useToast();
@@ -292,7 +307,15 @@ const handleSwap = async (swapData: {
     });
   }
 };
-
+const handleReorderSave = async (newOrder: any[]) => {
+  await calendarStore.updateResourceOrder(newOrder);
+  toast.add({
+    severity: "success",
+    summary: "Success",
+    detail: "Staff order updated",
+    life: 3000,
+  });
+};
 // Zoom State
 const slotDurationMinutes = ref(30);
 
@@ -517,6 +540,8 @@ const calendarOptions = ref({
     month: "short",
     day: "numeric",
   },
+  resourceEditable: true,
+  resourceOrder: "sort_order",
   initialView: "resourceTimeGridDay",
   allDaySlot: false,
   slotDuration: "00:15:00",

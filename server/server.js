@@ -31,7 +31,7 @@ const upload = multer({
   fileFilter: (req, file, cb) => {
     const allowedTypes = /jpeg|jpg|png|gif|pdf|doc|docx|xls|xlsx/;
     const extname = allowedTypes.test(
-      path.extname(file.originalname).toLowerCase()
+      path.extname(file.originalname).toLowerCase(),
     );
     const mimetype = allowedTypes.test(file.mimetype);
     if (extname && mimetype) {
@@ -48,7 +48,7 @@ app.use(
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
-  })
+  }),
 );
 app.use(express.json());
 
@@ -92,7 +92,7 @@ const recalculateClientBalance = async (client, clientId) => {
     WHERE id = $1
     RETURNING outstanding_balance
   `,
-    [clientId]
+    [clientId],
   );
 
   // FIX: Force return of a Number, default to 0 if undefined/null
@@ -136,7 +136,7 @@ app.post("/api/v1/login", async (req, res) => {
        FROM users u
        LEFT JOIN shops s ON u.shop_id = s.id
        WHERE u.username = $1`,
-      [username]
+      [username],
     );
 
     if (result.rows.length === 0) {
@@ -162,7 +162,7 @@ app.post("/api/v1/login", async (req, res) => {
         staffId: user.staff_id,
       },
       process.env.JWT_SECRET || "supersecret",
-      { expiresIn: "7d" }
+      { expiresIn: "7d" },
     );
 
     res.json({ token, user });
@@ -184,7 +184,7 @@ app.put("/api/v1/profile", authenticateToken, async (req, res) => {
       const fullName = `${firstName} ${lastName}`.trim();
       await client.query(
         `UPDATE staff SET name = $1, email = $2, phone = $3 WHERE id = $4`,
-        [fullName, email, phone || null, req.user.staffId]
+        [fullName, email, phone || null, req.user.staffId],
       );
     }
 
@@ -217,7 +217,7 @@ app.get("/api/v1/profile", authenticateToken, async (req, res) => {
       LEFT JOIN staff st ON u.staff_id = st.id
       WHERE u.id = $1
     `,
-      [req.user.userId]
+      [req.user.userId],
     );
 
     if (rows.length === 0)
@@ -246,7 +246,7 @@ app.put("/api/v1/profile/password", authenticateToken, async (req, res) => {
     // 1. Fetch current hashed password
     const { rows } = await pool.query(
       "SELECT password FROM users WHERE id = $1",
-      [req.user.userId]
+      [req.user.userId],
     );
     if (rows.length === 0)
       return res.status(404).json({ error: "User not found" });
@@ -292,7 +292,7 @@ app.get("/api/v1/staff", authenticateToken, async (req, res) => {
       GROUP BY st.id
       ORDER BY st.name
     `,
-      [req.shopId]
+      [req.shopId],
     );
     res.json(rows);
   } catch (err) {
@@ -319,7 +319,7 @@ app.post("/api/v1/staff", authenticateToken, async (req, res) => {
     // 1. Create Staff Entry
     const staffRes = await client.query(
       "INSERT INTO staff (name, email, phone, shop_id) VALUES ($1, $2, $3, $4) RETURNING id",
-      [name, email, phone, req.shopId]
+      [name, email, phone, req.shopId],
     );
     const staffId = staffRes.rows[0].id;
 
@@ -330,7 +330,7 @@ app.post("/api/v1/staff", authenticateToken, async (req, res) => {
 
       await client.query(
         "INSERT INTO users (username, password, role, staff_id, shop_id) VALUES ($1, $2, $3, $4, $5)",
-        [username, hashedPassword, role || "staff", staffId, req.shopId]
+        [username, hashedPassword, role || "staff", staffId, req.shopId],
       );
     }
 
@@ -344,7 +344,28 @@ app.post("/api/v1/staff", authenticateToken, async (req, res) => {
     client.release();
   }
 });
+// server.js
+app.post("/api/v1/staff/reorder", async (req, res) => {
+  const { orders } = req.body; // Expects [{id: 1, sort_order: 0}, {id: 2, sort_order: 1}]
 
+  try {
+    // Start a transaction
+    await pool.query("BEGIN");
+
+    const queryText = "UPDATE public.staff SET sort_order = $1 WHERE id = $2";
+
+    for (const item of orders) {
+      await pool.query(queryText, [item.sort_order, item.id]);
+    }
+
+    await pool.query("COMMIT");
+    res.json({ success: true, message: "Staff order updated successfully" });
+  } catch (err) {
+    await pool.query("ROLLBACK");
+    console.error(err);
+    res.status(500).json({ error: "Failed to reorder staff" });
+  }
+});
 app.put("/api/v1/staff/:id", authenticateToken, async (req, res) => {
   const { id } = req.params;
   const {
@@ -366,7 +387,7 @@ app.put("/api/v1/staff/:id", authenticateToken, async (req, res) => {
       `UPDATE staff 
        SET name = $1, email = $2, phone = $3, hourly_rate = $4, specialty = $5
        WHERE id = $6 AND shop_id = $7`,
-      [fullName, email, phone, hourly_rate, specialty, id, req.shopId]
+      [fullName, email, phone, hourly_rate, specialty, id, req.shopId],
     );
 
     await client.query(`DELETE FROM staff_services WHERE staff_id = $1`, [id]);
@@ -375,7 +396,7 @@ app.put("/api/v1/staff/:id", authenticateToken, async (req, res) => {
       for (const svcId of service_ids) {
         await client.query(
           `INSERT INTO staff_services (staff_id, service_id) VALUES ($1, $2)`,
-          [id, svcId]
+          [id, svcId],
         );
       }
     }
@@ -394,7 +415,7 @@ app.delete("/api/v1/staff/:id", authenticateToken, async (req, res) => {
   try {
     await pool.query(
       "UPDATE staff SET is_active = false WHERE id = $1 AND shop_id = $2",
-      [req.params.id, req.shopId]
+      [req.params.id, req.shopId],
     );
     res.json({ success: true });
   } catch (err) {
@@ -416,7 +437,7 @@ app.post("/api/v1/staff/:id/login", authenticateToken, async (req, res) => {
 
     const checkUser = await client.query(
       "SELECT id FROM users WHERE username = $1",
-      [username]
+      [username],
     );
     if (checkUser.rows.length > 0) {
       await client.query("ROLLBACK");
@@ -428,7 +449,7 @@ app.post("/api/v1/staff/:id/login", authenticateToken, async (req, res) => {
     await client.query(
       `INSERT INTO users (username, password, shop_id, staff_id, role)
        VALUES ($1, $2, $3, $4, 'staff')`,
-      [username, hashedPassword, req.shopId, id]
+      [username, hashedPassword, req.shopId, id],
     );
 
     await client.query("COMMIT");
@@ -450,7 +471,7 @@ app.get("/api/v1/clients", authenticateToken, async (req, res) => {
        FROM clients 
        WHERE shop_id = $1 
        ORDER BY last_name`,
-      [req.shopId]
+      [req.shopId],
     );
     const data = rows.map((c) => ({
       ...c,
@@ -484,7 +505,7 @@ app.post("/api/v1/clients", authenticateToken, async (req, res) => {
         notes,
         JSON.stringify(custom_fields),
         req.shopId,
-      ]
+      ],
     );
     rows[0].full_name = `${rows[0].first_name} ${rows[0].last_name}`;
     res.json({ success: true, client: rows[0] });
@@ -517,7 +538,7 @@ app.put("/api/v1/clients/:id", authenticateToken, async (req, res) => {
         JSON.stringify(custom_fields),
         id,
         req.shopId,
-      ]
+      ],
     );
     res.json({ success: true });
   } catch (err) {
@@ -543,7 +564,7 @@ app.get("/api/v1/services", authenticateToken, async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT * FROM services WHERE shop_id = $1 ORDER BY name`,
-      [req.shopId]
+      [req.shopId],
     );
     res.json(rows);
   } catch (err) {
@@ -556,7 +577,7 @@ app.post("/api/v1/services", authenticateToken, async (req, res) => {
   try {
     await pool.query(
       `INSERT INTO services (name, duration_minutes, price, category, color_code, shop_id) VALUES ($1, $2, $3, $4, $5, $6)`,
-      [name, duration_minutes, price, category, color_code, req.shopId]
+      [name, duration_minutes, price, category, color_code, req.shopId],
     );
     res.json({ success: true });
   } catch (err) {
@@ -570,7 +591,7 @@ app.put("/api/v1/services/:id", authenticateToken, async (req, res) => {
   try {
     await pool.query(
       `UPDATE services SET name=$1, duration_minutes=$2, price=$3, category=$4, color_code=$5 WHERE id=$6 AND shop_id=$7`,
-      [name, duration_minutes, price, category, color_code, id, req.shopId]
+      [name, duration_minutes, price, category, color_code, id, req.shopId],
     );
     res.json({ success: true });
   } catch (err) {
@@ -634,7 +655,7 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
       GROUP BY a.id, c.first_name, c.last_name, c.phone
       ORDER BY a.created_at DESC
     `,
-      [req.shopId]
+      [req.shopId],
     );
 
     const formatted = rows.map((row) => ({
@@ -688,7 +709,7 @@ app.post("/api/v1/appointments", authenticateToken, async (req, res) => {
         !!is_block, // Ensure boolean
         !!save_receipt, // Ensure boolean
         req.shopId,
-      ]
+      ],
     );
     const appointmentId = apptRes.rows[0].id;
 
@@ -712,7 +733,7 @@ app.post("/api/v1/appointments", authenticateToken, async (req, res) => {
               svc.duration_override,
               svc.price_override,
               req.shopId,
-            ]
+            ],
           );
         }
       }
@@ -739,7 +760,7 @@ app.post("/api/v1/appointments", authenticateToken, async (req, res) => {
                 qty,
                 lineTotal, // FIX: Save calculated total, not undefined price_override
                 req.shopId,
-              ]
+              ],
             );
           }
         }
@@ -804,13 +825,13 @@ app.put("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
         save_receipt || false,
         id,
         req.shopId,
-      ]
+      ],
     );
 
     // 2. Refresh Services: Delete old and insert new
     await client.query(
       "DELETE FROM appointment_services WHERE appointment_id = $1",
-      [id]
+      [id],
     );
     if (!is_block) {
       for (const svc of services) {
@@ -828,7 +849,7 @@ app.put("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
               svc.duration_override,
               svc.price_override,
               req.shopId,
-            ]
+            ],
           );
         }
       }
@@ -858,7 +879,7 @@ app.put("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
               qty,
               lineTotal, // FIX: Save calculated total
               req.shopId,
-            ]
+            ],
           );
 
           // Note: Stock management on update requires tracking previous quantities
@@ -886,7 +907,7 @@ app.delete("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
   try {
     await pool.query(
       "DELETE FROM appointments WHERE id = $1 AND shop_id = $2",
-      [req.params.id, req.shopId]
+      [req.params.id, req.shopId],
     );
     res.json({ success: true });
   } catch (err) {
@@ -905,11 +926,11 @@ app.post("/api/v1/appointments/swap", authenticateToken, async (req, res) => {
 
     const q1 = await client.query(
       `SELECT * FROM appointment_services WHERE appointment_id = $1 AND shop_id = $2 ORDER BY id`,
-      [appointment1_id, req.shopId]
+      [appointment1_id, req.shopId],
     );
     const q2 = await client.query(
       `SELECT * FROM appointment_services WHERE appointment_id = $1 AND shop_id = $2 ORDER BY id`,
-      [appointment2_id, req.shopId]
+      [appointment2_id, req.shopId],
     );
 
     const s1 = q1.rows;
@@ -924,7 +945,7 @@ app.post("/api/v1/appointments/swap", authenticateToken, async (req, res) => {
           s2[i].duration_override,
           s2[i].price_override,
           s1[i].id,
-        ]
+        ],
       );
       await client.query(
         `UPDATE appointment_services SET start_time=$1, staff_id=$2, duration_override=$3, price_override=$4 WHERE id=$5`,
@@ -934,7 +955,7 @@ app.post("/api/v1/appointments/swap", authenticateToken, async (req, res) => {
           s1[i].duration_override,
           s1[i].price_override,
           s2[i].id,
-        ]
+        ],
       );
     }
 
@@ -965,19 +986,19 @@ app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
     await client.query(
       `INSERT INTO transactions (appointment_id, client_id, amount, payment_method, transaction_type, shop_id, created_at)
        VALUES ($1, $2, $3, $4, 'payment', $5, NOW())`,
-      [appointment_id, client_id, amount, payment_method, req.shopId]
+      [appointment_id, client_id, amount, payment_method, req.shopId],
     );
 
     // Calculate updated payment status
     const priceRes = await client.query(
       `SELECT SUM(price_override) as total_price FROM appointment_services WHERE appointment_id = $1`,
-      [appointment_id]
+      [appointment_id],
     );
     const totalPrice = Number(priceRes.rows[0].total_price || 0);
 
     const apptRes = await client.query(
       `SELECT deposit_amount FROM appointments WHERE id = $1`,
-      [appointment_id]
+      [appointment_id],
     );
     const currentPaid = Number(apptRes.rows[0]?.deposit_amount || 0);
     const newTotalPaid = currentPaid + Number(amount);
@@ -992,12 +1013,12 @@ app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
       `UPDATE appointments 
        SET payment_status = $1, status = $2, deposit_amount = deposit_amount + $3 
        WHERE id = $4 AND shop_id = $5`,
-      [newPaymentStatus, newStatus, amount, appointment_id, req.shopId]
+      [newPaymentStatus, newStatus, amount, appointment_id, req.shopId],
     );
 
     await client.query(
       `UPDATE clients SET total_sales = COALESCE(total_sales, 0) + $1 WHERE id = $2 AND shop_id = $3`,
-      [amount, client_id, req.shopId]
+      [amount, client_id, req.shopId],
     );
 
     // CRITICAL: Update outstanding balance
@@ -1026,7 +1047,7 @@ app.get("/api/v1/financials", authenticateToken, async (req, res) => {
       WHERE t.shop_id = $1
       ORDER BY t.created_at DESC
     `,
-      [req.shopId]
+      [req.shopId],
     );
     res.json(rows);
   } catch (err) {
@@ -1062,7 +1083,7 @@ app.get("/api/v1/reports/appointments", authenticateToken, async (req, res) => {
       WHERE 1=1 ${whereClause}
       GROUP BY a.id, c.first_name, c.last_name
       ORDER BY a.created_at DESC`,
-      params
+      params,
     );
     res.json(rows);
   } catch (err) {
@@ -1095,7 +1116,7 @@ app.get("/api/v1/reports/clients", authenticateToken, async (req, res) => {
       WHERE c.shop_id = $1 
       AND EXISTS (SELECT 1 FROM appointments a JOIN appointment_services aps ON a.id = aps.appointment_id ${subQuery})
       GROUP BY c.id ORDER BY c.last_name`,
-      params
+      params,
     );
     res.json(rows);
   } catch (err) {
@@ -1130,11 +1151,11 @@ app.get("/api/v1/reports/sales", authenticateToken, async (req, res) => {
       JOIN services s ON aps.service_id = s.id
       JOIN appointments a ON aps.appointment_id = a.id
       ${whereClause} GROUP BY s.name ORDER BY total_revenue DESC`,
-      params
+      params,
     );
     const summary = rows.reduce(
       (acc, row) => acc + Number(row.total_revenue),
-      0
+      0,
     );
     res.json({ summary: { total_revenue: summary }, details: rows });
   } catch (err) {
@@ -1167,7 +1188,7 @@ app.get("/api/v1/reports/staff", authenticateToken, async (req, res) => {
       JOIN services s ON aps.service_id = s.id
       JOIN appointments a ON aps.appointment_id = a.id
       ${whereClause} GROUP BY st.name ORDER BY total_revenue DESC`,
-      params
+      params,
     );
     res.json(rows);
   } catch (err) {
@@ -1206,7 +1227,7 @@ app.get("/api/v1/reports/payments", authenticateToken, async (req, res) => {
        LEFT JOIN appointments a ON t.appointment_id = a.id
        ${whereClause} 
        ORDER BY t.created_at DESC`,
-      params
+      params,
     );
     res.json(rows);
   } catch (err) {
@@ -1242,11 +1263,11 @@ app.get("/api/v1/reports/finances", authenticateToken, async (req, res) => {
   try {
     const salesRes = await pool.query(
       `SELECT SUM(COALESCE(aps.price_override, s.price)) as total FROM appointment_services aps JOIN services s ON aps.service_id=s.id JOIN appointments a ON aps.appointment_id=a.id ${salesWhere}`,
-      params
+      params,
     );
     const payRes = await pool.query(
       `SELECT SUM(amount) as total FROM transactions t ${payWhere}`,
-      params
+      params,
     );
     res.json({
       total_sales: Number(salesRes.rows[0].total) || 0,
@@ -1319,7 +1340,7 @@ io.on("connection", (socket) => {
           fileType || null,
           binaryData,
           process.env.MESSAGE_ENCRYPTION_KEY || "SecretKey123", // $9: The Key
-        ]
+        ],
       );
 
       const message = result.rows[0];
@@ -1328,7 +1349,7 @@ io.on("connection", (socket) => {
         `SELECT u.id, u.username, s.name as staff_name 
          FROM users u LEFT JOIN staff s ON u.staff_id = s.id 
          WHERE u.id = $1`,
-        [socket.user.userId]
+        [socket.user.userId],
       );
 
       const messageWithUser = {
@@ -1343,7 +1364,7 @@ io.on("connection", (socket) => {
 
       await pool.query(
         `UPDATE chat_channels SET updated_at = NOW() WHERE id = $1`,
-        [channelId]
+        [channelId],
       );
     } catch (err) {
       console.error("Socket Message Error:", err);
@@ -1372,7 +1393,7 @@ io.on("connection", (socket) => {
           `INSERT INTO message_read_receipts (message_id, user_id, read_at)
          VALUES ($1, $2, NOW())
          ON CONFLICT (message_id, user_id) DO NOTHING`,
-          [msgId, socket.user.userId]
+          [msgId, socket.user.userId],
         );
       }
 
@@ -1381,7 +1402,7 @@ io.on("connection", (socket) => {
         `UPDATE channel_members 
        SET last_read_at = NOW() 
        WHERE channel_id = $1 AND user_id = $2`,
-        [channelId, socket.user.userId]
+        [channelId, socket.user.userId],
       );
 
       await client.query("COMMIT");
@@ -1405,14 +1426,14 @@ io.on("connection", (socket) => {
         `INSERT INTO message_read_receipts (message_id, user_id, read_at)
          VALUES ($1, $2, NOW())
          ON CONFLICT (message_id, user_id) DO UPDATE SET read_at = NOW()`,
-        [messageId, socket.user.userId]
+        [messageId, socket.user.userId],
       );
 
       await pool.query(
         `UPDATE channel_members 
          SET last_read_at = NOW() 
          WHERE channel_id = $1 AND user_id = $2`,
-        [channelId, socket.user.userId]
+        [channelId, socket.user.userId],
       );
 
       io.to(`channel:${channelId}`).emit("chat:read", {
@@ -1450,7 +1471,7 @@ app.get("/api/v1/chat/channels", authenticateToken, async (req, res) => {
        JOIN channel_members cm ON c.id = cm.channel_id
        WHERE cm.user_id = $1 AND c.shop_id = $2
        ORDER BY c.updated_at DESC`,
-      [req.user.userId, req.shopId]
+      [req.user.userId, req.shopId],
     );
     res.json(rows);
   } catch (err) {
@@ -1470,21 +1491,21 @@ app.post("/api/v1/chat/channels", authenticateToken, async (req, res) => {
     const channelResult = await client.query(
       `INSERT INTO chat_channels (shop_id, name, description, created_by)
        VALUES ($1, $2, $3, $4) RETURNING *`,
-      [req.shopId, name, description, req.user.userId]
+      [req.shopId, name, description, req.user.userId],
     );
 
     const channel = channelResult.rows[0];
 
     await client.query(
       `INSERT INTO channel_members (channel_id, user_id) VALUES ($1, $2)`,
-      [channel.id, req.user.userId]
+      [channel.id, req.user.userId],
     );
 
     for (const userId of memberIds) {
       if (userId !== req.user.userId) {
         await client.query(
           `INSERT INTO channel_members (channel_id, user_id) VALUES ($1, $2)`,
-          [channel.id, userId]
+          [channel.id, userId],
         );
       }
     }
@@ -1511,7 +1532,7 @@ app.get(
     try {
       const memberCheck = await pool.query(
         `SELECT 1 FROM channel_members WHERE channel_id = $1 AND user_id = $2`,
-        [channelId, req.user.userId]
+        [channelId, req.user.userId],
       );
 
       if (memberCheck.rows.length === 0) {
@@ -1564,7 +1585,7 @@ app.get(
       console.error("Error fetching messages:", err);
       res.status(500).json({ error: err.message });
     }
-  }
+  },
 );
 
 // Get all shop users for adding to channels
@@ -1576,7 +1597,7 @@ app.get("/api/v1/chat/shop-users", authenticateToken, async (req, res) => {
        LEFT JOIN staff s ON u.staff_id = s.id
        WHERE u.shop_id = $1
        ORDER BY s.name, u.username`,
-      [req.shopId]
+      [req.shopId],
     );
     res.json(rows);
   } catch (err) {
@@ -1596,21 +1617,21 @@ app.post("/api/v1/chat/channels", authenticateToken, async (req, res) => {
     const channelResult = await client.query(
       `INSERT INTO chat_channels (shop_id, name, description, created_by)
        VALUES ($1, $2, $3, $4) RETURNING *`,
-      [req.shopId, name, description, req.user.userId]
+      [req.shopId, name, description, req.user.userId],
     );
 
     const channel = channelResult.rows[0];
 
     await client.query(
       `INSERT INTO channel_members (channel_id, user_id) VALUES ($1, $2)`,
-      [channel.id, req.user.userId]
+      [channel.id, req.user.userId],
     );
 
     for (const userId of memberIds) {
       if (userId !== req.user.userId) {
         await client.query(
           `INSERT INTO channel_members (channel_id, user_id) VALUES ($1, $2)`,
-          [channel.id, userId]
+          [channel.id, userId],
         );
       }
     }
@@ -1641,7 +1662,7 @@ app.get(
     try {
       const memberCheck = await pool.query(
         `SELECT 1 FROM channel_members WHERE channel_id = $1 AND user_id = $2`,
-        [channelId, req.user.userId]
+        [channelId, req.user.userId],
       );
 
       if (memberCheck.rows.length === 0) {
@@ -1686,7 +1707,7 @@ app.get(
       console.error("Error fetching messages:", err);
       res.status(500).json({ error: err.message });
     }
-  }
+  },
 );
 
 const fileStorage = multer.memoryStorage();
@@ -1706,7 +1727,7 @@ app.post(
       // Correctly handle Greek/Special characters in filename
       const originalName = Buffer.from(
         req.file.originalname,
-        "latin1"
+        "latin1",
       ).toString("utf8");
 
       // We return the base64 for the frontend "Optimistic" UI
@@ -1723,7 +1744,7 @@ app.post(
     } catch (err) {
       res.status(500).json({ error: "Upload processing failed" });
     }
-  }
+  },
 );
 
 app.get("/api/v1/chat/file/:messageId", authenticateToken, async (req, res) => {
@@ -1731,7 +1752,7 @@ app.get("/api/v1/chat/file/:messageId", authenticateToken, async (req, res) => {
     const { messageId } = req.params;
     const { rows } = await pool.query(
       "SELECT file_blob, file_type, file_name FROM chat_messages WHERE id = $1",
-      [messageId]
+      [messageId],
     );
 
     if (rows.length === 0 || !rows[0].file_blob) {
@@ -1746,7 +1767,7 @@ app.get("/api/v1/chat/file/:messageId", authenticateToken, async (req, res) => {
     res.setHeader("Content-Type", file_type || "application/octet-stream");
     res.setHeader(
       "Content-Disposition",
-      `inline; filename*=UTF-8''${encodedName}`
+      `inline; filename*=UTF-8''${encodedName}`,
     );
     res.send(file_blob);
   } catch (err) {
@@ -1767,13 +1788,13 @@ app.get(
        LEFT JOIN staff s ON u.staff_id = s.id
        WHERE cm.channel_id = $1
        ORDER BY s.name, u.username`,
-        [req.params.channelId]
+        [req.params.channelId],
       );
       res.json(rows);
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
-  }
+  },
 );
 
 // Add member to channel
@@ -1788,13 +1809,13 @@ app.post(
         `INSERT INTO channel_members (channel_id, user_id)
        VALUES ($1, $2)
        ON CONFLICT (channel_id, user_id) DO NOTHING`,
-        [req.params.channelId, userId]
+        [req.params.channelId, userId],
       );
       res.json({ success: true });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
-  }
+  },
 );
 
 // Get all shop users for adding to channels
@@ -1806,7 +1827,7 @@ app.get("/api/v1/chat/shop-users", authenticateToken, async (req, res) => {
        LEFT JOIN staff s ON u.staff_id = s.id
        WHERE u.shop_id = $1
        ORDER BY s.name, u.username`,
-      [req.shopId]
+      [req.shopId],
     );
     res.json(rows);
   } catch (err) {
@@ -1821,7 +1842,7 @@ app.get("/api/v1/shop", authenticateToken, async (req, res) => {
       `SELECT *
        FROM shops
        WHERE id = $1`, // <--- crucial fix
-      [req.shopId]
+      [req.shopId],
     );
 
     // 3. Handle case where shop isn't found
@@ -1850,7 +1871,7 @@ app.put("/api/v1/shop/theme", authenticateToken, async (req, res) => {
       `UPDATE shops
        SET primary_color = $1 
        WHERE id = $2`,
-      [primaryColor, req.shopId]
+      [primaryColor, req.shopId],
     );
 
     if (rowCount === 0) {
@@ -1878,7 +1899,7 @@ app.get("/api/v1/profile", authenticateToken, async (req, res) => {
       LEFT JOIN shops s ON u.shop_id = s.id
       LEFT JOIN staff st ON u.staff_id = st.id
       WHERE u.id = $1`,
-      [req.user.userId]
+      [req.user.userId],
     );
 
     if (rows.length === 0)
@@ -1906,7 +1927,7 @@ app.get("/api/v1/products", authenticateToken, async (req, res) => {
        WHERE p.shop_id = $1
        GROUP BY p.id, p.name
        ORDER BY p.name ASC`,
-      [req.shopId]
+      [req.shopId],
     );
     res.json(rows);
   } catch (err) {
@@ -1923,7 +1944,7 @@ app.post("/api/v1/products", authenticateToken, async (req, res) => {
 
     const productRes = await client.query(
       `INSERT INTO products (name, description, shop_id) VALUES ($1, $2, $3) RETURNING id`,
-      [name, description, req.shopId]
+      [name, description, req.shopId],
     );
     const productId = productRes.rows[0].id;
 
@@ -1931,7 +1952,7 @@ app.post("/api/v1/products", authenticateToken, async (req, res) => {
       await client.query(
         `INSERT INTO product_inventory (product_id, variation_name, price, stock_quantity)
          VALUES ($1, $2, $3, $4)`,
-        [productId, v.variation_name, v.price, v.stock_quantity]
+        [productId, v.variation_name, v.price, v.stock_quantity],
       );
     }
 
@@ -1956,13 +1977,13 @@ app.patch(
         `UPDATE product_inventory 
        SET stock_quantity = stock_quantity + $1 
        WHERE id = $2 RETURNING stock_quantity`,
-        [quantity, req.params.id]
+        [quantity, req.params.id],
       );
       res.json(rows[0]);
     } catch (err) {
       res.status(500).json({ error: "Insufficient stock or update failed" });
     }
-  }
+  },
 );
 app.put("/api/v1/products/:id", authenticateToken, async (req, res) => {
   const { id } = req.params;
@@ -1976,7 +1997,7 @@ app.put("/api/v1/products/:id", authenticateToken, async (req, res) => {
     await client.query(
       `UPDATE products SET name = $1, description = $2, updated_at = NOW() 
        WHERE id = $3 AND shop_id = $4`,
-      [name, description, id, req.shopId]
+      [name, description, id, req.shopId],
     );
 
     // 2. Handle variations
@@ -1987,14 +2008,14 @@ app.put("/api/v1/products/:id", authenticateToken, async (req, res) => {
           `UPDATE product_inventory 
            SET variation_name = $1, price = $2, stock_quantity = $3, updated_at = NOW()
            WHERE id = $4 AND product_id = $5`,
-          [v.variation_name, v.price, v.stock_quantity, v.id, id]
+          [v.variation_name, v.price, v.stock_quantity, v.id, id],
         );
       } else {
         // Insert new variation added during edit
         await client.query(
           `INSERT INTO product_inventory (product_id, variation_name, price, stock_quantity)
            VALUES ($1, $2, $3, $4)`,
-          [id, v.variation_name, v.price, v.stock_quantity]
+          [id, v.variation_name, v.price, v.stock_quantity],
         );
       }
     }
@@ -2014,7 +2035,7 @@ app.delete("/api/v1/products/:id", authenticateToken, async (req, res) => {
     // Ensure the product belongs to the user's shop for security
     const result = await pool.query(
       "DELETE FROM products WHERE id = $1 AND shop_id = $2",
-      [id, req.shopId]
+      [id, req.shopId],
     );
 
     if (result.rowCount === 0) {
@@ -2034,7 +2055,7 @@ app.get("/api/v1/clients/:id/full", authenticateToken, async (req, res) => {
     // 1. Fetch Client Details
     const clientRes = await pool.query(
       `SELECT * FROM clients WHERE id = $1 AND shop_id = $2`,
-      [id, req.shopId]
+      [id, req.shopId],
     );
 
     if (clientRes.rows.length === 0) {
@@ -2084,7 +2105,7 @@ app.get("/api/v1/clients/:id/full", authenticateToken, async (req, res) => {
        
        -- Order by the calculated start_time (using index 5 to avoid alias ambiguity)
        ORDER BY 5 DESC`,
-      [id, req.shopId]
+      [id, req.shopId],
     );
 
     // 3. Fetch File Metadata
@@ -2092,7 +2113,7 @@ app.get("/api/v1/clients/:id/full", authenticateToken, async (req, res) => {
       `SELECT id, file_name, file_type, file_size, uploaded_at 
        FROM client_files 
        WHERE client_id = $1 ORDER BY uploaded_at DESC`,
-      [id]
+      [id],
     );
 
     res.json({
@@ -2123,13 +2144,13 @@ app.post(
       // Fix encoding for special characters
       const originalName = Buffer.from(
         req.file.originalname,
-        "latin1"
+        "latin1",
       ).toString("utf8");
 
       await pool.query(
         `INSERT INTO client_files (client_id, file_name, file_type, file_size, file_data)
        VALUES ($1, $2, $3, $4, $5)`,
-        [id, originalName, req.file.mimetype, req.file.size, req.file.buffer]
+        [id, originalName, req.file.mimetype, req.file.size, req.file.buffer],
       );
 
       res.json({ success: true });
@@ -2137,7 +2158,7 @@ app.post(
       console.error("File Upload Error:", err);
       res.status(500).json({ error: "Failed to upload file" });
     }
-  }
+  },
 );
 
 // DOWNLOAD CLIENT FILE
@@ -2151,7 +2172,7 @@ app.get(
        FROM client_files cf
        JOIN clients c ON cf.client_id = c.id
        WHERE cf.id = $1 AND c.shop_id = $2`,
-        [req.params.fileId, req.shopId]
+        [req.params.fileId, req.shopId],
       );
 
       if (rows.length === 0)
@@ -2163,13 +2184,13 @@ app.get(
       res.setHeader("Content-Type", file.file_type);
       res.setHeader(
         "Content-Disposition",
-        `attachment; filename*=UTF-8''${encodedName}`
+        `attachment; filename*=UTF-8''${encodedName}`,
       );
       res.send(file.file_data);
     } catch (err) {
       res.status(500).json({ error: "Download failed" });
     }
-  }
+  },
 );
 
 // DELETE CLIENT FILE
@@ -2182,19 +2203,19 @@ app.delete(
         `DELETE FROM client_files cf
        USING clients c
        WHERE cf.client_id = c.id AND cf.id = $1 AND c.shop_id = $2`,
-        [req.params.fileId, req.shopId]
+        [req.params.fileId, req.shopId],
       );
       res.json({ success: true });
     } catch (err) {
       res.status(500).json({ error: "Delete failed" });
     }
-  }
+  },
 );
 app.get("/api/v1/exercises", authenticateToken, async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT * FROM exercises WHERE shop_id = $1 ORDER BY category, name`,
-      [req.shopId]
+      [req.shopId],
     );
     res.json(rows);
   } catch (err) {
@@ -2209,7 +2230,7 @@ app.post("/api/v1/exercises", authenticateToken, async (req, res) => {
     const { rows } = await pool.query(
       `INSERT INTO exercises (shop_id, name, category, description) 
        VALUES ($1, $2, $3, $4) RETURNING *`,
-      [req.shopId, name, category || "General", description]
+      [req.shopId, name, category || "General", description],
     );
     res.json(rows[0]);
   } catch (err) {
@@ -2225,14 +2246,14 @@ app.get(
     try {
       const { rows } = await pool.query(
         `SELECT exercise_id FROM client_exercises WHERE client_id = $1`,
-        [req.params.id]
+        [req.params.id],
       );
       // Return simple array of IDs: ['uuid-1', 'uuid-2']
       res.json(rows.map((r) => r.exercise_id));
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
-  }
+  },
 );
 
 // 4. Toggle Exercise Status (Check/Uncheck)
@@ -2249,13 +2270,13 @@ app.post(
         await pool.query(
           `INSERT INTO client_exercises (client_id, exercise_id) 
          VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-          [id, exerciseId]
+          [id, exerciseId],
         );
       } else {
         // Uncheck: Delete record
         await pool.query(
           `DELETE FROM client_exercises WHERE client_id = $1 AND exercise_id = $2`,
-          [id, exerciseId]
+          [id, exerciseId],
         );
       }
       res.json({ success: true });
@@ -2263,7 +2284,7 @@ app.post(
       console.error(err);
       res.status(500).json({ error: "Failed to update exercise status" });
     }
-  }
+  },
 );
 app.delete("/api/v1/exercises/:id", authenticateToken, async (req, res) => {
   const { id } = req.params;
@@ -2276,7 +2297,7 @@ app.delete("/api/v1/exercises/:id", authenticateToken, async (req, res) => {
   try {
     const result = await pool.query(
       "DELETE FROM exercises WHERE id = $1 AND shop_id = $2 RETURNING *",
-      [id, req.shopId]
+      [id, req.shopId],
     );
 
     if (result.rowCount === 0) {
