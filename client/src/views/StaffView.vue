@@ -313,7 +313,7 @@ const createLogin = async () => {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify(newLogin.value),
-      }
+      },
     );
 
     const data = await res.json();

@@ -95,6 +95,7 @@
             @click.stop="openProfile(slotProps.data)"
           />
           <Button
+            v-if="isOwner"
             icon="pi pi-trash"
             class="p-button-rounded p-button-text p-button-sm"
             severity="danger"
@@ -223,7 +224,11 @@
 import { ref, onMounted, computed } from "vue";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
+import { useAuthStore } from "../stores/auth";
 import ClientProfileDialog from "../components/ClientProfileDialog.vue"; // Ensure correct path
+
+const authStore = useAuthStore();
+const isOwner = authStore.isOwner;
 
 const toast = useToast();
 const confirm = useConfirm();
@@ -274,7 +279,7 @@ const filteredClients = computed(() => {
     (c) =>
       `${c.first_name} ${c.last_name}`.toLowerCase().includes(term) ||
       c.email?.toLowerCase().includes(term) ||
-      c.phone?.includes(term.replace(/\s/g, ""))
+      c.phone?.includes(term.replace(/\s/g, "")),
   );
 });
 
