@@ -141,14 +141,14 @@
 
         <button
           @click="openNewAppointment"
-          class="bg-gray-900 hover:bg-black text-white px-4 md:px-6 py-2.5 rounded-full text-sm font-medium shadow-lg transform active:scale-95 transition-all flex items-center gap-2 flex-shrink-0"
+          class="bg-[var(--p-primary-color)] hover:bg-white text-white hover:text-[var(--p-primary-color)] border border-[var(--p-primary-color)] px-4 md:px-6 py-2.5 rounded-full text-sm font-medium shadow-lg transform active:scale-95 transition-all flex items-center gap-2 flex-shrink-0"
         >
           <span class="hidden sm:inline">Add New</span>
           <span class="sm:hidden"><i class="pi pi-plus"></i></span>
         </button>
         <button
           @click="openSwapDialog"
-          class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 md:px-6 py-2.5 rounded-full text-sm font-medium shadow-lg transform active:scale-95 transition-all flex items-center gap-2 flex-shrink-0"
+          class="bg-white hover:bg-[var(--p-primary-color)] text-[var(--p-primary-color)] hover:text-white border border-[var(--p-primary-color)] px-4 md:px-6 py-2.5 rounded-full text-sm font-medium shadow-lg transform active:scale-95 transition-all flex items-center gap-2 flex-shrink-0"
         >
           <span class="hidden sm:inline">Swap</span>
           <span class="sm:hidden">
@@ -157,10 +157,11 @@
         </button>
         <button
           @click="reorderDialogVisible = true"
-          class="p-2.5 text-gray-600 hover:bg-gray-100 rounded-full transition-colors flex-shrink-0"
+          class="bg-[var(--p-primary-color)] hover:bg-white text-white hover:text-[var(--p-primary-color)] border border-[var(--p-primary-color)] px-4 md:px-6 py-2.5 rounded-full text-sm font-medium shadow-lg transform active:scale-95 transition-all flex items-center gap-2 flex-shrink-0"
           title="Reorder Staff"
         >
-          <i class="pi pi-sort-alt text-lg"></i>
+          <i class="pi pi-sort-alt"></i>
+          <span class="hidden sm:inline">Reorder Staff</span>
         </button>
       </div>
     </div>

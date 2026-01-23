@@ -77,7 +77,7 @@
         </button>
         <button
           @click="saveOrder"
-          class="px-6 py-2 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all active:scale-95"
+          class="px-6 py-2 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 shadow-lg shadow-primary-200 transition-all active:scale-95"
         >
           Save Order
         </button>
