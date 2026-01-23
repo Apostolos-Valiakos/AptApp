@@ -230,6 +230,7 @@ import AppointmentSwapDialog from "../components/AppointmentSwapDialog.vue";
 import { useToast } from "primevue/usetoast";
 import ColorModelToggle from "../components/ColorModelToggle.vue";
 import { useAuthStore } from "../stores/auth";
+import elLocale from "@fullcalendar/core/locales/el";
 
 const authStore = useAuthStore();
 const toast = useToast();
@@ -503,12 +504,19 @@ const calendarOptions = ref({
   eventLongPressDelay: 350,
   selectLongPressDelay: 350,
   eventResizableFromStart: true,
+  locale: elLocale,
   plugins: [
     resourceTimeGridPlugin,
     scrollGridPlugin,
     dayGridPlugin,
     interactionPlugin,
   ],
+  titleFormat: {
+    weekday: "long", // Adds "Mon"
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  },
   initialView: "resourceTimeGridDay",
   allDaySlot: false,
   slotDuration: "00:15:00",
