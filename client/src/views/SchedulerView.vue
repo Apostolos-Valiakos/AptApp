@@ -414,9 +414,10 @@ const calendarEvents = computed(() => {
         extendedProps: {
           isServiceEvent: true,
           appointmentId: appt.id,
-          serviceIndex: index,
+          group_id: appt.group_id,
           fullAppointment: {
             ...appt,
+            group_id: appt.group_id,
             products: appt.products || [],
           },
           client_name: `${appt.first_name || "Unknown"} ${

@@ -25,6 +25,239 @@ const storage = multer.diskStorage({
   },
 });
 
+const addRecurrenceInterval = (date, freq) => {
+  const result = new Date(date);
+  if (freq === "Daily") result.setDate(result.getDate() + 1);
+  if (freq === "Weekly") result.setDate(result.getDate() + 7);
+  if (freq === "Bi-Weekly") result.setDate(result.getDate() + 14);
+  if (freq === "Monthly") result.setMonth(result.getMonth() + 1);
+  return result;
+};
+const getGroupDetails = async (client, id, shopId) => {
+  const res = await client.query(
+    "SELECT group_id, (SELECT start_time FROM appointment_services WHERE appointment_id = appointments.id LIMIT 1) as start_time FROM appointments WHERE id = $1 AND shop_id = $2",
+    [id, shopId],
+  );
+  return res.rows[0];
+};
+// --- HELPER: Create Appointment Series ---
+const createAppointmentSeries = async (client, data, shopId) => {
+  const {
+    client_id,
+    status = "new",
+    internal_notes,
+    booking_notes,
+    deposit_amount,
+    payment_status,
+    is_block,
+    save_receipt = false,
+    services = [],
+    products = [],
+    recurrence,
+    group_id_override,
+  } = data;
+
+  const crypto = require("crypto");
+  const groupId =
+    group_id_override || (recurrence ? crypto.randomUUID() : null);
+  const recurrenceRule = recurrence ? JSON.stringify(recurrence) : null;
+  const validClientId = safeUUID(client_id);
+
+  let datesToBook = [new Date(services[0]?.start_time || new Date())];
+
+  if (recurrence && recurrence.end_date) {
+    let nextDate = addRecurrenceInterval(datesToBook[0], recurrence.freq);
+    const endDate = new Date(recurrence.end_date);
+
+    // Safety Limit: Max 52 appointments
+    while (nextDate <= endDate && datesToBook.length < 52) {
+      datesToBook.push(new Date(nextDate));
+      nextDate = addRecurrenceInterval(nextDate, recurrence.freq);
+    }
+  }
+
+  let firstAppointmentId = null;
+
+  for (let i = 0; i < datesToBook.length; i++) {
+    const currentDate = datesToBook[i];
+    const isFirstInstance = i === 0;
+
+    const apptRes = await client.query(
+      `INSERT INTO appointments (
+        client_id, status, internal_notes, booking_notes, 
+        deposit_amount, payment_status, is_block, save_receipt, 
+        shop_id, created_at, updated_at,
+        group_id, recurrence 
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW(), $10, $11) 
+      RETURNING id`,
+      [
+        is_block ? null : validClientId,
+        status,
+        internal_notes,
+        booking_notes,
+        deposit_amount || 0,
+        payment_status || "unpaid",
+        !!is_block,
+        !!save_receipt,
+        shopId,
+        groupId,
+        recurrenceRule,
+      ],
+    );
+    const appointmentId = apptRes.rows[0].id;
+    if (isFirstInstance) firstAppointmentId = appointmentId;
+
+    if (!is_block) {
+      for (const svc of services) {
+        const validServiceId = safeUUID(svc.service_id);
+        const validStaffId = safeUUID(svc.staff_id);
+
+        const originalStart = new Date(svc.start_time);
+        const instanceStart = new Date(currentDate);
+        instanceStart.setHours(
+          originalStart.getHours(),
+          originalStart.getMinutes(),
+          0,
+          0,
+        );
+
+        if (validServiceId) {
+          await client.query(
+            `INSERT INTO appointment_services (
+              appointment_id, service_id, staff_id, start_time, 
+              duration_override, price_override, shop_id
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            [
+              appointmentId,
+              validServiceId,
+              validStaffId,
+              instanceStart.toISOString(),
+              svc.duration_override,
+              svc.price_override,
+              shopId,
+            ],
+          );
+        }
+      }
+
+      if (isFirstInstance && products && products.length > 0) {
+        for (const prod of products) {
+          if (prod.product_id) {
+            const unitPrice = Number(prod.price || 0);
+            const qty = Number(prod.quantity || 1);
+            const lineTotal = unitPrice * qty;
+
+            await client.query(
+              `INSERT INTO product_sales (
+                appointment_id, inventory_id, staff_id, client_id, 
+                quantity, total_price, shop_id, sale_date
+              ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
+              [
+                appointmentId,
+                prod.product_id,
+                services[0]?.staff_id || null,
+                validClientId,
+                qty,
+                lineTotal,
+                shopId,
+              ],
+            );
+          }
+        }
+      }
+    }
+  }
+  return { firstAppointmentId, validClientId };
+};
+
+// --- HELPER: Perform Single Update ---
+const performSingleUpdate = async (client, id, shopId, body) => {
+  const {
+    client_id,
+    status,
+    internal_notes,
+    booking_notes,
+    deposit_amount,
+    payment_status,
+    is_block,
+    save_receipt,
+    services = [],
+    products = [],
+  } = body;
+
+  const validClientId = safeUUID(client_id);
+
+  await client.query(
+    `UPDATE appointments SET
+      client_id = $1, status = $2, internal_notes = $3, booking_notes = $4, 
+      deposit_amount = $5, payment_status = $6, is_block = $7, save_receipt = $8, updated_at = NOW()
+     WHERE id = $9 AND shop_id = $10`,
+    [
+      is_block ? null : validClientId,
+      status,
+      internal_notes,
+      booking_notes,
+      deposit_amount || 0,
+      payment_status || "unpaid",
+      is_block,
+      save_receipt || false,
+      id,
+      shopId,
+    ],
+  );
+
+  await client.query(
+    "DELETE FROM appointment_services WHERE appointment_id = $1",
+    [id],
+  );
+  if (!is_block) {
+    for (const svc of services) {
+      if (safeUUID(svc.service_id)) {
+        await client.query(
+          `INSERT INTO appointment_services (
+            appointment_id, service_id, staff_id, start_time, duration_override, price_override, shop_id
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [
+            id,
+            safeUUID(svc.service_id),
+            safeUUID(svc.staff_id),
+            svc.start_time,
+            svc.duration_override,
+            svc.price_override,
+            shopId,
+          ],
+        );
+      }
+    }
+  }
+
+  await client.query("DELETE FROM product_sales WHERE appointment_id = $1", [
+    id,
+  ]);
+  if (!is_block && products.length > 0) {
+    for (const prod of products) {
+      if (prod.product_id) {
+        const unitPrice = Number(prod.price || 0);
+        const qty = Number(prod.quantity || 1);
+        await client.query(
+          `INSERT INTO product_sales (
+            appointment_id, inventory_id, staff_id, client_id, quantity, total_price, shop_id, sale_date
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
+          [
+            id,
+            prod.product_id,
+            services[0]?.staff_id || null,
+            validClientId,
+            qty,
+            unitPrice * qty,
+            shopId,
+          ],
+        );
+      }
+    }
+  }
+};
+
 const upload = multer({
   storage,
   limits: { fileSize: 5 * 1024 * 1024 }, // 10MB
@@ -621,6 +854,8 @@ app.delete("/api/v1/services/:id", authenticateToken, async (req, res) => {
 
 // --- APPOINTMENT ROUTES ---
 
+// In server.js
+
 app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
   try {
     const visibilityClause = getVisibilityClause(req.user, "a");
@@ -628,10 +863,23 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
     const { rows } = await pool.query(
       `
       SELECT 
-        a.id, a.client_id, a.status, a.internal_notes, a.booking_notes, a.deposit_amount, 
-        a.payment_status, a.is_block, a.save_receipt, a.created_at,
-        c.first_name, c.last_name, c.phone as client_phone,
-        -- Aggregate Services
+        a.id, 
+        a.client_id, 
+        a.status, 
+        a.internal_notes, 
+        a.booking_notes, 
+        a.deposit_amount, 
+        a.payment_status, 
+        a.is_block, 
+        a.save_receipt, 
+        a.created_at,
+        a.recurrence,
+        a.group_id,
+        c.first_name, 
+        c.last_name, 
+        c.phone as client_phone,
+        
+        -- (Rest of your query: COALESCE services, products, etc...)
         COALESCE((
           SELECT json_agg(json_build_object(
             'service_id', s.id,
@@ -665,7 +913,6 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
     `,
       [req.shopId],
     );
-
     const formatted = rows.map((row) => ({
       ...row,
       start_time: row.services?.[0]?.start_time || row.created_at,
@@ -679,113 +926,30 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
 });
 
 app.post("/api/v1/appointments", authenticateToken, async (req, res) => {
-  const {
-    client_id,
-    status = "new",
-    internal_notes,
-    booking_notes,
-    deposit_amount,
-    payment_status,
-    is_block,
-    save_receipt = false,
-    services = [],
-    products = [],
-  } = req.body;
-
   const client = await pool.connect();
-
   try {
     await client.query("BEGIN");
 
-    const validClientId = safeUUID(client_id);
-
-    // 1. Insert the main Appointment
-    const apptRes = await client.query(
-      `INSERT INTO appointments (
-        client_id, status, internal_notes, booking_notes, 
-        deposit_amount, payment_status, is_block, save_receipt, 
-        shop_id, created_at, updated_at
-      )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW()) RETURNING id`,
-      [
-        is_block ? null : validClientId,
-        status,
-        internal_notes,
-        booking_notes,
-        deposit_amount || 0,
-        payment_status || "unpaid",
-        !!is_block, // Ensure boolean
-        !!save_receipt, // Ensure boolean
-        req.shopId,
-      ],
+    const { firstAppointmentId, validClientId } = await createAppointmentSeries(
+      client,
+      req.body,
+      req.shopId,
     );
-    const appointmentId = apptRes.rows[0].id;
 
-    if (!is_block) {
-      // 2. Insert Services
-      for (const svc of services) {
-        const validServiceId = safeUUID(svc.service_id);
-        const validStaffId = safeUUID(svc.staff_id);
-        if (validServiceId) {
-          await client.query(
-            `INSERT INTO appointment_services (
-              appointment_id, service_id, staff_id, start_time, 
-              duration_override, price_override, shop_id
-            )
-             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-            [
-              appointmentId,
-              validServiceId,
-              validStaffId,
-              svc.start_time,
-              svc.duration_override,
-              svc.price_override,
-              req.shopId,
-            ],
-          );
-        }
-      }
-
-      if (products && products.length > 0) {
-        for (const prod of products) {
-          if (prod.product_id) {
-            // FIX: Use prod.price (unit price) * quantity
-            const unitPrice = Number(prod.price || 0);
-            const qty = Number(prod.quantity || 1);
-            const lineTotal = unitPrice * qty;
-
-            await client.query(
-              `INSERT INTO product_sales (
-                appointment_id, inventory_id, staff_id, client_id, 
-                quantity, total_price, shop_id, sale_date
-              )
-               VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
-              [
-                appointmentId,
-                prod.product_id,
-                services[0]?.staff_id || null,
-                validClientId,
-                qty,
-                lineTotal, // FIX: Save calculated total, not undefined price_override
-                req.shopId,
-              ],
-            );
-          }
-        }
-      }
-    }
-
-    // 4. Recalculate Balance
-    let newBalance = 0; // Variable to hold the new balance
+    let newBalance = 0;
     if (validClientId) {
       newBalance = await recalculateClientBalance(client, validClientId);
     }
+
     await client.query("COMMIT");
-    res.json({ id: appointmentId, success: true, new_balance: newBalance });
+    res.json({
+      id: firstAppointmentId,
+      success: true,
+      new_balance: newBalance,
+    });
   } catch (err) {
     await client.query("ROLLBACK");
     console.error("Create Appointment Error:", err);
-    // Return the actual error message to help debugging
     res
       .status(500)
       .json({ error: "Failed to create appointment", details: err.message });
@@ -796,130 +960,112 @@ app.post("/api/v1/appointments", authenticateToken, async (req, res) => {
 
 app.put("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
   const { id } = req.params;
-  const {
-    client_id,
-    status,
-    internal_notes,
-    booking_notes,
-    deposit_amount,
-    payment_status,
-    is_block,
-    save_receipt,
-    services = [],
-    products = [], // Products array from frontend
-  } = req.body;
+  const { scope } = req.query;
 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    let validClientId = safeUUID(client_id);
-    if (!validClientId && !is_block) {
-      return res.status(400).json({ error: "Invalid Client ID" });
-    }
+    const validClientId = safeUUID(req.body.client_id);
 
-    // 1. Update the main appointment record
-    await client.query(
-      `UPDATE appointments SET
-        client_id = $1, status = $2, internal_notes = $3, booking_notes = $4, deposit_amount = $5, payment_status = $6, is_block = $7, save_receipt = $8, updated_at = NOW()
-       WHERE id = $9 AND shop_id = $10`,
-      [
-        is_block ? null : validClientId,
-        status,
-        internal_notes,
-        booking_notes,
-        deposit_amount || 0,
-        payment_status || "unpaid",
-        is_block,
-        save_receipt || false,
-        id,
-        req.shopId,
-      ],
-    );
+    if (scope === "series") {
+      const groupInfo = await getGroupDetails(client, id, req.shopId);
 
-    // 2. Refresh Services: Delete old and insert new
-    await client.query(
-      "DELETE FROM appointment_services WHERE appointment_id = $1",
-      [id],
-    );
-    if (!is_block) {
-      for (const svc of services) {
-        const validServiceId = safeUUID(svc.service_id);
-        const validStaffId = safeUUID(svc.staff_id);
-        if (validServiceId) {
-          await client.query(
-            `INSERT INTO appointment_services (appointment_id, service_id, staff_id, start_time, duration_override, price_override, shop_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-            [
-              id,
-              validServiceId,
-              validStaffId,
-              svc.start_time,
-              svc.duration_override,
-              svc.price_override,
-              req.shopId,
-            ],
-          );
-        }
+      if (groupInfo && groupInfo.group_id) {
+        const currentApptStart = req.body.services[0]?.start_time;
+
+        // Delete this and future appointments in series
+        await client.query(
+          `
+          DELETE FROM appointments 
+          WHERE group_id = $1 
+          AND shop_id = $2
+          AND id IN (
+            SELECT a.id FROM appointments a
+            JOIN appointment_services aps ON a.id = aps.appointment_id
+            WHERE a.group_id = $1 
+            AND aps.start_time >= $3
+          )
+        `,
+          [groupInfo.group_id, req.shopId, currentApptStart],
+        );
+
+        // Re-create series
+        await createAppointmentSeries(
+          client,
+          {
+            ...req.body,
+            group_id_override: groupInfo.group_id,
+          },
+          req.shopId,
+        );
+      } else {
+        await performSingleUpdate(client, id, req.shopId, req.body);
       }
-    }
-
-    // 3. Refresh Products: Delete old and insert new
-    // Note: In a production app, you might want to return stock to inventory before deleting
-    await client.query("DELETE FROM product_sales WHERE appointment_id = $1", [
-      id,
-    ]);
-    if (!is_block) {
-      for (const prod of products) {
-        if (prod.product_id) {
-          // FIX: Use prod.price (unit price) * quantity
-          const unitPrice = Number(prod.price || 0);
-          const qty = Number(prod.quantity || 1);
-          const lineTotal = unitPrice * qty;
-
-          await client.query(
-            `INSERT INTO product_sales (appointment_id, inventory_id, staff_id, client_id, quantity, total_price, shop_id, sale_date)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
-            [
-              id,
-              prod.product_id,
-              services[0]?.staff_id || null,
-              validClientId,
-              qty,
-              lineTotal, // FIX: Save calculated total
-              req.shopId,
-            ],
-          );
-
-          // Note: Stock management on update requires tracking previous quantities
-          // This simple version assumes the stock was handled at initial sale
-        }
-      }
+    } else {
+      await performSingleUpdate(client, id, req.shopId, req.body);
     }
 
     let newBalance = 0;
     if (validClientId) {
       newBalance = await recalculateClientBalance(client, validClientId);
     }
+
     await client.query("COMMIT");
     res.json({ success: true, new_balance: newBalance });
   } catch (err) {
     await client.query("ROLLBACK");
     console.error("Update Appointment Error:", err);
-    res.status(500).json({ error: "Update failed" });
+    res.status(500).json({ error: "Update failed", details: err.message });
   } finally {
     client.release();
   }
 });
 
 app.delete("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const { scope } = req.query;
+
+  const client = await pool.connect();
   try {
-    await pool.query(
-      "DELETE FROM appointments WHERE id = $1 AND shop_id = $2",
-      [req.params.id, req.shopId],
-    );
+    await client.query("BEGIN");
+
+    if (scope === "series") {
+      const groupInfo = await getGroupDetails(client, id, req.shopId);
+      if (groupInfo && groupInfo.group_id) {
+        await client.query(
+          `
+          DELETE FROM appointments 
+          WHERE group_id = $1 
+          AND shop_id = $2
+          AND id IN (
+            SELECT a.id FROM appointments a
+            JOIN appointment_services aps ON a.id = aps.appointment_id
+            WHERE a.group_id = $1 
+            AND aps.start_time >= $3
+          )
+        `,
+          [groupInfo.group_id, req.shopId, groupInfo.start_time],
+        );
+      } else {
+        await client.query(
+          "DELETE FROM appointments WHERE id = $1 AND shop_id = $2",
+          [id, req.shopId],
+        );
+      }
+    } else {
+      await client.query(
+        "DELETE FROM appointments WHERE id = $1 AND shop_id = $2",
+        [id, req.shopId],
+      );
+    }
+
+    await client.query("COMMIT");
     res.json({ success: true });
   } catch (err) {
+    await client.query("ROLLBACK");
     res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 

@@ -35,7 +35,7 @@ import ScrollPanel from "primevue/scrollpanel";
 import Divider from "primevue/divider";
 import FloatLabel from "primevue/floatlabel";
 import ColorPicker from "primevue/colorpicker";
-
+import ToggleSwitch from "primevue/toggleswitch";
 import Tag from "primevue/tag";
 import Toast from "primevue/toast";
 import ConfirmDialog from "primevue/confirmdialog";
@@ -102,7 +102,7 @@ const initApp = async () => {
   app.component("ScrollPanel", ScrollPanel);
   app.component("Divider", Divider);
   app.component("FloatLabel", FloatLabel);
-
+  app.component("ToggleSwitch", ToggleSwitch);
   app.component("Toast", Toast);
   app.component("ConfirmDialog", ConfirmDialog);
   app.component("DataTable", DataTable);

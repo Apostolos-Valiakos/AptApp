@@ -136,6 +136,44 @@
               :default-staff-id="currentStaffId"
             />
 
+            <div class="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+              <div class="flex items-center gap-2 mb-3">
+                <Checkbox v-model="isRecurring" binary inputId="isRecurring" />
+                <label
+                  for="isRecurring"
+                  class="font-bold text-gray-700 cursor-pointer text-sm"
+                >
+                  Repeat Appointment
+                </label>
+              </div>
+
+              <div v-if="isRecurring" class="grid grid-cols-2 gap-4">
+                <div>
+                  <label
+                    class="text-xs font-bold text-gray-500 uppercase block mb-1"
+                    >Frequency</label
+                  >
+                  <Dropdown
+                    v-model="recurrenceForm.freq"
+                    :options="['Daily', 'Weekly', 'Bi-Weekly', 'Monthly']"
+                    class="w-full p-inputtext-sm"
+                  />
+                </div>
+                <div>
+                  <label
+                    class="text-xs font-bold text-gray-500 uppercase block mb-1"
+                    >Ends On</label
+                  >
+                  <Calendar
+                    v-model="recurrenceForm.end_date"
+                    :minDate="form.start_time"
+                    class="w-full p-inputtext-sm"
+                    dateFormat="dd/mm/yy"
+                  />
+                </div>
+              </div>
+            </div>
+
             <div
               class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-gray-100"
             >
@@ -164,20 +202,6 @@
               </div>
 
               <div class="flex flex-col justify-end gap-3 pb-2">
-                <!-- <div class="flex items-center gap-2">
-                  <Checkbox
-                    v-model="form.save_receipt"
-                    binary
-                    inputId="saveReceipt"
-                  />
-                  <label
-                    for="saveReceipt"
-                    class="text-sm font-medium text-gray-700 cursor-pointer"
-                  >
-                    Save Receipt
-                  </label>
-                </div> -->
-
                 <div class="flex items-center gap-2">
                   <Checkbox v-model="form.is_block" binary inputId="isBlock" />
                   <label
@@ -340,11 +364,10 @@
     <ClientProfileDialog
       v-model:visible="showClientProfile"
       :clientId="currentProfileId"
-      @refresh="
-        () => {} /* Optional: You can trigger a client list refresh here if needed */
-      "
+      @refresh="() => {}"
     />
   </Dialog>
+  <ConfirmDialog></ConfirmDialog>
 </template>
 
 <script setup lang="ts">
@@ -354,6 +377,8 @@ import BookingServices from "./booking/bookingServices.vue";
 import BookingPayments from "./booking/bookingPayments.vue";
 import BookingSidebar from "./booking/bookingSideBar.vue";
 import ClientProfileDialog from "./ClientProfileDialog.vue";
+import { useConfirm } from "primevue/useconfirm";
+const confirm = useConfirm();
 
 const props = defineProps([
   "visible",
@@ -366,6 +391,12 @@ const props = defineProps([
 
 const emit = defineEmits(["update:visible", "save"]);
 const currentStaffId = ref<number | string | null>(null);
+
+const isRecurring = ref(false);
+const recurrenceForm = ref<{ freq: string; end_date: Date | null }>({
+  freq: "Weekly",
+  end_date: null,
+});
 
 const dialogVisible = computed({
   get: () => props.visible,
@@ -393,7 +424,7 @@ const productsList = ref<Array<any>>([]);
 
 // UI State
 const currentTab = ref("Booking");
-const tabs = ["Booking", "Notes"] as const; // "Products", "Payment",
+const tabs = ["Booking", "Notes", "Payment"] as const;
 
 const loading = ref(false);
 const paymentLoading = ref(false);
@@ -448,8 +479,6 @@ const currentApptTotal = computed(() => {
     (sum, s) => sum + (Number(s.price_override) || 0),
     0,
   );
-  // Note: productsList is available even if the tab is not 'Products',
-  // ensuring the Total is always accurate across tabs.
   const productsTotal = productsList.value.reduce(
     (sum, p) => sum + (Number(p.price) || 0) * (p.quantity || 1),
     0,
@@ -522,6 +551,22 @@ watch(
           val.save_receipt !== undefined ? !!val.save_receipt : true,
       };
 
+      if (val.recurrence) {
+        isRecurring.value = true;
+        const rule =
+          typeof val.recurrence === "string"
+            ? JSON.parse(val.recurrence)
+            : val.recurrence;
+
+        recurrenceForm.value = {
+          freq: rule.freq || "Weekly",
+          end_date: rule.end_date ? new Date(rule.end_date) : null,
+        };
+      } else {
+        isRecurring.value = false;
+        recurrenceForm.value = { freq: "Weekly", end_date: null };
+      }
+
       if (val.services?.length > 0) {
         servicesList.value = val.services.map((s: any) => ({
           service_id: s.service_id,
@@ -571,6 +616,9 @@ watch(
         save_receipt: true,
       };
 
+      isRecurring.value = false;
+      recurrenceForm.value = { freq: "Weekly", end_date: null };
+
       servicesList.value = [
         {
           service_id: null,
@@ -595,18 +643,43 @@ watch(
 // === METHODS ===
 
 const save = async (close = true) => {
+  // Check if editing an existing recurring appointment
+  const isSeriesEdit = form.value.id && props.appointment?.group_id;
+
+  if (isSeriesEdit) {
+    confirm.require({
+      message: "This is a recurring appointment. Apply changes to?",
+      header: "Edit Appointment",
+      icon: "pi pi-question-circle",
+      rejectLabel: "This Only",
+      acceptLabel: "This and Future",
+      accept: () => executeSave(close, "series"),
+      reject: () => executeSave(close, "single"),
+    });
+  } else {
+    executeSave(close, "single");
+  }
+};
+
+const executeSave = async (close = true, scope = "single") => {
   loading.value = true;
   const token = localStorage.getItem("token");
-  const url = form.value.id
-    ? `/api/v1/appointments/${form.value.id}`
+
+  let url = form.value.id
+    ? `/api/v1/appointments/${form.value.id}?scope=${scope}`
     : "/api/v1/appointments";
+
   const method = form.value.id ? "PUT" : "POST";
 
   try {
-    // Prepare Payload
     const payload = {
       ...form.value,
-      // Safety mapping: ensure price_override is used
+      recurrence: isRecurring.value
+        ? {
+            freq: recurrenceForm.value.freq,
+            end_date: recurrenceForm.value.end_date,
+          }
+        : null,
       services: servicesList.value.map((s) => ({
         ...s,
         price_override: Number(s.price_override) || Number(s.price) || 0,
@@ -625,11 +698,14 @@ const save = async (close = true) => {
 
     const data = await res.json();
 
+    if (!res.ok) {
+      throw new Error(data.error || "Failed to save");
+    }
+
     if (method === "POST") {
       form.value.id = data.id;
     }
 
-    // === BALANCE FIX ===
     if (data.new_balance !== undefined && selectedClient.value) {
       selectedClient.value.outstanding_balance = Number(data.new_balance);
     }
@@ -692,20 +768,42 @@ const recordPayment = async () => {
   }
 };
 
-const confirmDelete = async () => {
-  if (confirm("Cancel this appointment?")) {
-    const token = localStorage.getItem("token");
-    await fetch(`/api/v1/appointments/${form.value.id}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    emit("save");
-    dialogVisible.value = false;
-  }
+const confirmDelete = () => {
+  const isSeries = !!props.appointment?.group_id;
+
+  confirm.require({
+    message: isSeries
+      ? "This is a recurring appointment. What would you like to delete?"
+      : "Are you sure you want to cancel this appointment?",
+    header: "Cancel Appointment",
+    icon: "pi pi-exclamation-triangle",
+    rejectLabel: isSeries ? "This Only" : "No",
+    acceptLabel: isSeries ? "This and Future" : "Yes",
+    rejectClass: "p-button-outlined p-button-secondary",
+    acceptClass: "p-button-danger",
+
+    accept: async () => {
+      await executeDelete(isSeries ? "series" : "single");
+    },
+    reject: async () => {
+      if (isSeries) {
+        await executeDelete("single");
+      }
+    },
+  });
+};
+
+const executeDelete = async (scope: string) => {
+  const token = localStorage.getItem("token");
+  await fetch(`/api/v1/appointments/${form.value.id}?scope=${scope}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  emit("save");
+  dialogVisible.value = false;
 };
 
 // --- Client Helpers ---
-
 const saveNewClient = async () => {
   const token = localStorage.getItem("token");
   const res = await fetch("/api/v1/clients", {
@@ -734,7 +832,6 @@ const openClientProfile = () => {
 };
 
 // --- Formatters ---
-
 const formatDate = (d: Date) =>
   d
     ? new Date(d).toLocaleString("en-GB", {
