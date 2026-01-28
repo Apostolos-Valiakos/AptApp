@@ -158,7 +158,7 @@
           </div>
           <Button
             label="Save Changes"
-            class="p-button-sm"
+            class="p-button-sm p-button-rounded"
             :loading="isSavingProfile"
             @click="updateProfile"
             :disabled="isLoadingProfile"
@@ -203,7 +203,131 @@
           </div>
         </div>
       </div>
+      <div
+        class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8"
+      >
+        <div class="flex justify-between items-center mb-8">
+          <div>
+            <h3 class="text-lg font-bold text-gray-900">
+              Υπηρεσίες Θεραπευτηρίου
+            </h3>
+            <p class="text-sm text-gray-500">
+              Επιλέξτε τις διαθέσιμες υπηρεσίες του κέντρου σας.
+            </p>
+          </div>
+          <Button
+            label="Save Changes"
+            class="p-button-sm p-button-rounded"
+            :loading="isUpdatingShopServices"
+            @click="updateShopServices"
+          />
+        </div>
 
+        <div
+          v-if="isLoadingProfile"
+          class="grid grid-cols-1 md:grid-cols-3 gap-4"
+        >
+          <Skeleton height="100px" v-for="i in 3" :key="i" />
+        </div>
+
+        <div v-else class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div
+            @click="shopForm.ergotherapia = !shopForm.ergotherapia"
+            :class="[
+              'relative flex flex-col items-center p-5 rounded-xl border-2 cursor-pointer transition-all duration-200 group',
+              shopForm.ergotherapia
+                ? 'border-[var(--p-primary-color)] bg-[var(--p-primary-50)]'
+                : 'border-gray-100 bg-white hover:border-gray-200',
+            ]"
+          >
+            <div
+              :class="[
+                'w-12 h-12 rounded-full flex items-center justify-center mb-3 transition-colors',
+                shopForm.ergotherapia
+                  ? 'bg-[var(--p-primary-color)] text-white'
+                  : 'bg-gray-100 text-gray-500 group-hover:bg-gray-200',
+              ]"
+            >
+              <i class="pi pi-briefcase text-xl"></i>
+            </div>
+            <span
+              class="font-semibold text-sm mb-1"
+              :class="
+                shopForm.ergotherapia
+                  ? 'text-[var(--p-primary-700)]'
+                  : 'text-gray-700'
+              "
+            >
+              Εργοθεραπεία
+            </span>
+            <ToggleSwitch v-model="shopForm.ergotherapia" @click.stop />
+          </div>
+
+          <div
+            @click="shopForm.physiotherapia = !shopForm.physiotherapia"
+            :class="[
+              'relative flex flex-col items-center p-5 rounded-xl border-2 cursor-pointer transition-all duration-200 group',
+              shopForm.physiotherapia
+                ? 'border-[var(--p-primary-color)] bg-[var(--p-primary-50)]'
+                : 'border-gray-100 bg-white hover:border-gray-200',
+            ]"
+          >
+            <div
+              :class="[
+                'w-12 h-12 rounded-full flex items-center justify-center mb-3 transition-colors',
+                shopForm.physiotherapia
+                  ? 'bg-[var(--p-primary-color)] text-white'
+                  : 'bg-gray-100 text-gray-500 group-hover:bg-gray-200',
+              ]"
+            >
+              <i class="pi pi-heart text-xl"></i>
+            </div>
+            <span
+              class="font-semibold text-sm mb-1"
+              :class="
+                shopForm.physiotherapia
+                  ? 'text-[var(--p-primary-700)]'
+                  : 'text-gray-700'
+              "
+            >
+              Φυσιοθεραπεία
+            </span>
+            <ToggleSwitch v-model="shopForm.physiotherapia" @click.stop />
+          </div>
+
+          <div
+            @click="shopForm.logotherapia = !shopForm.logotherapia"
+            :class="[
+              'relative flex flex-col items-center p-5 rounded-xl border-2 cursor-pointer transition-all duration-200 group',
+              shopForm.logotherapia
+                ? 'border-[var(--p-primary-color)] bg-[var(--p-primary-50)]'
+                : 'border-gray-100 bg-white hover:border-gray-200',
+            ]"
+          >
+            <div
+              :class="[
+                'w-12 h-12 rounded-full flex items-center justify-center mb-3 transition-colors',
+                shopForm.logotherapia
+                  ? 'bg-[var(--p-primary-color)] text-white'
+                  : 'bg-gray-100 text-gray-500 group-hover:bg-gray-200',
+              ]"
+            >
+              <i class="pi pi-comments text-xl"></i>
+            </div>
+            <span
+              class="font-semibold text-sm mb-1"
+              :class="
+                shopForm.logotherapia
+                  ? 'text-[var(--p-primary-700)]'
+                  : 'text-gray-700'
+              "
+            >
+              Λογοθεραπεία
+            </span>
+            <ToggleSwitch v-model="shopForm.logotherapia" @click.stop />
+          </div>
+        </div>
+      </div>
       <div
         class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8"
       >
@@ -324,6 +448,11 @@ const profileForm = reactive({
   email: "",
   phone: "",
 });
+const shopForm = reactive({
+  ergotherapia: false,
+  logotherapia: false,
+  physiotherapia: false,
+});
 
 const preferences = reactive({
   notifications: true,
@@ -366,7 +495,7 @@ const saveCustomColor = () => {
 
 // --- Computed Helpers (Password) ---
 const passwordsMatch = computed(
-  () => security.newPassword === security.confirmPassword
+  () => security.newPassword === security.confirmPassword,
 );
 const hasMinLength = computed(() => security.newPassword.length >= 8);
 const hasNumber = computed(() => /\d/.test(security.newPassword));
@@ -375,7 +504,7 @@ const isValidSecurityForm = computed(
     security.currentPassword &&
     hasMinLength.value &&
     hasNumber.value &&
-    passwordsMatch.value
+    passwordsMatch.value,
 );
 
 // --- Actions ---
@@ -469,7 +598,45 @@ const updateProfile = async () => {
     isSavingProfile.value = false;
   }
 };
+const updateShopServices = async () => {
+  isSavingProfile.value = true;
+  const token = localStorage.getItem("token");
 
+  try {
+    const res = await fetch("/api/v1/shop/services", {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        ergotherapia: shopForm.ergotherapia,
+        physiotherapia: shopForm.physiotherapia,
+        logotherapia: shopForm.logotherapia,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) throw new Error(data.error || "Failed to update services");
+
+    toast.add({
+      severity: "success",
+      summary: "Success",
+      detail: "Therapy services updated successfully",
+      life: 3000,
+    });
+  } catch (e: any) {
+    toast.add({
+      severity: "error",
+      summary: "Error",
+      detail: e.message,
+      life: 4000,
+    });
+  } finally {
+    isSavingProfile.value = false;
+  }
+};
 const updatePassword = async () => {
   if (!isValidSecurityForm.value) return;
   isSavingPassword.value = true;

@@ -119,7 +119,78 @@
             </label>
             <Textarea v-model="editForm.notes" rows="3" class="w-full" />
           </div>
+          <div v-if="shopSettings" class="mb-4">
+            <span class="block text-xs font-bold text-gray-500 uppercase mb-3">
+              Ενεργές Υπηρεσίες
+            </span>
+            <div class="grid grid-cols-3 gap-3">
+              <div
+                v-if="shopSettings.ergotherapia"
+                @click="editForm.ergotherapia = !editForm.ergotherapia"
+                :class="[
+                  'flex flex-col items-center p-3 rounded-xl border-2 cursor-pointer transition-all text-center',
+                  editForm.ergotherapia
+                    ? 'border-[var(--p-primary-500)] bg-[var(--p-primary-50)] text-[var(--p-primary-700)]'
+                    : 'border-gray-300 bg-white text-gray-500 opacity-60',
+                ]"
+              >
+                <i class="pi pi-briefcase mb-1"></i>
+                <span
+                  class="text-[10px] font-bold uppercase tracking-tight leading-none"
+                >
+                  Εργο
+                </span>
+              </div>
 
+              <div
+                v-if="shopSettings.physiotherapia"
+                @click="editForm.physiotherapia = !editForm.physiotherapia"
+                :class="[
+                  'flex flex-col items-center p-3 rounded-xl border-2 cursor-pointer transition-all text-center',
+                  editForm.physiotherapia
+                    ? 'border-[var(--p-primary-500)] bg-[var(--p-primary-50)] text-[var(--p-primary-700)]'
+                    : 'border-gray-300 bg-white text-gray-500 opacity-60',
+                ]"
+              >
+                <i class="pi pi-heart mb-1"></i>
+                <span
+                  class="text-[10px] font-bold uppercase tracking-tight leading-none"
+                >
+                  Φυσιο
+                </span>
+              </div>
+
+              <div
+                v-if="shopSettings.logotherapia"
+                @click="editForm.logotherapia = !editForm.logotherapia"
+                :class="[
+                  'flex flex-col items-center p-3 rounded-xl border-2 cursor-pointer transition-all text-center',
+                  editForm.logotherapia
+                    ? 'border-[var(--p-primary-500)] bg-[var(--p-primary-50)] text-[var(--p-primary-700)]'
+                    : 'border-gray-300 bg-white text-gray-500 opacity-60',
+                ]"
+              >
+                <i class="pi pi-comments mb-1"></i>
+                <span
+                  class="text-[10px] font-bold uppercase tracking-tight leading-none"
+                >
+                  Λογο
+                </span>
+              </div>
+            </div>
+
+            <div
+              v-if="
+                !shopSettings.ergotherapia &&
+                !shopSettings.physiotherapia &&
+                !shopSettings.logotherapia
+              "
+              class="text-xs italic text-gray-400"
+            >
+              Δεν έχουν οριστεί διαθέσιμες υπηρεσίες στις ρυθμίσεις του
+              καταστήματος.
+            </div>
+          </div>
           <div class="bg-gray-50 p-4 rounded-lg border border-gray-100">
             <div class="flex justify-between items-center mb-2">
               <span class="text-xs font-bold text-gray-500 uppercase"
@@ -361,7 +432,29 @@ const fetchClientData = async () => {
     loading.value = false;
   }
 };
+const shopSettings = ref<any>(null);
 
+const fetchShopSettings = async () => {
+  try {
+    const res = await fetch("/api/v1/shop", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    shopSettings.value = await res.json();
+  } catch (e) {
+    console.error("Error loading shop settings", e);
+  }
+};
+
+watch(
+  () => props.visible,
+  (val) => {
+    if (val && props.clientId) {
+      activeTab.value = "Info";
+      fetchClientData();
+      fetchShopSettings();
+    }
+  },
+);
 watch(
   () => props.visible,
   (val) => {

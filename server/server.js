@@ -523,12 +523,17 @@ app.put("/api/v1/clients/:id", authenticateToken, async (req, res) => {
     phone,
     notes,
     custom_fields = [],
+    ergotherapia,
+    physiotherapia,
+    logotherapia,
   } = req.body;
+
   try {
     await pool.query(
       `UPDATE clients 
-       SET first_name=$1, last_name=$2, email=$3, phone=$4, notes=$5, custom_fields=$6
-       WHERE id=$7 AND shop_id=$8`,
+       SET first_name=$1, last_name=$2, email=$3, phone=$4, notes=$5, custom_fields=$6,
+           ergotherapia=$7, physiotherapia=$8, logotherapia=$9
+       WHERE id=$10 AND shop_id=$11`,
       [
         first_name,
         last_name,
@@ -536,6 +541,9 @@ app.put("/api/v1/clients/:id", authenticateToken, async (req, res) => {
         phone,
         notes,
         JSON.stringify(custom_fields),
+        !!ergotherapia,
+        !!physiotherapia,
+        !!logotherapia,
         id,
         req.shopId,
       ],
@@ -1881,6 +1889,42 @@ app.put("/api/v1/shop/theme", authenticateToken, async (req, res) => {
     res.json({ message: "Theme updated successfully", primaryColor });
   } catch (err) {
     console.error("Error updating theme:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+app.put("/api/v1/shop/services", authenticateToken, async (req, res) => {
+  const { ergotherapia, physiotherapia, logotherapia } = req.body;
+
+  // Validation: Ensure all fields are present and are booleans
+  // We check for 'undefined' because 'false' is a falsy value in JS
+  if (
+    typeof ergotherapia === "undefined" ||
+    typeof physiotherapia === "undefined" ||
+    typeof logotherapia === "undefined"
+  ) {
+    return res.status(400).json({ error: "Missing therapy service data" });
+  }
+
+  try {
+    const { rowCount } = await pool.query(
+      `UPDATE shops
+       SET ergotherapia = $1, 
+           physiotherapia = $2, 
+           logotherapia = $3
+       WHERE id = $4`,
+      [ergotherapia, physiotherapia, logotherapia, req.shopId],
+    );
+
+    if (rowCount === 0) {
+      return res.status(404).json({ message: "Shop not found" });
+    }
+
+    res.json({
+      message: "Services updated successfully",
+      services: { ergotherapia, physiotherapia, logotherapia },
+    });
+  } catch (err) {
+    console.error("Error updating shop services:", err);
     res.status(500).json({ error: err.message });
   }
 });
