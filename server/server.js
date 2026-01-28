@@ -304,7 +304,7 @@ const safeUUID = (id) => {
 };
 
 const recalculateClientBalance = async (client, clientId) => {
-  if (!clientId) return 0; // Return 0 instead of null
+  if (!clientId) return 0;
 
   const res = await client.query(
     `
@@ -312,10 +312,24 @@ const recalculateClientBalance = async (client, clientId) => {
     SET outstanding_balance = (
       SELECT COALESCE(SUM(
         (
-          COALESCE((SELECT SUM(price_override) FROM appointment_services aps WHERE aps.appointment_id = a.id), 0) 
-          + 
-          COALESCE((SELECT SUM(total_price) FROM product_sales ps WHERE ps.appointment_id = a.id), 0)
+          -- LOGIC: Only count the Price/Products as "Debt" if the appointment has started (is in the past)
+          CASE 
+            WHEN (
+              SELECT MIN(start_time) 
+              FROM appointment_services aps 
+              WHERE aps.appointment_id = a.id
+            ) < NOW() 
+            THEN 
+              (
+                COALESCE((SELECT SUM(price_override) FROM appointment_services aps WHERE aps.appointment_id = a.id), 0) 
+                + 
+                COALESCE((SELECT SUM(total_price) FROM product_sales ps WHERE ps.appointment_id = a.id), 0)
+              )
+            ELSE 
+              0 
+          END
         ) 
+        -- LOGIC: Always subtract the deposit (Credit), even for future appointments
         - a.deposit_amount
       ), 0)
       FROM appointments a
@@ -328,7 +342,6 @@ const recalculateClientBalance = async (client, clientId) => {
     [clientId],
   );
 
-  // FIX: Force return of a Number, default to 0 if undefined/null
   return Number(res.rows[0]?.outstanding_balance || 0);
 };
 
@@ -1210,6 +1223,95 @@ app.get("/api/v1/financials", authenticateToken, async (req, res) => {
 });
 
 // --- REPORT ENDPOINTS (ALL FILTERED BY SHOP_ID AND VISIBILITY) ---
+app.get("/api/v1/reports/analytics", authenticateToken, async (req, res) => {
+  const { from, to } = req.query;
+  // Default to last 30 days if no dates provided
+  const startDate =
+    from || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const endDate = to || new Date().toISOString();
+
+  try {
+    const client = await pool.connect();
+    try {
+      // A. Cancellation Rate
+      // (Cancelled + No-Show) / Total Appointments
+      const statusRes = await client.query(
+        `SELECT 
+           COUNT(*) FILTER (WHERE status IN ('cancelled', 'no-show')) as negative,
+           COUNT(*) as total
+         FROM appointments a
+         JOIN appointment_services aps ON a.id = aps.appointment_id
+         WHERE a.shop_id = $1 
+         AND aps.start_time >= $2 AND aps.start_time <= $3`,
+        [req.shopId, startDate, endDate],
+      );
+
+      const negCount = Number(statusRes.rows[0].negative);
+      const totalAppts = Number(statusRes.rows[0].total);
+      const cancelRate = totalAppts > 0 ? (negCount / totalAppts) * 100 : 0;
+
+      // B. Client Retention (New vs Returning in this period)
+      // "New" = Their first ever appointment is in this period
+      // "Returning" = They have appointments before this period
+      const retentionRes = await client.query(
+        `SELECT 
+           COUNT(DISTINCT a.client_id) FILTER (
+             WHERE NOT EXISTS (
+               SELECT 1 FROM appointments old 
+               WHERE old.client_id = a.client_id 
+               AND old.created_at < $2
+             )
+           ) as new_clients,
+           COUNT(DISTINCT a.client_id) FILTER (
+             WHERE EXISTS (
+               SELECT 1 FROM appointments old 
+               WHERE old.client_id = a.client_id 
+               AND old.created_at < $2
+             )
+           ) as returning_clients
+         FROM appointments a
+         WHERE a.shop_id = $1 
+         AND a.created_at >= $2 AND a.created_at <= $3`,
+        [req.shopId, startDate, endDate],
+      );
+
+      const newClients = Number(retentionRes.rows[0].new_clients);
+      const retClients = Number(retentionRes.rows[0].returning_clients);
+      const retentionRate =
+        newClients + retClients > 0
+          ? (retClients / (newClients + retClients)) * 100
+          : 0;
+
+      // C. Staff Utilization
+      // Returns hours booked per staff member
+      const utilRes = await client.query(
+        `SELECT st.name, 
+           SUM(COALESCE(aps.duration_override, s.duration_minutes))/60.0 as hours_booked,
+           COUNT(aps.id) as appt_count,
+           SUM(COALESCE(aps.price_override, s.price)) as total_revenue
+         FROM appointment_services aps
+         JOIN staff st ON aps.staff_id = st.id
+         LEFT JOIN services s ON aps.service_id = s.id
+         WHERE st.shop_id = $1
+         AND aps.start_time >= $2 AND aps.start_time <= $3
+         GROUP BY st.name`,
+        [req.shopId, startDate, endDate],
+      );
+
+      res.json({
+        cancellation_rate: cancelRate.toFixed(1),
+        retention_rate: retentionRate.toFixed(1),
+        new_clients: newClients,
+        returning_clients: retClients,
+        staff_utilization: utilRes.rows,
+      });
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 app.get("/api/v1/reports/appointments", authenticateToken, async (req, res) => {
   const { from, to } = req.query;
@@ -1282,10 +1384,7 @@ app.get("/api/v1/reports/sales", authenticateToken, async (req, res) => {
   const { from, to } = req.query;
   const params = [req.shopId];
 
-  // Base Clause
   let whereClause = "WHERE a.shop_id = $1 AND a.status = 'completed'";
-
-  // Visibility: If not super_admin, require save_receipt = true for completed items
   if (req.user.role !== "super_admin") {
     whereClause += " AND a.save_receipt = true";
   }
@@ -1298,15 +1397,23 @@ app.get("/api/v1/reports/sales", authenticateToken, async (req, res) => {
     params.push(to);
     whereClause += ` AND aps.start_time <= $${params.length}`;
   }
+
   try {
     const { rows } = await pool.query(
-      `SELECT s.name as service_name, COUNT(aps.id) as count, SUM(COALESCE(aps.price_override, s.price)) as total_revenue
+      `SELECT 
+        COALESCE(s.name, 'Deleted Service') as service_name, 
+        COUNT(aps.id) as count, 
+        SUM(COALESCE(aps.price_override, s.price)) as total_revenue
       FROM appointment_services aps
-      JOIN services s ON aps.service_id = s.id
+      LEFT JOIN services s ON aps.service_id = s.id -- FIXED: LEFT JOIN
       JOIN appointments a ON aps.appointment_id = a.id
-      ${whereClause} GROUP BY s.name ORDER BY total_revenue DESC`,
+      ${whereClause} 
+      GROUP BY COALESCE(s.name, 'Deleted Service') 
+      ORDER BY total_revenue DESC`,
       params,
     );
+
+    // Also return summary for charts
     const summary = rows.reduce(
       (acc, row) => acc + Number(row.total_revenue),
       0,
@@ -1393,40 +1500,72 @@ app.get("/api/v1/reports/finances", authenticateToken, async (req, res) => {
   const { from, to } = req.query;
   const params = [req.shopId];
 
-  let salesWhere = "WHERE a.shop_id = $1"; // AND a.status = 'completed'";
-  let payWhere = "WHERE t.shop_id = $1";
+  // A. Sales Logic (Completed & Visible)
+  let salesWhere = "WHERE a.shop_id = $1 AND a.status = 'completed'";
 
-  // Visibility logic for non-super-admins
+  // Visibility: If not super_admin, require save_receipt = true
   if (req.user.role !== "super_admin") {
     salesWhere += " AND a.save_receipt = true";
-    // For payments, we filter those attached to completed appointments without receipts
-    payWhere +=
-      " AND NOT EXISTS (SELECT 1 FROM appointments a WHERE a.id = t.appointment_id AND a.save_receipt = false)"; //AND a.status='completed'
   }
 
+  // Date filters for Sales (Revenue)
+  let salesDateClause = "";
   if (from) {
+    salesDateClause += ` AND aps.start_time >= $${params.length + 1}`;
     params.push(from);
-    salesWhere += ` AND aps.start_time >= $${params.length}`;
-    payWhere += ` AND t.created_at >= $${params.length}`;
   }
   if (to) {
+    salesDateClause += ` AND aps.start_time <= $${params.length + 1}`;
     params.push(to);
-    salesWhere += ` AND aps.start_time <= $${params.length}`;
-    payWhere += ` AND t.created_at <= $${params.length}`;
   }
+
   try {
-    const salesRes = await pool.query(
-      `SELECT SUM(COALESCE(aps.price_override, s.price)) as total FROM appointment_services aps JOIN services s ON aps.service_id=s.id JOIN appointments a ON aps.appointment_id=a.id ${salesWhere}`,
-      params,
-    );
-    const payRes = await pool.query(
-      `SELECT SUM(amount) as total FROM transactions t ${payWhere}`,
-      params,
-    );
-    res.json({
-      total_sales: Number(salesRes.rows[0].total) || 0,
-      total_payments: Number(payRes.rows[0].total) || 0,
-    });
+    const client = await pool.connect();
+    try {
+      // 1. Total Sales (in Date Range)
+      const salesRes = await client.query(
+        `SELECT SUM(COALESCE(aps.price_override, s.price)) as total 
+         FROM appointment_services aps 
+         LEFT JOIN services s ON aps.service_id = s.id 
+         JOIN appointments a ON aps.appointment_id = a.id 
+         ${salesWhere} ${salesDateClause}`,
+        params,
+      );
+
+      // 2. Total Collected (in Date Range)
+      // Note: We reuse params for date checking, so we need to rebuild params for this query or use distinct ones.
+      // Simpler approach: Run separate queries with clean params to avoid index confusion.
+      const payRes = await client.query(
+        `SELECT SUM(amount) as total FROM transactions t 
+         WHERE shop_id = $1 
+         AND created_at >= $2 AND created_at <= $3`,
+        [req.shopId, from || "1970-01-01", to || "2100-01-01"],
+      );
+
+      // 3. SPECIAL: Collected TODAY (Hardcoded date check)
+      const todayRes = await client.query(
+        `SELECT SUM(amount) as total FROM transactions 
+         WHERE shop_id = $1 AND created_at >= CURRENT_DATE`,
+        [req.shopId],
+      );
+
+      // 4. SPECIAL: Total Business Debt (Live Snapshot)
+      // Sum of all positive outstanding balances
+      const debtRes = await client.query(
+        `SELECT SUM(outstanding_balance) as total FROM clients 
+         WHERE shop_id = $1 AND outstanding_balance > 0`,
+        [req.shopId],
+      );
+
+      res.json({
+        total_sales: Number(salesRes.rows[0].total) || 0,
+        total_payments: Number(payRes.rows[0].total) || 0,
+        collected_today: Number(todayRes.rows[0].total) || 0,
+        total_debt: Number(debtRes.rows[0].total) || 0,
+      });
+    } finally {
+      client.release();
+    }
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

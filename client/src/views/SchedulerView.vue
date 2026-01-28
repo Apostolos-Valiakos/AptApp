@@ -415,6 +415,7 @@ const calendarEvents = computed(() => {
           isServiceEvent: true,
           appointmentId: appt.id,
           group_id: appt.group_id,
+          serviceIndex: index,
           fullAppointment: {
             ...appt,
             group_id: appt.group_id,
