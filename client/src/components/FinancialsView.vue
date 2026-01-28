@@ -13,25 +13,30 @@
       class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 mb-6 flex gap-4 items-end"
     >
       <div class="flex-grow">
-        <label class="block text-sm font-bold text-gray-700 mb-1"
-          >Date Range (Affects Sales & Reports)</label
-        >
+        <label class="block text-sm font-bold text-gray-700 mb-1">
+          Date Range (Affects Sales & Reports)
+        </label>
         <div class="flex gap-2">
           <Calendar
             v-model="filters.from"
             placeholder="From Date"
             showIcon
-            class="w-full"
+            class="flex-1"
             dateFormat="dd/mm/yy"
           />
           <Calendar
             v-model="filters.to"
             placeholder="To Date"
             showIcon
-            class="w-full"
+            class="flex-1"
             dateFormat="dd/mm/yy"
           />
-          <Button label="Today" class="p-button-outlined" @click="setToday" />
+          <Button
+            label="Today"
+            icon="pi pi-calendar"
+            class="p-button-outlined flex-shrink-0"
+            @click="setToday"
+          />
         </div>
       </div>
       <Button

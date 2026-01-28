@@ -551,13 +551,21 @@ watch(
           val.save_receipt !== undefined ? !!val.save_receipt : true,
       };
 
+      let rule = null;
       if (val.recurrence) {
-        isRecurring.value = true;
-        const rule =
-          typeof val.recurrence === "string"
-            ? JSON.parse(val.recurrence)
-            : val.recurrence;
+        try {
+          rule =
+            typeof val.recurrence === "string"
+              ? JSON.parse(val.recurrence)
+              : val.recurrence;
+        } catch (e) {
+          console.warn("Invalid recurrence format, resetting:", val.recurrence);
+          rule = null;
+        }
+      }
 
+      if (rule) {
+        isRecurring.value = true;
         recurrenceForm.value = {
           freq: rule.freq || "Weekly",
           end_date: rule.end_date ? new Date(rule.end_date) : null,
