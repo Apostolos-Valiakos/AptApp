@@ -173,6 +173,32 @@
                 </div>
               </div>
             </div>
+            <div
+              class="mb-4 p-3 bg-[var(--p-primary-50)] rounded-lg border border-[var(--p-primary-100)] flex items-center justify-between"
+            >
+              <div class="flex items-center gap-3">
+                <div
+                  class="w-8 h-8 rounded-full bg-[var(--p-primary-100)] flex items-center justify-center text-[var(--p-primary-600)]"
+                >
+                  <i class="pi pi-file text-sm"></i>
+                </div>
+                <div class="flex flex-col">
+                  <label
+                    for="eoppySwitch"
+                    class="font-bold text-[var(--p-primary-700)] cursor-pointer text-sm"
+                  >
+                    Συμβεβλημμένο με τον ΕΟΠΠΥ
+                  </label>
+                  <span
+                    class="text-xs text-[var(--p-primary-500)]"
+                    v-if="isRecurring"
+                  >
+                    Εφαρμόζεται μόνο στο πρώτο ραντεβού στα επαναλαμβανόμενα
+                  </span>
+                </div>
+              </div>
+              <ToggleSwitch v-model="form.is_eoppy" inputId="eoppySwitch" />
+            </div>
 
             <div
               class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-gray-100"
@@ -416,6 +442,7 @@ const form = ref<any>({
   payment_method: "card",
   is_block: false,
   save_receipt: true,
+  is_eoppy: false,
 });
 
 // State lifted from children
@@ -549,6 +576,7 @@ watch(
         is_block: !!val.is_block,
         save_receipt:
           val.save_receipt !== undefined ? !!val.save_receipt : true,
+        is_eoppy: !!val.is_eoppy,
       };
 
       let rule = null;
@@ -622,6 +650,7 @@ watch(
         payment_status: "unpaid",
         is_block: false,
         save_receipt: true,
+        is_eoppy: false,
       };
 
       isRecurring.value = false;

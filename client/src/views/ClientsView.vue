@@ -142,7 +142,65 @@
             <InputText v-model="editingClient.phone" class="w-full" />
           </div>
         </div>
+        <div v-if="shopSettings" class="mb-4">
+          <span class="block text-xs font-bold text-gray-500 uppercase mb-3">
+            Ενεργές Υπηρεσίες
+          </span>
+          <div class="grid grid-cols-3 gap-3">
+            <div
+              v-if="shopSettings.ergotherapia"
+              @click="editingClient.ergotherapia = !editingClient.ergotherapia"
+              :class="[
+                'flex flex-col items-center p-3 rounded-xl border-2 cursor-pointer transition-all text-center',
+                editingClient.ergotherapia
+                  ? 'border-[var(--p-primary-500)] bg-[var(--p-primary-50)] text-[var(--p-primary-700)]'
+                  : 'border-gray-300 bg-white text-gray-500 opacity-60',
+              ]"
+            >
+              <i class="pi pi-briefcase mb-1"></i>
+              <span
+                class="text-[10px] font-bold uppercase tracking-tight leading-none"
+                >Εργο</span
+              >
+            </div>
 
+            <div
+              v-if="shopSettings.physiotherapia"
+              @click="
+                editingClient.physiotherapia = !editingClient.physiotherapia
+              "
+              :class="[
+                'flex flex-col items-center p-3 rounded-xl border-2 cursor-pointer transition-all text-center',
+                editingClient.physiotherapia
+                  ? 'border-[var(--p-primary-500)] bg-[var(--p-primary-50)] text-[var(--p-primary-700)]'
+                  : 'border-gray-300 bg-white text-gray-500 opacity-60',
+              ]"
+            >
+              <i class="pi pi-heart mb-1"></i>
+              <span
+                class="text-[10px] font-bold uppercase tracking-tight leading-none"
+                >Φυσιο</span
+              >
+            </div>
+
+            <div
+              v-if="shopSettings.logotherapia"
+              @click="editingClient.logotherapia = !editingClient.logotherapia"
+              :class="[
+                'flex flex-col items-center p-3 rounded-xl border-2 cursor-pointer transition-all text-center',
+                editingClient.logotherapia
+                  ? 'border-[var(--p-primary-500)] bg-[var(--p-primary-50)] text-[var(--p-primary-700)]'
+                  : 'border-gray-300 bg-white text-gray-500 opacity-60',
+              ]"
+            >
+              <i class="pi pi-comments mb-1"></i>
+              <span
+                class="text-[10px] font-bold uppercase tracking-tight leading-none"
+                >Λογο</span
+              >
+            </div>
+          </div>
+        </div>
         <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
           <div class="flex justify-between items-center mb-3">
             <label
@@ -237,6 +295,8 @@ const clients = ref<any[]>([]);
 const loading = ref(true);
 const dialogVisible = ref(false); // For creating NEW clients
 const search = ref("");
+const shopSettings = ref<any>(null);
+const token = localStorage.getItem("token");
 
 // NEW: State for the Profile Dialog
 const profileVisible = ref(false);
@@ -250,15 +310,17 @@ const editingClient = ref<any>({
   phone: "",
   notes: "",
   custom_fields: [],
+  ergotherapia: false,
+  physiotherapia: false,
+  logotherapia: false,
 });
 
 onMounted(() => {
   fetchClients();
-  // Optional: setInterval(fetchClients, 10000);
+  fetchShopSettings();
 });
 
 const fetchClients = async () => {
-  const token = localStorage.getItem("token");
   try {
     const res = await fetch("/api/v1/clients", {
       headers: { Authorization: `Bearer ${token}` },
@@ -299,6 +361,9 @@ const openNew = () => {
     phone: "",
     notes: "",
     custom_fields: [],
+    ergotherapia: false,
+    physiotherapia: false,
+    logotherapia: false,
   };
   dialogVisible.value = true;
 };
@@ -323,8 +388,6 @@ const saveClient = async () => {
     });
     return;
   }
-
-  const token = localStorage.getItem("token");
 
   // Since we use ClientProfileDialog for edits, this is strictly for POST (Create)
   try {
@@ -368,7 +431,6 @@ const confirmDelete = (client: any) => {
 };
 
 const deleteClient = async (client: any) => {
-  const token = localStorage.getItem("token");
   try {
     const res = await fetch(`/api/v1/clients/${client.id}`, {
       method: "DELETE",
@@ -397,6 +459,17 @@ const deleteClient = async (client: any) => {
 const formatPhone = (phone: string) => {
   if (!phone) return "—";
   return phone.replace(/(\d{3})(\d{3})(\d{4})/, "$1 $2 $3");
+};
+
+const fetchShopSettings = async () => {
+  try {
+    const res = await fetch("/api/v1/shop", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    shopSettings.value = await res.json();
+  } catch (e) {
+    console.error("Error loading shop settings", e);
+  }
 };
 </script>
 

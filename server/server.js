@@ -51,6 +51,7 @@ const createAppointmentSeries = async (client, data, shopId) => {
     payment_status,
     is_block,
     save_receipt = false,
+    is_eoppy = false,
     services = [],
     products = [],
     recurrence,
@@ -81,14 +82,15 @@ const createAppointmentSeries = async (client, data, shopId) => {
   for (let i = 0; i < datesToBook.length; i++) {
     const currentDate = datesToBook[i];
     const isFirstInstance = i === 0;
+    const currentEoppyStatus = isFirstInstance ? !!is_eoppy : false;
 
     const apptRes = await client.query(
       `INSERT INTO appointments (
         client_id, status, internal_notes, booking_notes, 
-        deposit_amount, payment_status, is_block, save_receipt, 
+        deposit_amount, payment_status, is_block, save_receipt, is_eoppy,
         shop_id, created_at, updated_at,
         group_id, recurrence 
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW(), $10, $11) 
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW(), $11, $12) 
       RETURNING id`,
       [
         is_block ? null : validClientId,
@@ -99,6 +101,7 @@ const createAppointmentSeries = async (client, data, shopId) => {
         payment_status || "unpaid",
         !!is_block,
         !!save_receipt,
+        currentEoppyStatus,
         shopId,
         groupId,
         recurrenceRule,
@@ -181,6 +184,7 @@ const performSingleUpdate = async (client, id, shopId, body) => {
     payment_status,
     is_block,
     save_receipt,
+    is_eoppy,
     services = [],
     products = [],
   } = body;
@@ -190,8 +194,8 @@ const performSingleUpdate = async (client, id, shopId, body) => {
   await client.query(
     `UPDATE appointments SET
       client_id = $1, status = $2, internal_notes = $3, booking_notes = $4, 
-      deposit_amount = $5, payment_status = $6, is_block = $7, save_receipt = $8, updated_at = NOW()
-     WHERE id = $9 AND shop_id = $10`,
+      deposit_amount = $5, payment_status = $6, is_block = $7, save_receipt = $8,is_eoppy = $9, updated_at = NOW()
+    WHERE id = $10 AND shop_id = $11`,
     [
       is_block ? null : validClientId,
       status,
@@ -201,6 +205,7 @@ const performSingleUpdate = async (client, id, shopId, body) => {
       payment_status || "unpaid",
       is_block,
       save_receipt || false,
+      !!is_eoppy,
       id,
       shopId,
     ],
@@ -716,16 +721,24 @@ app.post("/api/v1/staff/:id/login", authenticateToken, async (req, res) => {
 app.get("/api/v1/clients", authenticateToken, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT *
-       FROM clients 
-       WHERE shop_id = $1 
-       ORDER BY last_name`,
+      `SELECT c.*, 
+        -- Count only EOPPY appointments
+        (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND is_eoppy = true) as eoppy_count,
+        -- Count appointments that are NOT EOPPY (is_eoppy is false or null)
+        (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND (is_eoppy = false OR is_eoppy IS NULL)) as non_eoppy_count
+      FROM clients c
+      WHERE shop_id = $1 
+      ORDER BY last_name`,
       [req.shopId],
     );
+
     const data = rows.map((c) => ({
       ...c,
       full_name: `${c.first_name} ${c.last_name}`,
+      eoppy_count: parseInt(c.eoppy_count || 0),
+      non_eoppy_count: parseInt(c.non_eoppy_count || 0),
     }));
+
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -740,11 +753,14 @@ app.post("/api/v1/clients", authenticateToken, async (req, res) => {
     phone,
     notes,
     custom_fields = [],
+    ergotherapia,
+    physiotherapia,
+    logotherapia,
   } = req.body;
   try {
     const { rows } = await pool.query(
-      `INSERT INTO clients (first_name, last_name, email, phone, notes, custom_fields, shop_id) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7) 
+      `INSERT INTO clients (first_name, last_name, email, phone, notes, custom_fields, shop_id, ergotherapia, physiotherapia, logotherapia) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) 
        RETURNING *`,
       [
         first_name,
@@ -754,6 +770,9 @@ app.post("/api/v1/clients", authenticateToken, async (req, res) => {
         notes,
         JSON.stringify(custom_fields),
         req.shopId,
+        ergotherapia,
+        physiotherapia,
+        logotherapia,
       ],
     );
     rows[0].full_name = `${rows[0].first_name} ${rows[0].last_name}`;
@@ -887,6 +906,7 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
         a.deposit_amount, 
         a.payment_status, 
         a.is_block, 
+        a.is_eoppy,
         a.save_receipt, 
         a.created_at,
         a.recurrence,

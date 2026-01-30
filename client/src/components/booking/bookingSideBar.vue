@@ -20,6 +20,18 @@
         class="text-left bg-white p-4 rounded-lg shadow-sm border border-gray-100"
       >
         <h4 class="text-xs font-bold text-gray-400 uppercase mb-3">
+          Ραντεβου ΕΟΠΠΥ
+        </h4>
+        <span class="text-gray-600">{{ client.eoppy_count }}</span>
+        <h4 class="text-xs font-bold text-gray-400 uppercase mb-3">
+          Ραντεβου Εκτος ΕΟΠΠΥ
+        </h4>
+        <span class="text-gray-600">{{ client.non_eoppy_count }}</span>
+      </div>
+      <div
+        class="text-left bg-white p-4 rounded-lg shadow-sm border border-gray-100"
+      >
+        <h4 class="text-xs font-bold text-gray-400 uppercase mb-3">
           Πρόγραμμα
         </h4>
         <ul>

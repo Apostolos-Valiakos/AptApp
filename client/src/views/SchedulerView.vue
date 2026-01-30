@@ -4,10 +4,10 @@
       class="flex flex-col md:flex-row justify-between items-center px-4 md:px-6 py-4 border-b border-gray-200 flex-shrink-0 gap-4"
     >
       <div class="flex items-center justify-between w-full md:w-auto space-x-2">
-        <div class="flex bg-gray-100 rounded-lg p-1">
+        <div class="flex bg-[var(--p-primary-100)] rounded-lg p-1">
           <button
             @click="calendarApi?.today()"
-            class="px-4 py-1.5 text-sm font-medium text-gray-700 hover:bg-white hover:shadow-sm rounded-md transition-all"
+            class="px-4 py-1.5 text-sm font-medium text-[var(--p-primary-700)] hover:bg-white hover:shadow-sm rounded-md transition-all"
           >
             Today
           </button>
@@ -15,7 +15,7 @@
         <div class="flex items-center space-x-2">
           <button
             @click="calendarApi?.prev()"
-            class="p-1.5 hover:bg-gray-100 rounded-full text-gray-500 transition-colors"
+            class="p-1.5 hover:bg-[var(--p-primary-100)] rounded-full text-gray-500 transition-colors"
           >
             <svg
               class="w-5 h-5"
