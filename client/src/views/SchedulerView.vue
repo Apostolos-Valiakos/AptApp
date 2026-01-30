@@ -521,7 +521,7 @@ const prepareServicesForUpdate = (services: any[]) => {
 const getDayMinWidth = () => {
   // If mobile (less than 768px), use 60px (tight columns)
   // If desktop, use 160px (wide columns for names)
-  return window.innerWidth < 768 ? 60 : 160;
+  return window.innerWidth < 768 ? 130 : 160;
 };
 // --- Calendar Options ---
 const calendarOptions = ref({
@@ -585,9 +585,9 @@ const calendarOptions = ref({
           <div class="relative">
             <img src="${src}" class="w-8 h-8 rounded-full border-2 border-white shadow-sm mb-2 object-cover group-hover:scale-105 transition-transform" />
           </div>
-          <div style="text-wrap=auto" class="hidden md:block font-bold text-gray-800 text-sm mt-2 truncate w-full text-center px-2">
+          <div style="white-space: normal;" class="font-bold text-gray-800 text-[10px] md:text-sm mt-1 leading-tight w-full text-center px-1 break-words">
             ${arg.resource.title}
-        </div>
+          </div>
         </div>
       `,
     };
@@ -608,7 +608,10 @@ const calendarOptions = ref({
     const isShort = durationMins < 45;
 
     const paddingClass = isShort && !isMonthView ? "p-0.5 pl-1" : "p-2";
-    const titleClass = isShort && !isMonthView ? "text-xs" : "text-sm";
+    const titleClass =
+      isShort && !isMonthView
+        ? "text-[9px] md:text-[10px] leading-tight"
+        : "text-[10px] md:text-xs leading-tight";
 
     // 2. Define conditional styles for Cancelled status
     // We use 'line-through' for strikethrough and 'text-red-600' for color
@@ -627,15 +630,15 @@ const calendarOptions = ref({
       }">
         ${
           showTime
-            ? `<div class="text-[11px] font-bold opacity-70 mb-0.5 ${isCancelled ? "text-red-400" : ""}">${timeText}</div>`
+            ? `<div class="text-[9px] md:text-[12px] font-bold opacity-70 mb-0.5 ${isCancelled ? "text-red-400" : ""}">${timeText}</div>`
             : ""
         }
-        <div class="font-bold ${titleClass} truncate ${cancelledClasses}">
+        <div class="font-bold ${titleClass} break-words whitespace-normal ${cancelledClasses}">
           ${props.client_name}
         </div>
         ${
           showService
-            ? `<div class="text-xs font-medium truncate mt-0.5 ${cancelledServiceClasses}">
+            ? `<div class="text-[9px] md:text-[12px] font-medium opacity-90 mt-0.5 break-words whitespace-normal ${cancelledServiceClasses}">
                 ${props.service_name}
                </div>`
             : ""
