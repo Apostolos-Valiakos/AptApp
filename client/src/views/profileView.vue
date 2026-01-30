@@ -218,7 +218,6 @@
           <Button
             label="Save Changes"
             class="p-button-sm p-button-rounded"
-            :loading="isUpdatingShopServices"
             @click="updateShopServices"
           />
         </div>
@@ -527,6 +526,9 @@ const fetchProfile = async () => {
       profileForm.lastName = nameParts.slice(1).join(" ") || "";
       profileForm.email = data.staff_email || "";
       profileForm.phone = data.staff_phone || "";
+      shopForm.ergotherapia = data.ergotherapia;
+      shopForm.physiotherapia = data.physiotherapia;
+      shopForm.logotherapia = data.logotherapia;
     } else {
       throw new Error("Failed to load profile");
     }

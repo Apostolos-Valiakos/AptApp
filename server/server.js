@@ -453,6 +453,9 @@ app.get("/api/v1/profile", authenticateToken, async (req, res) => {
         u.role, 
         s.name as shop_name,
         s.id as shop_id,
+        s.ergotherapia as ergotherapia,
+        s.physiotherapia as physiotherapia,
+        s.logotherapia as logotherapia,
         st.id as staff_id,
         st.name as staff_name,
         st.email as staff_email,
@@ -713,7 +716,7 @@ app.post("/api/v1/staff/:id/login", authenticateToken, async (req, res) => {
 app.get("/api/v1/clients", authenticateToken, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT id, first_name, last_name, email, phone, notes, no_show_count, total_sales, custom_fields, outstanding_balance
+      `SELECT *
        FROM clients 
        WHERE shop_id = $1 
        ORDER BY last_name`,
@@ -2177,6 +2180,7 @@ app.put("/api/v1/shop/theme", authenticateToken, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 app.put("/api/v1/shop/services", authenticateToken, async (req, res) => {
   const { ergotherapia, physiotherapia, logotherapia } = req.body;
 
@@ -2221,7 +2225,7 @@ app.get("/api/v1/profile", authenticateToken, async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT u.id as user_id, u.username, u.role, 
-        s.name as shop_name, s.id as shop_id,
+        s.name as shop_name, s.id as shop_id, s.ergotherapia as ergotherapia,
         st.id as staff_id, st.name as staff_name,
         st.email as staff_email, st.phone as staff_phone, st.specialty
       FROM users u
@@ -2230,7 +2234,7 @@ app.get("/api/v1/profile", authenticateToken, async (req, res) => {
       WHERE u.id = $1`,
       [req.user.userId],
     );
-
+    console.log(rows);
     if (rows.length === 0)
       return res.status(404).json({ error: "User not found" });
     res.json(rows[0]);
@@ -2238,6 +2242,7 @@ app.get("/api/v1/profile", authenticateToken, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 // Get all products with their inventory variations for a shop
 app.get("/api/v1/products", authenticateToken, async (req, res) => {
   try {

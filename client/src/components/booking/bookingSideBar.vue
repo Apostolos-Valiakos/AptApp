@@ -16,7 +16,20 @@
       >
         Balance: €{{ Number(client.outstanding_balance).toFixed(2) }}
       </div>
-
+      <div
+        class="text-left bg-white p-4 rounded-lg shadow-sm border border-gray-100"
+      >
+        <h4 class="text-xs font-bold text-gray-400 uppercase mb-3">
+          Πρόγραμμα
+        </h4>
+        <ul>
+          <li v-if="client.ergotherapia" class="text-gray-600">Εργοθεραπεία</li>
+          <li v-if="client.physiotherapia" class="text-gray-600">
+            Φυσιοθεραπεία
+          </li>
+          <li v-if="client.logotherapia" class="text-gray-600">Λογοθεραπεία</li>
+        </ul>
+      </div>
       <div
         v-if="client.custom_fields && client.custom_fields.length"
         class="text-left bg-white p-4 rounded-lg shadow-sm border border-gray-100"
