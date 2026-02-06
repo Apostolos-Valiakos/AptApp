@@ -682,6 +682,8 @@ watch(
 const save = async (close = true) => {
   // Check if editing an existing recurring appointment
   const isSeriesEdit = form.value.id && props.appointment?.group_id;
+  const isConvertingToSeries =
+    form.value.id && !props.appointment?.group_id && isRecurring.value;
 
   if (isSeriesEdit) {
     confirm.require({
@@ -693,6 +695,8 @@ const save = async (close = true) => {
       accept: () => executeSave(close, "series"),
       reject: () => executeSave(close, "single"),
     });
+  } else if (isConvertingToSeries) {
+    executeSave(close, "series");
   } else {
     executeSave(close, "single");
   }

@@ -543,7 +543,6 @@ const calendarOptions = ref({
     month: "short",
     day: "numeric",
   },
-  resourceEditable: true,
   resourceOrder: "sort_order",
   initialView: "resourceTimeGridDay",
   allDaySlot: false,

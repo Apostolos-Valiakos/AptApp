@@ -19,14 +19,37 @@
       <div
         class="text-left bg-white p-4 rounded-lg shadow-sm border border-gray-100"
       >
-        <h4 class="text-xs font-bold text-gray-400 uppercase mb-3">
-          Ραντεβου ΕΟΠΠΥ
-        </h4>
-        <span class="text-gray-600">{{ client.eoppy_count }}</span>
-        <h4 class="text-xs font-bold text-gray-400 uppercase mb-3">
-          Ραντεβου Εκτος ΕΟΠΠΥ
-        </h4>
-        <span class="text-gray-600">{{ client.non_eoppy_count }}</span>
+        <div v-if="client.eoppy_breakdown.total > 0" class="mb-4">
+          <h4 class="text-xs font-bold text-gray-400 uppercase mb-1">
+            Ραντεβου ΕΟΠΥΥ ({{ client.eoppy_breakdown.total }})
+          </h4>
+          <ul class="text-sm">
+            <li
+              v-for="(count, name) in client.eoppy_breakdown.services"
+              :key="name"
+              class="flex justify-between"
+            >
+              <span class="text-gray-600">{{ name }}</span>
+              <span class="font-semibold">{{ count }}</span>
+            </li>
+          </ul>
+        </div>
+
+        <div v-if="client.non_eoppy_breakdown.total > 0">
+          <h4 class="text-xs font-bold text-gray-400 uppercase mb-1">
+            Ραντεβου Εκτος ΕΟΠΥΥ ({{ client.non_eoppy_breakdown.total }})
+          </h4>
+          <ul class="text-sm">
+            <li
+              v-for="(count, name) in client.non_eoppy_breakdown.services"
+              :key="name"
+              class="flex justify-between"
+            >
+              <span class="text-gray-600">{{ name }}</span>
+              <span class="font-semibold">{{ count }}</span>
+            </li>
+          </ul>
+        </div>
       </div>
       <div
         class="text-left bg-white p-4 rounded-lg shadow-sm border border-gray-100"

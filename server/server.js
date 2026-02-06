@@ -24,6 +24,48 @@ const storage = multer.diskStorage({
     cb(null, uniqueSuffix + "-" + file.originalname);
   },
 });
+// --- HELPER: Check for duplicate appointment ---
+const checkAppointmentExists = async (client, shopId, clientId, startTime) => {
+  if (!clientId || !startTime) return false;
+
+  // We check if this client already has an active appointment starting at this exact time
+  const res = await client.query(
+    `SELECT 1 
+     FROM appointments a
+     JOIN appointment_services aps ON a.id = aps.appointment_id
+     WHERE a.shop_id = $1 
+       AND a.client_id = $2
+       AND aps.start_time = $3
+       AND a.status != 'cancelled'
+     LIMIT 1`,
+    [shopId, clientId, startTime],
+  );
+  return res.rows.length > 0;
+};
+
+const eoppyReport = (rows) => {
+  return rows.reduce(
+    (acc, row) => {
+      // Determine the key based on boolean is_eoppy
+      const category = row.is_eoppy ? "eoppy_count" : "non_eoppy_count";
+
+      // Initialize category if it's the first time we see it
+      if (!acc[category]) {
+        acc[category] = { total: 0, services: {} };
+      }
+
+      // Add to the total and map the service name to its count
+      acc[category].total += row.service_count;
+      acc[category].services[row.service_name] = row.service_count;
+
+      return acc;
+    },
+    {
+      eoppy_count: { total: 0, services: {} },
+      non_eoppy_count: { total: 0, services: {} },
+    },
+  );
+};
 
 const addRecurrenceInterval = (date, freq) => {
   const result = new Date(date);
@@ -82,7 +124,38 @@ const createAppointmentSeries = async (client, data, shopId) => {
   for (let i = 0; i < datesToBook.length; i++) {
     const currentDate = datesToBook[i];
     const isFirstInstance = i === 0;
-    const currentEoppyStatus = isFirstInstance ? !!is_eoppy : false;
+
+    // Calculate the start time for this instance to check for collisions
+    const originalStart = new Date(services[0]?.start_time);
+    const instanceStart = new Date(currentDate);
+    instanceStart.setHours(
+      originalStart.getHours(),
+      originalStart.getMinutes(),
+      0,
+      0,
+    );
+    const instanceStartIso = instanceStart.toISOString();
+
+    // === DUPLICATE CHECK ===
+    // Check if an appointment already exists for this client at this time
+    // This handles "add the new appointments only" logic
+    if (!is_block && validClientId) {
+      const exists = await checkAppointmentExists(
+        client,
+        shopId,
+        validClientId,
+        instanceStartIso,
+      );
+      if (exists) {
+        // If this is the FIRST instance (the one we might be editing), we skip creating a DUPLICATE,
+        // but we still capture its ID if we need to return it?
+        // Actually, if we are in POST (New), this means conflict.
+        // If we are in PUT (Edit), this is expected because the first one is already there.
+        continue;
+      }
+    }
+
+    const currentEoppyStatus = !!is_eoppy;
 
     const apptRes = await client.query(
       `INSERT INTO appointments (
@@ -115,15 +188,6 @@ const createAppointmentSeries = async (client, data, shopId) => {
         const validServiceId = safeUUID(svc.service_id);
         const validStaffId = safeUUID(svc.staff_id);
 
-        const originalStart = new Date(svc.start_time);
-        const instanceStart = new Date(currentDate);
-        instanceStart.setHours(
-          originalStart.getHours(),
-          originalStart.getMinutes(),
-          0,
-          0,
-        );
-
         if (validServiceId) {
           await client.query(
             `INSERT INTO appointment_services (
@@ -134,7 +198,7 @@ const createAppointmentSeries = async (client, data, shopId) => {
               appointmentId,
               validServiceId,
               validStaffId,
-              instanceStart.toISOString(),
+              instanceStartIso, // Use the calculated ISO time
               svc.duration_override,
               svc.price_override,
               shopId,
@@ -143,7 +207,9 @@ const createAppointmentSeries = async (client, data, shopId) => {
         }
       }
 
+      // Products logic remains the same (usually only for first instance)
       if (isFirstInstance && products && products.length > 0) {
+        // ... existing product logic ...
         for (const prod of products) {
           if (prod.product_id) {
             const unitPrice = Number(prod.price || 0);
@@ -152,9 +218,9 @@ const createAppointmentSeries = async (client, data, shopId) => {
 
             await client.query(
               `INSERT INTO product_sales (
-                appointment_id, inventory_id, staff_id, client_id, 
-                quantity, total_price, shop_id, sale_date
-              ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
+                    appointment_id, inventory_id, staff_id, client_id, 
+                    quantity, total_price, shop_id, sale_date
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
               [
                 appointmentId,
                 prod.product_id,
@@ -717,34 +783,98 @@ app.post("/api/v1/staff/:id/login", authenticateToken, async (req, res) => {
 });
 
 // --- CLIENT ROUTES ---
+// app.get("/api/v1/clients", authenticateToken, async (req, res) => {
+//   try {
+//     const { rows } = await pool.query(
+//       `SELECT c.*,
+//         -- Count only EOPPY appointments
+//         (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND is_eoppy = true) as eoppy_count,
+//         -- Count appointments that are NOT EOPPY (is_eoppy is false or null)
+//         (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND (is_eoppy = false OR is_eoppy IS NULL)) as non_eoppy_count
+//       FROM clients c
+//       WHERE shop_id = $1
+//       ORDER BY last_name`,
+//       [req.shopId],
+//     );
 
+//     const data = rows.map((c) => ({
+//       ...c,
+//       full_name: `${c.first_name} ${c.last_name}`,
+//       eoppy_count: parseInt(c.eoppy_count || 0),
+//       non_eoppy_count: parseInt(c.non_eoppy_count || 0),
+//     }));
+
+//     res.json(data);
+//   } catch (err) {
+//     res.status(500).json({ error: err.message });
+//   }
+// });
 app.get("/api/v1/clients", authenticateToken, async (req, res) => {
   try {
-    const { rows } = await pool.query(
-      `SELECT c.*, 
-        -- Count only EOPPY appointments
-        (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND is_eoppy = true) as eoppy_count,
-        -- Count appointments that are NOT EOPPY (is_eoppy is false or null)
-        (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND (is_eoppy = false OR is_eoppy IS NULL)) as non_eoppy_count
-      FROM clients c
-      WHERE shop_id = $1 
-      ORDER BY last_name`,
-      [req.shopId],
-    );
+    const query = `
+      SELECT 
+        c.*,
+        c.first_name || ' ' || c.last_name as full_name,
+        
+        -- EOPPY Breakdown
+        (SELECT jsonb_build_object(
+            'total', COALESCE(SUM(s_inner.count_per_service), 0),
+            'services', COALESCE(jsonb_object_agg(s_inner.service_name, s_inner.count_per_service), '{}'::jsonb)
+          )
+         FROM (
+           SELECT s.name as service_name, COUNT(aps.id) as count_per_service
+           FROM appointments a
+           JOIN appointment_services aps ON a.id = aps.appointment_id
+           JOIN services s ON aps.service_id = s.id
+           WHERE a.client_id = c.id AND a.is_eoppy = true
+           GROUP BY s.name
+         ) s_inner
+        ) as eoppy_breakdown,
 
-    const data = rows.map((c) => ({
-      ...c,
-      full_name: `${c.first_name} ${c.last_name}`,
-      eoppy_count: parseInt(c.eoppy_count || 0),
-      non_eoppy_count: parseInt(c.non_eoppy_count || 0),
+        -- Non-EOPPY Breakdown
+        (SELECT jsonb_build_object(
+            'total', COALESCE(SUM(s_inner.count_per_service), 0),
+            'services', COALESCE(jsonb_object_agg(s_inner.service_name, s_inner.count_per_service), '{}'::jsonb)
+          )
+         FROM (
+           SELECT s.name as service_name, COUNT(aps.id) as count_per_service
+           FROM appointments a
+           JOIN appointment_services aps ON a.id = aps.appointment_id
+           JOIN services s ON aps.service_id = s.id
+           WHERE a.client_id = c.id AND (a.is_eoppy = false OR a.is_eoppy IS NULL)
+           GROUP BY s.name
+         ) s_inner
+        ) as non_eoppy_breakdown
+
+      FROM clients c
+      WHERE c.shop_id = $1
+      ORDER BY c.last_name;
+    `;
+
+    const { rows } = await pool.query(query, [req.shopId]);
+
+    // Format the data safely
+    const data = rows.map((row) => ({
+      ...row,
+      // The COALESCE in SQL helps, but we ensure the structure exists here too
+      eoppy_breakdown: row.eoppy_breakdown || { total: 0, services: {} },
+      non_eoppy_breakdown: row.non_eoppy_breakdown || {
+        total: 0,
+        services: {},
+      },
     }));
 
-    res.json(data);
+    // Use 'return' to ensure the function stops here
+    return res.json(data);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("SQL Error Detail:", err);
+
+    // Check if headers were already sent to avoid the ERR_HTTP_HEADERS_SENT crash
+    if (!res.headersSent) {
+      return res.status(500).json({ error: "Internal Server Error" });
+    }
   }
 });
-
 app.post("/api/v1/clients", authenticateToken, async (req, res) => {
   const {
     first_name,
@@ -1005,39 +1135,57 @@ app.put("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
 
     if (scope === "series") {
       const groupInfo = await getGroupDetails(client, id, req.shopId);
+      const isRecurringBody = !!req.body.recurrence;
 
       if (groupInfo && groupInfo.group_id) {
+        // === Case 1: Existing Series (Delete Future & Recreate) ===
         const currentApptStart = req.body.services[0]?.start_time;
-
-        // Delete this and future appointments in series
         await client.query(
-          `
-          DELETE FROM appointments 
-          WHERE group_id = $1 
-          AND shop_id = $2
-          AND id IN (
-            SELECT a.id FROM appointments a
-            JOIN appointment_services aps ON a.id = aps.appointment_id
-            WHERE a.group_id = $1 
-            AND aps.start_time >= $3
-          )
-        `,
+          `DELETE FROM appointments 
+           WHERE group_id = $1 AND shop_id = $2
+           AND id IN (
+             SELECT a.id FROM appointments a
+             JOIN appointment_services aps ON a.id = aps.appointment_id
+             WHERE a.group_id = $1 AND aps.start_time >= $3
+           )`,
           [groupInfo.group_id, req.shopId, currentApptStart],
         );
 
-        // Re-create series
         await createAppointmentSeries(
           client,
-          {
-            ...req.body,
-            group_id_override: groupInfo.group_id,
-          },
+          { ...req.body, group_id_override: groupInfo.group_id },
           req.shopId,
         );
-      } else {
+      } else if (isRecurringBody) {
+        // === Case 2: Convert Single -> Series (Update Current & Fill Future) ===
+        const crypto = require("crypto");
+        const newGroupId = crypto.randomUUID();
+        const recurrenceRule = JSON.stringify(req.body.recurrence);
+
+        // 1. Update the CURRENT appointment (the 'Single' one)
+        // We use performSingleUpdate to handle services/products/basic info
         await performSingleUpdate(client, id, req.shopId, req.body);
+
+        // 2. Assign the new Group ID and Recurrence Rule to it
+        await client.query(
+          `UPDATE appointments 
+             SET group_id = $1, recurrence = $2 
+             WHERE id = $3 AND shop_id = $4`,
+          [newGroupId, recurrenceRule, id, req.shopId],
+        );
+
+        // 3. Create the REST of the series
+        // The duplicate check in createAppointmentSeries will see the current appointment
+        // (which we just updated) and skip creating a duplicate for today,
+        // then proceed to create the future ones.
+        await createAppointmentSeries(
+          client,
+          { ...req.body, group_id_override: newGroupId },
+          req.shopId,
+        );
       }
     } else {
+      // === Case 3: Single Update ===
       await performSingleUpdate(client, id, req.shopId, req.body);
     }
 
