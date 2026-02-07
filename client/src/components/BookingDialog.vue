@@ -321,7 +321,7 @@
             </div>
             <Button
               label="Save"
-              @click="save"
+              @click="save()"
               :loading="loading"
               class="w-full sm:w-auto px-8"
             />

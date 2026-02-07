@@ -231,7 +231,7 @@
         ></a>
       </div>
       <p class="text-gray-400 text-sm">
-        © 2024 Petalouda Booking System. All rights reserved.
+        © 2026 Interventio Booking System. All rights reserved.
       </p>
     </footer>
   </div>

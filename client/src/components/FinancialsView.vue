@@ -9,48 +9,57 @@
       </p>
     </div>
 
-    <div
-      class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 mb-6 flex gap-4 items-end"
-    >
-      <div class="flex-grow">
-        <label class="block text-sm font-bold text-gray-700 mb-1">
-          Date Range (Affects Sales & Reports)
-        </label>
-        <div class="flex gap-2">
-          <Calendar
-            v-model="filters.from"
-            placeholder="From Date"
-            showIcon
-            class="flex-1"
-            dateFormat="dd/mm/yy"
-          />
-          <Calendar
-            v-model="filters.to"
-            placeholder="To Date"
-            showIcon
-            class="flex-1"
-            dateFormat="dd/mm/yy"
+    <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 mb-6">
+      <div class="flex flex-col lg:flex-row gap-4 lg:items-end">
+        <div class="flex-grow w-full">
+          <label class="block text-sm font-bold text-gray-700 mb-2">
+            Date Range (Affects Sales & Reports)
+          </label>
+
+          <div class="flex flex-col sm:flex-row gap-3">
+            <div class="flex-1">
+              <Calendar
+                v-model="filters.from"
+                placeholder="From Date"
+                showIcon
+                class="w-full"
+                dateFormat="dd/mm/yy"
+              />
+            </div>
+            <div class="flex-1">
+              <Calendar
+                v-model="filters.to"
+                placeholder="To Date"
+                showIcon
+                class="w-full"
+                dateFormat="dd/mm/yy"
+              />
+            </div>
+            <Button
+              label="Today"
+              icon="pi pi-calendar"
+              class="p-button-outlined w-full sm:w-auto flex-shrink-0"
+              @click="setToday"
+            />
+          </div>
+        </div>
+
+        <div class="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
+          <Button
+            label="Apply"
+            icon="pi pi-filter"
+            class="w-full sm:w-auto"
+            @click="fetchAllReports"
+            :loading="loading"
           />
           <Button
-            label="Today"
-            icon="pi pi-calendar"
-            class="p-button-outlined flex-shrink-0"
-            @click="setToday"
+            label="Clear"
+            icon="pi pi-times"
+            class="p-button-outlined p-button-secondary w-full sm:w-auto"
+            @click="clearFilters"
           />
         </div>
       </div>
-      <Button
-        label="Apply Filters"
-        icon="pi pi-filter"
-        @click="fetchAllReports"
-        :loading="loading"
-      />
-      <Button
-        label="Clear"
-        icon="pi pi-times"
-        class="p-button-outlined p-button-secondary"
-        @click="clearFilters"
-      />
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
