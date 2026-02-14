@@ -16,6 +16,8 @@ const PORT = process.env.PORT || 3000;
 
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "http://localhost:5173";
 
+require("./reminderService");
+
 // ==================== FILE UPLOAD SETUP ====================
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
@@ -1151,6 +1153,8 @@ app.put("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
           [groupInfo.group_id, req.shopId, currentApptStart],
         );
 
+        // createAppointmentSeries will create new rows.
+        // These rows default to reminder_sent = false automatically via DB schema.
         await createAppointmentSeries(
           client,
           { ...req.body, group_id_override: groupInfo.group_id },
@@ -1166,10 +1170,10 @@ app.put("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
         // We use performSingleUpdate to handle services/products/basic info
         await performSingleUpdate(client, id, req.shopId, req.body);
 
-        // 2. Assign the new Group ID and Recurrence Rule to it
+        // 2. Assign the new Group ID, Recurrence Rule to it and RESET reminder_sent
         await client.query(
           `UPDATE appointments 
-             SET group_id = $1, recurrence = $2 
+             SET group_id = $1, recurrence = $2, email_reminder_sent = false 
              WHERE id = $3 AND shop_id = $4`,
           [newGroupId, recurrenceRule, id, req.shopId],
         );
@@ -1187,6 +1191,12 @@ app.put("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
     } else {
       // === Case 3: Single Update ===
       await performSingleUpdate(client, id, req.shopId, req.body);
+
+      // Reset flag to ensure that if the time was moved, a new reminder can trigger
+      await client.query(
+        `UPDATE appointments SET email_reminder_sent = false WHERE id = $1 AND shop_id = $2`,
+        [id, req.shopId],
+      );
     }
 
     let newBalance = 0;
