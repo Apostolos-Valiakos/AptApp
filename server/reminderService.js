@@ -1,3 +1,4 @@
+require("dotenv").config();
 const cron = require("node-cron");
 const nodemailer = require("nodemailer");
 const pool = require("./db");
