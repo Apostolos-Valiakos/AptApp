@@ -6,10 +6,6 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD} # From .env
       POSTGRES_DB: ${POSTGRES_DB} # e.g., fresha_clone
       POSTGRES_USER: postgres # Or custom user
-      EMAIL_HOST: ${EMAIL_HOST}
-      EMAIL_PORT: ${EMAIL_PORT}
-      EMAIL_USER: ${EMAIL_USER}
-      EMAIL_PASS: ${EMAIL_PASS}
       TZ: "UTC"
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -49,6 +45,10 @@ services:
       MESSAGE_ENCRYPTION_KEY: ${MESSAGE_ENCRYPTION_KEY}
       ALLOWED_ORIGIN: ${ALLOWED_ORIGIN} # Update to your domain in prod
       # Add any other env vars from your .env (e.g., API_URL if needed)
+      EMAIL_HOST: ${EMAIL_HOST}
+      EMAIL_PORT: ${EMAIL_PORT}
+      EMAIL_USER: ${EMAIL_USER}
+      EMAIL_PASS: ${EMAIL_PASS}
     ports:
       - "3000:3000" # Expose to host (access http://your-vps-ip:3000)
     volumes:
