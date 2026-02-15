@@ -1,4 +1,7 @@
-require("dotenv").config();
+// At the very top of your cron/email file
+if (process.env.NODE_ENV !== 'production') {
+    require("dotenv").config();
+}
 const cron = require("node-cron");
 const nodemailer = require("nodemailer");
 const pool = require("./db");
