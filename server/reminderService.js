@@ -446,4 +446,4 @@ const processReminders = async () => {
 };
 
 // Run every 1 minute
-cron.schedule("*/1 * * * *", processReminders);
+cron.schedule("*/5 * * * *", processReminders);
