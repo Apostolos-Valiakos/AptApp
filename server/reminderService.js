@@ -88,7 +88,7 @@ const processReminders = async () => {
       const details = encodeURIComponent(`Ραντεβού στο ${location}`);
 
       const token = generateUnsubToken(appt.client_id);
-      const unsubUrl = `${process.env.API_URL}/api/v1/unsubscribe?id=${appt.client_id}&token=${token}`;
+      const unsubUrl = `https://interventio.gr/api/v1/unsubscribe?id=${appt.client_id}&token=${token}`;
 
       // Google Calendar Link
       const googleUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${gStart}/${gEnd}&details=${details}`;
