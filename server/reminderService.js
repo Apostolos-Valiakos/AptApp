@@ -1,10 +1,11 @@
 // At the very top of your cron/email file
-if (process.env.NODE_ENV !== 'production') {
-    require("dotenv").config();
+if (process.env.NODE_ENV !== "production") {
+  require("dotenv").config();
 }
 const cron = require("node-cron");
 const nodemailer = require("nodemailer");
 const pool = require("./db");
+const crypto = require("crypto");
 
 // 1. Configure Nodemailer
 const transporter = nodemailer.createTransport({
@@ -16,6 +17,14 @@ const transporter = nodemailer.createTransport({
     pass: process.env.EMAIL_PASS,
   },
 });
+
+const generateUnsubToken = (clientId) => {
+  if (!clientId) return "";
+  return crypto
+    .createHmac("sha256", process.env.JWT_SECRET)
+    .update(clientId.toString())
+    .digest("hex");
+};
 
 // Helper: Format time to Greek standard HH:MM
 const formatTime = (date) => {
@@ -33,6 +42,7 @@ const processReminders = async () => {
         SELECT
             a.id AS appointment_id, 
             c.first_name AS client_name,
+            c.id AS client_id,
 			c.last_name AS client_last_name,
             c.email AS client_email,
             s.name AS shop_name,
@@ -50,6 +60,7 @@ const processReminders = async () => {
             AND aps.start_time >= (NOW() + INTERVAL '23 hours 55 minutes')
             AND a.email_reminder_sent = false
             AND a.status != 'cancelled'
+            AND c.receive_emails = true 
             AND a.is_block = false;
         `;
 
@@ -75,6 +86,9 @@ const processReminders = async () => {
       const title = encodeURIComponent(`Ραντεβού: ${appt.service_name}`);
       const location = encodeURIComponent(appt.shop_name);
       const details = encodeURIComponent(`Ραντεβού στο ${location}`);
+
+      const token = generateUnsubToken(appt.client_id);
+      const unsubUrl = `${process.env.API_URL}/api/v1/unsubscribe?id=${appt.client_id}&token=${token}`;
 
       // Google Calendar Link
       const googleUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${gStart}/${gEnd}&details=${details}`;
@@ -344,6 +358,24 @@ const processReminders = async () => {
                         Outlook
                       </a>
                     </div>
+                    <div
+                      style="
+                        margin-top: 20px;
+                        padding-top: 20px;
+                        border-top: 1px solid #eee;
+                        text-align: center;
+                      "
+                    >
+                      <p style="color: #9ca3af; font-size: 11px; line-height: 1.4">
+                        Λαμβάνετε αυτό το email ως υπενθύμιση για το ραντεβού σας.<br />
+                        Αν δεν επιθυμείτε να λαμβάνετε πλέον ειδοποιήσεις,
+                        <a
+                          href="${unsubUrl}"
+                          style="color: #ff93d4; text-decoration: underline"
+                          >πατήστε εδώ για διαγραφή</a
+                        >.
+                      </p>
+                    </div>
                   </div>
 
                   <div
@@ -366,7 +398,6 @@ const processReminders = async () => {
                         ${appt.shop_name}<span style="color: #ff93d4"> Booking</span>
                       </span>
                     </div>
-
                     <p
                       style="
                         color: #ff93d4;
@@ -389,30 +420,6 @@ const processReminders = async () => {
               </body>
             </html>
             `;
-      // <li>Φορέστε άνετα ρούχα για τη συνεδρία σας.</li>
-      // <li>Μπορείτε να δείτε το πλάνο ασκήσεών σας μέσω του <strong>Interventio</strong>.</li>
-
-      //   <div style="margin-bottom: 16px;">
-      //     <a href="#" style="color: white; text-decoration: none; margin: 0 10px; font-size: 13px;">Υποστήριξη</a>
-      //     <a href="#" style="color: white; text-decoration: none; margin: 0 10px; font-size: 13px;">Πολιτική Απορρήτου</a>
-      // </div>
-      // <div>
-      //   <div
-      //     style="
-      //             color: #ff93d4;
-      //             font-size: 11px;
-      //             text-transform: uppercase;
-      //             font-weight: 800;
-      //             margin-bottom: 4px;
-      //             letter-spacing: 0.05em;
-      //           "
-      //   >
-      //     Θεραπευτής
-      //   </div>
-      //   <div style="color: #111827; font-size: 18px; font-weight: 700">
-      //     ${therapistFullName}
-      //   </div>
-      // </div>;
 
       try {
         await transporter.sendMail({
@@ -439,4 +446,4 @@ const processReminders = async () => {
 };
 
 // Run every 1 minute
-cron.schedule("*/5 * * * *", processReminders);
+cron.schedule("*/1 * * * *", processReminders);
