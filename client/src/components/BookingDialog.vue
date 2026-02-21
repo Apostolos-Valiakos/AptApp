@@ -856,9 +856,19 @@ const saveNewClient = async () => {
     body: JSON.stringify(newClient.value),
   });
   const data = await res.json();
+
   if (data.success || data.client) {
     const client = data.client || data;
+
+    // 1. Format the name
     client.full_name = `${client.first_name} ${client.last_name}`;
+
+    // 2. ADD THE MISSING STRUCTURES HERE so the sidebar doesn't crash
+    client.eoppy_breakdown = { total: 0, services: {} };
+    client.non_eoppy_breakdown = { total: 0, services: {} };
+    client.outstanding_balance = 0; // Good practice to default this too
+
+    // 3. Push to state and select it
     props.clients.push(client);
     form.value.client_id = client.id;
     showQuickAddClient.value = false;

@@ -437,7 +437,11 @@ const deleteClient = async (client: any) => {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    if (!res.ok) throw new Error("Failed to delete");
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      throw new Error(data.error || "Failed to delete client");
+    }
 
     toast.add({
       severity: "success",
@@ -445,13 +449,14 @@ const deleteClient = async (client: any) => {
       detail: "Client removed",
       life: 3000,
     });
+
     fetchClients();
-  } catch (err) {
+  } catch (err: any) {
     toast.add({
       severity: "error",
-      summary: "Error",
-      detail: "Failed to delete client",
-      life: 4000,
+      summary: "Action Denied",
+      detail: err.message || "Failed to delete client",
+      life: 5000,
     });
   }
 };

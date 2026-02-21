@@ -959,13 +959,29 @@ app.put("/api/v1/clients/:id", authenticateToken, async (req, res) => {
 
 app.delete("/api/v1/clients/:id", authenticateToken, async (req, res) => {
   try {
-    await pool.query("DELETE FROM clients WHERE id = $1 AND shop_id = $2", [
-      req.params.id,
-      req.shopId,
-    ]);
+    const result = await pool.query(
+      "DELETE FROM clients WHERE id = $1 AND shop_id = $2",
+      [req.params.id, req.shopId],
+    );
+
+    // Optional check if the client even existed
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Client not found" });
+    }
+
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    // 1. Intercept the PostgreSQL Foreign Key Violation Error (Code 23503)
+    if (err.code === "23503") {
+      return res.status(409).json({
+        error:
+          "Δεν μπορείτε να διαγράψετε αυτόν τον πελάτη, επειδή υπάρχουν ραντεβού καταχωρημένα στο όνομά του.",
+      });
+    }
+
+    // 2. Generic fallback error (hides the ugly SQL from the user)
+    console.error("Delete Client Error:", err);
+    res.status(500).json({ error: "Αποτυχία διαγραφής πελάτη." });
   }
 });
 
