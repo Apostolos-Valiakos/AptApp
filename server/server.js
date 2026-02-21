@@ -27,10 +27,16 @@ const storage = multer.diskStorage({
   },
 });
 // --- HELPER: Check for duplicate appointment ---
-const checkAppointmentExists = async (client, shopId, clientId, startTime) => {
-  if (!clientId || !startTime) return false;
+const checkAppointmentExists = async (
+  client,
+  shopId,
+  clientId,
+  startTime,
+  staffId,
+) => {
+  // Add staffId to the initial check so we don't query with undefined
+  if (!clientId || !startTime || !staffId) return false;
 
-  // We check if this client already has an active appointment starting at this exact time
   const res = await client.query(
     `SELECT 1 
      FROM appointments a
@@ -38,9 +44,10 @@ const checkAppointmentExists = async (client, shopId, clientId, startTime) => {
      WHERE a.shop_id = $1 
        AND a.client_id = $2
        AND aps.start_time = $3
+       AND aps.staff_id = $4 
        AND a.status != 'cancelled'
      LIMIT 1`,
-    [shopId, clientId, startTime],
+    [shopId, clientId, startTime, staffId], // <-- Add staffId here
   );
   return res.rows.length > 0;
 };
@@ -137,22 +144,18 @@ const createAppointmentSeries = async (client, data, shopId) => {
       0,
     );
     const instanceStartIso = instanceStart.toISOString();
+    const staffId = services[0]?.staff_id;
 
     // === DUPLICATE CHECK ===
-    // Check if an appointment already exists for this client at this time
-    // This handles "add the new appointments only" logic
     if (!is_block && validClientId) {
       const exists = await checkAppointmentExists(
         client,
         shopId,
         validClientId,
         instanceStartIso,
+        staffId, // <-- Pass it into the helper
       );
       if (exists) {
-        // If this is the FIRST instance (the one we might be editing), we skip creating a DUPLICATE,
-        // but we still capture its ID if we need to return it?
-        // Actually, if we are in POST (New), this means conflict.
-        // If we are in PUT (Edit), this is expected because the first one is already there.
         continue;
       }
     }
