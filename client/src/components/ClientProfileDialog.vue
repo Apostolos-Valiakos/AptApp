@@ -95,7 +95,7 @@
               <InputText v-model="editForm.last_name" class="w-full" />
             </div>
           </div>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <label
                 class="block text-xs font-bold text-gray-500 uppercase mb-1"
@@ -111,6 +111,19 @@
                 Phone
               </label>
               <InputText v-model="editForm.phone" class="w-full" />
+            </div>
+            <div>
+              <label
+                class="block text-xs font-bold text-gray-500 uppercase mb-1"
+              >
+                Date of Birth
+              </label>
+              <Calendar
+                v-model="editForm.date_of_birth"
+                dateFormat="dd/mm/yy"
+                class="w-full"
+                placeholder="dd/mm/yyyy"
+              />
             </div>
           </div>
           <div>
@@ -426,6 +439,10 @@ const fetchClientData = async () => {
 
     editForm.value = JSON.parse(JSON.stringify(data.client));
     if (!editForm.value.custom_fields) editForm.value.custom_fields = [];
+
+    if (editForm.value.date_of_birth) {
+      editForm.value.date_of_birth = new Date(editForm.value.date_of_birth);
+    }
   } catch (e) {
     console.error(e);
   } finally {
@@ -471,16 +488,23 @@ const addCustomField = () =>
 const saveClientInfo = async () => {
   saving.value = true;
   try {
+    const payload = { ...editForm.value };
+
+    if (payload.date_of_birth) {
+      const d = new Date(payload.date_of_birth);
+      payload.date_of_birth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    }
+
     const res = await fetch(`/api/v1/clients/${props.clientId}`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify(editForm.value),
+      body: JSON.stringify(payload),
     });
     if (res.ok) {
-      clientData.value = { ...clientData.value, ...editForm.value };
+      clientData.value = { ...clientData.value, ...payload };
       emit("refresh");
     }
   } finally {

@@ -8,7 +8,14 @@
       </div>
       <h3 class="text-xl font-bold">{{ client.full_name }}</h3>
       <p class="text-gray-500 text-sm">{{ client.email }}</p>
-      <p class="text-gray-500 text-sm mb-4">{{ client.phone }}</p>
+
+      <p class="text-gray-500 text-sm" :class="{ 'mb-4': !clientAgeDisplay }">
+        {{ client.phone }}
+      </p>
+
+      <p v-if="clientAgeDisplay" class="text-gray-500 text-sm mb-4">
+        {{ clientAgeDisplay }}
+      </p>
 
       <div
         v-if="calculatedBalance > 0 && authStore.isOwner"
@@ -94,10 +101,11 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from "vue";
 import { useAuthStore } from "../../stores/auth";
 const authStore = useAuthStore();
 
-defineProps({
+const props = defineProps({
   client: {
     type: Object,
     default: null,
@@ -106,5 +114,33 @@ defineProps({
     type: Number,
     default: 0,
   },
+});
+
+const clientAgeDisplay = computed(() => {
+  if (!props.client || !props.client.date_of_birth) return null;
+
+  const dob = new Date(props.client.date_of_birth);
+  const today = new Date();
+
+  // Calculate total months difference
+  let months = (today.getFullYear() - dob.getFullYear()) * 12;
+  months -= dob.getMonth();
+  months += today.getMonth();
+
+  // Subtract a month if the actual birth day hasn't happened yet this month
+  if (today.getDate() < dob.getDate()) {
+    months--;
+  }
+
+  // Fallback for future dates just in case
+  if (months < 0) months = 0;
+
+  // Logic: Show months if under 1 year, otherwise show years
+  if (months < 12) {
+    return `${months} month${months === 1 ? "" : "s"} old`;
+  } else {
+    const years = Math.floor(months / 12);
+    return `${years} year${years === 1 ? "" : "s"} old`;
+  }
 });
 </script>

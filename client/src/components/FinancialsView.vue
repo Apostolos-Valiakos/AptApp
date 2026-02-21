@@ -161,6 +161,10 @@
     </div>
 
     <TabView class="bg-white rounded-xl shadow-sm border border-gray-200 p-2">
+      <TabPanel header="Client Demographics">
+        <ClientDemographics :clients="clientsReport" />
+      </TabPanel>
+
       <TabPanel header="Sales by Service">
         <DataTable
           :value="salesReport"
@@ -258,6 +262,7 @@ import { ref, onMounted } from "vue";
 import { useToast } from "primevue/usetoast";
 import TabView from "primevue/tabview";
 import TabPanel from "primevue/tabpanel";
+import ClientDemographics from "./ClientDemographics.vue";
 
 const toast = useToast();
 const loading = ref(false);
@@ -293,6 +298,7 @@ const salesReport = ref([]);
 const staffReport = ref([]);
 const paymentsReport = ref([]);
 const appointmentsReport = ref([]);
+const clientsReport = ref<any[]>([]);
 
 const formatCurrency = (val: any) => {
   return Number(val).toLocaleString("en-US", {
@@ -329,7 +335,6 @@ const fetchAllReports = async () => {
 
   const params = new URLSearchParams();
 
-  // FIX 2: Only append parameters ONCE (with time adjustments)
   if (filters.value.from) {
     const fromDate = new Date(filters.value.from);
     fromDate.setHours(0, 0, 0, 0); // Start of day
@@ -345,7 +350,7 @@ const fetchAllReports = async () => {
   const qs = params.toString() ? `?${params.toString()}` : "";
 
   try {
-    const [finRes, salesRes, staffRes, payRes, apptRes, anaRes] =
+    const [finRes, salesRes, staffRes, payRes, apptRes, anaRes, clientsRes] =
       await Promise.all([
         fetch(`/api/v1/reports/finances${qs}`, { headers }),
         fetch(`/api/v1/reports/sales${qs}`, { headers }),
@@ -353,11 +358,18 @@ const fetchAllReports = async () => {
         fetch(`/api/v1/reports/payments${qs}`, { headers }),
         fetch(`/api/v1/reports/appointments${qs}`, { headers }),
         fetch(`/api/v1/reports/analytics${qs}`, { headers }),
+        fetch(`/api/v1/reports/clients${qs}`, { headers }),
       ]);
 
     if (finRes.status === 401) throw new Error("Unauthorized");
 
-    if (!finRes.ok || !salesRes.ok || !anaRes.ok || !payRes.ok) {
+    if (
+      !finRes.ok ||
+      !salesRes.ok ||
+      !anaRes.ok ||
+      !payRes.ok ||
+      !clientsRes.ok
+    ) {
       throw new Error("Failed to fetch reports");
     }
 
@@ -371,6 +383,7 @@ const fetchAllReports = async () => {
     staffReport.value = await staffRes.json();
     paymentsReport.value = await payRes.json();
     appointmentsReport.value = await apptRes.json();
+    clientsReport.value = await clientsRes.json();
   } catch (err: any) {
     console.error(err);
     toast.add({

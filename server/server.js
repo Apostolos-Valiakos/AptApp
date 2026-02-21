@@ -896,11 +896,12 @@ app.post("/api/v1/clients", authenticateToken, async (req, res) => {
     ergotherapia,
     physiotherapia,
     logotherapia,
+    date_of_birth,
   } = req.body;
   try {
     const { rows } = await pool.query(
-      `INSERT INTO clients (first_name, last_name, email, phone, notes, custom_fields, shop_id, ergotherapia, physiotherapia, logotherapia) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) 
+      `INSERT INTO clients (first_name, last_name, email, phone, notes, custom_fields, shop_id, ergotherapia, physiotherapia, logotherapia, date_of_birth) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) 
        RETURNING *`,
       [
         first_name,
@@ -913,6 +914,7 @@ app.post("/api/v1/clients", authenticateToken, async (req, res) => {
         ergotherapia,
         physiotherapia,
         logotherapia,
+        date_of_birth || null,
       ],
     );
     rows[0].full_name = `${rows[0].first_name} ${rows[0].last_name}`;
@@ -934,14 +936,15 @@ app.put("/api/v1/clients/:id", authenticateToken, async (req, res) => {
     ergotherapia,
     physiotherapia,
     logotherapia,
+    date_of_birth,
   } = req.body;
 
   try {
     await pool.query(
       `UPDATE clients 
        SET first_name=$1, last_name=$2, email=$3, phone=$4, notes=$5, custom_fields=$6,
-           ergotherapia=$7, physiotherapia=$8, logotherapia=$9
-       WHERE id=$10 AND shop_id=$11`,
+           ergotherapia=$7, physiotherapia=$8, logotherapia=$9, date_of_birth=$10
+       WHERE id=$11 AND shop_id=$12`,
       [
         first_name,
         last_name,
@@ -952,6 +955,7 @@ app.put("/api/v1/clients/:id", authenticateToken, async (req, res) => {
         !!ergotherapia,
         !!physiotherapia,
         !!logotherapia,
+        date_of_birth || null,
         id,
         req.shopId,
       ],
@@ -1506,15 +1510,19 @@ app.get("/api/v1/reports/analytics", authenticateToken, async (req, res) => {
            COUNT(DISTINCT a.client_id) FILTER (
              WHERE NOT EXISTS (
                SELECT 1 FROM appointments old 
+               JOIN appointment_services aps_old ON old.id = aps_old.appointment_id
                WHERE old.client_id = a.client_id 
-               AND old.created_at < $2
+               AND aps_old.start_time < $2
+               AND old.status = 'completed'
              )
            ) as new_clients,
            COUNT(DISTINCT a.client_id) FILTER (
              WHERE EXISTS (
                SELECT 1 FROM appointments old 
+               JOIN appointment_services aps_old ON old.id = aps_old.appointment_id
                WHERE old.client_id = a.client_id 
-               AND old.created_at < $2
+               AND aps_old.start_time < $2
+               AND old.status = 'completed'
              )
            ) as returning_clients
          FROM appointments a
@@ -1599,27 +1607,25 @@ app.get("/api/v1/reports/clients", authenticateToken, async (req, res) => {
   const { from, to } = req.query;
   const params = [req.shopId];
 
-  // Subquery must also respect visibility rules
-  let subQuery =
-    "WHERE a.shop_id = $1 AND a.client_id = c.id" +
-    getVisibilityClause(req.user, "a");
+  let whereClause = "WHERE a.shop_id = $1" + getVisibilityClause(req.user, "a");
 
   if (from) {
     params.push(from);
-    subQuery += ` AND aps.start_time >= $${params.length}`;
+    whereClause += ` AND aps.start_time >= $${params.length}`;
   }
   if (to) {
     params.push(to);
-    subQuery += ` AND aps.start_time <= $${params.length}`;
+    whereClause += ` AND aps.start_time <= $${params.length}`;
   }
   try {
     const { rows } = await pool.query(
-      `SELECT c.*, COUNT(a.id) as appointment_count
-      FROM clients c
-      LEFT JOIN appointments a ON c.id = a.client_id
-      WHERE c.shop_id = $1 
-      AND EXISTS (SELECT 1 FROM appointments a JOIN appointment_services aps ON a.id = aps.appointment_id ${subQuery})
-      GROUP BY c.id ORDER BY c.last_name`,
+      `SELECT c.*, COUNT(DISTINCT a.id) as appointment_count
+       FROM clients c
+       JOIN appointments a ON c.id = a.client_id
+       JOIN appointment_services aps ON a.id = aps.appointment_id
+       ${whereClause}
+       GROUP BY c.id 
+       ORDER BY c.last_name`,
       params,
     );
     res.json(rows);
@@ -1770,13 +1776,25 @@ app.get("/api/v1/reports/finances", authenticateToken, async (req, res) => {
   try {
     const client = await pool.connect();
     try {
-      // 1. Total Sales (in Date Range)
       const salesRes = await client.query(
-        `SELECT SUM(COALESCE(aps.price_override, s.price)) as total 
-         FROM appointment_services aps 
-         LEFT JOIN services s ON aps.service_id = s.id 
-         JOIN appointments a ON aps.appointment_id = a.id 
-         ${salesWhere} ${salesDateClause}`,
+        `SELECT SUM(
+            (SELECT COALESCE(SUM(COALESCE(aps_inner.price_override, s_inner.price)), 0)
+             FROM appointment_services aps_inner
+             LEFT JOIN services s_inner ON aps_inner.service_id = s_inner.id
+             WHERE aps_inner.appointment_id = a.id)
+            +
+            (SELECT COALESCE(SUM(ps.total_price), 0)
+             FROM product_sales ps
+             WHERE ps.appointment_id = a.id)
+         ) as total
+         FROM appointments a
+         WHERE a.id IN (
+           SELECT DISTINCT a2.id
+           FROM appointments a2
+           JOIN appointment_services aps2 ON a2.id = aps2.appointment_id
+           ${salesWhere.replace("a.shop_id", "a2.shop_id").replace("a.status", "a2.status").replace("a.save_receipt", "a2.save_receipt")} 
+           ${salesDateClause.replace(/aps\./g, "aps2.")}
+         )`,
         params,
       );
 
