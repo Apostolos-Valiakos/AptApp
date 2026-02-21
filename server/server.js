@@ -14,6 +14,10 @@ const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
 
+const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "http://localhost:5173";
+
+require("./reminderService");
+
 // ==================== FILE UPLOAD SETUP ====================
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
@@ -22,6 +26,318 @@ const storage = multer.diskStorage({
     cb(null, uniqueSuffix + "-" + file.originalname);
   },
 });
+// --- HELPER: Check for duplicate appointment ---
+const checkAppointmentExists = async (
+  client,
+  shopId,
+  clientId,
+  startTime,
+  staffId,
+) => {
+  // Add staffId to the initial check so we don't query with undefined
+  if (!clientId || !startTime || !staffId) return false;
+
+  const res = await client.query(
+    `SELECT 1 
+     FROM appointments a
+     JOIN appointment_services aps ON a.id = aps.appointment_id
+     WHERE a.shop_id = $1 
+       AND a.client_id = $2
+       AND aps.start_time = $3
+       AND aps.staff_id = $4 
+       AND a.status != 'cancelled'
+     LIMIT 1`,
+    [shopId, clientId, startTime, staffId], // <-- Add staffId here
+  );
+  return res.rows.length > 0;
+};
+
+const eoppyReport = (rows) => {
+  return rows.reduce(
+    (acc, row) => {
+      // Determine the key based on boolean is_eoppy
+      const category = row.is_eoppy ? "eoppy_count" : "non_eoppy_count";
+
+      // Initialize category if it's the first time we see it
+      if (!acc[category]) {
+        acc[category] = { total: 0, services: {} };
+      }
+
+      // Add to the total and map the service name to its count
+      acc[category].total += row.service_count;
+      acc[category].services[row.service_name] = row.service_count;
+
+      return acc;
+    },
+    {
+      eoppy_count: { total: 0, services: {} },
+      non_eoppy_count: { total: 0, services: {} },
+    },
+  );
+};
+
+const addRecurrenceInterval = (date, freq) => {
+  const result = new Date(date);
+  if (freq === "Daily") result.setDate(result.getDate() + 1);
+  if (freq === "Weekly") result.setDate(result.getDate() + 7);
+  if (freq === "Bi-Weekly") result.setDate(result.getDate() + 14);
+  if (freq === "Monthly") result.setMonth(result.getMonth() + 1);
+  return result;
+};
+const getGroupDetails = async (client, id, shopId) => {
+  const res = await client.query(
+    "SELECT group_id, (SELECT start_time FROM appointment_services WHERE appointment_id = appointments.id LIMIT 1) as start_time FROM appointments WHERE id = $1 AND shop_id = $2",
+    [id, shopId],
+  );
+  return res.rows[0];
+};
+// --- HELPER: Create Appointment Series ---
+const createAppointmentSeries = async (client, data, shopId) => {
+  const {
+    client_id,
+    status = "new",
+    internal_notes,
+    booking_notes,
+    deposit_amount,
+    payment_status,
+    is_block,
+    save_receipt = false,
+    is_eoppy = false,
+    services = [],
+    products = [],
+    recurrence,
+    group_id_override,
+  } = data;
+
+  const crypto = require("crypto");
+  const groupId =
+    group_id_override || (recurrence ? crypto.randomUUID() : null);
+  const recurrenceRule = recurrence ? JSON.stringify(recurrence) : null;
+  const validClientId = safeUUID(client_id);
+
+  let datesToBook = [new Date(services[0]?.start_time || new Date())];
+
+  if (recurrence && recurrence.end_date) {
+    let nextDate = addRecurrenceInterval(datesToBook[0], recurrence.freq);
+    const endDate = new Date(recurrence.end_date);
+
+    // Safety Limit: Max 52 appointments
+    while (nextDate <= endDate && datesToBook.length < 52) {
+      datesToBook.push(new Date(nextDate));
+      nextDate = addRecurrenceInterval(nextDate, recurrence.freq);
+    }
+  }
+
+  let firstAppointmentId = null;
+
+  for (let i = 0; i < datesToBook.length; i++) {
+    const currentDate = datesToBook[i];
+    const isFirstInstance = i === 0;
+
+    // Calculate the start time for this instance to check for collisions
+    const originalStart = new Date(services[0]?.start_time);
+    const instanceStart = new Date(currentDate);
+    instanceStart.setHours(
+      originalStart.getHours(),
+      originalStart.getMinutes(),
+      0,
+      0,
+    );
+    const instanceStartIso = instanceStart.toISOString();
+    const staffId = services[0]?.staff_id;
+
+    // === DUPLICATE CHECK ===
+    if (!is_block && validClientId) {
+      const exists = await checkAppointmentExists(
+        client,
+        shopId,
+        validClientId,
+        instanceStartIso,
+        staffId, // <-- Pass it into the helper
+      );
+      if (exists) {
+        continue;
+      }
+    }
+
+    const currentEoppyStatus = !!is_eoppy;
+
+    const instanceDeposit = isFirstInstance ? deposit_amount || 0 : 0;
+    const instancePaymentStatus = isFirstInstance
+      ? payment_status || "unpaid"
+      : "unpaid";
+
+    const apptRes = await client.query(
+      `INSERT INTO appointments (
+        client_id, status, internal_notes, booking_notes, 
+        deposit_amount, payment_status, is_block, save_receipt, is_eoppy,
+        shop_id, created_at, updated_at,
+        group_id, recurrence 
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW(), $11, $12) 
+      RETURNING id`,
+      [
+        is_block ? null : validClientId,
+        status,
+        internal_notes,
+        booking_notes,
+        instanceDeposit,
+        instancePaymentStatus,
+        !!is_block,
+        !!save_receipt,
+        currentEoppyStatus,
+        shopId,
+        groupId,
+        recurrenceRule,
+      ],
+    );
+    const appointmentId = apptRes.rows[0].id;
+    if (isFirstInstance) firstAppointmentId = appointmentId;
+
+    if (!is_block) {
+      for (const svc of services) {
+        const validServiceId = safeUUID(svc.service_id);
+        const validStaffId = safeUUID(svc.staff_id);
+
+        if (validServiceId) {
+          await client.query(
+            `INSERT INTO appointment_services (
+              appointment_id, service_id, staff_id, start_time, 
+              duration_override, price_override, shop_id
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            [
+              appointmentId,
+              validServiceId,
+              validStaffId,
+              instanceStartIso, // Use the calculated ISO time
+              svc.duration_override,
+              svc.price_override,
+              shopId,
+            ],
+          );
+        }
+      }
+
+      // Products logic remains the same (usually only for first instance)
+      if (isFirstInstance && products && products.length > 0) {
+        // ... existing product logic ...
+        for (const prod of products) {
+          if (prod.product_id) {
+            const unitPrice = Number(prod.price || 0);
+            const qty = Number(prod.quantity || 1);
+            const lineTotal = unitPrice * qty;
+
+            await client.query(
+              `INSERT INTO product_sales (
+                    appointment_id, inventory_id, staff_id, client_id, 
+                    quantity, total_price, shop_id, sale_date
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
+              [
+                appointmentId,
+                prod.product_id,
+                services[0]?.staff_id || null,
+                validClientId,
+                qty,
+                lineTotal,
+                shopId,
+              ],
+            );
+          }
+        }
+      }
+    }
+  }
+  return { firstAppointmentId, validClientId };
+};
+
+// --- HELPER: Perform Single Update ---
+const performSingleUpdate = async (client, id, shopId, body) => {
+  const {
+    client_id,
+    status,
+    internal_notes,
+    booking_notes,
+    deposit_amount,
+    payment_status,
+    is_block,
+    save_receipt,
+    is_eoppy,
+    services = [],
+    products = [],
+  } = body;
+
+  const validClientId = safeUUID(client_id);
+
+  await client.query(
+    `UPDATE appointments SET
+      client_id = $1, status = $2, internal_notes = $3, booking_notes = $4, 
+      deposit_amount = $5, payment_status = $6, is_block = $7, save_receipt = $8,is_eoppy = $9, updated_at = NOW()
+    WHERE id = $10 AND shop_id = $11`,
+    [
+      is_block ? null : validClientId,
+      status,
+      internal_notes,
+      booking_notes,
+      deposit_amount || 0,
+      payment_status || "unpaid",
+      is_block,
+      save_receipt || false,
+      !!is_eoppy,
+      id,
+      shopId,
+    ],
+  );
+
+  await client.query(
+    "DELETE FROM appointment_services WHERE appointment_id = $1",
+    [id],
+  );
+  if (!is_block) {
+    for (const svc of services) {
+      if (safeUUID(svc.service_id)) {
+        await client.query(
+          `INSERT INTO appointment_services (
+            appointment_id, service_id, staff_id, start_time, duration_override, price_override, shop_id
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [
+            id,
+            safeUUID(svc.service_id),
+            safeUUID(svc.staff_id),
+            svc.start_time,
+            svc.duration_override,
+            svc.price_override,
+            shopId,
+          ],
+        );
+      }
+    }
+  }
+
+  await client.query("DELETE FROM product_sales WHERE appointment_id = $1", [
+    id,
+  ]);
+  if (!is_block && products.length > 0) {
+    for (const prod of products) {
+      if (prod.product_id) {
+        const unitPrice = Number(prod.price || 0);
+        const qty = Number(prod.quantity || 1);
+        await client.query(
+          `INSERT INTO product_sales (
+            appointment_id, inventory_id, staff_id, client_id, quantity, total_price, shop_id, sale_date
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
+          [
+            id,
+            prod.product_id,
+            services[0]?.staff_id || null,
+            validClientId,
+            qty,
+            unitPrice * qty,
+            shopId,
+          ],
+        );
+      }
+    }
+  }
+};
 
 const upload = multer({
   storage,
@@ -29,7 +345,7 @@ const upload = multer({
   fileFilter: (req, file, cb) => {
     const allowedTypes = /jpeg|jpg|png|gif|pdf|doc|docx|xls|xlsx/;
     const extname = allowedTypes.test(
-      path.extname(file.originalname).toLowerCase()
+      path.extname(file.originalname).toLowerCase(),
     );
     const mimetype = allowedTypes.test(file.mimetype);
     if (extname && mimetype) {
@@ -46,7 +362,7 @@ app.use(
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
-  })
+  }),
 );
 app.use(express.json());
 
@@ -69,7 +385,7 @@ const safeUUID = (id) => {
 };
 
 const recalculateClientBalance = async (client, clientId) => {
-  if (!clientId) return 0; // Return 0 instead of null
+  if (!clientId) return 0;
 
   const res = await client.query(
     `
@@ -77,10 +393,24 @@ const recalculateClientBalance = async (client, clientId) => {
     SET outstanding_balance = (
       SELECT COALESCE(SUM(
         (
-          COALESCE((SELECT SUM(price_override) FROM appointment_services aps WHERE aps.appointment_id = a.id), 0) 
-          + 
-          COALESCE((SELECT SUM(total_price) FROM product_sales ps WHERE ps.appointment_id = a.id), 0)
+          -- LOGIC: Only count the Price/Products as "Debt" if the appointment has started (is in the past)
+          CASE 
+            WHEN (
+              SELECT MIN(start_time) 
+              FROM appointment_services aps 
+              WHERE aps.appointment_id = a.id
+            ) < NOW() 
+            THEN 
+              (
+                COALESCE((SELECT SUM(price_override) FROM appointment_services aps WHERE aps.appointment_id = a.id), 0) 
+                + 
+                COALESCE((SELECT SUM(total_price) FROM product_sales ps WHERE ps.appointment_id = a.id), 0)
+              )
+            ELSE 
+              0 
+          END
         ) 
+        -- LOGIC: Always subtract the deposit (Credit), even for future appointments
         - a.deposit_amount
       ), 0)
       FROM appointments a
@@ -90,10 +420,9 @@ const recalculateClientBalance = async (client, clientId) => {
     WHERE id = $1
     RETURNING outstanding_balance
   `,
-    [clientId]
+    [clientId],
   );
 
-  // FIX: Force return of a Number, default to 0 if undefined/null
   return Number(res.rows[0]?.outstanding_balance || 0);
 };
 
@@ -134,7 +463,7 @@ app.post("/api/v1/login", async (req, res) => {
        FROM users u
        LEFT JOIN shops s ON u.shop_id = s.id
        WHERE u.username = $1`,
-      [username]
+      [username],
     );
 
     if (result.rows.length === 0) {
@@ -160,7 +489,7 @@ app.post("/api/v1/login", async (req, res) => {
         staffId: user.staff_id,
       },
       process.env.JWT_SECRET || "supersecret",
-      { expiresIn: "7d" }
+      { expiresIn: "7d" },
     );
 
     res.json({ token, user });
@@ -182,7 +511,7 @@ app.put("/api/v1/profile", authenticateToken, async (req, res) => {
       const fullName = `${firstName} ${lastName}`.trim();
       await client.query(
         `UPDATE staff SET name = $1, email = $2, phone = $3 WHERE id = $4`,
-        [fullName, email, phone || null, req.user.staffId]
+        [fullName, email, phone || null, req.user.staffId],
       );
     }
 
@@ -205,6 +534,9 @@ app.get("/api/v1/profile", authenticateToken, async (req, res) => {
         u.role, 
         s.name as shop_name,
         s.id as shop_id,
+        s.ergotherapia as ergotherapia,
+        s.physiotherapia as physiotherapia,
+        s.logotherapia as logotherapia,
         st.id as staff_id,
         st.name as staff_name,
         st.email as staff_email,
@@ -215,7 +547,7 @@ app.get("/api/v1/profile", authenticateToken, async (req, res) => {
       LEFT JOIN staff st ON u.staff_id = st.id
       WHERE u.id = $1
     `,
-      [req.user.userId]
+      [req.user.userId],
     );
 
     if (rows.length === 0)
@@ -244,7 +576,7 @@ app.put("/api/v1/profile/password", authenticateToken, async (req, res) => {
     // 1. Fetch current hashed password
     const { rows } = await pool.query(
       "SELECT password FROM users WHERE id = $1",
-      [req.user.userId]
+      [req.user.userId],
     );
     if (rows.length === 0)
       return res.status(404).json({ error: "User not found" });
@@ -290,7 +622,7 @@ app.get("/api/v1/staff", authenticateToken, async (req, res) => {
       GROUP BY st.id
       ORDER BY st.name
     `,
-      [req.shopId]
+      [req.shopId],
     );
     res.json(rows);
   } catch (err) {
@@ -299,16 +631,25 @@ app.get("/api/v1/staff", authenticateToken, async (req, res) => {
 });
 
 app.post("/api/v1/staff", authenticateToken, async (req, res) => {
-  const { name, email, phone, role, color, username, password } = req.body;
-
+  const {
+    first_name,
+    last_name,
+    email,
+    phone,
+    role,
+    color,
+    username,
+    password,
+  } = req.body;
+  const name = first_name + " " + last_name;
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
     // 1. Create Staff Entry
     const staffRes = await client.query(
-      "INSERT INTO staff (name, email, phone, color, shop_id) VALUES ($1, $2, $3, $4, $5) RETURNING id",
-      [name, email, phone, color, req.shopId]
+      "INSERT INTO staff (name, email, phone, shop_id) VALUES ($1, $2, $3, $4) RETURNING id",
+      [name, email, phone, req.shopId],
     );
     const staffId = staffRes.rows[0].id;
 
@@ -319,7 +660,7 @@ app.post("/api/v1/staff", authenticateToken, async (req, res) => {
 
       await client.query(
         "INSERT INTO users (username, password, role, staff_id, shop_id) VALUES ($1, $2, $3, $4, $5)",
-        [username, hashedPassword, role || "staff", staffId, req.shopId]
+        [username, hashedPassword, role || "staff", staffId, req.shopId],
       );
     }
 
@@ -333,7 +674,28 @@ app.post("/api/v1/staff", authenticateToken, async (req, res) => {
     client.release();
   }
 });
+// server.js
+app.post("/api/v1/staff/reorder", async (req, res) => {
+  const { orders } = req.body; // Expects [{id: 1, sort_order: 0}, {id: 2, sort_order: 1}]
 
+  try {
+    // Start a transaction
+    await pool.query("BEGIN");
+
+    const queryText = "UPDATE public.staff SET sort_order = $1 WHERE id = $2";
+
+    for (const item of orders) {
+      await pool.query(queryText, [item.sort_order, item.id]);
+    }
+
+    await pool.query("COMMIT");
+    res.json({ success: true, message: "Staff order updated successfully" });
+  } catch (err) {
+    await pool.query("ROLLBACK");
+    console.error(err);
+    res.status(500).json({ error: "Failed to reorder staff" });
+  }
+});
 app.put("/api/v1/staff/:id", authenticateToken, async (req, res) => {
   const { id } = req.params;
   const {
@@ -355,7 +717,7 @@ app.put("/api/v1/staff/:id", authenticateToken, async (req, res) => {
       `UPDATE staff 
        SET name = $1, email = $2, phone = $3, hourly_rate = $4, specialty = $5
        WHERE id = $6 AND shop_id = $7`,
-      [fullName, email, phone, hourly_rate, specialty, id, req.shopId]
+      [fullName, email, phone, hourly_rate, specialty, id, req.shopId],
     );
 
     await client.query(`DELETE FROM staff_services WHERE staff_id = $1`, [id]);
@@ -364,7 +726,7 @@ app.put("/api/v1/staff/:id", authenticateToken, async (req, res) => {
       for (const svcId of service_ids) {
         await client.query(
           `INSERT INTO staff_services (staff_id, service_id) VALUES ($1, $2)`,
-          [id, svcId]
+          [id, svcId],
         );
       }
     }
@@ -383,7 +745,7 @@ app.delete("/api/v1/staff/:id", authenticateToken, async (req, res) => {
   try {
     await pool.query(
       "UPDATE staff SET is_active = false WHERE id = $1 AND shop_id = $2",
-      [req.params.id, req.shopId]
+      [req.params.id, req.shopId],
     );
     res.json({ success: true });
   } catch (err) {
@@ -405,7 +767,7 @@ app.post("/api/v1/staff/:id/login", authenticateToken, async (req, res) => {
 
     const checkUser = await client.query(
       "SELECT id FROM users WHERE username = $1",
-      [username]
+      [username],
     );
     if (checkUser.rows.length > 0) {
       await client.query("ROLLBACK");
@@ -417,7 +779,7 @@ app.post("/api/v1/staff/:id/login", authenticateToken, async (req, res) => {
     await client.query(
       `INSERT INTO users (username, password, shop_id, staff_id, role)
        VALUES ($1, $2, $3, $4, 'staff')`,
-      [username, hashedPassword, req.shopId, id]
+      [username, hashedPassword, req.shopId, id],
     );
 
     await client.query("COMMIT");
@@ -431,26 +793,98 @@ app.post("/api/v1/staff/:id/login", authenticateToken, async (req, res) => {
 });
 
 // --- CLIENT ROUTES ---
+// app.get("/api/v1/clients", authenticateToken, async (req, res) => {
+//   try {
+//     const { rows } = await pool.query(
+//       `SELECT c.*,
+//         -- Count only EOPPY appointments
+//         (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND is_eoppy = true) as eoppy_count,
+//         -- Count appointments that are NOT EOPPY (is_eoppy is false or null)
+//         (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND (is_eoppy = false OR is_eoppy IS NULL)) as non_eoppy_count
+//       FROM clients c
+//       WHERE shop_id = $1
+//       ORDER BY last_name`,
+//       [req.shopId],
+//     );
 
+//     const data = rows.map((c) => ({
+//       ...c,
+//       full_name: `${c.first_name} ${c.last_name}`,
+//       eoppy_count: parseInt(c.eoppy_count || 0),
+//       non_eoppy_count: parseInt(c.non_eoppy_count || 0),
+//     }));
+
+//     res.json(data);
+//   } catch (err) {
+//     res.status(500).json({ error: err.message });
+//   }
+// });
 app.get("/api/v1/clients", authenticateToken, async (req, res) => {
   try {
-    const { rows } = await pool.query(
-      `SELECT id, first_name, last_name, email, phone, notes, no_show_count, total_sales, custom_fields, outstanding_balance
-       FROM clients 
-       WHERE shop_id = $1 
-       ORDER BY last_name`,
-      [req.shopId]
-    );
-    const data = rows.map((c) => ({
-      ...c,
-      full_name: `${c.first_name} ${c.last_name}`,
+    const query = `
+      SELECT 
+        c.*,
+        c.first_name || ' ' || c.last_name as full_name,
+        
+        -- EOPPY Breakdown
+        (SELECT jsonb_build_object(
+            'total', COALESCE(SUM(s_inner.count_per_service), 0),
+            'services', COALESCE(jsonb_object_agg(s_inner.service_name, s_inner.count_per_service), '{}'::jsonb)
+          )
+         FROM (
+           SELECT s.name as service_name, COUNT(aps.id) as count_per_service
+           FROM appointments a
+           JOIN appointment_services aps ON a.id = aps.appointment_id
+           JOIN services s ON aps.service_id = s.id
+           WHERE a.client_id = c.id AND a.is_eoppy = true
+           GROUP BY s.name
+         ) s_inner
+        ) as eoppy_breakdown,
+
+        -- Non-EOPPY Breakdown
+        (SELECT jsonb_build_object(
+            'total', COALESCE(SUM(s_inner.count_per_service), 0),
+            'services', COALESCE(jsonb_object_agg(s_inner.service_name, s_inner.count_per_service), '{}'::jsonb)
+          )
+         FROM (
+           SELECT s.name as service_name, COUNT(aps.id) as count_per_service
+           FROM appointments a
+           JOIN appointment_services aps ON a.id = aps.appointment_id
+           JOIN services s ON aps.service_id = s.id
+           WHERE a.client_id = c.id AND (a.is_eoppy = false OR a.is_eoppy IS NULL)
+           GROUP BY s.name
+         ) s_inner
+        ) as non_eoppy_breakdown
+
+      FROM clients c
+      WHERE c.shop_id = $1
+      ORDER BY c.last_name;
+    `;
+
+    const { rows } = await pool.query(query, [req.shopId]);
+
+    // Format the data safely
+    const data = rows.map((row) => ({
+      ...row,
+      // The COALESCE in SQL helps, but we ensure the structure exists here too
+      eoppy_breakdown: row.eoppy_breakdown || { total: 0, services: {} },
+      non_eoppy_breakdown: row.non_eoppy_breakdown || {
+        total: 0,
+        services: {},
+      },
     }));
-    res.json(data);
+
+    // Use 'return' to ensure the function stops here
+    return res.json(data);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("SQL Error Detail:", err);
+
+    // Check if headers were already sent to avoid the ERR_HTTP_HEADERS_SENT crash
+    if (!res.headersSent) {
+      return res.status(500).json({ error: "Internal Server Error" });
+    }
   }
 });
-
 app.post("/api/v1/clients", authenticateToken, async (req, res) => {
   const {
     first_name,
@@ -459,11 +893,15 @@ app.post("/api/v1/clients", authenticateToken, async (req, res) => {
     phone,
     notes,
     custom_fields = [],
+    ergotherapia,
+    physiotherapia,
+    logotherapia,
+    date_of_birth,
   } = req.body;
   try {
     const { rows } = await pool.query(
-      `INSERT INTO clients (first_name, last_name, email, phone, notes, custom_fields, shop_id) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7) 
+      `INSERT INTO clients (first_name, last_name, email, phone, notes, custom_fields, shop_id, ergotherapia, physiotherapia, logotherapia, date_of_birth) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) 
        RETURNING *`,
       [
         first_name,
@@ -473,7 +911,11 @@ app.post("/api/v1/clients", authenticateToken, async (req, res) => {
         notes,
         JSON.stringify(custom_fields),
         req.shopId,
-      ]
+        ergotherapia,
+        physiotherapia,
+        logotherapia,
+        date_of_birth || null,
+      ],
     );
     rows[0].full_name = `${rows[0].first_name} ${rows[0].last_name}`;
     res.json({ success: true, client: rows[0] });
@@ -491,12 +933,18 @@ app.put("/api/v1/clients/:id", authenticateToken, async (req, res) => {
     phone,
     notes,
     custom_fields = [],
+    ergotherapia,
+    physiotherapia,
+    logotherapia,
+    date_of_birth,
   } = req.body;
+
   try {
     await pool.query(
       `UPDATE clients 
-       SET first_name=$1, last_name=$2, email=$3, phone=$4, notes=$5, custom_fields=$6
-       WHERE id=$7 AND shop_id=$8`,
+       SET first_name=$1, last_name=$2, email=$3, phone=$4, notes=$5, custom_fields=$6,
+           ergotherapia=$7, physiotherapia=$8, logotherapia=$9, date_of_birth=$10
+       WHERE id=$11 AND shop_id=$12`,
       [
         first_name,
         last_name,
@@ -504,9 +952,13 @@ app.put("/api/v1/clients/:id", authenticateToken, async (req, res) => {
         phone,
         notes,
         JSON.stringify(custom_fields),
+        !!ergotherapia,
+        !!physiotherapia,
+        !!logotherapia,
+        date_of_birth || null,
         id,
         req.shopId,
-      ]
+      ],
     );
     res.json({ success: true });
   } catch (err) {
@@ -516,13 +968,29 @@ app.put("/api/v1/clients/:id", authenticateToken, async (req, res) => {
 
 app.delete("/api/v1/clients/:id", authenticateToken, async (req, res) => {
   try {
-    await pool.query("DELETE FROM clients WHERE id = $1 AND shop_id = $2", [
-      req.params.id,
-      req.shopId,
-    ]);
+    const result = await pool.query(
+      "DELETE FROM clients WHERE id = $1 AND shop_id = $2",
+      [req.params.id, req.shopId],
+    );
+
+    // Optional check if the client even existed
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Client not found" });
+    }
+
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    // 1. Intercept the PostgreSQL Foreign Key Violation Error (Code 23503)
+    if (err.code === "23503") {
+      return res.status(409).json({
+        error:
+          "Δεν μπορείτε να διαγράψετε αυτόν τον πελάτη, επειδή υπάρχουν ραντεβού καταχωρημένα στο όνομά του.",
+      });
+    }
+
+    // 2. Generic fallback error (hides the ugly SQL from the user)
+    console.error("Delete Client Error:", err);
+    res.status(500).json({ error: "Αποτυχία διαγραφής πελάτη." });
   }
 });
 
@@ -532,7 +1000,7 @@ app.get("/api/v1/services", authenticateToken, async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT * FROM services WHERE shop_id = $1 ORDER BY name`,
-      [req.shopId]
+      [req.shopId],
     );
     res.json(rows);
   } catch (err) {
@@ -545,7 +1013,7 @@ app.post("/api/v1/services", authenticateToken, async (req, res) => {
   try {
     await pool.query(
       `INSERT INTO services (name, duration_minutes, price, category, color_code, shop_id) VALUES ($1, $2, $3, $4, $5, $6)`,
-      [name, duration_minutes, price, category, color_code, req.shopId]
+      [name, duration_minutes, price, category, color_code, req.shopId],
     );
     res.json({ success: true });
   } catch (err) {
@@ -559,7 +1027,7 @@ app.put("/api/v1/services/:id", authenticateToken, async (req, res) => {
   try {
     await pool.query(
       `UPDATE services SET name=$1, duration_minutes=$2, price=$3, category=$4, color_code=$5 WHERE id=$6 AND shop_id=$7`,
-      [name, duration_minutes, price, category, color_code, id, req.shopId]
+      [name, duration_minutes, price, category, color_code, id, req.shopId],
     );
     res.json({ success: true });
   } catch (err) {
@@ -581,6 +1049,8 @@ app.delete("/api/v1/services/:id", authenticateToken, async (req, res) => {
 
 // --- APPOINTMENT ROUTES ---
 
+// In server.js
+
 app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
   try {
     const visibilityClause = getVisibilityClause(req.user, "a");
@@ -588,10 +1058,24 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
     const { rows } = await pool.query(
       `
       SELECT 
-        a.id, a.client_id, a.status, a.internal_notes, a.booking_notes, a.deposit_amount, 
-        a.payment_status, a.is_block, a.save_receipt, a.created_at,
-        c.first_name, c.last_name, c.phone as client_phone,
-        -- Aggregate Services
+        a.id, 
+        a.client_id, 
+        a.status, 
+        a.internal_notes, 
+        a.booking_notes, 
+        a.deposit_amount, 
+        a.payment_status, 
+        a.is_block, 
+        a.is_eoppy,
+        a.save_receipt, 
+        a.created_at,
+        a.recurrence,
+        a.group_id,
+        c.first_name, 
+        c.last_name, 
+        c.phone as client_phone,
+        
+        -- (Rest of your query: COALESCE services, products, etc...)
         COALESCE((
           SELECT json_agg(json_build_object(
             'service_id', s.id,
@@ -623,9 +1107,8 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
       GROUP BY a.id, c.first_name, c.last_name, c.phone
       ORDER BY a.created_at DESC
     `,
-      [req.shopId]
+      [req.shopId],
     );
-
     const formatted = rows.map((row) => ({
       ...row,
       start_time: row.services?.[0]?.start_time || row.created_at,
@@ -639,113 +1122,30 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
 });
 
 app.post("/api/v1/appointments", authenticateToken, async (req, res) => {
-  const {
-    client_id,
-    status = "new",
-    internal_notes,
-    booking_notes,
-    deposit_amount,
-    payment_status,
-    is_block,
-    save_receipt = false,
-    services = [],
-    products = [],
-  } = req.body;
-
   const client = await pool.connect();
-
   try {
     await client.query("BEGIN");
 
-    const validClientId = safeUUID(client_id);
-
-    // 1. Insert the main Appointment
-    const apptRes = await client.query(
-      `INSERT INTO appointments (
-        client_id, status, internal_notes, booking_notes, 
-        deposit_amount, payment_status, is_block, save_receipt, 
-        shop_id, created_at, updated_at
-      )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW()) RETURNING id`,
-      [
-        is_block ? null : validClientId,
-        status,
-        internal_notes,
-        booking_notes,
-        deposit_amount || 0,
-        payment_status || "unpaid",
-        !!is_block, // Ensure boolean
-        !!save_receipt, // Ensure boolean
-        req.shopId,
-      ]
+    const { firstAppointmentId, validClientId } = await createAppointmentSeries(
+      client,
+      req.body,
+      req.shopId,
     );
-    const appointmentId = apptRes.rows[0].id;
 
-    if (!is_block) {
-      // 2. Insert Services
-      for (const svc of services) {
-        const validServiceId = safeUUID(svc.service_id);
-        const validStaffId = safeUUID(svc.staff_id);
-        if (validServiceId) {
-          await client.query(
-            `INSERT INTO appointment_services (
-              appointment_id, service_id, staff_id, start_time, 
-              duration_override, price_override, shop_id
-            )
-             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-            [
-              appointmentId,
-              validServiceId,
-              validStaffId,
-              svc.start_time,
-              svc.duration_override,
-              svc.price_override,
-              req.shopId,
-            ]
-          );
-        }
-      }
-
-      if (products && products.length > 0) {
-        for (const prod of products) {
-          if (prod.product_id) {
-            // FIX: Use prod.price (unit price) * quantity
-            const unitPrice = Number(prod.price || 0);
-            const qty = Number(prod.quantity || 1);
-            const lineTotal = unitPrice * qty;
-
-            await client.query(
-              `INSERT INTO product_sales (
-                appointment_id, inventory_id, staff_id, client_id, 
-                quantity, total_price, shop_id, sale_date
-              )
-               VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
-              [
-                appointmentId,
-                prod.product_id,
-                services[0]?.staff_id || null,
-                validClientId,
-                qty,
-                lineTotal, // FIX: Save calculated total, not undefined price_override
-                req.shopId,
-              ]
-            );
-          }
-        }
-      }
-    }
-
-    // 4. Recalculate Balance
-    let newBalance = 0; // Variable to hold the new balance
+    let newBalance = 0;
     if (validClientId) {
       newBalance = await recalculateClientBalance(client, validClientId);
     }
+
     await client.query("COMMIT");
-    res.json({ id: appointmentId, success: true, new_balance: newBalance });
+    res.json({
+      id: firstAppointmentId,
+      success: true,
+      new_balance: newBalance,
+    });
   } catch (err) {
     await client.query("ROLLBACK");
     console.error("Create Appointment Error:", err);
-    // Return the actual error message to help debugging
     res
       .status(500)
       .json({ error: "Failed to create appointment", details: err.message });
@@ -753,133 +1153,184 @@ app.post("/api/v1/appointments", authenticateToken, async (req, res) => {
     client.release();
   }
 });
+app.get("/api/v1/unsubscribe", async (req, res) => {
+  const crypto = require("crypto");
 
+  const { id, token } = req.query;
+
+  if (!id || !token) {
+    return res.status(400).send("Μη έγκυρο αίτημα.");
+  }
+
+  // Verify the token matches the ID using your secret
+  const expectedToken = crypto
+    .createHmac("sha256", process.env.JWT_SECRET)
+    .update(id)
+    .digest("hex");
+
+  if (token !== expectedToken) {
+    return res.status(403).send("Ο σύνδεσμος είναι άκυρος ή έχει λήξει.");
+  }
+
+  try {
+    const result = await pool.query(
+      "UPDATE clients SET receive_emails = false WHERE id = $1",
+      [id],
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).send("Ο χρήστης δεν βρέθηκε.");
+    }
+
+    // Return a nice styled confirmation page
+    res.send(`
+            <div style="font-family: sans-serif; text-align: center; padding: 100px 20px; background: #fff5f9; min-height: 100vh;">
+                <div style="background: white; padding: 40px; border-radius: 20px; display: inline-block; box-shadow: 0 10px 25px rgba(0,0,0,0.05);">
+                    <h1 style="color: #111827; margin-bottom: 10px;">Επιτυχής Διαγραφή</h1>
+                    <p style="color: #4b5563;">Έχετε διαγραφεί με επιτυχία από τη λίστα των υπενθυμίσεων.</p>
+                    <a href="https://interventio.gr" style="display: inline-block; margin-top: 20px; color: #ff93d4; text-decoration: none; font-weight: bold;">Επιστροφή στην Αρχική</a>
+                </div>
+            </div>
+        `);
+  } catch (err) {
+    console.error("Unsubscribe Error:", err);
+    res.status(500).send("Παρουσιάστηκε σφάλμα κατά τη διαγραφή.");
+  }
+});
 app.put("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
   const { id } = req.params;
-  const {
-    client_id,
-    status,
-    internal_notes,
-    booking_notes,
-    deposit_amount,
-    payment_status,
-    is_block,
-    save_receipt,
-    services = [],
-    products = [], // Products array from frontend
-  } = req.body;
+  const { scope } = req.query;
 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    let validClientId = safeUUID(client_id);
-    if (!validClientId && !is_block) {
-      return res.status(400).json({ error: "Invalid Client ID" });
-    }
+    const validClientId = safeUUID(req.body.client_id);
 
-    // 1. Update the main appointment record
-    await client.query(
-      `UPDATE appointments SET
-        client_id = $1, status = $2, internal_notes = $3, booking_notes = $4, deposit_amount = $5, payment_status = $6, is_block = $7, save_receipt = $8, updated_at = NOW()
-       WHERE id = $9 AND shop_id = $10`,
-      [
-        is_block ? null : validClientId,
-        status,
-        internal_notes,
-        booking_notes,
-        deposit_amount || 0,
-        payment_status || "unpaid",
-        is_block,
-        save_receipt || false,
-        id,
-        req.shopId,
-      ]
-    );
+    if (scope === "series") {
+      const groupInfo = await getGroupDetails(client, id, req.shopId);
+      const isRecurringBody = !!req.body.recurrence;
 
-    // 2. Refresh Services: Delete old and insert new
-    await client.query(
-      "DELETE FROM appointment_services WHERE appointment_id = $1",
-      [id]
-    );
-    if (!is_block) {
-      for (const svc of services) {
-        const validServiceId = safeUUID(svc.service_id);
-        const validStaffId = safeUUID(svc.staff_id);
-        if (validServiceId) {
-          await client.query(
-            `INSERT INTO appointment_services (appointment_id, service_id, staff_id, start_time, duration_override, price_override, shop_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-            [
-              id,
-              validServiceId,
-              validStaffId,
-              svc.start_time,
-              svc.duration_override,
-              svc.price_override,
-              req.shopId,
-            ]
-          );
-        }
+      if (groupInfo && groupInfo.group_id) {
+        // === Case 1: Existing Series (Delete Future & Recreate) ===
+        const currentApptStart = req.body.services[0]?.start_time;
+        await client.query(
+          `DELETE FROM appointments 
+           WHERE group_id = $1 AND shop_id = $2
+           AND id IN (
+             SELECT a.id FROM appointments a
+             JOIN appointment_services aps ON a.id = aps.appointment_id
+             WHERE a.group_id = $1 AND aps.start_time >= $3
+           )`,
+          [groupInfo.group_id, req.shopId, currentApptStart],
+        );
+
+        // createAppointmentSeries will create new rows.
+        // These rows default to reminder_sent = false automatically via DB schema.
+        await createAppointmentSeries(
+          client,
+          { ...req.body, group_id_override: groupInfo.group_id },
+          req.shopId,
+        );
+      } else if (isRecurringBody) {
+        // === Case 2: Convert Single -> Series (Update Current & Fill Future) ===
+        const crypto = require("crypto");
+        const newGroupId = crypto.randomUUID();
+        const recurrenceRule = JSON.stringify(req.body.recurrence);
+
+        // 1. Update the CURRENT appointment (the 'Single' one)
+        // We use performSingleUpdate to handle services/products/basic info
+        await performSingleUpdate(client, id, req.shopId, req.body);
+
+        // 2. Assign the new Group ID, Recurrence Rule to it and RESET reminder_sent
+        await client.query(
+          `UPDATE appointments 
+             SET group_id = $1, recurrence = $2, email_reminder_sent = false 
+             WHERE id = $3 AND shop_id = $4`,
+          [newGroupId, recurrenceRule, id, req.shopId],
+        );
+
+        // 3. Create the REST of the series
+        // The duplicate check in createAppointmentSeries will see the current appointment
+        // (which we just updated) and skip creating a duplicate for today,
+        // then proceed to create the future ones.
+        await createAppointmentSeries(
+          client,
+          { ...req.body, group_id_override: newGroupId },
+          req.shopId,
+        );
       }
-    }
+    } else {
+      // === Case 3: Single Update ===
+      await performSingleUpdate(client, id, req.shopId, req.body);
 
-    // 3. Refresh Products: Delete old and insert new
-    // Note: In a production app, you might want to return stock to inventory before deleting
-    await client.query("DELETE FROM product_sales WHERE appointment_id = $1", [
-      id,
-    ]);
-    if (!is_block) {
-      for (const prod of products) {
-        if (prod.product_id) {
-          // FIX: Use prod.price (unit price) * quantity
-          const unitPrice = Number(prod.price || 0);
-          const qty = Number(prod.quantity || 1);
-          const lineTotal = unitPrice * qty;
-
-          await client.query(
-            `INSERT INTO product_sales (appointment_id, inventory_id, staff_id, client_id, quantity, total_price, shop_id, sale_date)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
-            [
-              id,
-              prod.product_id,
-              services[0]?.staff_id || null,
-              validClientId,
-              qty,
-              lineTotal, // FIX: Save calculated total
-              req.shopId,
-            ]
-          );
-
-          // Note: Stock management on update requires tracking previous quantities
-          // This simple version assumes the stock was handled at initial sale
-        }
-      }
+      // Reset flag to ensure that if the time was moved, a new reminder can trigger
+      await client.query(
+        `UPDATE appointments SET email_reminder_sent = false WHERE id = $1 AND shop_id = $2`,
+        [id, req.shopId],
+      );
     }
 
     let newBalance = 0;
     if (validClientId) {
       newBalance = await recalculateClientBalance(client, validClientId);
     }
+
     await client.query("COMMIT");
     res.json({ success: true, new_balance: newBalance });
   } catch (err) {
     await client.query("ROLLBACK");
     console.error("Update Appointment Error:", err);
-    res.status(500).json({ error: "Update failed" });
+    res.status(500).json({ error: "Update failed", details: err.message });
   } finally {
     client.release();
   }
 });
 
 app.delete("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const { scope } = req.query;
+
+  const client = await pool.connect();
   try {
-    await pool.query(
-      "DELETE FROM appointments WHERE id = $1 AND shop_id = $2",
-      [req.params.id, req.shopId]
-    );
+    await client.query("BEGIN");
+
+    if (scope === "series") {
+      const groupInfo = await getGroupDetails(client, id, req.shopId);
+      if (groupInfo && groupInfo.group_id) {
+        await client.query(
+          `
+          DELETE FROM appointments 
+          WHERE group_id = $1 
+          AND shop_id = $2
+          AND id IN (
+            SELECT a.id FROM appointments a
+            JOIN appointment_services aps ON a.id = aps.appointment_id
+            WHERE a.group_id = $1 
+            AND aps.start_time >= $3
+          )
+        `,
+          [groupInfo.group_id, req.shopId, groupInfo.start_time],
+        );
+      } else {
+        await client.query(
+          "DELETE FROM appointments WHERE id = $1 AND shop_id = $2",
+          [id, req.shopId],
+        );
+      }
+    } else {
+      await client.query(
+        "DELETE FROM appointments WHERE id = $1 AND shop_id = $2",
+        [id, req.shopId],
+      );
+    }
+
+    await client.query("COMMIT");
     res.json({ success: true });
   } catch (err) {
+    await client.query("ROLLBACK");
     res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 
@@ -894,11 +1345,11 @@ app.post("/api/v1/appointments/swap", authenticateToken, async (req, res) => {
 
     const q1 = await client.query(
       `SELECT * FROM appointment_services WHERE appointment_id = $1 AND shop_id = $2 ORDER BY id`,
-      [appointment1_id, req.shopId]
+      [appointment1_id, req.shopId],
     );
     const q2 = await client.query(
       `SELECT * FROM appointment_services WHERE appointment_id = $1 AND shop_id = $2 ORDER BY id`,
-      [appointment2_id, req.shopId]
+      [appointment2_id, req.shopId],
     );
 
     const s1 = q1.rows;
@@ -913,7 +1364,7 @@ app.post("/api/v1/appointments/swap", authenticateToken, async (req, res) => {
           s2[i].duration_override,
           s2[i].price_override,
           s1[i].id,
-        ]
+        ],
       );
       await client.query(
         `UPDATE appointment_services SET start_time=$1, staff_id=$2, duration_override=$3, price_override=$4 WHERE id=$5`,
@@ -923,7 +1374,7 @@ app.post("/api/v1/appointments/swap", authenticateToken, async (req, res) => {
           s1[i].duration_override,
           s1[i].price_override,
           s2[i].id,
-        ]
+        ],
       );
     }
 
@@ -954,19 +1405,19 @@ app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
     await client.query(
       `INSERT INTO transactions (appointment_id, client_id, amount, payment_method, transaction_type, shop_id, created_at)
        VALUES ($1, $2, $3, $4, 'payment', $5, NOW())`,
-      [appointment_id, client_id, amount, payment_method, req.shopId]
+      [appointment_id, client_id, amount, payment_method, req.shopId],
     );
 
     // Calculate updated payment status
     const priceRes = await client.query(
       `SELECT SUM(price_override) as total_price FROM appointment_services WHERE appointment_id = $1`,
-      [appointment_id]
+      [appointment_id],
     );
     const totalPrice = Number(priceRes.rows[0].total_price || 0);
 
     const apptRes = await client.query(
       `SELECT deposit_amount FROM appointments WHERE id = $1`,
-      [appointment_id]
+      [appointment_id],
     );
     const currentPaid = Number(apptRes.rows[0]?.deposit_amount || 0);
     const newTotalPaid = currentPaid + Number(amount);
@@ -981,12 +1432,12 @@ app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
       `UPDATE appointments 
        SET payment_status = $1, status = $2, deposit_amount = deposit_amount + $3 
        WHERE id = $4 AND shop_id = $5`,
-      [newPaymentStatus, newStatus, amount, appointment_id, req.shopId]
+      [newPaymentStatus, newStatus, amount, appointment_id, req.shopId],
     );
 
     await client.query(
       `UPDATE clients SET total_sales = COALESCE(total_sales, 0) + $1 WHERE id = $2 AND shop_id = $3`,
-      [amount, client_id, req.shopId]
+      [amount, client_id, req.shopId],
     );
 
     // CRITICAL: Update outstanding balance
@@ -1015,7 +1466,7 @@ app.get("/api/v1/financials", authenticateToken, async (req, res) => {
       WHERE t.shop_id = $1
       ORDER BY t.created_at DESC
     `,
-      [req.shopId]
+      [req.shopId],
     );
     res.json(rows);
   } catch (err) {
@@ -1024,6 +1475,99 @@ app.get("/api/v1/financials", authenticateToken, async (req, res) => {
 });
 
 // --- REPORT ENDPOINTS (ALL FILTERED BY SHOP_ID AND VISIBILITY) ---
+app.get("/api/v1/reports/analytics", authenticateToken, async (req, res) => {
+  const { from, to } = req.query;
+  // Default to last 30 days if no dates provided
+  const startDate =
+    from || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const endDate = to || new Date().toISOString();
+
+  try {
+    const client = await pool.connect();
+    try {
+      // A. Cancellation Rate
+      // (Cancelled + No-Show) / Total Appointments
+      const statusRes = await client.query(
+        `SELECT 
+           COUNT(*) FILTER (WHERE status IN ('cancelled', 'no-show')) as negative,
+           COUNT(*) as total
+         FROM appointments a
+         JOIN appointment_services aps ON a.id = aps.appointment_id
+         WHERE a.shop_id = $1 
+         AND aps.start_time >= $2 AND aps.start_time <= $3`,
+        [req.shopId, startDate, endDate],
+      );
+
+      const negCount = Number(statusRes.rows[0].negative);
+      const totalAppts = Number(statusRes.rows[0].total);
+      const cancelRate = totalAppts > 0 ? (negCount / totalAppts) * 100 : 0;
+
+      // B. Client Retention (New vs Returning in this period)
+      // "New" = Their first ever appointment is in this period
+      // "Returning" = They have appointments before this period
+      const retentionRes = await client.query(
+        `SELECT 
+           COUNT(DISTINCT a.client_id) FILTER (
+             WHERE NOT EXISTS (
+               SELECT 1 FROM appointments old 
+               JOIN appointment_services aps_old ON old.id = aps_old.appointment_id
+               WHERE old.client_id = a.client_id 
+               AND aps_old.start_time < $2
+               AND old.status = 'completed'
+             )
+           ) as new_clients,
+           COUNT(DISTINCT a.client_id) FILTER (
+             WHERE EXISTS (
+               SELECT 1 FROM appointments old 
+               JOIN appointment_services aps_old ON old.id = aps_old.appointment_id
+               WHERE old.client_id = a.client_id 
+               AND aps_old.start_time < $2
+               AND old.status = 'completed'
+             )
+           ) as returning_clients
+         FROM appointments a
+         WHERE a.shop_id = $1 
+         AND a.created_at >= $2 AND a.created_at <= $3`,
+        [req.shopId, startDate, endDate],
+      );
+
+      const newClients = Number(retentionRes.rows[0].new_clients);
+      const retClients = Number(retentionRes.rows[0].returning_clients);
+      const retentionRate =
+        newClients + retClients > 0
+          ? (retClients / (newClients + retClients)) * 100
+          : 0;
+
+      // C. Staff Utilization
+      // Returns hours booked per staff member
+      const utilRes = await client.query(
+        `SELECT st.name, 
+           SUM(COALESCE(aps.duration_override, s.duration_minutes))/60.0 as hours_booked,
+           COUNT(aps.id) as appt_count,
+           SUM(COALESCE(aps.price_override, s.price)) as total_revenue
+         FROM appointment_services aps
+         JOIN staff st ON aps.staff_id = st.id
+         LEFT JOIN services s ON aps.service_id = s.id
+         WHERE st.shop_id = $1
+         AND aps.start_time >= $2 AND aps.start_time <= $3
+         GROUP BY st.name`,
+        [req.shopId, startDate, endDate],
+      );
+
+      res.json({
+        cancellation_rate: cancelRate.toFixed(1),
+        retention_rate: retentionRate.toFixed(1),
+        new_clients: newClients,
+        returning_clients: retClients,
+        staff_utilization: utilRes.rows,
+      });
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 app.get("/api/v1/reports/appointments", authenticateToken, async (req, res) => {
   const { from, to } = req.query;
@@ -1051,7 +1595,7 @@ app.get("/api/v1/reports/appointments", authenticateToken, async (req, res) => {
       WHERE 1=1 ${whereClause}
       GROUP BY a.id, c.first_name, c.last_name
       ORDER BY a.created_at DESC`,
-      params
+      params,
     );
     res.json(rows);
   } catch (err) {
@@ -1063,28 +1607,26 @@ app.get("/api/v1/reports/clients", authenticateToken, async (req, res) => {
   const { from, to } = req.query;
   const params = [req.shopId];
 
-  // Subquery must also respect visibility rules
-  let subQuery =
-    "WHERE a.shop_id = $1 AND a.client_id = c.id" +
-    getVisibilityClause(req.user, "a");
+  let whereClause = "WHERE a.shop_id = $1" + getVisibilityClause(req.user, "a");
 
   if (from) {
     params.push(from);
-    subQuery += ` AND aps.start_time >= $${params.length}`;
+    whereClause += ` AND aps.start_time >= $${params.length}`;
   }
   if (to) {
     params.push(to);
-    subQuery += ` AND aps.start_time <= $${params.length}`;
+    whereClause += ` AND aps.start_time <= $${params.length}`;
   }
   try {
     const { rows } = await pool.query(
-      `SELECT c.*, COUNT(a.id) as appointment_count
-      FROM clients c
-      LEFT JOIN appointments a ON c.id = a.client_id
-      WHERE c.shop_id = $1 
-      AND EXISTS (SELECT 1 FROM appointments a JOIN appointment_services aps ON a.id = aps.appointment_id ${subQuery})
-      GROUP BY c.id ORDER BY c.last_name`,
-      params
+      `SELECT c.*, COUNT(DISTINCT a.id) as appointment_count
+       FROM clients c
+       JOIN appointments a ON c.id = a.client_id
+       JOIN appointment_services aps ON a.id = aps.appointment_id
+       ${whereClause}
+       GROUP BY c.id 
+       ORDER BY c.last_name`,
+      params,
     );
     res.json(rows);
   } catch (err) {
@@ -1096,10 +1638,7 @@ app.get("/api/v1/reports/sales", authenticateToken, async (req, res) => {
   const { from, to } = req.query;
   const params = [req.shopId];
 
-  // Base Clause
   let whereClause = "WHERE a.shop_id = $1 AND a.status = 'completed'";
-
-  // Visibility: If not super_admin, require save_receipt = true for completed items
   if (req.user.role !== "super_admin") {
     whereClause += " AND a.save_receipt = true";
   }
@@ -1112,18 +1651,26 @@ app.get("/api/v1/reports/sales", authenticateToken, async (req, res) => {
     params.push(to);
     whereClause += ` AND aps.start_time <= $${params.length}`;
   }
+
   try {
     const { rows } = await pool.query(
-      `SELECT s.name as service_name, COUNT(aps.id) as count, SUM(COALESCE(aps.price_override, s.price)) as total_revenue
+      `SELECT 
+        COALESCE(s.name, 'Deleted Service') as service_name, 
+        COUNT(aps.id) as count, 
+        SUM(COALESCE(aps.price_override, s.price)) as total_revenue
       FROM appointment_services aps
-      JOIN services s ON aps.service_id = s.id
+      LEFT JOIN services s ON aps.service_id = s.id -- FIXED: LEFT JOIN
       JOIN appointments a ON aps.appointment_id = a.id
-      ${whereClause} GROUP BY s.name ORDER BY total_revenue DESC`,
-      params
+      ${whereClause} 
+      GROUP BY COALESCE(s.name, 'Deleted Service') 
+      ORDER BY total_revenue DESC`,
+      params,
     );
+
+    // Also return summary for charts
     const summary = rows.reduce(
       (acc, row) => acc + Number(row.total_revenue),
-      0
+      0,
     );
     res.json({ summary: { total_revenue: summary }, details: rows });
   } catch (err) {
@@ -1156,7 +1703,7 @@ app.get("/api/v1/reports/staff", authenticateToken, async (req, res) => {
       JOIN services s ON aps.service_id = s.id
       JOIN appointments a ON aps.appointment_id = a.id
       ${whereClause} GROUP BY st.name ORDER BY total_revenue DESC`,
-      params
+      params,
     );
     res.json(rows);
   } catch (err) {
@@ -1195,7 +1742,7 @@ app.get("/api/v1/reports/payments", authenticateToken, async (req, res) => {
        LEFT JOIN appointments a ON t.appointment_id = a.id
        ${whereClause} 
        ORDER BY t.created_at DESC`,
-      params
+      params,
     );
     res.json(rows);
   } catch (err) {
@@ -1207,49 +1754,93 @@ app.get("/api/v1/reports/finances", authenticateToken, async (req, res) => {
   const { from, to } = req.query;
   const params = [req.shopId];
 
+  // A. Sales Logic (Completed & Visible)
   let salesWhere = "WHERE a.shop_id = $1 AND a.status = 'completed'";
-  let payWhere = "WHERE t.shop_id = $1";
 
-  // Visibility logic for non-super-admins
+  // Visibility: If not super_admin, require save_receipt = true
   if (req.user.role !== "super_admin") {
     salesWhere += " AND a.save_receipt = true";
-    // For payments, we filter those attached to completed appointments without receipts
-    payWhere +=
-      " AND NOT EXISTS (SELECT 1 FROM appointments a WHERE a.id = t.appointment_id AND a.status='completed' AND a.save_receipt = false)";
   }
 
+  // Date filters for Sales (Revenue)
+  let salesDateClause = "";
   if (from) {
+    salesDateClause += ` AND aps.start_time >= $${params.length + 1}`;
     params.push(from);
-    salesWhere += ` AND aps.start_time >= $${params.length}`;
-    payWhere += ` AND t.created_at >= $${params.length}`;
   }
   if (to) {
+    salesDateClause += ` AND aps.start_time <= $${params.length + 1}`;
     params.push(to);
-    salesWhere += ` AND aps.start_time <= $${params.length}`;
-    payWhere += ` AND t.created_at <= $${params.length}`;
   }
+
   try {
-    const salesRes = await pool.query(
-      `SELECT SUM(COALESCE(aps.price_override, s.price)) as total FROM appointment_services aps JOIN services s ON aps.service_id=s.id JOIN appointments a ON aps.appointment_id=a.id ${salesWhere}`,
-      params
-    );
-    const payRes = await pool.query(
-      `SELECT SUM(amount) as total FROM transactions t ${payWhere}`,
-      params
-    );
-    res.json({
-      total_sales: Number(salesRes.rows[0].total) || 0,
-      total_payments: Number(payRes.rows[0].total) || 0,
-    });
+    const client = await pool.connect();
+    try {
+      const salesRes = await client.query(
+        `SELECT SUM(
+            (SELECT COALESCE(SUM(COALESCE(aps_inner.price_override, s_inner.price)), 0)
+             FROM appointment_services aps_inner
+             LEFT JOIN services s_inner ON aps_inner.service_id = s_inner.id
+             WHERE aps_inner.appointment_id = a.id)
+            +
+            (SELECT COALESCE(SUM(ps.total_price), 0)
+             FROM product_sales ps
+             WHERE ps.appointment_id = a.id)
+         ) as total
+         FROM appointments a
+         WHERE a.id IN (
+           SELECT DISTINCT a2.id
+           FROM appointments a2
+           JOIN appointment_services aps2 ON a2.id = aps2.appointment_id
+           ${salesWhere.replace("a.shop_id", "a2.shop_id").replace("a.status", "a2.status").replace("a.save_receipt", "a2.save_receipt")} 
+           ${salesDateClause.replace(/aps\./g, "aps2.")}
+         )`,
+        params,
+      );
+
+      // 2. Total Collected (in Date Range)
+      // Note: We reuse params for date checking, so we need to rebuild params for this query or use distinct ones.
+      // Simpler approach: Run separate queries with clean params to avoid index confusion.
+      const payRes = await client.query(
+        `SELECT SUM(amount) as total FROM transactions t 
+         WHERE shop_id = $1 
+         AND created_at >= $2 AND created_at <= $3`,
+        [req.shopId, from || "1970-01-01", to || "2100-01-01"],
+      );
+
+      // 3. SPECIAL: Collected TODAY (Hardcoded date check)
+      const todayRes = await client.query(
+        `SELECT SUM(amount) as total FROM transactions 
+         WHERE shop_id = $1 AND created_at >= CURRENT_DATE`,
+        [req.shopId],
+      );
+
+      // 4. SPECIAL: Total Business Debt (Live Snapshot)
+      // Sum of all positive outstanding balances
+      const debtRes = await client.query(
+        `SELECT SUM(outstanding_balance) as total FROM clients 
+         WHERE shop_id = $1 AND outstanding_balance > 0`,
+        [req.shopId],
+      );
+
+      res.json({
+        total_sales: Number(salesRes.rows[0].total) || 0,
+        total_payments: Number(payRes.rows[0].total) || 0,
+        collected_today: Number(todayRes.rows[0].total) || 0,
+        total_debt: Number(debtRes.rows[0].total) || 0,
+      });
+    } finally {
+      client.release();
+    }
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// 3️⃣ SOCKET.IO ΠΑΝΩ ΣΤΟ HTTP SERVER
 const io = new Server(server, {
   cors: {
-    origin: ["http://localhost:5173", "http://192.168.68.58:5173"],
+    // You can use an array or a single string from your .env
+    origin: [ALLOWED_ORIGIN, "http://localhost:5173"],
     credentials: true,
   },
 });
@@ -1308,7 +1899,7 @@ io.on("connection", (socket) => {
           fileType || null,
           binaryData,
           process.env.MESSAGE_ENCRYPTION_KEY || "SecretKey123", // $9: The Key
-        ]
+        ],
       );
 
       const message = result.rows[0];
@@ -1317,7 +1908,7 @@ io.on("connection", (socket) => {
         `SELECT u.id, u.username, s.name as staff_name 
          FROM users u LEFT JOIN staff s ON u.staff_id = s.id 
          WHERE u.id = $1`,
-        [socket.user.userId]
+        [socket.user.userId],
       );
 
       const messageWithUser = {
@@ -1332,7 +1923,7 @@ io.on("connection", (socket) => {
 
       await pool.query(
         `UPDATE chat_channels SET updated_at = NOW() WHERE id = $1`,
-        [channelId]
+        [channelId],
       );
     } catch (err) {
       console.error("Socket Message Error:", err);
@@ -1361,7 +1952,7 @@ io.on("connection", (socket) => {
           `INSERT INTO message_read_receipts (message_id, user_id, read_at)
          VALUES ($1, $2, NOW())
          ON CONFLICT (message_id, user_id) DO NOTHING`,
-          [msgId, socket.user.userId]
+          [msgId, socket.user.userId],
         );
       }
 
@@ -1370,7 +1961,7 @@ io.on("connection", (socket) => {
         `UPDATE channel_members 
        SET last_read_at = NOW() 
        WHERE channel_id = $1 AND user_id = $2`,
-        [channelId, socket.user.userId]
+        [channelId, socket.user.userId],
       );
 
       await client.query("COMMIT");
@@ -1394,14 +1985,14 @@ io.on("connection", (socket) => {
         `INSERT INTO message_read_receipts (message_id, user_id, read_at)
          VALUES ($1, $2, NOW())
          ON CONFLICT (message_id, user_id) DO UPDATE SET read_at = NOW()`,
-        [messageId, socket.user.userId]
+        [messageId, socket.user.userId],
       );
 
       await pool.query(
         `UPDATE channel_members 
          SET last_read_at = NOW() 
          WHERE channel_id = $1 AND user_id = $2`,
-        [channelId, socket.user.userId]
+        [channelId, socket.user.userId],
       );
 
       io.to(`channel:${channelId}`).emit("chat:read", {
@@ -1439,7 +2030,7 @@ app.get("/api/v1/chat/channels", authenticateToken, async (req, res) => {
        JOIN channel_members cm ON c.id = cm.channel_id
        WHERE cm.user_id = $1 AND c.shop_id = $2
        ORDER BY c.updated_at DESC`,
-      [req.user.userId, req.shopId]
+      [req.user.userId, req.shopId],
     );
     res.json(rows);
   } catch (err) {
@@ -1459,21 +2050,21 @@ app.post("/api/v1/chat/channels", authenticateToken, async (req, res) => {
     const channelResult = await client.query(
       `INSERT INTO chat_channels (shop_id, name, description, created_by)
        VALUES ($1, $2, $3, $4) RETURNING *`,
-      [req.shopId, name, description, req.user.userId]
+      [req.shopId, name, description, req.user.userId],
     );
 
     const channel = channelResult.rows[0];
 
     await client.query(
       `INSERT INTO channel_members (channel_id, user_id) VALUES ($1, $2)`,
-      [channel.id, req.user.userId]
+      [channel.id, req.user.userId],
     );
 
     for (const userId of memberIds) {
       if (userId !== req.user.userId) {
         await client.query(
           `INSERT INTO channel_members (channel_id, user_id) VALUES ($1, $2)`,
-          [channel.id, userId]
+          [channel.id, userId],
         );
       }
     }
@@ -1500,7 +2091,7 @@ app.get(
     try {
       const memberCheck = await pool.query(
         `SELECT 1 FROM channel_members WHERE channel_id = $1 AND user_id = $2`,
-        [channelId, req.user.userId]
+        [channelId, req.user.userId],
       );
 
       if (memberCheck.rows.length === 0) {
@@ -1553,7 +2144,7 @@ app.get(
       console.error("Error fetching messages:", err);
       res.status(500).json({ error: err.message });
     }
-  }
+  },
 );
 
 // Get all shop users for adding to channels
@@ -1565,7 +2156,7 @@ app.get("/api/v1/chat/shop-users", authenticateToken, async (req, res) => {
        LEFT JOIN staff s ON u.staff_id = s.id
        WHERE u.shop_id = $1
        ORDER BY s.name, u.username`,
-      [req.shopId]
+      [req.shopId],
     );
     res.json(rows);
   } catch (err) {
@@ -1585,21 +2176,21 @@ app.post("/api/v1/chat/channels", authenticateToken, async (req, res) => {
     const channelResult = await client.query(
       `INSERT INTO chat_channels (shop_id, name, description, created_by)
        VALUES ($1, $2, $3, $4) RETURNING *`,
-      [req.shopId, name, description, req.user.userId]
+      [req.shopId, name, description, req.user.userId],
     );
 
     const channel = channelResult.rows[0];
 
     await client.query(
       `INSERT INTO channel_members (channel_id, user_id) VALUES ($1, $2)`,
-      [channel.id, req.user.userId]
+      [channel.id, req.user.userId],
     );
 
     for (const userId of memberIds) {
       if (userId !== req.user.userId) {
         await client.query(
           `INSERT INTO channel_members (channel_id, user_id) VALUES ($1, $2)`,
-          [channel.id, userId]
+          [channel.id, userId],
         );
       }
     }
@@ -1630,7 +2221,7 @@ app.get(
     try {
       const memberCheck = await pool.query(
         `SELECT 1 FROM channel_members WHERE channel_id = $1 AND user_id = $2`,
-        [channelId, req.user.userId]
+        [channelId, req.user.userId],
       );
 
       if (memberCheck.rows.length === 0) {
@@ -1675,7 +2266,7 @@ app.get(
       console.error("Error fetching messages:", err);
       res.status(500).json({ error: err.message });
     }
-  }
+  },
 );
 
 const fileStorage = multer.memoryStorage();
@@ -1695,7 +2286,7 @@ app.post(
       // Correctly handle Greek/Special characters in filename
       const originalName = Buffer.from(
         req.file.originalname,
-        "latin1"
+        "latin1",
       ).toString("utf8");
 
       // We return the base64 for the frontend "Optimistic" UI
@@ -1712,7 +2303,7 @@ app.post(
     } catch (err) {
       res.status(500).json({ error: "Upload processing failed" });
     }
-  }
+  },
 );
 
 app.get("/api/v1/chat/file/:messageId", authenticateToken, async (req, res) => {
@@ -1720,7 +2311,7 @@ app.get("/api/v1/chat/file/:messageId", authenticateToken, async (req, res) => {
     const { messageId } = req.params;
     const { rows } = await pool.query(
       "SELECT file_blob, file_type, file_name FROM chat_messages WHERE id = $1",
-      [messageId]
+      [messageId],
     );
 
     if (rows.length === 0 || !rows[0].file_blob) {
@@ -1735,7 +2326,7 @@ app.get("/api/v1/chat/file/:messageId", authenticateToken, async (req, res) => {
     res.setHeader("Content-Type", file_type || "application/octet-stream");
     res.setHeader(
       "Content-Disposition",
-      `inline; filename*=UTF-8''${encodedName}`
+      `inline; filename*=UTF-8''${encodedName}`,
     );
     res.send(file_blob);
   } catch (err) {
@@ -1756,13 +2347,13 @@ app.get(
        LEFT JOIN staff s ON u.staff_id = s.id
        WHERE cm.channel_id = $1
        ORDER BY s.name, u.username`,
-        [req.params.channelId]
+        [req.params.channelId],
       );
       res.json(rows);
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
-  }
+  },
 );
 
 // Add member to channel
@@ -1777,13 +2368,13 @@ app.post(
         `INSERT INTO channel_members (channel_id, user_id)
        VALUES ($1, $2)
        ON CONFLICT (channel_id, user_id) DO NOTHING`,
-        [req.params.channelId, userId]
+        [req.params.channelId, userId],
       );
       res.json({ success: true });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
-  }
+  },
 );
 
 // Get all shop users for adding to channels
@@ -1795,7 +2386,7 @@ app.get("/api/v1/chat/shop-users", authenticateToken, async (req, res) => {
        LEFT JOIN staff s ON u.staff_id = s.id
        WHERE u.shop_id = $1
        ORDER BY s.name, u.username`,
-      [req.shopId]
+      [req.shopId],
     );
     res.json(rows);
   } catch (err) {
@@ -1803,7 +2394,92 @@ app.get("/api/v1/chat/shop-users", authenticateToken, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+app.get("/api/v1/shop", authenticateToken, async (req, res) => {
+  try {
+    // 2. Add the WHERE clause with the $1 placeholder
+    const { rows } = await pool.query(
+      `SELECT *
+       FROM shops
+       WHERE id = $1`, // <--- crucial fix
+      [req.shopId],
+    );
 
+    // 3. Handle case where shop isn't found
+    if (rows.length === 0) {
+      return res.status(404).json({ message: "Shop not found" });
+    }
+
+    // 5. Send the first item (since ID is unique), not the whole array
+    res.json(rows[0]);
+  } catch (err) {
+    console.error("Error fetching shop:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+// PUT: Update Shop Theme Color
+app.put("/api/v1/shop/theme", authenticateToken, async (req, res) => {
+  const { primaryColor } = req.body;
+
+  // Basic Hex Validation (7 characters, starts with #)
+  if (!primaryColor || !/^#[0-9A-F]{6}$/i.test(primaryColor)) {
+    return res.status(400).json({ error: "Invalid hex color format" });
+  }
+
+  try {
+    const { rowCount } = await pool.query(
+      `UPDATE shops
+       SET primary_color = $1 
+       WHERE id = $2`,
+      [primaryColor, req.shopId],
+    );
+
+    if (rowCount === 0) {
+      return res.status(404).json({ message: "Shop not found" });
+    }
+
+    res.json({ message: "Theme updated successfully", primaryColor });
+  } catch (err) {
+    console.error("Error updating theme:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put("/api/v1/shop/services", authenticateToken, async (req, res) => {
+  const { ergotherapia, physiotherapia, logotherapia } = req.body;
+
+  // Validation: Ensure all fields are present and are booleans
+  // We check for 'undefined' because 'false' is a falsy value in JS
+  if (
+    typeof ergotherapia === "undefined" ||
+    typeof physiotherapia === "undefined" ||
+    typeof logotherapia === "undefined"
+  ) {
+    return res.status(400).json({ error: "Missing therapy service data" });
+  }
+
+  try {
+    const { rowCount } = await pool.query(
+      `UPDATE shops
+       SET ergotherapia = $1, 
+           physiotherapia = $2, 
+           logotherapia = $3
+       WHERE id = $4`,
+      [ergotherapia, physiotherapia, logotherapia, req.shopId],
+    );
+
+    if (rowCount === 0) {
+      return res.status(404).json({ message: "Shop not found" });
+    }
+
+    res.json({
+      message: "Services updated successfully",
+      services: { ergotherapia, physiotherapia, logotherapia },
+    });
+  } catch (err) {
+    console.error("Error updating shop services:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
 // ==================== KEEP ALL YOUR OTHER ROUTES ====================
 // (Profile, Staff, Clients, Services, Appointments, Reports, etc.)
 // ... Copy all routes from your original server.js here ...
@@ -1812,16 +2488,16 @@ app.get("/api/v1/profile", authenticateToken, async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT u.id as user_id, u.username, u.role, 
-        s.name as shop_name, s.id as shop_id,
+        s.name as shop_name, s.id as shop_id, s.ergotherapia as ergotherapia,
         st.id as staff_id, st.name as staff_name,
         st.email as staff_email, st.phone as staff_phone, st.specialty
       FROM users u
       LEFT JOIN shops s ON u.shop_id = s.id
       LEFT JOIN staff st ON u.staff_id = st.id
       WHERE u.id = $1`,
-      [req.user.userId]
+      [req.user.userId],
     );
-
+    console.log(rows);
     if (rows.length === 0)
       return res.status(404).json({ error: "User not found" });
     res.json(rows[0]);
@@ -1829,11 +2505,12 @@ app.get("/api/v1/profile", authenticateToken, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 // Get all products with their inventory variations for a shop
 app.get("/api/v1/products", authenticateToken, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT p.id, p.name, 
+      `SELECT p.id, p.name, p.description, 
         json_agg(
           json_build_object(
             'id', pi.id, 
@@ -1847,7 +2524,7 @@ app.get("/api/v1/products", authenticateToken, async (req, res) => {
        WHERE p.shop_id = $1
        GROUP BY p.id, p.name
        ORDER BY p.name ASC`,
-      [req.shopId]
+      [req.shopId],
     );
     res.json(rows);
   } catch (err) {
@@ -1864,7 +2541,7 @@ app.post("/api/v1/products", authenticateToken, async (req, res) => {
 
     const productRes = await client.query(
       `INSERT INTO products (name, description, shop_id) VALUES ($1, $2, $3) RETURNING id`,
-      [name, description, req.shopId]
+      [name, description, req.shopId],
     );
     const productId = productRes.rows[0].id;
 
@@ -1872,7 +2549,7 @@ app.post("/api/v1/products", authenticateToken, async (req, res) => {
       await client.query(
         `INSERT INTO product_inventory (product_id, variation_name, price, stock_quantity)
          VALUES ($1, $2, $3, $4)`,
-        [productId, v.variation_name, v.price, v.stock_quantity]
+        [productId, v.variation_name, v.price, v.stock_quantity],
       );
     }
 
@@ -1897,13 +2574,13 @@ app.patch(
         `UPDATE product_inventory 
        SET stock_quantity = stock_quantity + $1 
        WHERE id = $2 RETURNING stock_quantity`,
-        [quantity, req.params.id]
+        [quantity, req.params.id],
       );
       res.json(rows[0]);
     } catch (err) {
       res.status(500).json({ error: "Insufficient stock or update failed" });
     }
-  }
+  },
 );
 app.put("/api/v1/products/:id", authenticateToken, async (req, res) => {
   const { id } = req.params;
@@ -1917,7 +2594,7 @@ app.put("/api/v1/products/:id", authenticateToken, async (req, res) => {
     await client.query(
       `UPDATE products SET name = $1, description = $2, updated_at = NOW() 
        WHERE id = $3 AND shop_id = $4`,
-      [name, description, id, req.shopId]
+      [name, description, id, req.shopId],
     );
 
     // 2. Handle variations
@@ -1928,14 +2605,14 @@ app.put("/api/v1/products/:id", authenticateToken, async (req, res) => {
           `UPDATE product_inventory 
            SET variation_name = $1, price = $2, stock_quantity = $3, updated_at = NOW()
            WHERE id = $4 AND product_id = $5`,
-          [v.variation_name, v.price, v.stock_quantity, v.id, id]
+          [v.variation_name, v.price, v.stock_quantity, v.id, id],
         );
       } else {
         // Insert new variation added during edit
         await client.query(
           `INSERT INTO product_inventory (product_id, variation_name, price, stock_quantity)
            VALUES ($1, $2, $3, $4)`,
-          [id, v.variation_name, v.price, v.stock_quantity]
+          [id, v.variation_name, v.price, v.stock_quantity],
         );
       }
     }
@@ -1955,7 +2632,7 @@ app.delete("/api/v1/products/:id", authenticateToken, async (req, res) => {
     // Ensure the product belongs to the user's shop for security
     const result = await pool.query(
       "DELETE FROM products WHERE id = $1 AND shop_id = $2",
-      [id, req.shopId]
+      [id, req.shopId],
     );
 
     if (result.rowCount === 0) {
@@ -1975,7 +2652,7 @@ app.get("/api/v1/clients/:id/full", authenticateToken, async (req, res) => {
     // 1. Fetch Client Details
     const clientRes = await pool.query(
       `SELECT * FROM clients WHERE id = $1 AND shop_id = $2`,
-      [id, req.shopId]
+      [id, req.shopId],
     );
 
     if (clientRes.rows.length === 0) {
@@ -2025,7 +2702,7 @@ app.get("/api/v1/clients/:id/full", authenticateToken, async (req, res) => {
        
        -- Order by the calculated start_time (using index 5 to avoid alias ambiguity)
        ORDER BY 5 DESC`,
-      [id, req.shopId]
+      [id, req.shopId],
     );
 
     // 3. Fetch File Metadata
@@ -2033,7 +2710,7 @@ app.get("/api/v1/clients/:id/full", authenticateToken, async (req, res) => {
       `SELECT id, file_name, file_type, file_size, uploaded_at 
        FROM client_files 
        WHERE client_id = $1 ORDER BY uploaded_at DESC`,
-      [id]
+      [id],
     );
 
     res.json({
@@ -2064,13 +2741,13 @@ app.post(
       // Fix encoding for special characters
       const originalName = Buffer.from(
         req.file.originalname,
-        "latin1"
+        "latin1",
       ).toString("utf8");
 
       await pool.query(
         `INSERT INTO client_files (client_id, file_name, file_type, file_size, file_data)
        VALUES ($1, $2, $3, $4, $5)`,
-        [id, originalName, req.file.mimetype, req.file.size, req.file.buffer]
+        [id, originalName, req.file.mimetype, req.file.size, req.file.buffer],
       );
 
       res.json({ success: true });
@@ -2078,7 +2755,7 @@ app.post(
       console.error("File Upload Error:", err);
       res.status(500).json({ error: "Failed to upload file" });
     }
-  }
+  },
 );
 
 // DOWNLOAD CLIENT FILE
@@ -2092,7 +2769,7 @@ app.get(
        FROM client_files cf
        JOIN clients c ON cf.client_id = c.id
        WHERE cf.id = $1 AND c.shop_id = $2`,
-        [req.params.fileId, req.shopId]
+        [req.params.fileId, req.shopId],
       );
 
       if (rows.length === 0)
@@ -2104,13 +2781,13 @@ app.get(
       res.setHeader("Content-Type", file.file_type);
       res.setHeader(
         "Content-Disposition",
-        `attachment; filename*=UTF-8''${encodedName}`
+        `attachment; filename*=UTF-8''${encodedName}`,
       );
       res.send(file.file_data);
     } catch (err) {
       res.status(500).json({ error: "Download failed" });
     }
-  }
+  },
 );
 
 // DELETE CLIENT FILE
@@ -2123,14 +2800,113 @@ app.delete(
         `DELETE FROM client_files cf
        USING clients c
        WHERE cf.client_id = c.id AND cf.id = $1 AND c.shop_id = $2`,
-        [req.params.fileId, req.shopId]
+        [req.params.fileId, req.shopId],
       );
       res.json({ success: true });
     } catch (err) {
       res.status(500).json({ error: "Delete failed" });
     }
-  }
+  },
 );
+app.get("/api/v1/exercises", authenticateToken, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT * FROM exercises WHERE shop_id = $1 ORDER BY category, name`,
+      [req.shopId],
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 2. Create a New Exercise (Master List)
+app.post("/api/v1/exercises", authenticateToken, async (req, res) => {
+  const { name, category, description } = req.body;
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO exercises (shop_id, name, category, description) 
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [req.shopId, name, category || "General", description],
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 3. Get Exercises Completed by Specific Client
+app.get(
+  "/api/v1/clients/:id/exercises",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const { rows } = await pool.query(
+        `SELECT exercise_id FROM client_exercises WHERE client_id = $1`,
+        [req.params.id],
+      );
+      // Return simple array of IDs: ['uuid-1', 'uuid-2']
+      res.json(rows.map((r) => r.exercise_id));
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  },
+);
+
+// 4. Toggle Exercise Status (Check/Uncheck)
+app.post(
+  "/api/v1/clients/:id/exercises/toggle",
+  authenticateToken,
+  async (req, res) => {
+    const { id } = req.params; // Client ID
+    const { exerciseId, completed } = req.body;
+
+    try {
+      if (completed) {
+        // Check: Insert record
+        await pool.query(
+          `INSERT INTO client_exercises (client_id, exercise_id) 
+         VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+          [id, exerciseId],
+        );
+      } else {
+        // Uncheck: Delete record
+        await pool.query(
+          `DELETE FROM client_exercises WHERE client_id = $1 AND exercise_id = $2`,
+          [id, exerciseId],
+        );
+      }
+      res.json({ success: true });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Failed to update exercise status" });
+    }
+  },
+);
+app.delete("/api/v1/exercises/:id", authenticateToken, async (req, res) => {
+  const { id } = req.params;
+
+  // Security Check: Only allow Admins/Super Admins
+  if (req.user.role !== "admin" && req.user.role !== "super_admin") {
+    return res.status(403).json({ error: "Unauthorized: Admins only" });
+  }
+
+  try {
+    const result = await pool.query(
+      "DELETE FROM exercises WHERE id = $1 AND shop_id = $2 RETURNING *",
+      [id, req.shopId],
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Exercise not found" });
+    }
+
+    res.json({ success: true, message: "Exercise deleted" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to delete exercise" });
+  }
+});
 app.get(/(.*)/, (req, res) => {
   if (req.path.startsWith("/api")) {
     return res.status(404).json({ error: "API Route Not Found" });
@@ -2138,6 +2914,7 @@ app.get(/(.*)/, (req, res) => {
   res.sendFile(path.join(distPath, "index.html"));
 });
 
-server.listen(3000, "0.0.0.0", () => {
-  console.log("🚀 Server running on http://192.168.68.58:3000");
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`Allowed Origin: ${ALLOWED_ORIGIN}`);
 });

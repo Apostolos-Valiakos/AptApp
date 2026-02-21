@@ -4,10 +4,10 @@
       class="flex flex-col md:flex-row justify-between items-center px-4 md:px-6 py-4 border-b border-gray-200 flex-shrink-0 gap-4"
     >
       <div class="flex items-center justify-between w-full md:w-auto space-x-2">
-        <div class="flex bg-gray-100 rounded-lg p-1">
+        <div class="flex bg-[var(--p-primary-100)] rounded-lg p-1">
           <button
             @click="calendarApi?.today()"
-            class="px-4 py-1.5 text-sm font-medium text-gray-700 hover:bg-white hover:shadow-sm rounded-md transition-all"
+            class="px-4 py-1.5 text-sm font-medium text-[var(--p-primary-700)] hover:bg-white hover:shadow-sm rounded-md transition-all"
           >
             Today
           </button>
@@ -15,7 +15,7 @@
         <div class="flex items-center space-x-2">
           <button
             @click="calendarApi?.prev()"
-            class="p-1.5 hover:bg-gray-100 rounded-full text-gray-500 transition-colors"
+            class="p-1.5 hover:bg-[var(--p-primary-100)] rounded-full text-gray-500 transition-colors"
           >
             <svg
               class="w-5 h-5"
@@ -141,19 +141,27 @@
 
         <button
           @click="openNewAppointment"
-          class="bg-gray-900 hover:bg-black text-white px-4 md:px-6 py-2.5 rounded-full text-sm font-medium shadow-lg transform active:scale-95 transition-all flex items-center gap-2 flex-shrink-0"
+          class="bg-[var(--p-primary-color)] hover:bg-white text-white hover:text-[var(--p-primary-color)] border border-[var(--p-primary-color)] px-4 md:px-6 py-2.5 rounded-full text-sm font-medium shadow-lg transform active:scale-95 transition-all flex items-center gap-2 flex-shrink-0"
         >
           <span class="hidden sm:inline">Add New</span>
           <span class="sm:hidden"><i class="pi pi-plus"></i></span>
         </button>
         <button
           @click="openSwapDialog"
-          class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 md:px-6 py-2.5 rounded-full text-sm font-medium shadow-lg transform active:scale-95 transition-all flex items-center gap-2 flex-shrink-0"
+          class="bg-white hover:bg-[var(--p-primary-color)] text-[var(--p-primary-color)] hover:text-white border border-[var(--p-primary-color)] px-4 md:px-6 py-2.5 rounded-full text-sm font-medium shadow-lg transform active:scale-95 transition-all flex items-center gap-2 flex-shrink-0"
         >
           <span class="hidden sm:inline">Swap</span>
           <span class="sm:hidden">
             <i class="pi pi-arrow-right-arrow-left"> </i>
           </span>
+        </button>
+        <button
+          @click="reorderDialogVisible = true"
+          class="bg-[var(--p-primary-color)] hover:bg-white text-white hover:text-[var(--p-primary-color)] border border-[var(--p-primary-color)] px-4 md:px-6 py-2.5 rounded-full text-sm font-medium shadow-lg transform active:scale-95 transition-all flex items-center gap-2 flex-shrink-0"
+          title="Reorder Staff"
+        >
+          <i class="pi pi-sort-alt"></i>
+          <span class="hidden sm:inline">Reorder Staff</span>
         </button>
       </div>
     </div>
@@ -214,6 +222,11 @@
       @swap="handleSwap"
     />
   </div>
+  <StaffReorderDialog
+    v-model:visible="reorderDialogVisible"
+    :staff-list="calendarStore.resources"
+    @save="handleReorderSave"
+  />
 </template>
 
 <script setup lang="ts">
@@ -230,6 +243,10 @@ import AppointmentSwapDialog from "../components/AppointmentSwapDialog.vue";
 import { useToast } from "primevue/usetoast";
 import ColorModelToggle from "../components/ColorModelToggle.vue";
 import { useAuthStore } from "../stores/auth";
+import elLocale from "@fullcalendar/core/locales/el";
+import StaffReorderDialog from "../components/StaffReorderDialog.vue";
+
+const reorderDialogVisible = ref(false);
 
 const authStore = useAuthStore();
 const toast = useToast();
@@ -291,7 +308,15 @@ const handleSwap = async (swapData: {
     });
   }
 };
-
+const handleReorderSave = async (newOrder: any[]) => {
+  await calendarStore.updateResourceOrder(newOrder);
+  toast.add({
+    severity: "success",
+    summary: "Success",
+    detail: "Staff order updated",
+    life: 3000,
+  });
+};
 // Zoom State
 const slotDurationMinutes = ref(30);
 
@@ -303,7 +328,7 @@ const viewOptions = [
 ];
 
 const currentViewLabel = computed(
-  () => viewOptions.find((v) => v.value === currentView.value)?.label || "Day"
+  () => viewOptions.find((v) => v.value === currentView.value)?.label || "Day",
 );
 
 const calendarApi = computed(() => fullCalendar.value?.getApi());
@@ -350,7 +375,7 @@ const calendarResources = computed(() => {
     title: r.name,
     eventBackgroundColor: "#f3f4f6",
     imageUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(
-      r.name
+      r.name,
     )}&background=random&color=fff&rounded=true&bold=true`,
   }));
 });
@@ -372,7 +397,7 @@ const calendarEvents = computed(() => {
       let endTime = null;
       if (svc.start_time) {
         endTime = new Date(
-          new Date(svc.start_time).getTime() + duration * 60000
+          new Date(svc.start_time).getTime() + duration * 60000,
         ).toISOString();
       }
 
@@ -389,9 +414,11 @@ const calendarEvents = computed(() => {
         extendedProps: {
           isServiceEvent: true,
           appointmentId: appt.id,
+          group_id: appt.group_id,
           serviceIndex: index,
           fullAppointment: {
             ...appt,
+            group_id: appt.group_id,
             products: appt.products || [],
           },
           client_name: `${appt.first_name || "Unknown"} ${
@@ -491,25 +518,50 @@ const prepareServicesForUpdate = (services: any[]) => {
         : s.duration_minutes,
   }));
 };
-
+const getDayMinWidth = () => {
+  // If mobile (less than 768px), use 60px (tight columns)
+  // If desktop, use 160px (wide columns for names)
+  return window.innerWidth < 768 ? 130 : 160;
+};
 // --- Calendar Options ---
 const calendarOptions = ref({
   schedulerLicenseKey: "CC-Attribution-NonCommercial-NoDerivatives",
+  longPressDelay: 350,
+  eventLongPressDelay: 350,
+  selectLongPressDelay: 350,
+  eventResizableFromStart: true,
+  locale: elLocale,
   plugins: [
     resourceTimeGridPlugin,
     scrollGridPlugin,
     dayGridPlugin,
     interactionPlugin,
   ],
+  titleFormat: {
+    weekday: "long", // Adds "Mon"
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  },
+  resourceOrder: "sort_order",
   initialView: "resourceTimeGridDay",
   allDaySlot: false,
-  slotDuration: "00:30:00",
+  slotDuration: "00:15:00",
   slotLabelInterval: "01:00",
   slotMinTime: "07:00:00",
   slotMaxTime: "23:00:00",
   height: "100%",
   expandRows: true,
-  dayMinWidth: 150,
+  // dayMinWidth: 150,
+  dayMinWidth: getDayMinWidth(),
+
+  // 2. Add this listener to handle screen resizing/rotation
+  windowResize: (arg: any) => {
+    if (fullCalendar.value) {
+      const api = fullCalendar.value.getApi();
+      api.setOption("dayMinWidth", getDayMinWidth());
+    }
+  },
   stickyHeaderDates: true,
   nowIndicator: true,
   weekends: true, // Default enabled, can be toggled by prop if needed
@@ -532,7 +584,9 @@ const calendarOptions = ref({
           <div class="relative">
             <img src="${src}" class="w-8 h-8 rounded-full border-2 border-white shadow-sm mb-2 object-cover group-hover:scale-105 transition-transform" />
           </div>
-          <div class="font-bold text-gray-800 text-sm-2 mt-2 truncate w-full text-center px-2">${arg.resource.title}</div>
+          <div style="white-space: normal;" class="font-bold text-gray-800 text-[10px] md:text-sm mt-1 leading-tight w-full text-center px-1 break-words">
+            ${arg.resource.title}
+          </div>
         </div>
       `,
     };
@@ -542,48 +596,54 @@ const calendarOptions = ref({
     const timeText = arg.timeText;
     const props = arg.event.extendedProps;
 
-    // 1. Check if we are in Month View (Row layout)
-    const isMonthView = arg.view.type === "dayGridMonth";
+    // 1. Check if the appointment status is cancelled
+    const isCancelled = props.fullAppointment?.status === "cancelled";
 
-    // 2. Calculate Duration in Minutes
+    const isMonthView = arg.view.type === "dayGridMonth";
     const start = arg.event.start;
     const end = arg.event.end;
     const durationMins =
       end && start ? (end.getTime() - start.getTime()) / 60000 : 60;
-
-    // 3. Define "Short Event" (e.g., less than 45 mins)
     const isShort = durationMins < 45;
 
-    // 4. Dynamic Classes
-    // If short: Use tiny padding (p-0.5) and small text
-    // If normal: Use standard padding (p-2)
     const paddingClass = isShort && !isMonthView ? "p-0.5 pl-1" : "p-2";
-    const titleClass = isShort && !isMonthView ? "text-xs" : "text-sm";
+    const titleClass =
+      isShort && !isMonthView
+        ? "text-[9px] md:text-[10px] leading-tight"
+        : "text-[10px] md:text-xs leading-tight";
 
-    // Hide secondary info if space is tight
+    // 2. Define conditional styles for Cancelled status
+    // We use 'line-through' for strikethrough and 'text-red-600' for color
+    const cancelledClasses = isCancelled
+      ? "line-through text-red-600"
+      : "text-gray-900";
+    const cancelledServiceClasses = isCancelled ? "text-red-500" : "opacity-80";
+
     const showTime = !isShort && !isMonthView;
     const showService = !isShort || isMonthView;
 
     return {
       html: `
-        <div class="w-full ${paddingClass} flex flex-col leading-tight overflow-hidden rounded-md hover:brightness-95 transition-all ${
+      <div class="w-full ${paddingClass} flex flex-col leading-tight overflow-hidden rounded-md hover:brightness-95 transition-all ${
         isMonthView ? "" : "h-full"
       }">
-          ${
-            showTime
-              ? `<div class="text-[11px] font-bold opacity-70 mb-0.5">${timeText}</div>`
-              : ""
-          }
-          <div class="font-bold ${titleClass} truncate text-gray-900">${
-        props.client_name
-      }</div>
-          ${
-            showService
-              ? `<div class="text-xs font-medium opacity-80 truncate mt-0.5">${props.service_name}</div>`
-              : ""
-          }
+        ${
+          showTime
+            ? `<div class="text-[9px] md:text-[12px] font-bold opacity-70 mb-0.5 ${isCancelled ? "text-red-400" : ""}">${timeText}</div>`
+            : ""
+        }
+        <div class="font-bold ${titleClass} break-words whitespace-normal ${cancelledClasses}">
+          ${props.client_name}
         </div>
-      `,
+        ${
+          showService
+            ? `<div class="text-[9px] md:text-[12px] font-medium opacity-90 mt-0.5 break-words whitespace-normal ${cancelledServiceClasses}">
+                ${props.service_name}
+               </div>`
+            : ""
+        }
+      </div>
+    `,
     };
   },
 
@@ -644,10 +704,13 @@ const calendarOptions = ref({
 
   select: (info: any) => {
     const resourceId = info.resource ? info.resource.id : null;
+    const resourceName = info.resource ? info.resource.title : "";
+
     selectedAppointment.value = {
       start_time: info.startStr,
       end_time: info.endStr,
       staff_id: resourceId,
+      staff_name: resourceName,
     };
     dialogVisible.value = true;
   },
@@ -661,7 +724,7 @@ watch(
     api.setOption("resources", newResources);
     api.setOption("events", newEvents);
   },
-  { deep: true }
+  { deep: true },
 );
 
 onMounted(async () => {

@@ -41,6 +41,7 @@
         </div>
         <div
           class="text-center sm:text-right mt-2 sm:mt-0 w-full sm:w-auto bg-gray-50 sm:bg-transparent p-2 sm:p-0 rounded-lg"
+          v-if="isOwner"
         >
           <div class="text-xs text-gray-500 uppercase tracking-wider font-bold">
             Balance
@@ -60,7 +61,7 @@
 
       <div class="flex gap-6 border-b border-gray-200 mb-6 overflow-x-auto">
         <button
-          v-for="tab in ['Info', 'History', 'Files']"
+          v-for="tab in ['Info', 'Ασκησιολόγιο', 'Αξιολογητικά', 'History']"
           :key="tab"
           @click="activeTab = tab"
           class="pb-2 px-1 text-sm font-medium transition-colors border-b-2 whitespace-nowrap"
@@ -80,41 +81,129 @@
             <div>
               <label
                 class="block text-xs font-bold text-gray-500 uppercase mb-1"
-                >First Name</label
               >
+                First Name
+              </label>
               <InputText v-model="editForm.first_name" class="w-full" />
             </div>
             <div>
               <label
                 class="block text-xs font-bold text-gray-500 uppercase mb-1"
-                >Last Name</label
               >
+                Last Name
+              </label>
               <InputText v-model="editForm.last_name" class="w-full" />
             </div>
           </div>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <label
                 class="block text-xs font-bold text-gray-500 uppercase mb-1"
-                >Email</label
               >
+                Email
+              </label>
               <InputText v-model="editForm.email" class="w-full" />
             </div>
             <div>
               <label
                 class="block text-xs font-bold text-gray-500 uppercase mb-1"
-                >Phone</label
               >
+                Phone
+              </label>
               <InputText v-model="editForm.phone" class="w-full" />
+            </div>
+            <div>
+              <label
+                class="block text-xs font-bold text-gray-500 uppercase mb-1"
+              >
+                Date of Birth
+              </label>
+              <Calendar
+                v-model="editForm.date_of_birth"
+                dateFormat="dd/mm/yy"
+                class="w-full"
+                placeholder="dd/mm/yyyy"
+              />
             </div>
           </div>
           <div>
-            <label class="block text-xs font-bold text-gray-500 uppercase mb-1"
-              >Notes</label
-            >
+            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">
+              Notes
+            </label>
             <Textarea v-model="editForm.notes" rows="3" class="w-full" />
           </div>
+          <div v-if="shopSettings" class="mb-4">
+            <span class="block text-xs font-bold text-gray-500 uppercase mb-3">
+              Ενεργές Υπηρεσίες
+            </span>
+            <div class="grid grid-cols-3 gap-3">
+              <div
+                v-if="shopSettings.ergotherapia"
+                @click="editForm.ergotherapia = !editForm.ergotherapia"
+                :class="[
+                  'flex flex-col items-center p-3 rounded-xl border-2 cursor-pointer transition-all text-center',
+                  editForm.ergotherapia
+                    ? 'border-[var(--p-primary-500)] bg-[var(--p-primary-50)] text-[var(--p-primary-700)]'
+                    : 'border-gray-300 bg-white text-gray-500 opacity-60',
+                ]"
+              >
+                <i class="pi pi-briefcase mb-1"></i>
+                <span
+                  class="text-[10px] font-bold uppercase tracking-tight leading-none"
+                >
+                  Εργο
+                </span>
+              </div>
 
+              <div
+                v-if="shopSettings.physiotherapia"
+                @click="editForm.physiotherapia = !editForm.physiotherapia"
+                :class="[
+                  'flex flex-col items-center p-3 rounded-xl border-2 cursor-pointer transition-all text-center',
+                  editForm.physiotherapia
+                    ? 'border-[var(--p-primary-500)] bg-[var(--p-primary-50)] text-[var(--p-primary-700)]'
+                    : 'border-gray-300 bg-white text-gray-500 opacity-60',
+                ]"
+              >
+                <i class="pi pi-heart mb-1"></i>
+                <span
+                  class="text-[10px] font-bold uppercase tracking-tight leading-none"
+                >
+                  Φυσιο
+                </span>
+              </div>
+
+              <div
+                v-if="shopSettings.logotherapia"
+                @click="editForm.logotherapia = !editForm.logotherapia"
+                :class="[
+                  'flex flex-col items-center p-3 rounded-xl border-2 cursor-pointer transition-all text-center',
+                  editForm.logotherapia
+                    ? 'border-[var(--p-primary-500)] bg-[var(--p-primary-50)] text-[var(--p-primary-700)]'
+                    : 'border-gray-300 bg-white text-gray-500 opacity-60',
+                ]"
+              >
+                <i class="pi pi-comments mb-1"></i>
+                <span
+                  class="text-[10px] font-bold uppercase tracking-tight leading-none"
+                >
+                  Λογο
+                </span>
+              </div>
+            </div>
+
+            <div
+              v-if="
+                !shopSettings.ergotherapia &&
+                !shopSettings.physiotherapia &&
+                !shopSettings.logotherapia
+              "
+              class="text-xs italic text-gray-400"
+            >
+              Δεν έχουν οριστεί διαθέσιμες υπηρεσίες στις ρυθμίσεις του
+              καταστήματος.
+            </div>
+          </div>
           <div class="bg-gray-50 p-4 rounded-lg border border-gray-100">
             <div class="flex justify-between items-center mb-2">
               <span class="text-xs font-bold text-gray-500 uppercase"
@@ -208,19 +297,22 @@
               >
                 {{ appt.status }}
               </span>
-              <span class="font-bold"
-                >€{{
+              <span class="font-bold" v-if="isOwner">
+                {{ isOwner }}
+                €{{
                   (
                     Number(appt.total_service_price || 0) +
                     Number(appt.total_product_price || 0)
                   ).toFixed(2)
-                }}</span
-              >
+                }}
+              </span>
             </div>
           </div>
         </div>
-
-        <div v-if="activeTab === 'Files'" class="space-y-4">
+        <div v-if="activeTab === 'Ασκησιολόγιο'" class="space-y-4">
+          <Exercises :clientId="clientId" />
+        </div>
+        <div v-if="activeTab === 'Αξιολογητικά'" class="space-y-4">
           <div
             class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:bg-gray-50 transition-colors cursor-pointer"
             @click="$refs.fileInput.click()"
@@ -232,12 +324,12 @@
               class="hidden"
             />
             <div v-if="!uploading">
-              <i class="pi pi-cloud-upload text-3xl text-gray-400 mb-2"></i>
+              <i class="pi pi-cloud-upload text-3xl text-gray-400"></i>
               <p class="text-sm text-gray-600 font-medium">
                 Click to upload documents
               </p>
               <p class="text-xs text-gray-400 mt-1">Max 5MB per file</p>
-              <Button label="Select File" size="small" class="mt-3" />
+              <Button label="Select File" size="small" class="mt-1" />
             </div>
             <div v-else>
               <i class="pi pi-spin pi-spinner text-2xl text-indigo-600"></i>
@@ -269,6 +361,7 @@
               </div>
               <div class="flex gap-1">
                 <a
+                  v-if="isOwner"
                   :href="`/api/v1/clients/files/${file.id}?token=${token}`"
                   target="_blank"
                   class="p-button p-component p-button-icon-only p-button-text p-button-rounded p-button-secondary"
@@ -276,6 +369,14 @@
                   <span class="pi pi-download"></span>
                 </a>
                 <Button
+                  icon="pi pi-eye"
+                  class="p-button-text p-button-secondary p-button-rounded"
+                  @click="viewFile(file)"
+                  v-tooltip="'View in new tab'"
+                  :loading="viewingFileId === file.id"
+                />
+                <Button
+                  v-if="isOwner"
                   icon="pi pi-trash"
                   class="p-button-text p-button-danger p-button-rounded"
                   @click="deleteFile(file.id)"
@@ -291,6 +392,10 @@
 
 <script setup lang="ts">
 import { ref, watch, computed } from "vue";
+import Exercises from "./Exercises.vue";
+import { useAuthStore } from "../stores/auth";
+const authStore = useAuthStore();
+const isOwner = authStore.isOwner;
 
 const props = defineProps(["visible", "clientId"]);
 const emit = defineEmits(["update:visible", "refresh"]);
@@ -310,6 +415,15 @@ const history = ref<any[]>([]);
 const files = ref<any[]>([]);
 const editForm = ref<any>({});
 const fileInput = ref<any>(null);
+const viewingFileId = ref<number | null>(null); // Track which file is loading
+
+// Computed property for the Avatar initials
+const initials = computed(() => {
+  if (!clientData.value) return "";
+  const f = clientData.value.first_name?.[0] || "";
+  const l = clientData.value.last_name?.[0] || "";
+  return `${f}${l}`.toUpperCase();
+});
 
 const fetchClientData = async () => {
   if (!props.clientId) return;
@@ -325,10 +439,26 @@ const fetchClientData = async () => {
 
     editForm.value = JSON.parse(JSON.stringify(data.client));
     if (!editForm.value.custom_fields) editForm.value.custom_fields = [];
+
+    if (editForm.value.date_of_birth) {
+      editForm.value.date_of_birth = new Date(editForm.value.date_of_birth);
+    }
   } catch (e) {
     console.error(e);
   } finally {
     loading.value = false;
+  }
+};
+const shopSettings = ref<any>(null);
+
+const fetchShopSettings = async () => {
+  try {
+    const res = await fetch("/api/v1/shop", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    shopSettings.value = await res.json();
+  } catch (e) {
+    console.error("Error loading shop settings", e);
   }
 };
 
@@ -338,8 +468,18 @@ watch(
     if (val && props.clientId) {
       activeTab.value = "Info";
       fetchClientData();
+      fetchShopSettings();
     }
-  }
+  },
+);
+watch(
+  () => props.visible,
+  (val) => {
+    if (val && props.clientId) {
+      activeTab.value = "Info";
+      fetchClientData();
+    }
+  },
 );
 
 const addCustomField = () =>
@@ -348,16 +488,23 @@ const addCustomField = () =>
 const saveClientInfo = async () => {
   saving.value = true;
   try {
+    const payload = { ...editForm.value };
+
+    if (payload.date_of_birth) {
+      const d = new Date(payload.date_of_birth);
+      payload.date_of_birth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    }
+
     const res = await fetch(`/api/v1/clients/${props.clientId}`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify(editForm.value),
+      body: JSON.stringify(payload),
     });
     if (res.ok) {
-      clientData.value = { ...clientData.value, ...editForm.value };
+      clientData.value = { ...clientData.value, ...payload };
       emit("refresh");
     }
   } finally {
@@ -421,4 +568,38 @@ const getStatusColor = (s: string) => {
   };
   return map[s] || "bg-gray-100";
 };
+const viewFile = async (file: any) => {
+  viewingFileId.value = file.id;
+  try {
+    const response = await fetch(`/api/v1/clients/files/${file.id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (!response.ok) throw new Error("Failed to fetch file");
+
+    const blob = await response.blob();
+    const fileType = file.file_type || "application/pdf";
+    const newBlob = new Blob([blob], { type: fileType });
+
+    const blobUrl = window.URL.createObjectURL(newBlob);
+
+    // Open the tab
+    window.open(blobUrl, "_blank");
+
+    setTimeout(() => {
+      window.URL.revokeObjectURL(blobUrl);
+    }, 100);
+  } catch (err) {
+    console.error(err);
+    alert("Could not open file preview.");
+  } finally {
+    viewingFileId.value = null;
+  }
+};
 </script>
+<style>
+.p-dialog-close-button {
+  background-color: red;
+  color: red !important;
+}
+</style>

@@ -52,7 +52,7 @@ export const useChatStore = defineStore("chat", () => {
   const onlineUsers = ref<Set<string>>(new Set());
   const typingUsers = ref<Map<string, Set<string>>>(new Map());
   const isMinimized = ref(true);
-  const notificationSound = ref<HTMLAudioElement | null>(null);
+  // const notificationSound = ref<HTMLAudioElement | null>(null);
 
   const totalUnreadCount = computed(() => {
     if (!channels.value || !Array.isArray(channels.value)) {
@@ -86,12 +86,13 @@ export const useChatStore = defineStore("chat", () => {
   const connect = (token: string) => {
     if (socket.value?.connected) return;
 
-    const socketUrl =
-      process.env.NODE_ENV === "production"
-        ? window.location.origin
-        : "http://192.168.68.58:3000";
+    // const socketUrl = window.location.origin;
 
-    socket.value = io(socketUrl, {
+    // socket.value = io(socketUrl, {
+    //   auth: { token },
+    //   transports: ["websocket", "polling"],
+    // });
+    socket.value = io({
       auth: { token },
       transports: ["websocket", "polling"],
     });
@@ -151,7 +152,7 @@ export const useChatStore = defineStore("chat", () => {
         // AND I don't have that specific chat window open
         if (!isFromMe && !isChatOpen) {
           channel.unread_count = (channel.unread_count || 0) + 1;
-          playNotificationSound();
+          // playNotificationSound();
         }
       }
 
@@ -219,7 +220,7 @@ export const useChatStore = defineStore("chat", () => {
     );
 
     // Initialize notification sound
-    notificationSound.value = new Audio("/notification.mp3");
+    // notificationSound.value = new Audio("/notification.mp3");
   };
 
   const disconnect = () => {
@@ -453,17 +454,17 @@ export const useChatStore = defineStore("chat", () => {
     }
   };
 
-  const playNotificationSound = () => {
-    if (!isMinimized.value) return;
+  // const playNotificationSound = () => {
+  //   if (!isMinimized.value) return;
 
-    try {
-      notificationSound.value?.play().catch((err) => {
-        console.log("Could not play notification sound:", err);
-      });
-    } catch (err) {
-      console.log("Notification sound error:", err);
-    }
-  };
+  //   try {
+  //     notificationSound.value?.play().catch((err) => {
+  //       console.log("Could not play notification sound:", err);
+  //     });
+  //   } catch (err) {
+  //     console.log("Notification sound error:", err);
+  //   }
+  // };
 
   const toggleMinimized = () => {
     isMinimized.value = !isMinimized.value;

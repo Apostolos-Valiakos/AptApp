@@ -1,7 +1,7 @@
 <template>
-  <div class="p-4">
-    <div class="flex justify-between items-center mb-4">
-      <h1 class="text-2xl font-bold text-white">Inventory Management</h1>
+  <div class="bg-white rounded-xl shadow-lg p-6">
+    <div class="flex justify-between items-center mb-6">
+      <h1 class="text-2xl font-bold">Inventory Management</h1>
       <Button
         label="Add New Product"
         icon="pi pi-plus"
@@ -13,30 +13,37 @@
       :value="productStore.products"
       responsiveLayout="scroll"
       class="p-datatable-sm shadow-sm border rounded"
+      :rowHover="true"
     >
       <Column
         field="name"
         header="Product Name"
         sortable
         class="font-semibold"
+        style="width: 20%"
       ></Column>
-      <Column field="description" header="Description"></Column>
 
-      <Column header="Variations & Stock">
+      <Column
+        field="description"
+        header="Description"
+        style="width: 25%"
+      ></Column>
+
+      <Column header="Variations & Stock" style="width: 40%">
         <template #body="slotProps">
           <div class="space-y-2">
             <div
               v-for="variation in slotProps.data.variations"
               :key="variation.id"
-              class="flex items-center justify-between p-2 bg-gray-50 rounded border border-gray-100"
+              class="flex items-center justify-between p-2 bg-[#fff5f9] rounded border border-gray-100"
             >
               <div class="flex flex-col">
-                <span class="text-sm font-medium">{{
-                  variation.variation_name || "Standard"
-                }}</span>
-                <span class="text-xs text-gray-500"
-                  >Price: {{ variation.price }}€</span
-                >
+                <span class="text-sm font-medium">
+                  {{ variation.variation_name || "Standard" }}
+                </span>
+                <span class="text-xs text-gray-500">
+                  Price: {{ variation.price }}€
+                </span>
               </div>
 
               <div class="flex items-center gap-3">
@@ -48,24 +55,16 @@
                 <div class="flex gap-1">
                   <Button
                     icon="pi pi-minus"
-                    class="p-button-rounded p-button-text p-button-danger p-button-sm"
+                    class="p-button-rounded p-button-text p-button-sm"
+                    severity="danger"
                     @click="adjustStock(variation.id, -1)"
                     :disabled="variation.stock_quantity <= 0"
                   />
                   <Button
                     icon="pi pi-plus"
-                    class="p-button-rounded p-button-text p-button-success p-button-sm"
+                    class="p-button-rounded p-button-text p-button-sm"
+                    severity="success"
                     @click="adjustStock(variation.id, 1)"
-                  />
-                  <Button
-                    icon="pi pi-pencil"
-                    class="p-button-rounded p-button-outlined mr-2"
-                    @click="editProduct(slotProps.data)"
-                  />
-                  <Button
-                    icon="pi pi-trash"
-                    class="p-button-rounded p-button-outlined p-button-danger"
-                    @click="confirmDeleteProduct(slotProps.data)"
                   />
                 </div>
               </div>
@@ -73,11 +72,32 @@
           </div>
         </template>
       </Column>
+
+      <Column header="Actions" style="width: 15%" headerClass="text-center">
+        <template #body="slotProps">
+          <div class="gap-2">
+            <Button
+              icon="pi pi-pencil"
+              class="p-button-rounded p-button-text p-button-sm"
+              v-tooltip.top="'Edit Product'"
+              @click="editProduct(slotProps.data)"
+            />
+            <Button
+              icon="pi pi-trash"
+              c
+              class="p-button-rounded p-button-text p-button-sm"
+              severity="danger"
+              v-tooltip.top="'Delete Product'"
+              @click="confirmDeleteProduct(slotProps.data)"
+            />
+          </div>
+        </template>
+      </Column>
     </DataTable>
 
     <Dialog
       v-model:visible="productDialog"
-      header="Create New Product"
+      :header="isEdit ? 'Edit Product' : 'Create New Product'"
       modal
       :style="{ width: '50vw' }"
     >
@@ -116,13 +136,13 @@
           <div
             v-for="(v, index) in newProduct.variations"
             :key="index"
-            class="flex gap-2 mb-2 items-end bg-gray-50 p-2 rounded"
+            class="flex gap-2 mb-2 items-start bg-gray-50 p-2 rounded"
           >
             <div class="flex-1">
               <label class="text-xs font-semibold">Variation Name</label>
               <InputText
                 v-model="v.variation_name"
-                class="w-full p-inputtext-sm"
+                class="w-full h-full p-inputtext-sm"
                 placeholder="e.g., 250ml"
               />
             </div>
@@ -169,6 +189,7 @@
         />
       </template>
     </Dialog>
+
     <Dialog
       v-model:visible="stockDialog"
       header="Adjust Stock"
@@ -191,6 +212,7 @@
         <Button label="Update" @click="confirmStockAdjustment" />
       </template>
     </Dialog>
+
     <ConfirmDialog></ConfirmDialog>
   </div>
 </template>
@@ -200,17 +222,33 @@ import { ref, onMounted } from "vue";
 import { useProductStore } from "../stores/products";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
-import ConfirmationService from "primevue/confirmationservice";
-import ConfirmDialog from "primevue/confirmdialog";
+
+// --- Type Definitions to fix errors ---
+interface Variation {
+  id?: number | string;
+  variation_name: string;
+  price: number;
+  stock_quantity: number;
+}
+
+interface Product {
+  id?: number | string;
+  name: string;
+  description: string;
+  variations: Variation[];
+}
 
 const productStore = useProductStore();
 const toast = useToast();
+const confirm = useConfirm();
 
 const stockDialog = ref(false);
-const selectedVariation = ref<any>(null);
+const selectedVariation = ref<Variation | null>(null);
 const stockAdjustment = ref(0);
 const productDialog = ref(false);
-const newProduct = ref({
+const isEdit = ref(false);
+
+const newProduct = ref<Product>({
   name: "",
   description: "",
   variations: [{ variation_name: "Standard", price: 0, stock_quantity: 0 }],
@@ -220,13 +258,20 @@ onMounted(() => {
   productStore.fetchProducts();
 });
 
-const isEdit = ref(false);
+const openNewProductDialog = () => {
+  isEdit.value = false;
+  newProduct.value = {
+    name: "",
+    description: "",
+    variations: [{ variation_name: "Standard", price: 0, stock_quantity: 0 }],
+  };
+  productDialog.value = true;
+};
 
-// Open dialog for Editing
-const editProduct = (product: any) => {
+const editProduct = (product: Product) => {
   isEdit.value = true;
-  // Use a deep copy to avoid modifying the table data before saving
   newProduct.value = JSON.parse(JSON.stringify(product));
+  console.log(newProduct);
   productDialog.value = true;
 };
 
@@ -236,7 +281,7 @@ const getStockSeverity = (qty: number) => {
   return "success";
 };
 
-const adjustStock = async (inventoryId: string, amount: number) => {
+const adjustStock = async (inventoryId: any, amount: number) => {
   try {
     await productStore.updateStock(inventoryId, amount);
     toast.add({
@@ -256,22 +301,12 @@ const adjustStock = async (inventoryId: string, amount: number) => {
 };
 
 const confirmStockAdjustment = async () => {
-  if (selectedVariation.value && stockAdjustment.value !== 0) {
+  if (selectedVariation.value?.id && stockAdjustment.value !== 0) {
     await adjustStock(selectedVariation.value.id, stockAdjustment.value);
     stockDialog.value = false;
   }
 };
 
-const openNewProductDialog = () => {
-  newProduct.value = {
-    name: "",
-    description: "",
-    variations: [{ variation_name: "Standard", price: 0, stock_quantity: 0 }],
-  };
-  productDialog.value = true;
-};
-
-// Adds a new row for product variations
 const addVariationRow = () => {
   newProduct.value.variations.push({
     variation_name: "",
@@ -280,17 +315,13 @@ const addVariationRow = () => {
   });
 };
 
-// Removes a variation row
 const removeVariationRow = (index: number) => {
   newProduct.value.variations.splice(index, 1);
 };
 
-// Submits the product and its variations to the server
 const saveProduct = async () => {
   try {
     const token = localStorage.getItem("token");
-
-    // Determine if we are updating or creating
     const method = isEdit.value ? "PUT" : "POST";
     const url = isEdit.value
       ? `/api/v1/products/${newProduct.value.id}`
@@ -332,20 +363,20 @@ const saveProduct = async () => {
     });
   }
 };
-const confirm = useConfirm(); //
 
-const confirmDeleteProduct = (product: any) => {
+const confirmDeleteProduct = (product: Product) => {
   confirm.require({
-    message: `Are you sure you want to delete "${product.name}"? This will also remove all stock and variations.`,
+    message: `Are you sure you want to delete "${product.name}"? This will also remove all stock.`,
     header: "Danger Zone",
     icon: "pi pi-exclamation-triangle",
     acceptClass: "p-button-danger",
     accept: async () => {
+      if (!product.id) return;
       try {
-        const token = localStorage.getItem("token"); //
+        const token = localStorage.getItem("token");
         const res = await fetch(`/api/v1/products/${product.id}`, {
-          method: "DELETE", //
-          headers: { Authorization: `Bearer ${token}` }, //
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
         });
 
         if (res.ok) {
@@ -354,8 +385,8 @@ const confirmDeleteProduct = (product: any) => {
             summary: "Deleted",
             detail: "Product removed",
             life: 3000,
-          }); //
-          await productStore.fetchProducts(); //
+          });
+          await productStore.fetchProducts();
         } else {
           throw new Error("Failed to delete");
         }
@@ -365,7 +396,7 @@ const confirmDeleteProduct = (product: any) => {
           summary: "Error",
           detail: "Could not delete product",
           life: 3000,
-        }); //
+        });
       }
     },
   });
@@ -375,5 +406,6 @@ const confirmDeleteProduct = (product: any) => {
 <style scoped>
 :deep(.p-datatable .p-datatable-tbody > tr > td) {
   padding: 1rem;
+  vertical-align: top;
 }
 </style>

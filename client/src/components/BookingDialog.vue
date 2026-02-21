@@ -2,18 +2,21 @@
   <Dialog
     v-model:visible="dialogVisible"
     modal
-    class="fresha-dialog h-full md:h-auto"
-    :style="{ width: '100vw', maxWidth: '900px', margin: '0' }"
-    :breakpoints="{ '960px': '100vw' }"
+    class="fresha-dialog h-full md:h-auto md:rounded-xl rounded-none"
     :showHeader="false"
+    :breakpoints="{ '960px': '100vw' }"
+    :style="{ width: '80vw', maxWidth: '1200px' }"
     :contentStyle="{
       padding: '0',
       borderRadius: '12px',
       overflow: 'hidden',
-      height: '100%',
+      display: 'flex',
+      flexDirection: 'column',
     }"
   >
-    <div class="flex flex-col md:flex-row h-full md:h-[750px] bg-white">
+    <div
+      class="flex flex-col md:flex-row h-full md:max-h-[90vh] md:h-[800px] bg-white"
+    >
       <div
         class="flex-grow flex flex-col w-full md:w-2/3 border-b md:border-b-0 md:border-r border-gray-200 order-2 md:order-1 h-full overflow-hidden"
       >
@@ -37,7 +40,7 @@
           </div>
           <button
             @click="dialogVisible = false"
-            class="text-gray-400 hover:text-gray-600"
+            class="text-red-500 hover:text-red-700 transition-colors duration-200"
           >
             <i class="pi pi-times text-xl"></i>
           </button>
@@ -115,6 +118,10 @@
                 <Button
                   icon="pi pi-eye"
                   class="p-button-outlined p-button-secondary w-12"
+                  style="
+                    color: var(--p-primary-color);
+                    border-color: var(--p-primary-color);
+                  "
                   v-tooltip.top="'View Full Profile'"
                   @click="openClientProfile"
                 />
@@ -126,7 +133,72 @@
               :services="services"
               :staff="staff"
               :baseStartTime="new Date(form.start_time)"
+              :default-staff-id="currentStaffId"
             />
+
+            <div class="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+              <div class="flex items-center gap-2 mb-3">
+                <Checkbox v-model="isRecurring" binary inputId="isRecurring" />
+                <label
+                  for="isRecurring"
+                  class="font-bold text-gray-700 cursor-pointer text-sm"
+                >
+                  Repeat Appointment
+                </label>
+              </div>
+
+              <div v-if="isRecurring" class="grid grid-cols-2 gap-4">
+                <div>
+                  <label
+                    class="text-xs font-bold text-gray-500 uppercase block mb-1"
+                    >Frequency</label
+                  >
+                  <Dropdown
+                    v-model="recurrenceForm.freq"
+                    :options="['Daily', 'Weekly', 'Bi-Weekly', 'Monthly']"
+                    class="w-full p-inputtext-sm"
+                  />
+                </div>
+                <div>
+                  <label
+                    class="text-xs font-bold text-gray-500 uppercase block mb-1"
+                    >Ends On</label
+                  >
+                  <Calendar
+                    v-model="recurrenceForm.end_date"
+                    :minDate="form.start_time"
+                    class="w-full p-inputtext-sm"
+                    dateFormat="dd/mm/yy"
+                  />
+                </div>
+              </div>
+            </div>
+            <div
+              class="mb-4 p-3 bg-[var(--p-primary-50)] rounded-lg border border-[var(--p-primary-100)] flex items-center justify-between"
+            >
+              <div class="flex items-center gap-3">
+                <div
+                  class="w-8 h-8 rounded-full bg-[var(--p-primary-100)] flex items-center justify-center text-[var(--p-primary-600)]"
+                >
+                  <i class="pi pi-file text-sm"></i>
+                </div>
+                <div class="flex flex-col">
+                  <label
+                    for="eoppySwitch"
+                    class="font-bold text-[var(--p-primary-700)] cursor-pointer text-sm"
+                  >
+                    Συμβεβλημμένο με τον ΕΟΠΠΥ
+                  </label>
+                  <span
+                    class="text-xs text-[var(--p-primary-500)]"
+                    v-if="isRecurring"
+                  >
+                    Εφαρμόζεται μόνο στο πρώτο ραντεβού στα επαναλαμβανόμενα
+                  </span>
+                </div>
+              </div>
+              <ToggleSwitch v-model="form.is_eoppy" inputId="eoppySwitch" />
+            </div>
 
             <div
               class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-gray-100"
@@ -156,20 +228,6 @@
               </div>
 
               <div class="flex flex-col justify-end gap-3 pb-2">
-                <div class="flex items-center gap-2">
-                  <Checkbox
-                    v-model="form.save_receipt"
-                    binary
-                    inputId="saveReceipt"
-                  />
-                  <label
-                    for="saveReceipt"
-                    class="text-sm font-medium text-gray-700 cursor-pointer"
-                  >
-                    Save Receipt
-                  </label>
-                </div>
-
                 <div class="flex items-center gap-2">
                   <Checkbox v-model="form.is_block" binary inputId="isBlock" />
                   <label
@@ -218,9 +276,9 @@
 
           <div v-if="currentTab === 'Notes'" class="space-y-4">
             <div>
-              <label class="text-sm font-semibold text-gray-700 block mb-1"
-                >Booking Note (Visible to Client)</label
-              >
+              <label class="text-sm font-semibold text-gray-700 block mb-1">
+                Booking Note (Visible to Client)
+              </label>
               <Textarea
                 v-model="form.booking_notes"
                 rows="3"
@@ -229,9 +287,9 @@
               />
             </div>
             <div>
-              <label class="text-sm font-semibold text-gray-700 block mb-1"
-                >Internal Note (Staff Only)</label
-              >
+              <label class="text-sm font-semibold text-gray-700 block mb-1">
+                Internal Note (Staff Only)
+              </label>
               <Textarea
                 v-model="form.internal_notes"
                 rows="3"
@@ -257,13 +315,13 @@
               class="flex items-center gap-2 justify-center sm:justify-start sm:mr-4 mb-2 sm:mb-0"
             >
               <Checkbox v-model="notifyClient" binary inputId="notify" />
-              <label for="notify" class="text-sm text-gray-600"
-                >Email client</label
-              >
+              <label for="notify" class="text-sm text-gray-600">
+                Email client
+              </label>
             </div>
             <Button
               label="Save"
-              @click="save"
+              @click="save()"
               :loading="loading"
               class="w-full sm:w-auto px-8"
             />
@@ -291,6 +349,7 @@
           <BookingSidebar
             class="w-full bg-gray-50 h-full"
             :client="selectedClient"
+            :calculated-balance="previousDebt"
           />
         </div>
       </div>
@@ -332,11 +391,10 @@
     <ClientProfileDialog
       v-model:visible="showClientProfile"
       :clientId="currentProfileId"
-      @refresh="
-        () => {} /* Optional: You can trigger a client list refresh here if needed */
-      "
+      @refresh="() => {}"
     />
   </Dialog>
+  <ConfirmDialog></ConfirmDialog>
 </template>
 
 <script setup lang="ts">
@@ -346,6 +404,8 @@ import BookingServices from "./booking/bookingServices.vue";
 import BookingPayments from "./booking/bookingPayments.vue";
 import BookingSidebar from "./booking/bookingSideBar.vue";
 import ClientProfileDialog from "./ClientProfileDialog.vue";
+import { useConfirm } from "primevue/useconfirm";
+const confirm = useConfirm();
 
 const props = defineProps([
   "visible",
@@ -357,6 +417,13 @@ const props = defineProps([
 ]);
 
 const emit = defineEmits(["update:visible", "save"]);
+const currentStaffId = ref<number | string | null>(null);
+
+const isRecurring = ref(false);
+const recurrenceForm = ref<{ freq: string; end_date: Date | null }>({
+  freq: "Weekly",
+  end_date: null,
+});
 
 const dialogVisible = computed({
   get: () => props.visible,
@@ -376,6 +443,7 @@ const form = ref<any>({
   payment_method: "card",
   is_block: false,
   save_receipt: true,
+  is_eoppy: false,
 });
 
 // State lifted from children
@@ -384,7 +452,7 @@ const productsList = ref<Array<any>>([]);
 
 // UI State
 const currentTab = ref("Booking");
-const tabs = ["Booking", "Products", "Payment", "Notes"] as const;
+const tabs = ["Booking", "Notes", "Payment"] as const;
 
 const loading = ref(false);
 const paymentLoading = ref(false);
@@ -430,35 +498,41 @@ onUnmounted(() => {
 // === COMPUTED ===
 const isEditMode = computed(() => !!form.value.id);
 const selectedClient = computed(() =>
-  props.clients.find((c: any) => c.id === form.value.client_id)
+  props.clients.find((c: any) => c.id === form.value.client_id),
 );
 
 // Financial Calculations
 const currentApptTotal = computed(() => {
   const servicesTotal = servicesList.value.reduce(
     (sum, s) => sum + (Number(s.price_override) || 0),
-    0
+    0,
   );
-  // Note: productsList is available even if the tab is not 'Products',
-  // ensuring the Total is always accurate across tabs.
   const productsTotal = productsList.value.reduce(
     (sum, p) => sum + (Number(p.price) || 0) * (p.quantity || 1),
-    0
+    0,
   );
   return servicesTotal + productsTotal;
 });
 
-const originalSnapshot = ref({ price: 0, deposit: 0 });
+const originalSnapshot = ref({ price: 0, deposit: 0, isPast: false });
+
+const originalDebtContribution = computed(() => {
+  if (!form.value.id) return 0;
+  // Mirror the backend logic: future appointments only contributed their deposit (as a credit) to the DB balance
+  if (originalSnapshot.value.isPast) {
+    return originalSnapshot.value.price - originalSnapshot.value.deposit;
+  } else {
+    return -originalSnapshot.value.deposit;
+  }
+});
 
 const previousDebt = computed(() => {
   const dbBalance = Number(selectedClient.value?.outstanding_balance || 0);
-  if (!form.value.id) return dbBalance;
+  if (!form.value.id) return Math.max(0, dbBalance);
 
-  const originalDebtContribution = Math.max(
-    0,
-    originalSnapshot.value.price - originalSnapshot.value.deposit
-  );
-  return Math.max(0, dbBalance - originalDebtContribution);
+  // Safely extract this appointment's contribution to find the true historical debt
+  const trueHistoricalDebt = dbBalance - originalDebtContribution.value;
+  return Math.max(0, trueHistoricalDebt);
 });
 
 const totalDueNow = computed(() => {
@@ -466,17 +540,13 @@ const totalDueNow = computed(() => {
   if (!form.value.id) {
     return Math.max(
       0,
-      dbBalance + currentApptTotal.value - form.value.deposit_amount
+      dbBalance + currentApptTotal.value - form.value.deposit_amount,
     );
   } else {
-    const originalDebtContribution = Math.max(
-      0,
-      originalSnapshot.value.price - originalSnapshot.value.deposit
-    );
-    const trueHistoricalDebt = dbBalance - originalDebtContribution;
+    const trueHistoricalDebt = dbBalance - originalDebtContribution.value;
     const currentApptDebt = Math.max(
       0,
-      currentApptTotal.value - form.value.deposit_amount
+      currentApptTotal.value - form.value.deposit_amount,
     );
     return Math.max(0, trueHistoricalDebt + currentApptDebt);
   }
@@ -490,10 +560,16 @@ watch(totalDueNow, (val) => {
 watch(
   () => props.appointment,
   (val) => {
-    if (val) {
-      // EDIT MODE
+    let resolvedStaffId = null;
+    if (val?.staff_id && props.staff) {
+      const found = props.staff.find((s: any) => s.id == val.staff_id);
+      if (found) resolvedStaffId = found.id;
+    }
+
+    if (val && val.id) {
+      // === EDIT MODE ===
       form.value = {
-        id: val.id || null,
+        id: val.id,
         client_id: val.client_id || null,
         start_time: val.start_time ? new Date(val.start_time) : new Date(),
         status: val.status || "new",
@@ -505,10 +581,34 @@ watch(
         is_block: !!val.is_block,
         save_receipt:
           val.save_receipt !== undefined ? !!val.save_receipt : true,
+        is_eoppy: !!val.is_eoppy,
       };
 
-      // Populate Services
-      if (val.services?.length > 0 && val.services[0].service_id) {
+      let rule = null;
+      if (val.recurrence) {
+        try {
+          rule =
+            typeof val.recurrence === "string"
+              ? JSON.parse(val.recurrence)
+              : val.recurrence;
+        } catch (e) {
+          console.warn("Invalid recurrence format, resetting:", val.recurrence);
+          rule = null;
+        }
+      }
+
+      if (rule) {
+        isRecurring.value = true;
+        recurrenceForm.value = {
+          freq: rule.freq || "Weekly",
+          end_date: rule.end_date ? new Date(rule.end_date) : null,
+        };
+      } else {
+        isRecurring.value = false;
+        recurrenceForm.value = { freq: "Weekly", end_date: null };
+      }
+
+      if (val.services?.length > 0) {
         servicesList.value = val.services.map((s: any) => ({
           service_id: s.service_id,
           staff_id: s.staff_id,
@@ -522,7 +622,7 @@ watch(
         servicesList.value = [
           {
             service_id: null,
-            staff_id: null,
+            staff_id: resolvedStaffId,
             start_time: new Date(form.value.start_time),
             duration_override: 60,
             price_override: 0,
@@ -530,72 +630,104 @@ watch(
         ];
       }
 
-      // Populate Products
-      if (
-        val.products &&
-        Array.isArray(val.products) &&
-        val.products.length > 0
-      ) {
-        productsList.value = val.products.map((p: any) => ({
-          product_id: p.product_id,
-          quantity: p.quantity || 1,
-          price: Number(p.price || 0),
-        }));
-      } else {
-        productsList.value = [];
-      }
+      productsList.value = Array.isArray(val.products)
+        ? val.products.map((p: any) => ({
+            product_id: p.product_id,
+            quantity: p.quantity || 1,
+            price: Number(p.price || 0),
+          }))
+        : [];
 
+      const apptStartTime = val.services?.[0]?.start_time || val.start_time;
       originalSnapshot.value = {
         price: currentApptTotal.value,
         deposit: form.value.deposit_amount,
+        isPast: apptStartTime ? new Date(apptStartTime) < new Date() : false,
       };
     } else {
-      // NEW MODE
+      // === NEW MODE ===
+      const newStart = val?.start_time ? new Date(val.start_time) : new Date();
+
       form.value = {
         id: null,
         client_id: null,
-        start_time: new Date(),
+        start_time: newStart,
         status: "new",
         deposit_amount: 0,
         payment_status: "unpaid",
         is_block: false,
         save_receipt: true,
+        is_eoppy: false,
       };
+
+      isRecurring.value = false;
+      recurrenceForm.value = { freq: "Weekly", end_date: null };
+
       servicesList.value = [
         {
           service_id: null,
-          staff_id: null,
-          start_time: new Date(),
+          staff_id: resolvedStaffId,
+          start_time: newStart,
           duration_override: 60,
           price_override: 0,
         },
       ];
+
       productsList.value = [];
-      originalSnapshot.value = { price: 0, deposit: 0 };
+      originalSnapshot.value = { price: 0, deposit: 0, isPast: false };
     }
+
     amountToPayNow.value = 0;
-    // Always start on Booking tab
     currentTab.value = "Booking";
-    showMobileSidebar.value = false; // Reset mobile sidebar
+    showMobileSidebar.value = false;
   },
-  { immediate: true }
+  { immediate: true },
 );
 
 // === METHODS ===
 
 const save = async (close = true) => {
+  // Check if editing an existing recurring appointment
+  const isSeriesEdit = form.value.id && props.appointment?.group_id;
+  const isConvertingToSeries =
+    form.value.id && !props.appointment?.group_id && isRecurring.value;
+
+  if (isSeriesEdit) {
+    confirm.require({
+      message: "This is a recurring appointment. Apply changes to?",
+      header: "Edit Appointment",
+      icon: "pi pi-question-circle",
+      rejectLabel: "This Only",
+      acceptLabel: "This and Future",
+      accept: () => executeSave(close, "series"),
+      reject: () => executeSave(close, "single"),
+    });
+  } else if (isConvertingToSeries) {
+    executeSave(close, "series");
+  } else {
+    executeSave(close, "single");
+  }
+};
+
+const executeSave = async (close = true, scope = "single") => {
   loading.value = true;
   const token = localStorage.getItem("token");
-  const url = form.value.id
-    ? `/api/v1/appointments/${form.value.id}`
+
+  let url = form.value.id
+    ? `/api/v1/appointments/${form.value.id}?scope=${scope}`
     : "/api/v1/appointments";
+
   const method = form.value.id ? "PUT" : "POST";
 
   try {
-    // Prepare Payload
     const payload = {
       ...form.value,
-      // Safety mapping: ensure price_override is used
+      recurrence: isRecurring.value
+        ? {
+            freq: recurrenceForm.value.freq,
+            end_date: recurrenceForm.value.end_date,
+          }
+        : null,
       services: servicesList.value.map((s) => ({
         ...s,
         price_override: Number(s.price_override) || Number(s.price) || 0,
@@ -614,11 +746,14 @@ const save = async (close = true) => {
 
     const data = await res.json();
 
+    if (!res.ok) {
+      throw new Error(data.error || "Failed to save");
+    }
+
     if (method === "POST") {
       form.value.id = data.id;
     }
 
-    // === BALANCE FIX ===
     if (data.new_balance !== undefined && selectedClient.value) {
       selectedClient.value.outstanding_balance = Number(data.new_balance);
     }
@@ -626,6 +761,7 @@ const save = async (close = true) => {
     originalSnapshot.value = {
       price: currentApptTotal.value,
       deposit: form.value.deposit_amount,
+      isPast: originalSnapshot.value.isPast,
     };
 
     if (close) {
@@ -681,20 +817,42 @@ const recordPayment = async () => {
   }
 };
 
-const confirmDelete = async () => {
-  if (confirm("Cancel this appointment?")) {
-    const token = localStorage.getItem("token");
-    await fetch(`/api/v1/appointments/${form.value.id}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    emit("save");
-    dialogVisible.value = false;
-  }
+const confirmDelete = () => {
+  const isSeries = !!props.appointment?.group_id;
+
+  confirm.require({
+    message: isSeries
+      ? "This is a recurring appointment. What would you like to delete?"
+      : "Are you sure you want to cancel this appointment?",
+    header: "Cancel Appointment",
+    icon: "pi pi-exclamation-triangle",
+    rejectLabel: isSeries ? "This Only" : "No",
+    acceptLabel: isSeries ? "This and Future" : "Yes",
+    rejectClass: "p-button-outlined p-button-secondary",
+    acceptClass: "p-button-danger",
+
+    accept: async () => {
+      await executeDelete(isSeries ? "series" : "single");
+    },
+    reject: async () => {
+      if (isSeries) {
+        await executeDelete("single");
+      }
+    },
+  });
+};
+
+const executeDelete = async (scope: string) => {
+  const token = localStorage.getItem("token");
+  await fetch(`/api/v1/appointments/${form.value.id}?scope=${scope}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  emit("save");
+  dialogVisible.value = false;
 };
 
 // --- Client Helpers ---
-
 const saveNewClient = async () => {
   const token = localStorage.getItem("token");
   const res = await fetch("/api/v1/clients", {
@@ -706,9 +864,19 @@ const saveNewClient = async () => {
     body: JSON.stringify(newClient.value),
   });
   const data = await res.json();
+
   if (data.success || data.client) {
     const client = data.client || data;
+
+    // 1. Format the name
     client.full_name = `${client.first_name} ${client.last_name}`;
+
+    // 2. ADD THE MISSING STRUCTURES HERE so the sidebar doesn't crash
+    client.eoppy_breakdown = { total: 0, services: {} };
+    client.non_eoppy_breakdown = { total: 0, services: {} };
+    client.outstanding_balance = 0; // Good practice to default this too
+
+    // 3. Push to state and select it
     props.clients.push(client);
     form.value.client_id = client.id;
     showQuickAddClient.value = false;
@@ -723,7 +891,6 @@ const openClientProfile = () => {
 };
 
 // --- Formatters ---
-
 const formatDate = (d: Date) =>
   d
     ? new Date(d).toLocaleString("en-GB", {

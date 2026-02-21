@@ -1,81 +1,170 @@
 <template>
   <div class="p-6 max-w-7xl mx-auto">
     <div class="mb-8">
-      <h1 class="text-3xl font-bold text-gray-900 text-white">
-        Financial Reports
+      <h1 class="text-3xl font-bold text-[var(--p-primary-400)] text-primary">
+        Financial & Analytics
       </h1>
-      <p class="text-gray-500">
-        View your business performance, sales, and payments.
+      <p class="text-primary-700">
+        Performance metrics, revenue, and client retention.
       </p>
     </div>
 
-    <div
-      class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 mb-6 flex gap-4 items-end"
-    >
-      <div class="flex-grow">
-        <label class="block text-sm font-bold text-gray-700 mb-1"
-          >Date Range</label
-        >
-        <div class="flex gap-2">
-          <Calendar
-            v-model="filters.from"
-            placeholder="From Date"
-            showIcon
-            class="w-full"
+    <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 mb-6">
+      <div class="flex flex-col lg:flex-row gap-4 lg:items-end">
+        <div class="flex-grow w-full">
+          <label class="block text-sm font-bold text-gray-700 mb-2">
+            Date Range (Affects Sales & Reports)
+          </label>
+
+          <div class="flex flex-col sm:flex-row gap-3">
+            <div class="flex-1">
+              <Calendar
+                v-model="filters.from"
+                placeholder="From Date"
+                showIcon
+                class="w-full"
+                dateFormat="dd/mm/yy"
+              />
+            </div>
+            <div class="flex-1">
+              <Calendar
+                v-model="filters.to"
+                placeholder="To Date"
+                showIcon
+                class="w-full"
+                dateFormat="dd/mm/yy"
+              />
+            </div>
+            <Button
+              label="Today"
+              icon="pi pi-calendar"
+              class="p-button-outlined w-full sm:w-auto flex-shrink-0"
+              @click="setToday"
+            />
+          </div>
+        </div>
+
+        <div class="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
+          <Button
+            label="Apply"
+            icon="pi pi-filter"
+            class="w-full sm:w-auto"
+            @click="fetchAllReports"
+            :loading="loading"
           />
-          <Calendar
-            v-model="filters.to"
-            placeholder="To Date"
-            showIcon
-            class="w-full"
+          <Button
+            label="Clear"
+            icon="pi pi-times"
+            class="p-button-outlined p-button-secondary w-full sm:w-auto"
+            @click="clearFilters"
           />
         </div>
       </div>
-      <Button
-        label="Apply Filters"
-        icon="pi pi-filter"
-        @click="fetchAllReports"
-        :loading="loading"
-      />
-      <Button
-        label="Clear"
-        icon="pi pi-times"
-        class="p-button-outlined p-button-secondary"
-        @click="clearFilters"
-      />
     </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
       <div
         class="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl p-6 text-white shadow-lg"
       >
-        <div class="text-indigo-100 font-medium mb-1">Total Sales</div>
+        <div class="text-indigo-100 font-medium mb-1 flex justify-between">
+          <span>Total Sales</span>
+          <i class="pi pi-calendar"></i>
+        </div>
         <div class="text-3xl font-bold">
           €{{ formatCurrency(finances.total_sales) }}
         </div>
-        <div class="text-xs text-indigo-200 mt-2">Completed appointments</div>
-      </div>
-      <div class="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
-        <div class="text-gray-500 font-medium mb-1">Total Collected</div>
-        <div class="text-3xl font-bold text-green-600">
-          €{{ formatCurrency(finances.total_payments) }}
+        <div class="text-xs text-indigo-200 mt-2">
+          Completed revenue ({{ formatDate(filters.from) }} -
+          {{ formatDate(filters.to) }})
         </div>
-        <div class="text-xs text-gray-400 mt-2">Actual payments received</div>
-      </div>
-      <div class="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
-        <div class="text-gray-500 font-medium mb-1">Pending Balance</div>
-        <div class="text-3xl font-bold text-orange-500">
-          €{{
-            formatCurrency(
-              Math.max(0, finances.total_sales - finances.total_payments)
-            )
-          }}
+        <div class="text-[10px] text-indigo-100 mt-1 opacity-80 leading-tight">
+          * Value of services finished in this period (includes services that
+          haven't been paid yet)
         </div>
-        <div class="text-xs text-gray-400 mt-2">Outstanding from clients</div>
+      </div>
+
+      <div
+        class="bg-white rounded-xl p-6 border border-gray-200 shadow-sm border-l-4 border-l-green-500"
+      >
+        <div class="text-gray-500 font-medium mb-1">Collected Today</div>
+        <div class="text-3xl font-bold text-green-700">
+          €{{ formatCurrency(finances.collected_today) }}
+        </div>
+        <div class="text-xs text-gray-400 mt-2">Cash flow received today</div>
+        <div class="text-[10px] text-gray-500 mt-1 leading-tight">
+          * Actual payments (deposits + debts) received today
+        </div>
+      </div>
+
+      <div
+        class="bg-white rounded-xl p-6 border border-gray-200 shadow-sm border-l-4 border-l-red-500"
+      >
+        <div class="text-gray-500 font-medium mb-1">Total Business Debt</div>
+        <div class="text-3xl font-bold text-red-600">
+          €{{ formatCurrency(finances.total_debt) }}
+        </div>
+        <div class="text-xs text-gray-400 mt-2">All client balances</div>
+      </div>
+
+      <div
+        class="bg-white rounded-xl p-6 border border-gray-200 shadow-sm border-l-4 border-l-blue-500"
+      >
+        <div class="text-gray-500 font-medium mb-1">Client Retention</div>
+        <div class="text-3xl font-bold text-blue-600">
+          {{ analytics.retention_rate }}%
+        </div>
+        <div class="text-xs text-gray-400 mt-2">
+          {{ analytics.returning_clients }} Returning vs
+          {{ analytics.new_clients }} New
+        </div>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+      <div
+        class="bg-white p-4 rounded-xl border border-gray-200 flex items-center justify-between"
+      >
+        <div>
+          <h4 class="text-gray-500 font-bold text-sm uppercase">
+            Cancellation Rate
+          </h4>
+          <div class="text-2xl font-bold text-gray-800">
+            {{ analytics.cancellation_rate }}%
+          </div>
+          <div class="text-xs text-gray-400">Cancelled or No-show</div>
+        </div>
+        <div
+          class="h-12 w-12 rounded-full flex items-center justify-center bg-gray-100 text-gray-500"
+        >
+          <i class="pi pi-ban text-xl"></i>
+        </div>
+      </div>
+
+      <div
+        class="bg-white p-4 rounded-xl border border-gray-200 flex items-center justify-between"
+      >
+        <div>
+          <h4 class="text-gray-500 font-bold text-sm uppercase">
+            Selected Period Payments
+          </h4>
+          <div class="text-2xl font-bold text-gray-800">
+            €{{ formatCurrency(finances.total_payments) }}
+          </div>
+          <div class="text-xs text-gray-400">Collected in selected dates</div>
+        </div>
+        <div
+          class="h-12 w-12 rounded-full flex items-center justify-center bg-green-50 text-green-600"
+        >
+          <i class="pi pi-wallet text-xl"></i>
+        </div>
       </div>
     </div>
 
     <TabView class="bg-white rounded-xl shadow-sm border border-gray-200 p-2">
+      <TabPanel header="Client Demographics">
+        <ClientDemographics :clients="clientsReport" />
+      </TabPanel>
+
       <TabPanel header="Sales by Service">
         <DataTable
           :value="salesReport"
@@ -96,26 +185,22 @@
 
       <TabPanel header="Staff Performance">
         <DataTable
-          :value="staffReport"
+          :value="analytics.staff_utilization"
           responsiveLayout="scroll"
           :paginator="true"
           :rows="10"
           class="p-datatable-sm"
         >
-          <Column field="staff_name" header="Staff Member"></Column>
-          <Column
-            field="appointment_count"
-            header="Appointments"
-            sortable
-          ></Column>
-          <Column field="total_hours" header="Hours Booked" sortable>
+          <Column field="name" header="Staff Member"></Column>
+          <Column field="appt_count" header="Appointments" sortable></Column>
+          <Column field="hours_booked" header="Hours Booked" sortable>
             <template #body="slotProps">
-              {{ (slotProps.data.total_hours / 60).toFixed(1) }}h
+              {{ Number(slotProps.data.hours_booked).toFixed(1) }}h
             </template>
           </Column>
           <Column field="total_revenue" header="Revenue Generated" sortable>
             <template #body="slotProps">
-              €{{ formatCurrency(slotProps.data.total_revenue) }}
+              €{{ formatCurrency(slotProps.data.total_revenue || 0) }}
             </template>
           </Column>
         </DataTable>
@@ -168,56 +253,6 @@
           </Column>
         </DataTable>
       </TabPanel>
-
-      <TabPanel header="Appointments List">
-        <DataTable
-          :value="appointmentsReport"
-          responsiveLayout="scroll"
-          :paginator="true"
-          :rows="10"
-          class="p-datatable-sm"
-          sortField="created_at"
-          :sortOrder="-1"
-        >
-          <Column field="created_at" header="Date">
-            <template #body="slotProps">
-              {{ new Date(slotProps.data.created_at).toLocaleDateString() }}
-            </template>
-          </Column>
-          <Column header="Client">
-            <template #body="slotProps">
-              {{ slotProps.data.first_name }} {{ slotProps.data.last_name }}
-            </template>
-          </Column>
-          <Column field="status" header="Status">
-            <template #body="slotProps">
-              <span
-                class="px-2 py-1 rounded text-xs font-bold uppercase"
-                :class="{
-                  'bg-green-100 text-green-800':
-                    slotProps.data.status === 'completed',
-                  'bg-blue-100 text-blue-800': slotProps.data.status === 'new',
-                  'bg-red-100 text-red-800':
-                    slotProps.data.status === 'cancelled',
-                }"
-              >
-                {{ slotProps.data.status }}
-              </span>
-            </template>
-          </Column>
-          <Column header="Services">
-            <template #body="slotProps">
-              <div
-                v-for="s in slotProps.data.services"
-                :key="s.service_name"
-                class="text-xs"
-              >
-                {{ s.service_name }} (€{{ s.price }})
-              </div>
-            </template>
-          </Column>
-        </DataTable>
-      </TabPanel>
     </TabView>
   </div>
 </template>
@@ -227,27 +262,56 @@ import { ref, onMounted } from "vue";
 import { useToast } from "primevue/usetoast";
 import TabView from "primevue/tabview";
 import TabPanel from "primevue/tabpanel";
+import ClientDemographics from "./ClientDemographics.vue";
 
 const toast = useToast();
 const loading = ref(false);
 
-const filters = ref({
-  from: null as Date | null,
-  to: null as Date | null,
+// Initialize filters with Current Month
+const today = new Date();
+const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+
+// FIX 1: Explicitly define type so 'null' is allowed
+const filters = ref<{ from: Date | null; to: Date | null }>({
+  from: firstDay,
+  to: lastDay,
 });
 
 // Data State
-const finances = ref({ total_sales: 0, total_payments: 0 });
+const finances = ref({
+  total_sales: 0,
+  total_payments: 0,
+  collected_today: 0,
+  total_debt: 0,
+});
+
+const analytics = ref({
+  cancellation_rate: 0,
+  retention_rate: 0,
+  new_clients: 0,
+  returning_clients: 0,
+  staff_utilization: [],
+});
+
 const salesReport = ref([]);
 const staffReport = ref([]);
 const paymentsReport = ref([]);
 const appointmentsReport = ref([]);
+const clientsReport = ref<any[]>([]);
 
-// FIX: Changed 'en-EUR' to 'en-US' to fix the RangeError
 const formatCurrency = (val: any) => {
   return Number(val).toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
+  });
+};
+
+const formatDate = (d: Date | null) => {
+  if (!d) return "";
+  return new Date(d).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
   });
 };
 
@@ -257,57 +321,74 @@ const clearFilters = () => {
   fetchAllReports();
 };
 
+const setToday = () => {
+  const now = new Date();
+  filters.value.from = now;
+  filters.value.to = now;
+  fetchAllReports();
+};
+
 const fetchAllReports = async () => {
   loading.value = true;
   const token = localStorage.getItem("token");
-
-  // FIX: Added Authorization header to prevent 401 Unauthorized
   const headers = { Authorization: `Bearer ${token}` };
 
-  // Build Query Params
   const params = new URLSearchParams();
-  if (filters.value.from)
-    params.append("from", filters.value.from.toISOString());
-  if (filters.value.to) params.append("to", filters.value.to.toISOString());
+
+  if (filters.value.from) {
+    const fromDate = new Date(filters.value.from);
+    fromDate.setHours(0, 0, 0, 0); // Start of day
+    params.append("from", fromDate.toISOString());
+  }
+
+  if (filters.value.to) {
+    const toDate = new Date(filters.value.to);
+    toDate.setHours(23, 59, 59, 999); // End of day
+    params.append("to", toDate.toISOString());
+  }
+
   const qs = params.toString() ? `?${params.toString()}` : "";
 
   try {
-    const [finRes, salesRes, staffRes, payRes, apptRes] = await Promise.all([
-      fetch(`/api/v1/reports/finances${qs}`, { headers }),
-      fetch(`/api/v1/reports/sales${qs}`, { headers }),
-      fetch(`/api/v1/reports/staff${qs}`, { headers }),
-      fetch(`/api/v1/reports/payments${qs}`, { headers }),
-      fetch(`/api/v1/reports/appointments${qs}`, { headers }),
-    ]);
+    const [finRes, salesRes, staffRes, payRes, apptRes, anaRes, clientsRes] =
+      await Promise.all([
+        fetch(`/api/v1/reports/finances${qs}`, { headers }),
+        fetch(`/api/v1/reports/sales${qs}`, { headers }),
+        fetch(`/api/v1/reports/staff${qs}`, { headers }),
+        fetch(`/api/v1/reports/payments${qs}`, { headers }),
+        fetch(`/api/v1/reports/appointments${qs}`, { headers }),
+        fetch(`/api/v1/reports/analytics${qs}`, { headers }),
+        fetch(`/api/v1/reports/clients${qs}`, { headers }),
+      ]);
 
-    // Check for 401s specifically
-    if (payRes.status === 401) {
-      throw new Error("Unauthorized: Please log in again.");
-    }
+    if (finRes.status === 401) throw new Error("Unauthorized");
 
     if (
       !finRes.ok ||
       !salesRes.ok ||
-      !staffRes.ok ||
+      !anaRes.ok ||
       !payRes.ok ||
-      !apptRes.ok
+      !clientsRes.ok
     ) {
-      throw new Error("Failed to fetch some reports");
+      throw new Error("Failed to fetch reports");
     }
 
     const finData = await finRes.json();
     const salesData = await salesRes.json();
+    const anaData = await anaRes.json();
 
     finances.value = finData;
     salesReport.value = salesData.details || [];
+    analytics.value = anaData;
     staffReport.value = await staffRes.json();
     paymentsReport.value = await payRes.json();
     appointmentsReport.value = await apptRes.json();
+    clientsReport.value = await clientsRes.json();
   } catch (err: any) {
     console.error(err);
     toast.add({
       severity: "error",
-      summary: "Error loading reports",
+      summary: "Error",
       detail: err.message,
       life: 4000,
     });

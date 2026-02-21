@@ -5,9 +5,8 @@ import App from "./App.vue";
 import router from "./router";
 
 // === PrimeVue v4 Theming ===
-// The old "resources/themes/..." imports are removed in v4.
-// You must import a preset from @primevue/themes instead.
-import Aura from "@primevue/themes/aura"; // Ensure you ran: npm install @primevue/themes
+import Aura from "@primevue/themes/aura";
+import { definePreset, palette } from "@primeuix/themes";
 
 // Core Styles
 import "primeicons/primeicons.css";
@@ -19,7 +18,6 @@ import ConfirmationService from "primevue/confirmationservice";
 import Tooltip from "primevue/tooltip";
 
 // === COMPONENTS ===
-// Note: In PrimeVue v4, some components were renamed.
 import Button from "primevue/button";
 import Dialog from "primevue/dialog";
 import Select from "primevue/select";
@@ -36,62 +34,83 @@ import Avatar from "primevue/avatar";
 import ScrollPanel from "primevue/scrollpanel";
 import Divider from "primevue/divider";
 import FloatLabel from "primevue/floatlabel";
-
+import ColorPicker from "primevue/colorpicker";
+import ToggleSwitch from "primevue/toggleswitch";
 import Tag from "primevue/tag";
 import Toast from "primevue/toast";
 import ConfirmDialog from "primevue/confirmdialog";
 import DataTable from "primevue/datatable";
 import Column from "primevue/column";
 import Chart from "primevue/chart";
+import { useThemeStore } from "./stores/themes";
 
-const app = createApp(App);
-
-app.use(createPinia());
-app.use(router);
-app.use(ToastService);
-app.use(ConfirmationService);
-
-// Initialize PrimeVue with the v4 Theme Preset
-app.use(PrimeVue, {
-  theme: {
-    preset: Aura,
-    options: {
-      // Toggle dark mode based on a class, or use 'system'
-      darkModeSelector: ".my-app-dark",
-    },
+const MyPreset = definePreset(Aura, {
+  semantic: {
+    primary: palette("#ff93d4"),
   },
-  ripple: true,
 });
 
-// Directives
-app.directive("tooltip", Tooltip);
+const initApp = async () => {
+  const app = createApp(App);
+  const pinia = createPinia();
 
-// === REGISTER COMPONENTS ===
-app.component("Button", Button);
-app.component("Dialog", Dialog);
-app.component("Dropdown", Select);
-app.component("InputText", InputText);
-app.component("InputNumber", InputNumber);
-app.component("Chart", Chart);
+  // 2. Install Pinia FIRST so we can use stores
+  app.use(pinia);
 
-app.component("DatePicker", DatePicker);
-app.component("Calendar", DatePicker);
+  // 3. Use the store to fetch/apply theme before mounting
+  const themeStore = useThemeStore();
+  await themeStore.fetchAndApplyTheme();
 
-app.component("Textarea", Textarea);
-app.component("Tag", Tag);
-app.component("Checkbox", Checkbox);
-app.component("MultiSelect", MultiSelect);
+  app.use(router);
+  app.use(ToastService);
+  app.use(ConfirmationService);
 
-app.component("Chip", Chip);
-app.component("Card", Card);
-app.component("Avatar", Avatar);
-app.component("ScrollPanel", ScrollPanel);
-app.component("Divider", Divider);
-app.component("FloatLabel", FloatLabel);
+  // Initialize PrimeVue with the dynamic v4 Theme Preset
+  app.use(PrimeVue, {
+    theme: {
+      preset: MyPreset,
+      options: {
+        darkModeSelector: ".my-app-dark",
+      },
+    },
+    ripple: true,
+  });
 
-app.component("Toast", Toast);
-app.component("ConfirmDialog", ConfirmDialog);
-app.component("DataTable", DataTable);
-app.component("Column", Column);
+  // Directives
+  app.directive("tooltip", Tooltip);
 
-app.mount("#app");
+  // === REGISTER COMPONENTS ===
+  app.component("Button", Button);
+  app.component("Dialog", Dialog);
+  app.component("Dropdown", Select);
+  app.component("InputText", InputText);
+  app.component("InputNumber", InputNumber);
+  app.component("Chart", Chart);
+  app.component("ColorPicker", ColorPicker);
+
+  app.component("DatePicker", DatePicker);
+  app.component("Calendar", DatePicker);
+
+  app.component("Textarea", Textarea);
+  app.component("Tag", Tag);
+  app.component("Checkbox", Checkbox);
+  app.component("MultiSelect", MultiSelect);
+
+  app.component("Chip", Chip);
+  app.component("Card", Card);
+  app.component("Avatar", Avatar);
+  app.component("ScrollPanel", ScrollPanel);
+  app.component("Divider", Divider);
+  app.component("FloatLabel", FloatLabel);
+  app.component("ToggleSwitch", ToggleSwitch);
+  app.component("Toast", Toast);
+  app.component("ConfirmDialog", ConfirmDialog);
+  app.component("DataTable", DataTable);
+  app.component("Column", Column);
+
+  // 6. Mount the app (Removes the index.html spinner)
+  app.mount("#app");
+};
+
+// Execute the async start
+initApp();
