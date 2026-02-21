@@ -11,11 +11,12 @@
       <p class="text-gray-500 text-sm mb-4">{{ client.phone }}</p>
 
       <div
-        v-if="Number(client.outstanding_balance) > 0 && authStore.isOwner"
+        v-if="calculatedBalance > 0 && authStore.isOwner"
         class="inline-block bg-red-100 text-red-800 text-xs font-bold px-3 py-1 rounded-full mb-6"
       >
-        Balance: €{{ Number(client.outstanding_balance).toFixed(2) }}
+        Balance: €{{ calculatedBalance.toFixed(2) }}
       </div>
+
       <div
         class="text-left bg-white p-4 rounded-lg shadow-sm border border-gray-100"
       >
@@ -100,6 +101,10 @@ defineProps({
   client: {
     type: Object,
     default: null,
+  },
+  calculatedBalance: {
+    type: Number,
+    default: 0,
   },
 });
 </script>

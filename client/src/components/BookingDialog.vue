@@ -349,6 +349,7 @@
           <BookingSidebar
             class="w-full bg-gray-50 h-full"
             :client="selectedClient"
+            :calculated-balance="previousDebt"
           />
         </div>
       </div>
@@ -513,17 +514,25 @@ const currentApptTotal = computed(() => {
   return servicesTotal + productsTotal;
 });
 
-const originalSnapshot = ref({ price: 0, deposit: 0 });
+const originalSnapshot = ref({ price: 0, deposit: 0, isPast: false });
+
+const originalDebtContribution = computed(() => {
+  if (!form.value.id) return 0;
+  // Mirror the backend logic: future appointments only contributed their deposit (as a credit) to the DB balance
+  if (originalSnapshot.value.isPast) {
+    return originalSnapshot.value.price - originalSnapshot.value.deposit;
+  } else {
+    return -originalSnapshot.value.deposit;
+  }
+});
 
 const previousDebt = computed(() => {
   const dbBalance = Number(selectedClient.value?.outstanding_balance || 0);
-  if (!form.value.id) return dbBalance;
+  if (!form.value.id) return Math.max(0, dbBalance);
 
-  const originalDebtContribution = Math.max(
-    0,
-    originalSnapshot.value.price - originalSnapshot.value.deposit,
-  );
-  return Math.max(0, dbBalance - originalDebtContribution);
+  // Safely extract this appointment's contribution to find the true historical debt
+  const trueHistoricalDebt = dbBalance - originalDebtContribution.value;
+  return Math.max(0, trueHistoricalDebt);
 });
 
 const totalDueNow = computed(() => {
@@ -534,11 +543,7 @@ const totalDueNow = computed(() => {
       dbBalance + currentApptTotal.value - form.value.deposit_amount,
     );
   } else {
-    const originalDebtContribution = Math.max(
-      0,
-      originalSnapshot.value.price - originalSnapshot.value.deposit,
-    );
-    const trueHistoricalDebt = dbBalance - originalDebtContribution;
+    const trueHistoricalDebt = dbBalance - originalDebtContribution.value;
     const currentApptDebt = Math.max(
       0,
       currentApptTotal.value - form.value.deposit_amount,
@@ -633,9 +638,11 @@ watch(
           }))
         : [];
 
+      const apptStartTime = val.services?.[0]?.start_time || val.start_time;
       originalSnapshot.value = {
         price: currentApptTotal.value,
         deposit: form.value.deposit_amount,
+        isPast: apptStartTime ? new Date(apptStartTime) < new Date() : false,
       };
     } else {
       // === NEW MODE ===
@@ -667,7 +674,7 @@ watch(
       ];
 
       productsList.value = [];
-      originalSnapshot.value = { price: 0, deposit: 0 };
+      originalSnapshot.value = { price: 0, deposit: 0, isPast: false };
     }
 
     amountToPayNow.value = 0;
@@ -754,6 +761,7 @@ const executeSave = async (close = true, scope = "single") => {
     originalSnapshot.value = {
       price: currentApptTotal.value,
       deposit: form.value.deposit_amount,
+      isPast: originalSnapshot.value.isPast,
     };
 
     if (close) {

@@ -162,6 +162,11 @@ const createAppointmentSeries = async (client, data, shopId) => {
 
     const currentEoppyStatus = !!is_eoppy;
 
+    const instanceDeposit = isFirstInstance ? deposit_amount || 0 : 0;
+    const instancePaymentStatus = isFirstInstance
+      ? payment_status || "unpaid"
+      : "unpaid";
+
     const apptRes = await client.query(
       `INSERT INTO appointments (
         client_id, status, internal_notes, booking_notes, 
@@ -175,8 +180,8 @@ const createAppointmentSeries = async (client, data, shopId) => {
         status,
         internal_notes,
         booking_notes,
-        deposit_amount || 0,
-        payment_status || "unpaid",
+        instanceDeposit,
+        instancePaymentStatus,
         !!is_block,
         !!save_receipt,
         currentEoppyStatus,
