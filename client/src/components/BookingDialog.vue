@@ -526,30 +526,19 @@ const originalDebtContribution = computed(() => {
   }
 });
 
+// Update these in your <script setup>
 const previousDebt = computed(() => {
-  const dbBalance = Number(selectedClient.value?.outstanding_balance || 0);
-  if (!form.value.id) return Math.max(0, dbBalance);
-
-  // Safely extract this appointment's contribution to find the true historical debt
-  const trueHistoricalDebt = dbBalance - originalDebtContribution.value;
-  return Math.max(0, trueHistoricalDebt);
+  // Now reflects ONLY past unpaid appointments thanks to the backend fix
+  return Number(selectedClient.value?.outstanding_balance || 0);
 });
 
 const totalDueNow = computed(() => {
-  const dbBalance = Number(selectedClient.value?.outstanding_balance || 0);
-  if (!form.value.id) {
-    return Math.max(
-      0,
-      dbBalance + currentApptTotal.value - form.value.deposit_amount,
-    );
-  } else {
-    const trueHistoricalDebt = dbBalance - originalDebtContribution.value;
-    const currentApptDebt = Math.max(
-      0,
-      currentApptTotal.value - form.value.deposit_amount,
-    );
-    return Math.max(0, trueHistoricalDebt + currentApptDebt);
-  }
+  // Total = Unpaid from the past + Cost of this specific appointment - What we paid today
+  const currentApptUnpaid = Math.max(
+    0,
+    currentApptTotal.value - form.value.deposit_amount,
+  );
+  return previousDebt.value + currentApptUnpaid;
 });
 
 watch(totalDueNow, (val) => {

@@ -388,38 +388,28 @@ const recalculateClientBalance = async (client, clientId) => {
   if (!clientId) return 0;
 
   const res = await client.query(
-    `
-    UPDATE clients 
-    SET outstanding_balance = (
-      SELECT COALESCE(SUM(
-        (
-          -- LOGIC: Only count the Price/Products as "Debt" if the appointment has started (is in the past)
-          CASE 
-            WHEN (
-              SELECT MIN(start_time) 
-              FROM appointment_services aps 
-              WHERE aps.appointment_id = a.id
-            ) < NOW() 
-            THEN 
-              (
-                COALESCE((SELECT SUM(price_override) FROM appointment_services aps WHERE aps.appointment_id = a.id), 0) 
-                + 
-                COALESCE((SELECT SUM(total_price) FROM product_sales ps WHERE ps.appointment_id = a.id), 0)
-              )
-            ELSE 
-              0 
-          END
-        ) 
-        -- LOGIC: Always subtract the deposit (Credit), even for future appointments
-        - a.deposit_amount
-      ), 0)
-      FROM appointments a
-      WHERE a.client_id = $1 
+    `WITH AppointmentTotals AS (
+    SELECT 
+      a.id,
+      -- Total cost of this appointment (Services + Products)
+      COALESCE((SELECT SUM(price_override) FROM appointment_services WHERE appointment_id = a.id), 0) as total_cost,
+      -- Total paid specifically for this appointment
+      COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0) as total_paid
+    FROM appointments a
+    WHERE a.client_id = $1 
       AND a.status != 'cancelled'
-    )
-    WHERE id = $1
-    RETURNING outstanding_balance
-  `,
+      -- ONLY look at appointments that have already started
+      AND (SELECT MIN(start_time) FROM appointment_services aps WHERE aps.appointment_id = a.id) < NOW()
+  )
+  UPDATE clients 
+  SET outstanding_balance = (
+    SELECT COALESCE(SUM(total_cost - total_paid), 0) 
+    FROM AppointmentTotals
+    -- If an appointment is overpaid, it shouldn't hide debt of another 
+    -- unless you want "Account Credit" logic. 
+  )
+  WHERE id = $1;
+`,
     [clientId],
   );
 

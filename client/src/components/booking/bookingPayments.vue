@@ -72,7 +72,7 @@
       class="text-center p-8 bg-green-50 rounded-xl border border-green-100"
     >
       <h3 class="text-xl font-bold text-green-900">Payment Complete</h3>
-      <p class="text-green-700 text-sm">No outstanding balance.</p>
+      <p class="text-green-700 text-sm">No balance.</p>
     </div>
   </div>
 </template>
