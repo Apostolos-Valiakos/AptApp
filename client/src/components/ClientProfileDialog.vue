@@ -298,7 +298,6 @@
                 {{ appt.status }}
               </span>
               <span class="font-bold" v-if="isOwner">
-                {{ isOwner }}
                 €{{
                   (
                     Number(appt.total_service_price || 0) +
