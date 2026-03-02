@@ -2663,46 +2663,48 @@ app.get("/api/v1/clients/:id/full", authenticateToken, async (req, res) => {
 
     // 2. Fetch Appointment History
     // FIX: logic calculates start_time from subquery and orders by it safely
+    // 2. Fetch Appointment History
     const historyRes = await pool.query(
       `SELECT 
           a.id, 
           a.status, 
           a.deposit_amount,
           a.created_at,
-          -- Get the earliest service start time for this appointment
           (
             SELECT MIN(start_time) 
             FROM appointment_services 
             WHERE appointment_id = a.id
           ) as start_time,
           
-          -- Sum of services prices
           COALESCE((
             SELECT SUM(price_override) 
             FROM appointment_services 
             WHERE appointment_id = a.id
           ), 0) as total_service_price,
           
-          -- Sum of product sales linked to this appointment
           COALESCE((
             SELECT SUM(total_price) 
             FROM product_sales 
             WHERE appointment_id = a.id
           ), 0) as total_product_price,
           
-          -- Concatenate service names
           (
             SELECT string_agg(s.name, ', ') 
             FROM appointment_services aps 
             JOIN services s ON aps.service_id = s.id 
             WHERE aps.appointment_id = a.id
-          ) as service_names
+          ) as service_names,
 
-       FROM appointments a
-       WHERE a.client_id = $1 AND a.shop_id = $2
-       
-       -- Order by the calculated start_time (using index 5 to avoid alias ambiguity)
-       ORDER BY 5 DESC`,
+          (
+            SELECT string_agg(DISTINCT st.name, ', ') 
+            FROM appointment_services aps 
+            JOIN staff st ON aps.staff_id = st.id 
+            WHERE aps.appointment_id = a.id
+          ) as staff_names
+
+        FROM appointments a
+        WHERE a.client_id = $1 AND a.shop_id = $2
+        ORDER BY 5 DESC`, // 5 refers to start_time
       [id, req.shopId],
     );
 

@@ -39,6 +39,14 @@
               }}
             </div>
             <div class="text-sm font-medium mt-1">{{ appt.service_names }}</div>
+
+            <div
+              v-if="appt.staff_names"
+              class="text-xs text-gray-500 flex items-center gap-1 mt-1"
+            >
+              <i class="pi pi-user text-[10px]"></i>
+              <span>{{ appt.staff_names }}</span>
+            </div>
           </div>
         </div>
 
@@ -74,11 +82,19 @@
             class="p-datatable-sm"
           >
             <Column field="start_time" header="Date">
-              <template #body="{ data }">{{
-                new Date(data.start_time).toLocaleDateString()
-              }}</template>
+              <template #body="{ data }">
+                {{ new Date(data.start_time).toLocaleDateString() }}
+              </template>
             </Column>
+
             <Column field="service_names" header="Service"></Column>
+
+            <Column field="staff_names" header="Professional">
+              <template #body="{ data }">
+                <span class="text-gray-600">{{ data.staff_names || "—" }}</span>
+              </template>
+            </Column>
+
             <Column field="status" header="Status">
               <template #body="{ data }">
                 <span
