@@ -87,8 +87,14 @@
         </template>
       </Column>
 
-      <Column header="Actions" style="width: 120px">
+      <Column header="Actions" style="width: 150px">
         <template #body="slotProps">
+          <Button
+            icon="pi pi-envelope"
+            class="p-button-rounded p-button-text p-button-sm p-button-info"
+            v-tooltip.top="'Invite to Portal'"
+            @click.stop="inviteClient(slotProps.data)"
+          />
           <Button
             icon="pi pi-pencil"
             class="p-button-rounded p-button-text p-button-sm"
@@ -350,7 +356,41 @@ const openProfile = (client: any) => {
   selectedClientId.value = client.id;
   profileVisible.value = true;
 };
+const inviteClient = async (client: any) => {
+  if (!client.email) {
+    toast.add({
+      severity: "warn",
+      summary: "Missing Email",
+      detail: "Client must have an email address to be invited.",
+      life: 3000,
+    });
+    return;
+  }
 
+  try {
+    const res = await fetch(`/api/v1/clients/${client.id}/invite`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed to invite client");
+
+    toast.add({
+      severity: "success",
+      summary: "Invited",
+      detail: `Invitation sent to ${client.email}`,
+      life: 3000,
+    });
+  } catch (err: any) {
+    toast.add({
+      severity: "error",
+      summary: "Error",
+      detail: err.message,
+      life: 3000,
+    });
+  }
+};
 // Open the simple dialog for CREATION only
 const openNew = () => {
   editingClient.value = {

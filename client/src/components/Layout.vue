@@ -158,7 +158,7 @@
       <router-view />
     </main>
 
-    <FloatingChat v-if="authStore.isAuthenticated" />
+    <FloatingChat v-if="authStore.isAuthenticated && !authStore.isClient" />
   </div>
 </template>
 
@@ -183,16 +183,31 @@ const navItems = [
   // { label: "Products", path: "/app/products", ownerOnly: false },
   { label: "Clients", path: "/app/clients", ownerOnly: false },
   { label: "Analytics", path: "/app/financials", ownerOnly: true },
+  {
+    label: "My Portal",
+    path: "/portal",
+    ownerOnly: false,
+    adminOnly: false,
+    clientOnly: true,
+  },
 ];
 
 const isOwner = computed(() => {
   const role = authStore.user?.role;
   return role === "admin" || role === "super_admin";
 });
+const isClient = computed(() => authStore.isClient);
 
 const visibleNavItems = computed(() => {
   if (!authStore.isAuthenticated) return [];
-  return navItems.filter((item) => !item.ownerOnly || isOwner.value);
+
+  return navItems.filter((item) => {
+    if (isClient.value) return item.clientOnly;
+    if (item.clientOnly) return false;
+    if (item.ownerOnly && !isOwner.value) return false;
+
+    return true;
+  });
 });
 
 const isFullWidthPage = computed(() => route.path.includes("/app/scheduler"));

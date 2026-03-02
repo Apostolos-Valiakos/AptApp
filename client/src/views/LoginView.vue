@@ -54,15 +54,18 @@ const router = useRouter();
 const themeStore = useThemeStore();
 
 const login = async () => {
-  // 3. Perform login (this sets the token in localStorage)
-  await authStore.login(username.value, password.value);
+  const result = await authStore.login(username.value, password.value);
 
   if (authStore.isAuthenticated) {
     await themeStore.fetchAndApplyTheme();
 
-    router.push("/app/scheduler");
+    if (authStore.user?.role === "client") {
+      router.push("/portal");
+    } else {
+      router.push("/app/scheduler");
+    }
   } else {
-    alert("Invalid credentials");
+    alert(result.error || "Invalid credentials");
   }
 };
 </script>
