@@ -477,6 +477,7 @@ app.post("/api/v1/login", async (req, res) => {
         role: user.role,
         shopId: user.shop_id,
         staffId: user.staff_id,
+        clientId: user.client_id,
       },
       process.env.JWT_SECRET || "supersecret",
       { expiresIn: "7d" },
@@ -2638,6 +2639,16 @@ app.delete("/api/v1/products/:id", authenticateToken, async (req, res) => {
 // GET FULL CLIENT PROFILE (Info + History + File Metadata)
 app.get("/api/v1/clients/:id/full", authenticateToken, async (req, res) => {
   const { id } = req.params;
+  if (req.user.role === "client") {
+    if (String(req.user.clientId) !== String(id)) {
+      console.log(
+        `Blocked access: User ${req.user.clientId} tried to view ${id}`,
+      );
+      return res
+        .status(403)
+        .json({ error: "Unauthorized to view this profile" });
+    }
+  }
   try {
     // 1. Fetch Client Details
     const clientRes = await pool.query(
@@ -2652,46 +2663,48 @@ app.get("/api/v1/clients/:id/full", authenticateToken, async (req, res) => {
 
     // 2. Fetch Appointment History
     // FIX: logic calculates start_time from subquery and orders by it safely
+    // 2. Fetch Appointment History
     const historyRes = await pool.query(
       `SELECT 
           a.id, 
           a.status, 
           a.deposit_amount,
           a.created_at,
-          -- Get the earliest service start time for this appointment
           (
             SELECT MIN(start_time) 
             FROM appointment_services 
             WHERE appointment_id = a.id
           ) as start_time,
           
-          -- Sum of services prices
           COALESCE((
             SELECT SUM(price_override) 
             FROM appointment_services 
             WHERE appointment_id = a.id
           ), 0) as total_service_price,
           
-          -- Sum of product sales linked to this appointment
           COALESCE((
             SELECT SUM(total_price) 
             FROM product_sales 
             WHERE appointment_id = a.id
           ), 0) as total_product_price,
           
-          -- Concatenate service names
           (
             SELECT string_agg(s.name, ', ') 
             FROM appointment_services aps 
             JOIN services s ON aps.service_id = s.id 
             WHERE aps.appointment_id = a.id
-          ) as service_names
+          ) as service_names,
 
-       FROM appointments a
-       WHERE a.client_id = $1 AND a.shop_id = $2
-       
-       -- Order by the calculated start_time (using index 5 to avoid alias ambiguity)
-       ORDER BY 5 DESC`,
+          (
+            SELECT string_agg(DISTINCT st.name, ', ') 
+            FROM appointment_services aps 
+            JOIN staff st ON aps.staff_id = st.id 
+            WHERE aps.appointment_id = a.id
+          ) as staff_names
+
+        FROM appointments a
+        WHERE a.client_id = $1 AND a.shop_id = $2
+        ORDER BY 5 DESC`, // 5 refers to start_time
       [id, req.shopId],
     );
 
@@ -2754,27 +2767,51 @@ app.get(
   authenticateToken,
   async (req, res) => {
     try {
-      const { rows } = await pool.query(
-        `SELECT cf.file_data, cf.file_type, cf.file_name 
-       FROM client_files cf
-       JOIN clients c ON cf.client_id = c.id
-       WHERE cf.id = $1 AND c.shop_id = $2`,
-        [req.params.fileId, req.shopId],
-      );
+      const { fileId } = req.params;
+      let query = `
+      SELECT cf.file_data, cf.file_type, cf.file_name 
+      FROM client_files cf
+      JOIN clients c ON cf.client_id = c.id
+      WHERE cf.id = $1
+    `;
+      let params = [fileId];
 
-      if (rows.length === 0)
-        return res.status(404).json({ error: "File not found" });
+      // 2. Add Role-Based Security
+      if (req.user.role === "client") {
+        // CLIENTS: Must match the file ID AND their own clientId
+        query += ` AND cf.client_id = $2`;
+        params.push(req.user.clientId);
+      } else {
+        // STAFF/ADMIN: Must match the file ID AND the shop_id they belong to
+        query += ` AND c.shop_id = $2`;
+        params.push(req.shopId);
+      }
+
+      // 3. Execute the query AFTER building it
+      const { rows } = await pool.query(query, params);
+
+      if (rows.length === 0) {
+        return res
+          .status(404)
+          .json({ error: "File not found or access denied" });
+      }
 
       const file = rows[0];
       const encodedName = encodeURIComponent(file.file_name);
 
-      res.setHeader("Content-Type", file.file_type);
+      // 4. Send the file
+      res.setHeader(
+        "Content-Type",
+        file.file_type || "application/octet-stream",
+      );
       res.setHeader(
         "Content-Disposition",
         `attachment; filename*=UTF-8''${encodedName}`,
       );
+
       res.send(file.file_data);
     } catch (err) {
+      console.error("Download Error:", err);
       res.status(500).json({ error: "Download failed" });
     }
   },
@@ -2895,6 +2932,172 @@ app.delete("/api/v1/exercises/:id", authenticateToken, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to delete exercise" });
+  }
+});
+
+// Invite Endpoint
+app.post("/api/v1/clients/:id/invite", authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { rows } = await pool.query(
+      "SELECT * FROM clients WHERE id = $1 AND shop_id = $2",
+      [id, req.shopId],
+    );
+    if (rows.length === 0)
+      return res.status(404).json({ error: "Client not found" });
+    const client = rows[0];
+
+    if (!client.email)
+      return res
+        .status(400)
+        .json({ error: "Client does not have an email address" });
+
+    const userCheck = await pool.query(
+      "SELECT id FROM users WHERE client_id = $1",
+      [id],
+    );
+    if (userCheck.rows.length > 0)
+      return res.status(400).json({ error: "Client already has an account" });
+
+    // Generate temporary token for signup
+    const inviteToken = jwt.sign(
+      { clientId: id, shopId: req.shopId, email: client.email },
+      process.env.JWT_SECRET || "supersecret",
+      { expiresIn: "48h" },
+    );
+
+    const signupUrl = `${ALLOWED_ORIGIN}/signup?token=${inviteToken}`;
+    const nodemailer = require("nodemailer");
+
+    const transporter = nodemailer.createTransport({
+      host: process.env.EMAIL_HOST,
+      port: process.env.EMAIL_PORT,
+      secure: process.env.EMAIL_PORT == 465,
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
+      },
+      family: 4,
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+    });
+
+    await transporter.sendMail({
+      from: `"${req.user.shopName || "Booking"}" <${process.env.EMAIL_USER}>`,
+      to: client.email,
+      subject: "Invitation to your Client Portal",
+      html: `
+<!doctype html>
+<html>
+  <head>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet" />
+    <style>
+      /* Mobile responsiveness */
+      @media only screen and (max-width: 600px) {
+        .inner-padding { padding: 30px 15px !important; }
+        .button-stack { display: block !important; width: 100% !important; margin: 10px 0 !important; box-sizing: border-box !important; }
+      }
+      /* Hover effect for buttons */
+      .btn-hover:hover { background-color: #ff7ec7 !important; transform: translateY(-2px); }
+    </style>
+  </head>
+  <body style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #fff5f9; padding: 40px 10px; margin: 0; -webkit-font-smoothing: antialiased;">
+    <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 32px; overflow: hidden; box-shadow: 0 20px 25px -5px rgba(255, 147, 212, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);">
+      
+      <div style="padding: 40px 40px 20px 40px; text-align: left">
+        <div style="display: inline-block; background-color: #ff93d4; color: white; padding: 4px 12px; border-radius: 9999px; font-size: 12px; font-weight: 700; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 0.05em;">
+          Πρόσκληση
+        </div>
+        <h2 style="margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.025em;">
+          <span style="color: #111827">${req.user.shopName || "Petalouda"}</span><span style="color: #ff93d4">Portal</span>
+        </h2>
+      </div>
+
+      <div class="inner-padding" style="padding: 0 40px 40px 40px">
+        <h1 style="color: #111827; font-size: 32px; font-weight: 800; margin-bottom: 24px; line-height: 1.1; letter-spacing: -1px;">
+          Καλώς ήρθατε στο <span style="color: #ff7ec7">Online Portal</span> μας
+        </h1>
+
+        <p style="color: #4b5563; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+          Γεια σας ${client.first_name},
+        </p>
+        <p style="color: #4b5563; font-size: 16px; line-height: 1.6">
+          Είμαστε ενθουσιασμένοι που σας προσκαλούμε στη νέα μας πλατφόρμα. Εδώ μπορείτε να διαχειρίζεστε τα ραντεβού σας και να έχετε πρόσβαση στα έγγραφά σας 24/7.
+        </p>
+
+        <div style="background-color: #fff5f9; border-radius: 24px; padding: 30px; margin: 32px 0; border: 1px solid rgba(255, 147, 212, 0.2);">
+          <ul style="color: #374151; font-size: 15px; padding-left: 0; list-style: none; margin: 0;">
+            <li style="margin-bottom: 12px; display: flex; align-items: center;">
+              <span style="color: #ff93d4; margin-right: 12px; font-size: 18px;">📅</span> 
+              <strong>Προβολή ραντεβού:</strong> Δείτε τα επόμενα ραντεβού σας.
+            </li>
+            <li style="margin-bottom: 12px; display: flex; align-items: center;">
+              <span style="color: #ff93d4; margin-right: 12px; font-size: 18px;">🕒</span> 
+              <strong>Ιστορικό:</strong> Πλήρης έλεγχος των επισκέψεών σας.
+            </li>
+            <li style="display: flex; align-items: center;">
+              <span style="color: #ff93d4; margin-right: 12px; font-size: 18px;">📁</span> 
+              <strong>Αρχεία:</strong> Κατεβάστε σημαντικά έγγραφα και οδηγίες.
+            </li>
+          </ul>
+        </div>
+
+        <div style="text-align: center; margin-top: 40px;">
+          <a href="${signupUrl}" class="btn-hover button-stack" style="display: inline-block; background-color: #ff93d4; color: white; padding: 18px 40px; border-radius: 16px; text-decoration: none; font-weight: 700; font-size: 16px; transition: all 0.2s ease; box-shadow: 0 10px 15px -3px rgba(255, 147, 212, 0.3);">
+            Ενεργοποίηση Λογαριασμού
+          </a>
+          <p style="color: #9ca3af; font-size: 12px; margin-top: 25px;">
+             Αυτός ο σύνδεσμος θα λήξει σε 48 ώρες για την ασφάλειά σας.
+          </p>
+        </div>
+      </div>
+
+      <div style="background-color: #fff; padding: 40px; text-align: center; border-top: 1px solid rgba(255, 147, 212, 0.1);">
+        <p style="color: #111827; font-size: 16px; font-weight: 700; margin-bottom: 8px;">
+          ${req.user.shopName || "Petalouda"}<span style="color: #ff93d4"> Booking</span>
+        </p>
+        <p style="color: #9ca3af; font-size: 12px; margin: 0;">
+          © 2026 Powered by Interventio Booking System
+        </p>
+      </div>
+    </div>
+  </body>
+</html>
+      `,
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Invite Error:", err);
+    res.status(500).json({ error: "Failed to send invitation" });
+  }
+});
+
+// Signup Endpoint
+app.post("/api/v1/signup", async (req, res) => {
+  const { token, password } = req.body;
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || "supersecret");
+
+    const userCheck = await pool.query(
+      "SELECT id FROM users WHERE username = $1",
+      [decoded.email],
+    );
+    if (userCheck.rows.length > 0)
+      return res
+        .status(400)
+        .json({ error: "An account with this email already exists" });
+
+    const hashedPassword = await bcrypt.hash(password, 12);
+
+    await pool.query(
+      `INSERT INTO users (username, password, role, shop_id, client_id) VALUES ($1, $2, 'client', $3, $4)`,
+      [decoded.email, hashedPassword, decoded.shopId, decoded.clientId],
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(400).json({ error: "Invalid or expired invitation link" });
   }
 });
 app.get(/(.*)/, (req, res) => {

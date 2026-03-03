@@ -2,20 +2,22 @@ import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 
 export const useAuthStore = defineStore("auth", () => {
-  // 1. Initialize user from localStorage so it survives page refreshes
   const user = ref(JSON.parse(localStorage.getItem("user") || "null"));
   const token = ref(localStorage.getItem("token") || "");
 
   const isAuthenticated = computed(() => !!token.value);
 
-  // Helper to check role (Matches server.js logic for super_admin/admin)
   const isOwner = computed(
-    () => user.value?.role === "admin" || user.value?.role === "super_admin"
+    () => user.value?.role === "admin" || user.value?.role === "super_admin",
   );
+  const clientId = computed(
+    () => user.value?.clientId || user.value?.client_id,
+  );
+
+  const isClient = computed(() => user.value?.role === "client");
 
   const login = async (username: string, password: string) => {
     try {
-      // FIX: Changed endpoint to match server.js (/api/v1/login)
       const res = await fetch("/api/v1/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -25,11 +27,9 @@ export const useAuthStore = defineStore("auth", () => {
       const data = await res.json();
 
       if (res.ok && data.token) {
-        // 2. Save Token
         token.value = data.token;
         localStorage.setItem("token", data.token);
 
-        // 3. Save User
         user.value = data.user;
         localStorage.setItem("user", JSON.stringify(data.user));
 
@@ -44,7 +44,6 @@ export const useAuthStore = defineStore("auth", () => {
   };
 
   const logout = () => {
-    // 4. Clear Token AND User on logout
     token.value = "";
     user.value = null;
     localStorage.removeItem("token");
@@ -56,6 +55,8 @@ export const useAuthStore = defineStore("auth", () => {
     user,
     isAuthenticated,
     isOwner,
+    isClient,
+    clientId,
     login,
     logout,
   };
