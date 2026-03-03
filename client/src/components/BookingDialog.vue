@@ -526,14 +526,26 @@ const originalDebtContribution = computed(() => {
   }
 });
 
-// Update these in your <script setup>
 const previousDebt = computed(() => {
-  // Now reflects ONLY past unpaid appointments thanks to the backend fix
-  return Number(selectedClient.value?.outstanding_balance || 0);
+  if (!selectedClient.value) return 0;
+
+  // Get total balance from DB
+  const totalBalance = Number(selectedClient.value.outstanding_balance || 0);
+
+  // Calculate what is currently owed for THIS specific appointment in the DB
+  // (Total cost - what was already recorded as paid in previous sessions)
+  const currentApptOwedInDB = Math.max(
+    0,
+    currentApptTotal.value - (form.value.deposit_amount || 0),
+  );
+
+  // Subtract this appointment from the total so "Previous Debt" is truly previous
+  return Math.max(0, totalBalance - currentApptOwedInDB);
 });
 
 const totalDueNow = computed(() => {
-  // Total = Unpaid from the past + Cost of this specific appointment - What we paid today
+  // Now we add them back together correctly:
+  // (Truly Old Debt) + (Current Appointment Total) - (What is being paid right now)
   const currentApptUnpaid = Math.max(
     0,
     currentApptTotal.value - form.value.deposit_amount,
@@ -541,9 +553,16 @@ const totalDueNow = computed(() => {
   return previousDebt.value + currentApptUnpaid;
 });
 
-watch(totalDueNow, (val) => {
-  amountToPayNow.value = val;
-});
+// Update the watcher to be more "lazy" or careful
+watch(
+  totalDueNow,
+  (newVal) => {
+    // Only auto-update if the user hasn't manually typed a different amount
+    // OR just keep it simple if you want it to always match the total:
+    amountToPayNow.value = newVal;
+  },
+  { immediate: true },
+);
 
 // === INITIALIZATION ===
 watch(
@@ -769,6 +788,10 @@ const recordPayment = async () => {
   paymentLoading.value = true;
   const token = localStorage.getItem("token");
 
+  // Requirement: Change status to completed
+  form.value.status = "completed";
+
+  // Save the appointment status change first
   await save(false);
 
   if (!form.value.id) {
@@ -792,11 +815,18 @@ const recordPayment = async () => {
     });
 
     if (res.ok) {
+      // Update local values so the UI reflects the payment immediately
       form.value.deposit_amount += amountToPayNow.value;
+
       if (selectedClient.value) {
+        // Reduce the client's total balance by the amount paid
         selectedClient.value.outstanding_balance -= amountToPayNow.value;
       }
+
+      // Sync snapshots to prevent "unsaved changes" warnings
       originalSnapshot.value.deposit = form.value.deposit_amount;
+      originalSnapshot.value.status = "completed";
+
       emit("save");
     }
   } catch (e) {

@@ -398,18 +398,15 @@ const recalculateClientBalance = async (client, clientId) => {
     FROM appointments a
     WHERE a.client_id = $1 
       AND a.status != 'cancelled'
-      -- ONLY look at appointments that have already started
-      AND (SELECT MIN(start_time) FROM appointment_services aps WHERE aps.appointment_id = a.id) < NOW()
+      AND (SELECT MIN(start_time) FROM appointment_services aps WHERE aps.appointment_id = a.id) < CURRENT_DATE
   )
   UPDATE clients 
   SET outstanding_balance = (
     SELECT COALESCE(SUM(total_cost - total_paid), 0) 
     FROM AppointmentTotals
-    -- If an appointment is overpaid, it shouldn't hide debt of another 
-    -- unless you want "Account Credit" logic. 
   )
-  WHERE id = $1;
-`,
+  WHERE id = $1
+  RETURNING outstanding_balance;`,
     [clientId],
   );
 
