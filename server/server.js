@@ -391,14 +391,16 @@ const recalculateClientBalance = async (client, clientId) => {
     `WITH AppointmentTotals AS (
     SELECT 
       a.id,
-      -- Total cost of this appointment (Services + Products)
       COALESCE((SELECT SUM(price_override) FROM appointment_services WHERE appointment_id = a.id), 0) as total_cost,
       -- Total paid specifically for this appointment
       COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0) as total_paid
     FROM appointments a
     WHERE a.client_id = $1 
       AND a.status != 'cancelled'
-      AND (SELECT MIN(start_time) FROM appointment_services aps WHERE aps.appointment_id = a.id) < CURRENT_DATE
+      -- 1. Only consider appointments from March 1st, 2026 onwards
+      AND (SELECT MIN(start_time) FROM appointment_services aps WHERE aps.appointment_id = a.id) >= '2026-03-01'
+      -- 2. Only consider appointments that have already passed (before today)
+      AND (SELECT MIN(start_time) FROM appointment_services aps WHERE aps.appointment_id = a.id) <= CURRENT_TIMESTAMP
   )
   UPDATE clients 
   SET outstanding_balance = (
@@ -1051,7 +1053,6 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
         a.status, 
         a.internal_notes, 
         a.booking_notes, 
-        a.deposit_amount, 
         a.payment_status, 
         a.is_block, 
         a.is_eoppy,
@@ -1062,8 +1063,21 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
         c.first_name, 
         c.last_name, 
         c.phone as client_phone,
-        
-        -- (Rest of your query: COALESCE services, products, etc...)
+        -- 1. GET CLIENT'S CURRENT OUTSTANDING BALANCE
+        COALESCE(c.outstanding_balance, 0) as client_outstanding_balance,
+
+        -- 2. CALCULATE ACTUAL PAID AMOUNT FROM TRANSACTIONS TABLE
+        COALESCE((
+          SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id
+        ), 0) as deposit_amount,
+
+        -- 3. CALCULATE TOTAL COST (SERVICES + PRODUCTS)
+        (
+          COALESCE((SELECT SUM(price_override) FROM appointment_services WHERE appointment_id = a.id), 0) +
+          COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = a.id), 0)
+        ) as total_cost,
+
+        -- AGGREGATE SERVICES (with the earliest start_time for sorting)
         COALESCE((
           SELECT json_agg(json_build_object(
             'service_id', s.id,
@@ -1073,13 +1087,14 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
             'staff_id', aps.staff_id,
             'staff_name', st.name,
             'start_time', aps.start_time
-          ))
+          ) ORDER BY aps.start_time ASC)
           FROM appointment_services aps
           LEFT JOIN services s ON aps.service_id = s.id
           LEFT JOIN staff st ON aps.staff_id = st.id
           WHERE aps.appointment_id = a.id
         ), '[]') as services,
-        -- Aggregate Products
+
+        -- AGGREGATE PRODUCTS
         COALESCE((
           SELECT json_agg(json_build_object(
             'product_id', ps.inventory_id,
@@ -1092,15 +1107,18 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
       FROM appointments a
       LEFT JOIN clients c ON a.client_id = c.id
       WHERE a.shop_id = $1 ${visibilityClause}
-      GROUP BY a.id, c.first_name, c.last_name, c.phone
-      ORDER BY a.created_at DESC
+      GROUP BY a.id, c.first_name, c.last_name, c.phone, c.outstanding_balance
+      ORDER BY (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) DESC
     `,
       [req.shopId],
     );
+
     const formatted = rows.map((row) => ({
       ...row,
       start_time: row.services?.[0]?.start_time || row.created_at,
       staff_id: row.services?.[0]?.staff_id,
+      current_appt_total: parseFloat(row.total_cost),
+      deposit_amount: parseFloat(row.deposit_amount),
     }));
 
     res.json(formatted);

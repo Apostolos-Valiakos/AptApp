@@ -525,41 +525,66 @@ const originalDebtContribution = computed(() => {
     return -originalSnapshot.value.deposit;
   }
 });
+const isApptInDatabaseBalance = computed(() => {
+  if (!form.value.id || !form.value.start_time) return false;
+
+  const apptDate = new Date(form.value.start_time);
+  apptDate.setHours(0, 0, 0, 0);
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // Matches SQL: Only appointments BEFORE today are in the outstanding_balance
+  return apptDate < today;
+});
+
+// Replace your existing previousDebt and totalDueNow with this:
 
 const previousDebt = computed(() => {
   if (!selectedClient.value) return 0;
 
-  // Get total balance from DB
   const totalBalance = Number(selectedClient.value.outstanding_balance || 0);
 
-  // Calculate what is currently owed for THIS specific appointment in the DB
-  // (Total cost - what was already recorded as paid in previous sessions)
-  const currentApptOwedInDB = Math.max(
-    0,
-    currentApptTotal.value - (form.value.deposit_amount || 0),
-  );
+  // If we are editing an appointment that is already "Past" (and thus included in the DB balance)
+  if (isEditMode.value && isApptInDatabaseBalance.value) {
+    // We subtract today's total from the balance to see what was owed BEFORE today.
+    // Important: We use the full cost, not the unpaid part.
+    return Math.max(0, totalBalance - currentApptTotal.value);
+  }
 
-  // Subtract this appointment from the total so "Previous Debt" is truly previous
-  return Math.max(0, totalBalance - currentApptOwedInDB);
+  // For NEW or FUTURE appointments, the database balance IS the previous debt
+  return totalBalance;
 });
 
 const totalDueNow = computed(() => {
-  // Now we add them back together correctly:
-  // (Truly Old Debt) + (Current Appointment Total) - (What is being paid right now)
+  // 1. Calculate what is still owed specifically for THIS appointment
   const currentApptUnpaid = Math.max(
     0,
     currentApptTotal.value - form.value.deposit_amount,
   );
+
+  // 2. Total Due = (Old Debt) + (Unpaid part of current visit)
   return previousDebt.value + currentApptUnpaid;
 });
 
-// Update the watcher to be more "lazy" or careful
 watch(
   totalDueNow,
   (newVal) => {
-    // Only auto-update if the user hasn't manually typed a different amount
-    // OR just keep it simple if you want it to always match the total:
-    amountToPayNow.value = newVal;
+    // Determine if today's visit still has a balance
+    const currentApptUnpaid = Math.max(
+      0,
+      currentApptTotal.value - form.value.deposit_amount,
+    );
+
+    if (currentApptUnpaid > 0) {
+      // Prioritize paying off today's visit first
+      amountToPayNow.value = currentApptUnpaid;
+    } else if (newVal > 0) {
+      // If today is paid but there is old debt, suggest the debt amount
+      amountToPayNow.value = newVal;
+    } else {
+      amountToPayNow.value = 0;
+    }
   },
   { immediate: true },
 );
@@ -788,16 +813,9 @@ const recordPayment = async () => {
   paymentLoading.value = true;
   const token = localStorage.getItem("token");
 
-  // Requirement: Change status to completed
+  // Automatically mark as completed upon payment
   form.value.status = "completed";
-
-  // Save the appointment status change first
   await save(false);
-
-  if (!form.value.id) {
-    paymentLoading.value = false;
-    return;
-  }
 
   try {
     const res = await fetch("/api/v1/transactions", {
@@ -815,19 +833,15 @@ const recordPayment = async () => {
     });
 
     if (res.ok) {
-      // Update local values so the UI reflects the payment immediately
+      // 1. Update the 'Paid' amount for THIS appointment
       form.value.deposit_amount += amountToPayNow.value;
 
+      // 2. Update the CLIENT'S total balance
       if (selectedClient.value) {
-        // Reduce the client's total balance by the amount paid
         selectedClient.value.outstanding_balance -= amountToPayNow.value;
       }
 
-      // Sync snapshots to prevent "unsaved changes" warnings
-      originalSnapshot.value.deposit = form.value.deposit_amount;
-      originalSnapshot.value.status = "completed";
-
-      emit("save");
+      emit("save"); // Refresh the background calendar
     }
   } catch (e) {
     console.error(e);
