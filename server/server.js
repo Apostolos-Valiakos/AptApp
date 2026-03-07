@@ -1185,6 +1185,53 @@ app.get("/api/v1/unsubscribe", async (req, res) => {
     res.status(500).send("Παρουσιάστηκε σφάλμα κατά τη διαγραφή.");
   }
 });
+app.get("/api/v1/confirm-appointment", async (req, res) => {
+  const crypto = require("crypto");
+  const { id, token } = req.query;
+
+  if (!id || !token) {
+    return res.status(400).send("Μη έγκυρο αίτημα.");
+  }
+
+  // Verify the token matches the Appointment ID
+  const expectedToken = crypto
+    .createHmac("sha256", process.env.JWT_SECRET)
+    .update(id.toString())
+    .digest("hex");
+
+  if (token !== expectedToken) {
+    return res.status(403).send("Ο σύνδεσμος είναι άκυρος ή έχει λήξει.");
+  }
+
+  try {
+    // Update status to 'confirmed' only if it's not already cancelled
+    const result = await pool.query(
+      "UPDATE appointments SET status = 'confirmed' WHERE id = $1 AND status != 'cancelled' RETURNING id",
+      [id],
+    );
+
+    if (result.rowCount === 0) {
+      return res
+        .status(404)
+        .send("Το ραντεβού δεν βρέθηκε ή έχει ήδη ακυρωθεί.");
+    }
+
+    // Success Styled Page
+    res.send(`
+      <div style="font-family: sans-serif; text-align: center; padding: 100px 20px; background: #fff5f9; min-height: 100vh;">
+          <div style="background: white; padding: 40px; border-radius: 32px; display: inline-block; box-shadow: 0 20px 25px rgba(255,147,212,0.1); max-width: 400px;">
+              <div style="font-size: 48px; margin-bottom: 20px;">✅</div>
+              <h1 style="color: #111827; margin-bottom: 10px; font-size: 24px;">Το ραντεβού επιβεβαιώθηκε!</h1>
+              <p style="color: #4b5563; line-height: 1.5;">Σας ευχαριστούμε. Η κράτησή σας έχει επισημανθεί ως επιβεβαιωμένη στο σύστημά μας. Ανυπομονούμε να σας δούμε!</p>
+              <a href="https://interventio.gr" style="display: inline-block; margin-top: 30px; background: #ff93d4; color: white; padding: 12px 24px; border-radius: 12px; text-decoration: none; font-weight: bold;">Επιστροφή στην Αρχική</a>
+          </div>
+      </div>
+    `);
+  } catch (err) {
+    console.error("Confirmation Error:", err);
+    res.status(500).send("Παρουσιάστηκε σφάλμα κατά την επιβεβαίωση.");
+  }
+});
 app.put("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
   const { id } = req.params;
   const { scope } = req.query;
