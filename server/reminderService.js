@@ -97,7 +97,7 @@ const processReminders = async () => {
       const token = generateUnsubToken(appt.client_id);
       const unsubUrl = `https://interventio.gr/api/v1/unsubscribe?id=${appt.client_id}&token=${token}`;
       const confirmToken = generateConfirmToken(appt.appointment_id);
-      const confirmUrl = `http://192.168.68.56:5173/api/v1/confirm-appointment?id=${appt.appointment_id}&token=${confirmToken}`;
+      const confirmUrl = `https://interventio.gr/api/v1/confirm-appointment?id=${appt.appointment_id}&token=${confirmToken}`;
       const confirmButtonHtml = `
         <div style="text-align: center; margin: 0 0 32px 0;">
             <a href="${confirmUrl}" 
