@@ -5,26 +5,19 @@
     >
       <div class="flex justify-between items-center mb-1 opacity-70">
         <span class="text-xs uppercase tracking-wider font-bold"
-          >Total Liability</span
+          >Συνολικο Υπολοιπο</span
         >
       </div>
       <div class="text-5xl font-extrabold mb-6 tracking-tight">
-        €{{ totalDueNow.toFixed(2) }}
+        €{{ previousDebt.toFixed(2) }}
       </div>
       <div class="space-y-2 border-t border-gray-700 pt-4 text-sm opacity-90">
         <div class="flex justify-between">
-          <span>Current Appointment</span>
+          <span>Κόστος ραντεβού</span>
           <span class="font-medium">€{{ currentApptTotal.toFixed(2) }}</span>
         </div>
-        <div
-          v-if="previousDebt > 0"
-          class="flex justify-between text-orange-300"
-        >
-          <span>Previous Unpaid Balance</span>
-          <span class="font-bold">+ €{{ previousDebt.toFixed(2) }}</span>
-        </div>
         <div class="border-t border-gray-700 pt-2 flex justify-between">
-          <span>Total Paid (Transactions)</span>
+          <span>Πληρώθηκαν</span>
           <span>- €{{ depositAmount.toFixed(2) }}</span>
         </div>
       </div>
