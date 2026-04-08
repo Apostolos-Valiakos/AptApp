@@ -16,7 +16,7 @@ const PORT = process.env.PORT || 3000;
 
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "http://localhost:5173";
 
-require("./reminderService");
+// require("./reminderService");
 
 // ==================== FILE UPLOAD SETUP ====================
 const storage = multer.diskStorage({
