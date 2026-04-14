@@ -389,26 +389,30 @@ const recalculateClientBalance = async (client, clientId) => {
 
   const res = await client.query(
     `WITH AppointmentTotals AS (
-    SELECT 
-      a.id,
-      COALESCE((SELECT SUM(price_override) FROM appointment_services WHERE appointment_id = a.id), 0) as total_cost,
-      -- Total paid specifically for this appointment
-      COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0) as total_paid
-    FROM appointments a
-    WHERE a.client_id = $1 
-      AND a.status != 'cancelled'
-      -- 1. Only consider appointments from March 1st, 2026 onwards
-      AND (SELECT MIN(start_time) FROM appointment_services aps WHERE aps.appointment_id = a.id) >= '2026-03-01'
-      -- 2. Only consider appointments that have already passed (before today)
-      AND (SELECT MIN(start_time) FROM appointment_services aps WHERE aps.appointment_id = a.id) <= CURRENT_TIMESTAMP
-  )
-  UPDATE clients 
-  SET outstanding_balance = (
-    SELECT COALESCE(SUM(total_cost - total_paid), 0) 
-    FROM AppointmentTotals
-  )
-  WHERE id = $1
-  RETURNING outstanding_balance;`,
+      SELECT 
+        a.id,
+        -- Sum of services only (price_override or base price)
+        COALESCE((
+          SELECT SUM(COALESCE(aps.price_override, s.price)) 
+          FROM appointment_services aps 
+          LEFT JOIN services s ON aps.service_id = s.id 
+          WHERE aps.appointment_id = a.id
+        ), 0) as total_cost,
+        -- Total paid specifically for these appointments
+        COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0) as total_paid
+      FROM appointments a
+      WHERE a.client_id = $1 
+        AND a.status != 'cancelled'
+        -- Only once the appointment time has passed
+        AND (SELECT MIN(start_time) FROM appointment_services aps WHERE aps.appointment_id = a.id) <= CURRENT_TIMESTAMP
+    )
+    UPDATE clients 
+    SET outstanding_balance = (
+      SELECT COALESCE(SUM(total_cost - total_paid), 0) 
+      FROM AppointmentTotals
+    )
+    WHERE id = $1
+    RETURNING outstanding_balance;`,
     [clientId],
   );
 
@@ -1341,40 +1345,26 @@ app.put("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
 
 app.delete("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
   const { id } = req.params;
-  const { scope } = req.query;
-
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
-    if (scope === "series") {
-      const groupInfo = await getGroupDetails(client, id, req.shopId);
-      if (groupInfo && groupInfo.group_id) {
-        await client.query(
-          `
-          DELETE FROM appointments 
-          WHERE group_id = $1 
-          AND shop_id = $2
-          AND id IN (
-            SELECT a.id FROM appointments a
-            JOIN appointment_services aps ON a.id = aps.appointment_id
-            WHERE a.group_id = $1 
-            AND aps.start_time >= $3
-          )
-        `,
-          [groupInfo.group_id, req.shopId, groupInfo.start_time],
-        );
-      } else {
-        await client.query(
-          "DELETE FROM appointments WHERE id = $1 AND shop_id = $2",
-          [id, req.shopId],
-        );
-      }
-    } else {
-      await client.query(
-        "DELETE FROM appointments WHERE id = $1 AND shop_id = $2",
-        [id, req.shopId],
-      );
+    // 1. Get client info before deleting
+    const infoRes = await client.query(
+      "SELECT client_id FROM appointments WHERE id = $1 AND shop_id = $2",
+      [id, req.shopId],
+    );
+    const clientId = infoRes.rows[0]?.client_id;
+
+    // 2. Perform deletion
+    await client.query(
+      "DELETE FROM appointments WHERE id = $1 AND shop_id = $2",
+      [id, req.shopId],
+    );
+
+    // 3. Recalculate balance for the client
+    if (clientId) {
+      await recalculateClientBalance(client, clientId);
     }
 
     await client.query("COMMIT");
@@ -1802,90 +1792,98 @@ app.get("/api/v1/reports/payments", authenticateToken, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 app.get("/api/v1/reports/finances", authenticateToken, async (req, res) => {
   const { from, to } = req.query;
-  const params = [req.shopId];
+  const shopId = req.shopId;
+  const isSuperAdmin = req.user.role === "super_admin";
 
-  // A. Sales Logic (Completed & Visible)
-  let salesWhere = "WHERE a.shop_id = $1 AND a.status = 'completed'";
-
-  // Visibility: If not super_admin, require save_receipt = true
-  if (req.user.role !== "super_admin") {
-    salesWhere += " AND a.save_receipt = true";
-  }
-
-  // Date filters for Sales (Revenue)
-  let salesDateClause = "";
+  // 1. Setup Parameters for Appointments (Sales/Debt)
+  const apptParams = [shopId];
+  let apptDateFilter = "";
   if (from) {
-    salesDateClause += ` AND aps.start_time >= $${params.length + 1}`;
-    params.push(from);
+    apptParams.push(from);
+    apptDateFilter += ` AND aps2.start_time >= $${apptParams.length}`;
   }
   if (to) {
-    salesDateClause += ` AND aps.start_time <= $${params.length + 1}`;
-    params.push(to);
+    apptParams.push(to);
+    apptDateFilter += ` AND aps2.start_time <= $${apptParams.length}`;
   }
+
+  // Subquery to find appointments in the date range
+  const appointmentSubquery = `
+    SELECT DISTINCT a2.id FROM appointments a2
+    JOIN appointment_services aps2 ON a2.id = aps2.appointment_id
+    WHERE a2.shop_id = $1 AND a2.status = 'completed'
+    ${!isSuperAdmin ? "AND a2.save_receipt = true" : ""} 
+    ${apptDateFilter}
+  `;
 
   try {
     const client = await pool.connect();
-    try {
-      const salesRes = await client.query(
-        `SELECT SUM(
-            (SELECT COALESCE(SUM(COALESCE(aps_inner.price_override, s_inner.price)), 0)
-             FROM appointment_services aps_inner
-             LEFT JOIN services s_inner ON aps_inner.service_id = s_inner.id
-             WHERE aps_inner.appointment_id = a.id)
-            +
-            (SELECT COALESCE(SUM(ps.total_price), 0)
-             FROM product_sales ps
-             WHERE ps.appointment_id = a.id)
-         ) as total
-         FROM appointments a
-         WHERE a.id IN (
-           SELECT DISTINCT a2.id
-           FROM appointments a2
-           JOIN appointment_services aps2 ON a2.id = aps2.appointment_id
-           ${salesWhere.replace("a.shop_id", "a2.shop_id").replace("a.status", "a2.status").replace("a.save_receipt", "a2.save_receipt")} 
-           ${salesDateClause.replace(/aps\./g, "aps2.")}
-         )`,
-        params,
-      );
 
-      // 2. Total Collected (in Date Range)
-      // Note: We reuse params for date checking, so we need to rebuild params for this query or use distinct ones.
-      // Simpler approach: Run separate queries with clean params to avoid index confusion.
-      const payRes = await client.query(
-        `SELECT SUM(amount) as total FROM transactions t 
-         WHERE shop_id = $1 
-         AND created_at >= $2 AND created_at <= $3`,
-        [req.shopId, from || "1970-01-01", to || "2100-01-01"],
-      );
+    // --- A. TOTAL SALES (Services Only) ---
+    const salesRes = await client.query(
+      `
+      SELECT SUM(COALESCE(aps.price_override, s.price)) as total
+      FROM appointment_services aps
+      LEFT JOIN services s ON aps.service_id = s.id
+      WHERE aps.appointment_id IN (${appointmentSubquery})
+    `,
+      apptParams,
+    );
+    const totalSales = Number(salesRes.rows[0].total) || 0;
 
-      // 3. SPECIAL: Collected TODAY (Hardcoded date check)
-      const todayRes = await client.query(
-        `SELECT SUM(amount) as total FROM transactions 
-         WHERE shop_id = $1 AND created_at >= CURRENT_DATE`,
-        [req.shopId],
-      );
+    // --- B. PERIOD DEBT ---
+    const periodPaymentsRes = await client.query(
+      `
+      SELECT SUM(amount) as total FROM transactions WHERE appointment_id IN (${appointmentSubquery})
+    `,
+      apptParams,
+    );
+    const periodPaymentsApplied = Number(periodPaymentsRes.rows[0].total) || 0;
+    const totalDebt = totalSales - periodPaymentsApplied;
 
-      // 4. SPECIAL: Total Business Debt (Live Snapshot)
-      // Sum of all positive outstanding balances
-      const debtRes = await client.query(
-        `SELECT SUM(outstanding_balance) as total FROM clients 
-         WHERE shop_id = $1 AND outstanding_balance > 0`,
-        [req.shopId],
-      );
-
-      res.json({
-        total_sales: Number(salesRes.rows[0].total) || 0,
-        total_payments: Number(payRes.rows[0].total) || 0,
-        collected_today: Number(todayRes.rows[0].total) || 0,
-        total_debt: Number(debtRes.rows[0].total) || 0,
-      });
-    } finally {
-      client.release();
+    // --- C. TOTAL COLLECTED (Cash Flow for Period) ---
+    const flowParams = [shopId];
+    let flowFilter = "";
+    if (from) {
+      flowParams.push(from);
+      flowFilter += ` AND created_at >= $${flowParams.length}`;
     }
+    if (to) {
+      flowParams.push(to);
+      flowFilter += ` AND created_at <= $${flowParams.length}`;
+    }
+
+    const payRes = await client.query(
+      `
+      SELECT SUM(amount) as total FROM transactions WHERE shop_id = $1 ${flowFilter}
+    `,
+      flowParams,
+    );
+    const totalPayments = Number(payRes.rows[0].total) || 0;
+
+    // --- D. COLLECTED TODAY (The missing piece) ---
+    const todayRes = await client.query(
+      `
+      SELECT SUM(amount) as total FROM transactions 
+      WHERE shop_id = $1 AND created_at >= CURRENT_DATE
+    `,
+      [shopId],
+    );
+    const collectedToday = Number(todayRes.rows[0].total) || 0;
+
+    // --- Final Response (All keys required by FinancialsView.vue) ---
+    res.json({
+      total_sales: totalSales,
+      total_payments: totalPayments,
+      collected_today: collectedToday,
+      total_debt: totalDebt,
+    });
+
+    client.release();
   } catch (err) {
+    console.error("Finance Report Error:", err);
     res.status(500).json({ error: err.message });
   }
 });
