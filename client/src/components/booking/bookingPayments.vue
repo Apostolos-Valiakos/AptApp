@@ -47,7 +47,7 @@
           class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2"
           >Payment Method</label
         >
-        <SelectButton
+        <Dropdown
           :modelValue="paymentMethod"
           @update:modelValue="$emit('update:paymentMethod', $event)"
           :options="['cash', 'card', 'bank-transfer']"
