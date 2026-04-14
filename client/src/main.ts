@@ -26,6 +26,7 @@ import InputNumber from "primevue/inputnumber";
 import DatePicker from "primevue/datepicker";
 import Textarea from "primevue/textarea";
 import Checkbox from "primevue/checkbox";
+import ProgressBar from "primevue/progressbar";
 import { MultiSelect } from "primevue";
 
 import Chip from "primevue/chip";
@@ -87,6 +88,7 @@ const initApp = async () => {
   app.component("InputNumber", InputNumber);
   app.component("Chart", Chart);
   app.component("ColorPicker", ColorPicker);
+  app.component("ProgressBar", ProgressBar);
 
   app.component("DatePicker", DatePicker);
   app.component("Calendar", DatePicker);
