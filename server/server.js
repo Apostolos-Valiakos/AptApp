@@ -384,39 +384,44 @@ const safeUUID = (id) => {
   return cleanId.length === 36 ? cleanId : null;
 };
 
+// --- HELPER: Recalculate Outstanding Balance for a Client ---
 const recalculateClientBalance = async (client, clientId) => {
-  if (!clientId) return 0;
+  try {
+    // This query calculates the total cost of all non-cancelled appointments
+    // but adds the restriction to only count appointments from March 1st, 2026 onwards.
+    const balanceRes = await client.query(
+      `SELECT 
+         COALESCE(SUM(total_cost - total_paid), 0) as new_balance
+       FROM (
+         SELECT 
+           a.id,
+           COALESCE(SUM(COALESCE(aps.price_override, s.price)), 0) as total_cost,
+           COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0) as total_paid
+         FROM appointments a
+         LEFT JOIN appointment_services aps ON a.id = aps.appointment_id
+         LEFT JOIN services s ON aps.service_id = s.id
+         WHERE a.client_id = $1 
+           AND a.status != 'cancelled'
+           AND a.start_time <= CURRENT_TIMESTAMP
+           AND a.start_time >= '2026-03-01 00:00:00' -- Added date restriction back here
+         GROUP BY a.id
+       ) subquery`,
+      [clientId],
+    );
 
-  const res = await client.query(
-    `WITH AppointmentTotals AS (
-      SELECT 
-        a.id,
-        -- Sum of services only (price_override or base price)
-        COALESCE((
-          SELECT SUM(COALESCE(aps.price_override, s.price)) 
-          FROM appointment_services aps 
-          LEFT JOIN services s ON aps.service_id = s.id 
-          WHERE aps.appointment_id = a.id
-        ), 0) as total_cost,
-        -- Total paid specifically for these appointments
-        COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0) as total_paid
-      FROM appointments a
-      WHERE a.client_id = $1 
-        AND a.status != 'cancelled'
-        -- Only once the appointment time has passed
-        AND (SELECT MIN(start_time) FROM appointment_services aps WHERE aps.appointment_id = a.id) <= CURRENT_TIMESTAMP
-    )
-    UPDATE clients 
-    SET outstanding_balance = (
-      SELECT COALESCE(SUM(total_cost - total_paid), 0) 
-      FROM AppointmentTotals
-    )
-    WHERE id = $1
-    RETURNING outstanding_balance;`,
-    [clientId],
-  );
+    const newBalance = balanceRes.rows[0].new_balance;
 
-  return Number(res.rows[0]?.outstanding_balance || 0);
+    // Update the clients table with the new calculated balance
+    await client.query(
+      "UPDATE clients SET outstanding_balance = $1 WHERE id = $2",
+      [newBalance, clientId],
+    );
+
+    return newBalance;
+  } catch (err) {
+    console.error("Error recalculating balance:", err);
+    throw err;
+  }
 };
 
 // --- VISIBILITY HELPER ---
