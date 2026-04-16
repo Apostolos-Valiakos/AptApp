@@ -856,7 +856,7 @@ app.get("/api/v1/clients", authenticateToken, async (req, res) => {
          ) s_inner
         ) as non_eoppy_breakdown
 
-      FROM clients c
+      FROM active_clients c
       WHERE c.shop_id = $1
       ORDER BY c.last_name;
     `;
@@ -966,31 +966,43 @@ app.put("/api/v1/clients/:id", authenticateToken, async (req, res) => {
   }
 });
 
-app.delete("/api/v1/clients/:id", authenticateToken, async (req, res) => {
+// app.delete("/api/v1/clients/:id", authenticateToken, async (req, res) => {
+//   try {
+//     const result = await pool.query(
+//       "DELETE FROM clients WHERE id = $1 AND shop_id = $2",
+//       [req.params.id, req.shopId],
+//     );
+
+//     // Optional check if the client even existed
+//     if (result.rowCount === 0) {
+//       return res.status(404).json({ error: "Client not found" });
+//     }
+
+//     res.json({ success: true });
+//   } catch (err) {
+//     // 1. Intercept the PostgreSQL Foreign Key Violation Error (Code 23503)
+//     if (err.code === "23503") {
+//       return res.status(409).json({
+//         error:
+//           "Δεν μπορείτε να διαγράψετε αυτόν τον πελάτη, επειδή υπάρχουν ραντεβού καταχωρημένα στο όνομά του.",
+//       });
+//     }
+
+//     // 2. Generic fallback error (hides the ugly SQL from the user)
+//     console.error("Delete Client Error:", err);
+//     res.status(500).json({ error: "Αποτυχία διαγραφής πελάτη." });
+//   }
+// });
+app.delete("/api/v1/clients/:id", async (req, res) => {
+  const { id } = req.params;
   try {
-    const result = await pool.query(
-      "DELETE FROM clients WHERE id = $1 AND shop_id = $2",
-      [req.params.id, req.shopId],
-    );
-
-    // Optional check if the client even existed
-    if (result.rowCount === 0) {
-      return res.status(404).json({ error: "Client not found" });
-    }
-
-    res.json({ success: true });
+    // We don't DELETE anymore, we just mark them
+    await pool.query("UPDATE clients SET is_deleted = TRUE WHERE id = $1", [
+      id,
+    ]);
+    res.json({ success: true, message: "Client archived" });
   } catch (err) {
-    // 1. Intercept the PostgreSQL Foreign Key Violation Error (Code 23503)
-    if (err.code === "23503") {
-      return res.status(409).json({
-        error:
-          "Δεν μπορείτε να διαγράψετε αυτόν τον πελάτη, επειδή υπάρχουν ραντεβού καταχωρημένα στο όνομά του.",
-      });
-    }
-
-    // 2. Generic fallback error (hides the ugly SQL from the user)
-    console.error("Delete Client Error:", err);
-    res.status(500).json({ error: "Αποτυχία διαγραφής πελάτη." });
+    res.status(500).json({ error: "Failed to archive client" });
   }
 });
 
