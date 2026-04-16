@@ -387,6 +387,8 @@ const safeUUID = (id) => {
 // --- HELPER: Recalculate Outstanding Balance for a Client ---
 const recalculateClientBalance = async (client, clientId) => {
   try {
+    // We use a subquery to find the appointment time from appointment_services
+    // since 'start_time' does not exist on the appointments table directly.
     const balanceRes = await client.query(
       `SELECT 
          COALESCE(SUM(total_cost - total_paid), 0) as new_balance
@@ -404,28 +406,13 @@ const recalculateClientBalance = async (client, clientId) => {
          GROUP BY a.id
        ) subquery
        WHERE appt_time <= CURRENT_TIMESTAMP
-         AND appt_time >= '2026-03-01 00:00:00'`, 
-      [clientId]
+         AND appt_time >= '2026-03-01 00:00:00'`,
+      [clientId],
     );
 
     const newBalance = balanceRes.rows[0].new_balance;
 
     // This updates the 'Clients' list you see in your second image
-    await client.query(
-      "UPDATE clients SET outstanding_balance = $1 WHERE id = $2",
-      [newBalance, clientId]
-    );
-
-    return newBalance;
-  } catch (err) {
-    console.error("Error recalculating balance:", err);
-    throw err;
-  }
-};
-
-    const newBalance = balanceRes.rows[0].new_balance;
-
-    // Update the clients table with the new calculated balance
     await client.query(
       "UPDATE clients SET outstanding_balance = $1 WHERE id = $2",
       [newBalance, clientId],
