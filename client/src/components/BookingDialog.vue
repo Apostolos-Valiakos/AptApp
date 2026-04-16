@@ -529,13 +529,14 @@ const isApptInDatabaseBalance = computed(() => {
   if (!form.value.id || !form.value.start_time) return false;
 
   const apptDate = new Date(form.value.start_time);
-  apptDate.setHours(0, 0, 0, 0);
+  const startDateLimit = new Date("2026-03-01T00:00:00");
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  // 1. If the appointment is before March 1st, 2026, it is NOT in the balance calculation
+  if (apptDate < startDateLimit) return false;
 
-  // Matches SQL: Only appointments BEFORE today are in the outstanding_balance
-  return apptDate < today;
+  // 2. Matches SQL: Only appointments that have already happened (<= NOW)
+  // are included in the database's outstanding_balance field.
+  return apptDate <= new Date();
 });
 
 // Replace your existing previousDebt and totalDueNow with this:
