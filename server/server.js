@@ -387,8 +387,6 @@ const safeUUID = (id) => {
 // --- HELPER: Recalculate Outstanding Balance for a Client ---
 const recalculateClientBalance = async (client, clientId) => {
   try {
-    // This query calculates the total cost of all non-cancelled appointments
-    // but adds the restriction to only count appointments from March 1st, 2026 onwards.
     const balanceRes = await client.query(
       `SELECT 
          COALESCE(SUM(total_cost - total_paid), 0) as new_balance
@@ -396,18 +394,34 @@ const recalculateClientBalance = async (client, clientId) => {
          SELECT 
            a.id,
            COALESCE(SUM(COALESCE(aps.price_override, s.price)), 0) as total_cost,
-           COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0) as total_paid
+           COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0) as total_paid,
+           (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) as appt_time
          FROM appointments a
          LEFT JOIN appointment_services aps ON a.id = aps.appointment_id
          LEFT JOIN services s ON aps.service_id = s.id
          WHERE a.client_id = $1 
            AND a.status != 'cancelled'
-           AND a.start_time <= CURRENT_TIMESTAMP
-           AND a.start_time >= '2026-03-01 00:00:00' -- Added date restriction back here
          GROUP BY a.id
-       ) subquery`,
-      [clientId],
+       ) subquery
+       WHERE appt_time <= CURRENT_TIMESTAMP
+         AND appt_time >= '2026-03-01 00:00:00'`, 
+      [clientId]
     );
+
+    const newBalance = balanceRes.rows[0].new_balance;
+
+    // This updates the 'Clients' list you see in your second image
+    await client.query(
+      "UPDATE clients SET outstanding_balance = $1 WHERE id = $2",
+      [newBalance, clientId]
+    );
+
+    return newBalance;
+  } catch (err) {
+    console.error("Error recalculating balance:", err);
+    throw err;
+  }
+};
 
     const newBalance = balanceRes.rows[0].new_balance;
 
