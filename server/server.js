@@ -389,35 +389,32 @@ const recalculateClientBalance = async (client, clientId) => {
 
   const res = await client.query(
     `WITH AppointmentTotals AS (
-      SELECT 
-        a.id,
-        -- Sum of services only (price_override or base price)
-        COALESCE((
-          SELECT SUM(COALESCE(aps.price_override, s.price)) 
-          FROM appointment_services aps 
-          LEFT JOIN services s ON aps.service_id = s.id 
-          WHERE aps.appointment_id = a.id
-        ), 0) as total_cost,
-        -- Total paid specifically for these appointments
-        COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0) as total_paid
-      FROM appointments a
-      WHERE a.client_id = $1 
-        AND a.status != 'cancelled'
-        -- Only once the appointment time has passed
-        AND (SELECT MIN(start_time) FROM appointment_services aps WHERE aps.appointment_id = a.id) <= CURRENT_TIMESTAMP
-    )
-    UPDATE clients 
-    SET outstanding_balance = (
-      SELECT COALESCE(SUM(total_cost - total_paid), 0) 
-      FROM AppointmentTotals
-    )
-    WHERE id = $1
-    RETURNING outstanding_balance;`,
+    SELECT 
+      a.id,
+      COALESCE((SELECT SUM(price_override) FROM appointment_services WHERE appointment_id = a.id), 0) as total_cost,
+      -- Total paid specifically for this appointment
+      COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0) as total_paid
+    FROM appointments a
+    WHERE a.client_id = $1 
+      AND a.status != 'cancelled'
+      -- 1. Only consider appointments from March 1st, 2026 onwards
+      AND (SELECT MIN(start_time) FROM appointment_services aps WHERE aps.appointment_id = a.id) >= '2026-03-01'
+      -- 2. Only consider appointments that have already passed (before today)
+      AND (SELECT MIN(start_time) FROM appointment_services aps WHERE aps.appointment_id = a.id) <= CURRENT_TIMESTAMP
+  )
+  UPDATE clients 
+  SET outstanding_balance = (
+    SELECT COALESCE(SUM(total_cost - total_paid), 0) 
+    FROM AppointmentTotals
+  )
+  WHERE id = $1
+  RETURNING outstanding_balance;`,
+
+
+
+
     [clientId],
   );
-
-  return Number(res.rows[0]?.outstanding_balance || 0);
-};
 
 // --- VISIBILITY HELPER ---
 // If user is 'super_admin', return empty string (no filter).
@@ -1345,26 +1342,40 @@ app.put("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
 
 app.delete("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
   const { id } = req.params;
+  const { scope } = req.query;
+
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
-    // 1. Get client info before deleting
-    const infoRes = await client.query(
-      "SELECT client_id FROM appointments WHERE id = $1 AND shop_id = $2",
-      [id, req.shopId],
-    );
-    const clientId = infoRes.rows[0]?.client_id;
-
-    // 2. Perform deletion
-    await client.query(
-      "DELETE FROM appointments WHERE id = $1 AND shop_id = $2",
-      [id, req.shopId],
-    );
-
-    // 3. Recalculate balance for the client
-    if (clientId) {
-      await recalculateClientBalance(client, clientId);
+    if (scope === "series") {
+      const groupInfo = await getGroupDetails(client, id, req.shopId);
+      if (groupInfo && groupInfo.group_id) {
+        await client.query(
+          `
+          DELETE FROM appointments 
+          WHERE group_id = $1 
+          AND shop_id = $2
+          AND id IN (
+            SELECT a.id FROM appointments a
+            JOIN appointment_services aps ON a.id = aps.appointment_id
+            WHERE a.group_id = $1 
+            AND aps.start_time >= $3
+          )
+        `,
+          [groupInfo.group_id, req.shopId, groupInfo.start_time],
+        );
+      } else {
+        await client.query(
+          "DELETE FROM appointments WHERE id = $1 AND shop_id = $2",
+          [id, req.shopId],
+        );
+      }
+    } else {
+      await client.query(
+        "DELETE FROM appointments WHERE id = $1 AND shop_id = $2",
+        [id, req.shopId],
+      );
     }
 
     await client.query("COMMIT");
