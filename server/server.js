@@ -389,32 +389,35 @@ const recalculateClientBalance = async (client, clientId) => {
 
   const res = await client.query(
     `WITH AppointmentTotals AS (
-    SELECT 
-      a.id,
-      COALESCE((SELECT SUM(price_override) FROM appointment_services WHERE appointment_id = a.id), 0) as total_cost,
-      -- Total paid specifically for this appointment
-      COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0) as total_paid
-    FROM appointments a
-    WHERE a.client_id = $1 
-      AND a.status != 'cancelled'
-      -- 1. Only consider appointments from March 1st, 2026 onwards
-      AND (SELECT MIN(start_time) FROM appointment_services aps WHERE aps.appointment_id = a.id) >= '2026-03-01'
-      -- 2. Only consider appointments that have already passed (before today)
-      AND (SELECT MIN(start_time) FROM appointment_services aps WHERE aps.appointment_id = a.id) <= CURRENT_TIMESTAMP
-  )
-  UPDATE clients 
-  SET outstanding_balance = (
-    SELECT COALESCE(SUM(total_cost - total_paid), 0) 
-    FROM AppointmentTotals
-  )
-  WHERE id = $1
-  RETURNING outstanding_balance;`,
-
-
-
-
+      SELECT 
+        a.id,
+        -- Sum of services only (price_override or base price)
+        COALESCE((
+          SELECT SUM(COALESCE(aps.price_override, s.price)) 
+          FROM appointment_services aps 
+          LEFT JOIN services s ON aps.service_id = s.id 
+          WHERE aps.appointment_id = a.id
+        ), 0) as total_cost,
+        -- Total paid specifically for these appointments
+        COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0) as total_paid
+      FROM appointments a
+      WHERE a.client_id = $1 
+        AND a.status != 'cancelled'
+        -- Only once the appointment time has passed
+        AND (SELECT MIN(start_time) FROM appointment_services aps WHERE aps.appointment_id = a.id) <= CURRENT_TIMESTAMP
+    )
+    UPDATE clients 
+    SET outstanding_balance = (
+      SELECT COALESCE(SUM(total_cost - total_paid), 0) 
+      FROM AppointmentTotals
+    )
+    WHERE id = $1
+    RETURNING outstanding_balance;`,
     [clientId],
   );
+
+  return Number(res.rows[0]?.outstanding_balance || 0);
+};
 
 // --- VISIBILITY HELPER ---
 // If user is 'super_admin', return empty string (no filter).
