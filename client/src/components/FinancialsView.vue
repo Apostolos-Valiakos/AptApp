@@ -215,20 +215,6 @@
                 class="text-center"
               ></Column>
 
-              <Column field="no_show_count" header="No-Shows" sortable>
-                <template #body="slotProps">
-                  <span
-                    :class="
-                      slotProps.data.no_show_count > 0
-                        ? 'text-red-500 font-bold'
-                        : 'text-gray-400'
-                    "
-                  >
-                    {{ slotProps.data.no_show_count }}
-                  </span>
-                </template>
-              </Column>
-
               <Column header="Balance">
                 <template #body="slotProps">
                   <span
@@ -496,7 +482,6 @@ const fetchAllReports = async () => {
     paymentsReport.value = await payRes.json();
     appointmentsReport.value = await apptRes.json();
     clientsReport.value = await clientsRes.json();
-    console.log(await clientsReport.value);
   } catch (err: any) {
     console.error(err);
     toast.add({
