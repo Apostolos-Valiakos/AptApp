@@ -162,7 +162,110 @@
 
     <TabView class="bg-white rounded-xl shadow-sm border border-gray-200 p-2">
       <TabPanel header="Client Demographics">
-        <ClientDemographics :clients="clientsReport" />
+        <div class="p-6 max-w-7xl mx-auto">
+          <div class="grid grid-cols-1 gap-6 mb-8">
+            <div
+              class="bg-white p-6 rounded-xl shadow-sm border border-gray-200"
+            >
+              <h2 class="text-xl font-bold mb-6 text-gray-800">
+                Client Demographics
+              </h2>
+              <ClientDemographics
+                :clients="clientsReport"
+                @view-group="openAgeGroupDialog"
+              />
+            </div>
+          </div>
+
+          <Dialog
+            v-model:visible="displayGroupDialog"
+            :header="'Clients: ' + selectedGroupName"
+            modal
+            :style="{ width: '50vw' }"
+            :breakpoints="{ '960px': '90vw' }"
+          >
+            <DataTable
+              :value="selectedGroupClients"
+              paginator
+              :rows="10"
+              stripedRows
+              class="p-datatable-sm"
+              responsiveLayout="scroll"
+            >
+              <Column header="Client">
+                <template #body="slotProps">
+                  <div class="flex flex-col">
+                    <span class="font-bold"
+                      >{{ slotProps.data.first_name }}
+                      {{ slotProps.data.last_name }}</span
+                    >
+                    <span class="text-xs text-gray-500">{{
+                      slotProps.data.email
+                    }}</span>
+                  </div>
+                </template>
+              </Column>
+
+              <Column field="phone" header="Phone"></Column>
+
+              <Column
+                field="appointment_count"
+                header="Appts"
+                sortable
+                class="text-center"
+              ></Column>
+
+              <Column field="no_show_count" header="No-Shows" sortable>
+                <template #body="slotProps">
+                  <span
+                    :class="
+                      slotProps.data.no_show_count > 0
+                        ? 'text-red-500 font-bold'
+                        : 'text-gray-400'
+                    "
+                  >
+                    {{ slotProps.data.no_show_count }}
+                  </span>
+                </template>
+              </Column>
+
+              <Column header="Balance">
+                <template #body="slotProps">
+                  <span
+                    :class="
+                      Number(slotProps.data.outstanding_balance || 0) > 0
+                        ? 'text-red-600 font-bold'
+                        : ''
+                    "
+                  >
+                    €{{
+                      formatCurrency(slotProps.data.outstanding_balance || 0)
+                    }}
+                  </span>
+                </template>
+              </Column>
+
+              <Column header="Services">
+                <template #body="slotProps">
+                  <div class="flex gap-1">
+                    <span
+                      v-if="slotProps.data.ergotherapia"
+                      class="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold"
+                    >
+                      ΕΡΓΟ
+                    </span>
+                    <span
+                      v-if="slotProps.data.physiotherapia"
+                      class="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-[10px] font-bold"
+                    >
+                      ΦΥΣΙΟ
+                    </span>
+                  </div>
+                </template>
+              </Column>
+            </DataTable>
+          </Dialog>
+        </div>
       </TabPanel>
 
       <TabPanel header="Sales by Service">
@@ -299,6 +402,15 @@ const staffReport = ref([]);
 const paymentsReport = ref([]);
 const appointmentsReport = ref([]);
 const clientsReport = ref<any[]>([]);
+const displayGroupDialog = ref(false);
+const selectedGroupName = ref("");
+const selectedGroupClients = ref([]);
+
+const openAgeGroupDialog = (data: any) => {
+  selectedGroupName.value = data.label;
+  selectedGroupClients.value = data.clients;
+  displayGroupDialog.value = true;
+};
 
 const formatCurrency = (val: any) => {
   return Number(val).toLocaleString("en-US", {
@@ -358,7 +470,7 @@ const fetchAllReports = async () => {
         fetch(`/api/v1/reports/payments${qs}`, { headers }),
         fetch(`/api/v1/reports/appointments${qs}`, { headers }),
         fetch(`/api/v1/reports/analytics${qs}`, { headers }),
-        fetch(`/api/v1/reports/clients${qs}`, { headers }),
+        fetch(`/api/v1/reports/clients`, { headers }),
       ]);
 
     if (finRes.status === 401) throw new Error("Unauthorized");
@@ -384,6 +496,7 @@ const fetchAllReports = async () => {
     paymentsReport.value = await payRes.json();
     appointmentsReport.value = await apptRes.json();
     clientsReport.value = await clientsRes.json();
+    console.log(await clientsReport.value);
   } catch (err: any) {
     console.error(err);
     toast.add({

@@ -4,11 +4,6 @@
       class="w-full lg:w-1/3 bg-gray-50 p-5 rounded-xl border border-gray-200"
     >
       <h3 class="font-bold text-gray-700 mb-4">Edit Age Ranges</h3>
-      <p class="text-xs text-gray-500 mb-4">
-        Customize the brackets to see how many clients visited during this
-        period fall into each age group.
-      </p>
-
       <div
         v-for="(range, idx) in ageRanges"
         :key="idx"
@@ -17,67 +12,57 @@
         <input
           type="number"
           v-model.number="range.min"
-          class="w-16 p-2 border border-gray-300 rounded text-center text-sm focus:border-indigo-500 outline-none"
-          min="0"
+          class="w-16 p-2 border rounded text-center text-sm"
         />
-        <span class="text-gray-400 font-bold">-</span>
+        <span>-</span>
         <input
           type="number"
           v-model.number="range.max"
-          class="w-16 p-2 border border-gray-300 rounded text-center text-sm focus:border-indigo-500 outline-none"
-          :min="range.min"
+          class="w-16 p-2 border rounded text-center text-sm"
         />
         <Button
           icon="pi pi-trash"
           class="p-button-text p-button-danger p-button-sm ml-auto"
-          @click="removeRange(idx)"
+          @click="ageRanges.splice(idx, 1)"
         />
       </div>
-
       <Button
         label="Add Range"
         icon="pi pi-plus"
-        class="p-button-outlined p-button-sm mt-2 w-full"
-        @click="addRange"
+        class="p-button-text p-button-sm mt-2"
+        @click="ageRanges.push({ min: 0, max: 100 })"
       />
     </div>
 
-    <div class="w-full lg:w-2/3">
-      <h3 class="font-bold text-gray-700 mb-6">Age Distribution Chart</h3>
-
-      <div class="space-y-5">
+    <div class="flex-grow">
+      <h3 class="font-bold text-gray-700 mb-6 flex items-center gap-2">
+        <i class="pi pi-users text-indigo-500"></i>
+        Client Distribution (Click to view list)
+      </h3>
+      <div class="space-y-6">
         <div
-          v-for="item in ageDistribution"
-          :key="item.label"
-          class="flex items-center gap-4 group"
+          v-for="(range, idx) in ageDistribution"
+          :key="idx"
+          @click="onRangeClick(range)"
+          class="group cursor-pointer p-2 rounded-lg hover:bg-white hover:shadow-sm transition-all border border-transparent hover:border-gray-100"
         >
-          <div class="w-24 text-right text-sm font-bold text-gray-600 shrink-0">
-            {{ item.label }}
-          </div>
-
-          <div
-            class="flex-grow h-7 bg-gray-100 rounded-lg overflow-hidden flex items-center relative"
-          >
-            <div
-              class="h-full bg-indigo-500 transition-all duration-700 ease-out rounded-lg relative"
-              :class="{ '!bg-gray-400': item.isUnknown }"
-              :style="{ width: item.barWidth + '%' }"
-            ></div>
-          </div>
-
-          <div class="w-20 text-sm text-gray-700 shrink-0 text-right font-bold">
-            {{ item.count }}
-            <span class="text-xs font-normal text-gray-400 block -mt-1"
-              >({{ item.percentage.toFixed(0) }}%)</span
+          <div class="flex justify-between mb-2">
+            <span
+              class="text-sm font-semibold text-gray-600 group-hover:text-indigo-600"
+              >{{ range.label }}</span
+            >
+            <span
+              class="text-xs font-bold px-2 py-1 bg-gray-100 rounded text-gray-500"
+              >{{ range.count }} clients</span
             >
           </div>
-        </div>
-
-        <div
-          v-if="ageDistribution.length === 0"
-          class="text-center py-8 text-gray-400"
-        >
-          No clients found in this date range.
+          <div class="w-full bg-gray-100 rounded-full h-3 overflow-hidden">
+            <div
+              :class="range.isUnknown ? 'bg-gray-400' : 'bg-indigo-500'"
+              class="h-full rounded-full transition-all duration-500"
+              :style="{ width: range.percentage + '%' }"
+            ></div>
+          </div>
         </div>
       </div>
     </div>
@@ -86,16 +71,13 @@
 
 <script setup lang="ts">
 import { ref, computed } from "vue";
-import Button from "primevue/button";
 
 const props = defineProps({
-  clients: {
-    type: Array as () => any[],
-    default: () => [],
-  },
+  clients: { type: Array, default: () => [] },
 });
 
-// Default Age Ranges
+const emit = defineEmits(["view-group"]);
+
 const ageRanges = ref([
   { min: 0, max: 2 },
   { min: 3, max: 5 },
@@ -104,35 +86,22 @@ const ageRanges = ref([
   { min: 18, max: 99 },
 ]);
 
-const addRange = () => {
-  ageRanges.value.push({ min: 0, max: 99 });
-};
-
-const removeRange = (idx: number) => {
-  ageRanges.value.splice(idx, 1);
-};
-
-// Safely calculate age from DOB string
 const calculateAge = (dobString: string | null) => {
   if (!dobString) return null;
   const dob = new Date(dobString);
   const current = new Date();
-
   let age = current.getFullYear() - dob.getFullYear();
   const m = current.getMonth() - dob.getMonth();
-  if (m < 0 || (m === 0 && current.getDate() < dob.getDate())) {
-    age--;
-  }
+  if (m < 0 || (m === 0 && current.getDate() < dob.getDate())) age--;
   return Math.max(0, age);
 };
 
-// Compute the distribution for the custom Bar Chart
 const ageDistribution = computed(() => {
   const total = props.clients.length;
   if (total === 0) return [];
 
   const distribution = ageRanges.value.map((range) => {
-    const count = props.clients.filter((c) => {
+    const count = props.clients.filter((c: any) => {
       const age = calculateAge(c.date_of_birth);
       return age !== null && age >= range.min && age <= range.max;
     }).length;
@@ -142,28 +111,38 @@ const ageDistribution = computed(() => {
       count,
       percentage: total > 0 ? (count / total) * 100 : 0,
       isUnknown: false,
+      min: range.min, // Crucial for filtering on click
+      max: range.max,
     };
   });
 
-  // Count clients missing DOB
   const unknownCount = props.clients.filter(
-    (c) => calculateAge(c.date_of_birth) === null,
+    (c: any) => calculateAge(c.date_of_birth) === null,
   ).length;
   if (unknownCount > 0) {
     distribution.push({
-      label: "Unknown",
+      label: "Unknown Age",
       count: unknownCount,
       percentage: (unknownCount / total) * 100,
       isUnknown: true,
+      min: null,
+      max: null,
     });
   }
-
-  // To make the chart look visually balanced, base the 100% width off the largest cohort
-  const maxCount = Math.max(...distribution.map((d) => d.count), 1);
-
-  return distribution.map((d) => ({
-    ...d,
-    barWidth: maxCount > 0 ? (d.count / maxCount) * 100 : 0,
-  }));
+  return distribution;
 });
+
+// THIS FUNCTION MUST BE DEFINED INSIDE <script setup>
+const onRangeClick = (rangeData: any) => {
+  const filteredList = props.clients.filter((c: any) => {
+    const age = calculateAge(c.date_of_birth);
+    if (rangeData.isUnknown) return age === null;
+    return age !== null && age >= rangeData.min && age <= rangeData.max;
+  });
+
+  emit("view-group", {
+    label: rangeData.label,
+    clients: filteredList,
+  });
+};
 </script>
