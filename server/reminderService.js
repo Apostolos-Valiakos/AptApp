@@ -25,6 +25,13 @@ const generateUnsubToken = (clientId) => {
     .update(clientId.toString())
     .digest("hex");
 };
+const generateConfirmToken = (appointmentId) => {
+  if (!appointmentId) return "";
+  return crypto
+    .createHmac("sha256", process.env.JWT_SECRET)
+    .update(appointmentId.toString())
+    .digest("hex");
+};
 
 // Helper: Format time to Greek standard HH:MM
 const formatTime = (date) => {
@@ -89,6 +96,19 @@ const processReminders = async () => {
 
       const token = generateUnsubToken(appt.client_id);
       const unsubUrl = `https://interventio.gr/api/v1/unsubscribe?id=${appt.client_id}&token=${token}`;
+      const confirmToken = generateConfirmToken(appt.appointment_id);
+      const confirmUrl = `https://interventio.gr/api/v1/confirm-appointment?id=${appt.appointment_id}&token=${confirmToken}`;
+      const confirmButtonHtml = `
+        <div style="text-align: center; margin: 0 0 32px 0;">
+            <a href="${confirmUrl}" 
+              style="display: block; background-color: #6b21a8; color: white; padding: 16px 32px; border-radius: 16px; text-decoration: none; font-weight: 800; font-size: 16px; box-shadow: 0 4px 6px rgba(107, 33, 168, 0.2);">
+              ΕΠΙΒΕΒΑΙΩΣΗ ΡΑΝΤΕΒΟΥ
+            </a>
+            <p style="color: #6b7280; font-size: 12px; margin-top: 12px;">
+                Πατήστε το παραπάνω κουμπί για να επιβεβαιώσετε την παρουσία σας.
+            </p>
+        </div>
+    `;
 
       // Google Calendar Link
       const googleUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${gStart}/${gEnd}&details=${details}`;
@@ -258,6 +278,7 @@ const processReminders = async () => {
                         </div>
                       </div>
                     </div>
+                      ${confirmButtonHtml}
 
                     <div
                       style="
@@ -446,4 +467,4 @@ const processReminders = async () => {
 };
 
 // Run every 1 minute
-cron.schedule("*/5 * * * *", processReminders);
+//cron.schedule("*/5 * * * *", processReminders);

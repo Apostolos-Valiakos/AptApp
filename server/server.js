@@ -16,7 +16,7 @@ const PORT = process.env.PORT || 3000;
 
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "http://localhost:5173";
 
-require("./reminderService");
+// require("./reminderService");
 
 // ==================== FILE UPLOAD SETUP ====================
 const storage = multer.diskStorage({
@@ -384,36 +384,45 @@ const safeUUID = (id) => {
   return cleanId.length === 36 ? cleanId : null;
 };
 
+// --- HELPER: Recalculate Outstanding Balance for a Client ---
 const recalculateClientBalance = async (client, clientId) => {
-  if (!clientId) return 0;
+  try {
+    // We use a subquery to find the appointment time from appointment_services
+    // since 'start_time' does not exist on the appointments table directly.
+    const balanceRes = await client.query(
+      `SELECT 
+         COALESCE(SUM(total_cost - total_paid), 0) as new_balance
+       FROM (
+         SELECT 
+           a.id,
+           COALESCE(SUM(COALESCE(aps.price_override, s.price)), 0) as total_cost,
+           COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0) as total_paid,
+           (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) as appt_time
+         FROM appointments a
+         LEFT JOIN appointment_services aps ON a.id = aps.appointment_id
+         LEFT JOIN services s ON aps.service_id = s.id
+         WHERE a.client_id = $1 
+           AND a.status != 'cancelled'
+         GROUP BY a.id
+       ) subquery
+       WHERE appt_time <= CURRENT_TIMESTAMP
+         AND appt_time >= '2026-03-01 00:00:00'`,
+      [clientId],
+    );
 
-  const res = await client.query(
-    `WITH AppointmentTotals AS (
-    SELECT 
-      a.id,
-      -- Total cost of this appointment (Services + Products)
-      COALESCE((SELECT SUM(price_override) FROM appointment_services WHERE appointment_id = a.id), 0) as total_cost,
-      -- Total paid specifically for this appointment
-      COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0) as total_paid
-    FROM appointments a
-    WHERE a.client_id = $1 
-      AND a.status != 'cancelled'
-      -- ONLY look at appointments that have already started
-      AND (SELECT MIN(start_time) FROM appointment_services aps WHERE aps.appointment_id = a.id) < NOW()
-  )
-  UPDATE clients 
-  SET outstanding_balance = (
-    SELECT COALESCE(SUM(total_cost - total_paid), 0) 
-    FROM AppointmentTotals
-    -- If an appointment is overpaid, it shouldn't hide debt of another 
-    -- unless you want "Account Credit" logic. 
-  )
-  WHERE id = $1;
-`,
-    [clientId],
-  );
+    const newBalance = balanceRes.rows[0].new_balance;
 
-  return Number(res.rows[0]?.outstanding_balance || 0);
+    // This updates the 'Clients' list you see in your second image
+    await client.query(
+      "UPDATE clients SET outstanding_balance = $1 WHERE id = $2",
+      [newBalance, clientId],
+    );
+
+    return newBalance;
+  } catch (err) {
+    console.error("Error recalculating balance:", err);
+    throw err;
+  }
 };
 
 // --- VISIBILITY HELPER ---
@@ -847,7 +856,7 @@ app.get("/api/v1/clients", authenticateToken, async (req, res) => {
          ) s_inner
         ) as non_eoppy_breakdown
 
-      FROM clients c
+      FROM active_clients c
       WHERE c.shop_id = $1
       ORDER BY c.last_name;
     `;
@@ -957,31 +966,43 @@ app.put("/api/v1/clients/:id", authenticateToken, async (req, res) => {
   }
 });
 
-app.delete("/api/v1/clients/:id", authenticateToken, async (req, res) => {
+// app.delete("/api/v1/clients/:id", authenticateToken, async (req, res) => {
+//   try {
+//     const result = await pool.query(
+//       "DELETE FROM clients WHERE id = $1 AND shop_id = $2",
+//       [req.params.id, req.shopId],
+//     );
+
+//     // Optional check if the client even existed
+//     if (result.rowCount === 0) {
+//       return res.status(404).json({ error: "Client not found" });
+//     }
+
+//     res.json({ success: true });
+//   } catch (err) {
+//     // 1. Intercept the PostgreSQL Foreign Key Violation Error (Code 23503)
+//     if (err.code === "23503") {
+//       return res.status(409).json({
+//         error:
+//           "Δεν μπορείτε να διαγράψετε αυτόν τον πελάτη, επειδή υπάρχουν ραντεβού καταχωρημένα στο όνομά του.",
+//       });
+//     }
+
+//     // 2. Generic fallback error (hides the ugly SQL from the user)
+//     console.error("Delete Client Error:", err);
+//     res.status(500).json({ error: "Αποτυχία διαγραφής πελάτη." });
+//   }
+// });
+app.delete("/api/v1/clients/:id", async (req, res) => {
+  const { id } = req.params;
   try {
-    const result = await pool.query(
-      "DELETE FROM clients WHERE id = $1 AND shop_id = $2",
-      [req.params.id, req.shopId],
-    );
-
-    // Optional check if the client even existed
-    if (result.rowCount === 0) {
-      return res.status(404).json({ error: "Client not found" });
-    }
-
-    res.json({ success: true });
+    // We don't DELETE anymore, we just mark them
+    await pool.query("UPDATE clients SET is_deleted = TRUE WHERE id = $1", [
+      id,
+    ]);
+    res.json({ success: true, message: "Client archived" });
   } catch (err) {
-    // 1. Intercept the PostgreSQL Foreign Key Violation Error (Code 23503)
-    if (err.code === "23503") {
-      return res.status(409).json({
-        error:
-          "Δεν μπορείτε να διαγράψετε αυτόν τον πελάτη, επειδή υπάρχουν ραντεβού καταχωρημένα στο όνομά του.",
-      });
-    }
-
-    // 2. Generic fallback error (hides the ugly SQL from the user)
-    console.error("Delete Client Error:", err);
-    res.status(500).json({ error: "Αποτυχία διαγραφής πελάτη." });
+    res.status(500).json({ error: "Failed to archive client" });
   }
 });
 
@@ -1054,7 +1075,6 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
         a.status, 
         a.internal_notes, 
         a.booking_notes, 
-        a.deposit_amount, 
         a.payment_status, 
         a.is_block, 
         a.is_eoppy,
@@ -1065,8 +1085,21 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
         c.first_name, 
         c.last_name, 
         c.phone as client_phone,
-        
-        -- (Rest of your query: COALESCE services, products, etc...)
+        -- 1. GET CLIENT'S CURRENT OUTSTANDING BALANCE
+        COALESCE(c.outstanding_balance, 0) as client_outstanding_balance,
+
+        -- 2. CALCULATE ACTUAL PAID AMOUNT FROM TRANSACTIONS TABLE
+        COALESCE((
+          SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id
+        ), 0) as deposit_amount,
+
+        -- 3. CALCULATE TOTAL COST (SERVICES + PRODUCTS)
+        (
+          COALESCE((SELECT SUM(price_override) FROM appointment_services WHERE appointment_id = a.id), 0) +
+          COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = a.id), 0)
+        ) as total_cost,
+
+        -- AGGREGATE SERVICES (with the earliest start_time for sorting)
         COALESCE((
           SELECT json_agg(json_build_object(
             'service_id', s.id,
@@ -1076,13 +1109,14 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
             'staff_id', aps.staff_id,
             'staff_name', st.name,
             'start_time', aps.start_time
-          ))
+          ) ORDER BY aps.start_time ASC)
           FROM appointment_services aps
           LEFT JOIN services s ON aps.service_id = s.id
           LEFT JOIN staff st ON aps.staff_id = st.id
           WHERE aps.appointment_id = a.id
         ), '[]') as services,
-        -- Aggregate Products
+
+        -- AGGREGATE PRODUCTS
         COALESCE((
           SELECT json_agg(json_build_object(
             'product_id', ps.inventory_id,
@@ -1095,15 +1129,18 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
       FROM appointments a
       LEFT JOIN clients c ON a.client_id = c.id
       WHERE a.shop_id = $1 ${visibilityClause}
-      GROUP BY a.id, c.first_name, c.last_name, c.phone
-      ORDER BY a.created_at DESC
+      GROUP BY a.id, c.first_name, c.last_name, c.phone, c.outstanding_balance
+      ORDER BY (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) DESC
     `,
       [req.shopId],
     );
+
     const formatted = rows.map((row) => ({
       ...row,
       start_time: row.services?.[0]?.start_time || row.created_at,
       staff_id: row.services?.[0]?.staff_id,
+      current_appt_total: parseFloat(row.total_cost),
+      deposit_amount: parseFloat(row.deposit_amount),
     }));
 
     res.json(formatted);
@@ -1186,6 +1223,53 @@ app.get("/api/v1/unsubscribe", async (req, res) => {
   } catch (err) {
     console.error("Unsubscribe Error:", err);
     res.status(500).send("Παρουσιάστηκε σφάλμα κατά τη διαγραφή.");
+  }
+});
+app.get("/api/v1/confirm-appointment", async (req, res) => {
+  const crypto = require("crypto");
+  const { id, token } = req.query;
+
+  if (!id || !token) {
+    return res.status(400).send("Μη έγκυρο αίτημα.");
+  }
+
+  // Verify the token matches the Appointment ID
+  const expectedToken = crypto
+    .createHmac("sha256", process.env.JWT_SECRET)
+    .update(id.toString())
+    .digest("hex");
+
+  if (token !== expectedToken) {
+    return res.status(403).send("Ο σύνδεσμος είναι άκυρος ή έχει λήξει.");
+  }
+
+  try {
+    // Update status to 'confirmed' only if it's not already cancelled
+    const result = await pool.query(
+      "UPDATE appointments SET status = 'confirmed' WHERE id = $1 AND status != 'cancelled' RETURNING id",
+      [id],
+    );
+
+    if (result.rowCount === 0) {
+      return res
+        .status(404)
+        .send("Το ραντεβού δεν βρέθηκε ή έχει ήδη ακυρωθεί.");
+    }
+
+    // Success Styled Page
+    res.send(`
+      <div style="font-family: sans-serif; text-align: center; padding: 100px 20px; background: #fff5f9; min-height: 100vh;">
+          <div style="background: white; padding: 40px; border-radius: 32px; display: inline-block; box-shadow: 0 20px 25px rgba(255,147,212,0.1); max-width: 400px;">
+              <div style="font-size: 48px; margin-bottom: 20px;">✅</div>
+              <h1 style="color: #111827; margin-bottom: 10px; font-size: 24px;">Το ραντεβού επιβεβαιώθηκε!</h1>
+              <p style="color: #4b5563; line-height: 1.5;">Σας ευχαριστούμε. Η κράτησή σας έχει επισημανθεί ως επιβεβαιωμένη στο σύστημά μας. Ανυπομονούμε να σας δούμε!</p>
+              <a href="https://interventio.gr" style="display: inline-block; margin-top: 30px; background: #ff93d4; color: white; padding: 12px 24px; border-radius: 12px; text-decoration: none; font-weight: bold;">Επιστροφή στην Αρχική</a>
+          </div>
+      </div>
+    `);
+  } catch (err) {
+    console.error("Confirmation Error:", err);
+    res.status(500).send("Παρουσιάστηκε σφάλμα κατά την επιβεβαίωση.");
   }
 });
 app.put("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
@@ -1740,90 +1824,98 @@ app.get("/api/v1/reports/payments", authenticateToken, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 app.get("/api/v1/reports/finances", authenticateToken, async (req, res) => {
   const { from, to } = req.query;
-  const params = [req.shopId];
+  const shopId = req.shopId;
+  const isSuperAdmin = req.user.role === "super_admin";
 
-  // A. Sales Logic (Completed & Visible)
-  let salesWhere = "WHERE a.shop_id = $1 AND a.status = 'completed'";
-
-  // Visibility: If not super_admin, require save_receipt = true
-  if (req.user.role !== "super_admin") {
-    salesWhere += " AND a.save_receipt = true";
-  }
-
-  // Date filters for Sales (Revenue)
-  let salesDateClause = "";
+  // 1. Setup Parameters for Appointments (Sales/Debt)
+  const apptParams = [shopId];
+  let apptDateFilter = "";
   if (from) {
-    salesDateClause += ` AND aps.start_time >= $${params.length + 1}`;
-    params.push(from);
+    apptParams.push(from);
+    apptDateFilter += ` AND aps2.start_time >= $${apptParams.length}`;
   }
   if (to) {
-    salesDateClause += ` AND aps.start_time <= $${params.length + 1}`;
-    params.push(to);
+    apptParams.push(to);
+    apptDateFilter += ` AND aps2.start_time <= $${apptParams.length}`;
   }
+
+  // Subquery to find appointments in the date range
+  const appointmentSubquery = `
+    SELECT DISTINCT a2.id FROM appointments a2
+    JOIN appointment_services aps2 ON a2.id = aps2.appointment_id
+    WHERE a2.shop_id = $1 AND a2.status = 'completed'
+    ${!isSuperAdmin ? "AND a2.save_receipt = true" : ""} 
+    ${apptDateFilter}
+  `;
 
   try {
     const client = await pool.connect();
-    try {
-      const salesRes = await client.query(
-        `SELECT SUM(
-            (SELECT COALESCE(SUM(COALESCE(aps_inner.price_override, s_inner.price)), 0)
-             FROM appointment_services aps_inner
-             LEFT JOIN services s_inner ON aps_inner.service_id = s_inner.id
-             WHERE aps_inner.appointment_id = a.id)
-            +
-            (SELECT COALESCE(SUM(ps.total_price), 0)
-             FROM product_sales ps
-             WHERE ps.appointment_id = a.id)
-         ) as total
-         FROM appointments a
-         WHERE a.id IN (
-           SELECT DISTINCT a2.id
-           FROM appointments a2
-           JOIN appointment_services aps2 ON a2.id = aps2.appointment_id
-           ${salesWhere.replace("a.shop_id", "a2.shop_id").replace("a.status", "a2.status").replace("a.save_receipt", "a2.save_receipt")} 
-           ${salesDateClause.replace(/aps\./g, "aps2.")}
-         )`,
-        params,
-      );
 
-      // 2. Total Collected (in Date Range)
-      // Note: We reuse params for date checking, so we need to rebuild params for this query or use distinct ones.
-      // Simpler approach: Run separate queries with clean params to avoid index confusion.
-      const payRes = await client.query(
-        `SELECT SUM(amount) as total FROM transactions t 
-         WHERE shop_id = $1 
-         AND created_at >= $2 AND created_at <= $3`,
-        [req.shopId, from || "1970-01-01", to || "2100-01-01"],
-      );
+    // --- A. TOTAL SALES (Services Only) ---
+    const salesRes = await client.query(
+      `
+      SELECT SUM(COALESCE(aps.price_override, s.price)) as total
+      FROM appointment_services aps
+      LEFT JOIN services s ON aps.service_id = s.id
+      WHERE aps.appointment_id IN (${appointmentSubquery})
+    `,
+      apptParams,
+    );
+    const totalSales = Number(salesRes.rows[0].total) || 0;
 
-      // 3. SPECIAL: Collected TODAY (Hardcoded date check)
-      const todayRes = await client.query(
-        `SELECT SUM(amount) as total FROM transactions 
-         WHERE shop_id = $1 AND created_at >= CURRENT_DATE`,
-        [req.shopId],
-      );
+    // --- B. PERIOD DEBT ---
+    const periodPaymentsRes = await client.query(
+      `
+      SELECT SUM(amount) as total FROM transactions WHERE appointment_id IN (${appointmentSubquery})
+    `,
+      apptParams,
+    );
+    const periodPaymentsApplied = Number(periodPaymentsRes.rows[0].total) || 0;
+    const totalDebt = totalSales - periodPaymentsApplied;
 
-      // 4. SPECIAL: Total Business Debt (Live Snapshot)
-      // Sum of all positive outstanding balances
-      const debtRes = await client.query(
-        `SELECT SUM(outstanding_balance) as total FROM clients 
-         WHERE shop_id = $1 AND outstanding_balance > 0`,
-        [req.shopId],
-      );
-
-      res.json({
-        total_sales: Number(salesRes.rows[0].total) || 0,
-        total_payments: Number(payRes.rows[0].total) || 0,
-        collected_today: Number(todayRes.rows[0].total) || 0,
-        total_debt: Number(debtRes.rows[0].total) || 0,
-      });
-    } finally {
-      client.release();
+    // --- C. TOTAL COLLECTED (Cash Flow for Period) ---
+    const flowParams = [shopId];
+    let flowFilter = "";
+    if (from) {
+      flowParams.push(from);
+      flowFilter += ` AND created_at >= $${flowParams.length}`;
     }
+    if (to) {
+      flowParams.push(to);
+      flowFilter += ` AND created_at <= $${flowParams.length}`;
+    }
+
+    const payRes = await client.query(
+      `
+      SELECT SUM(amount) as total FROM transactions WHERE shop_id = $1 ${flowFilter}
+    `,
+      flowParams,
+    );
+    const totalPayments = Number(payRes.rows[0].total) || 0;
+
+    // --- D. COLLECTED TODAY (The missing piece) ---
+    const todayRes = await client.query(
+      `
+      SELECT SUM(amount) as total FROM transactions 
+      WHERE shop_id = $1 AND created_at >= CURRENT_DATE
+    `,
+      [shopId],
+    );
+    const collectedToday = Number(todayRes.rows[0].total) || 0;
+
+    // --- Final Response (All keys required by FinancialsView.vue) ---
+    res.json({
+      total_sales: totalSales,
+      total_payments: totalPayments,
+      collected_today: collectedToday,
+      total_debt: totalDebt,
+    });
+
+    client.release();
   } catch (err) {
+    console.error("Finance Report Error:", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -2966,7 +3058,7 @@ app.post("/api/v1/clients/:id/invite", authenticateToken, async (req, res) => {
       { expiresIn: "48h" },
     );
 
-    const signupUrl = `${ALLOWED_ORIGIN}/signup?token=${inviteToken}`;
+    const signupUrl = `https://interventio.gr/signup?token=${inviteToken}`;
     const nodemailer = require("nodemailer");
 
     const transporter = nodemailer.createTransport({

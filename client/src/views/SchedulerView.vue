@@ -595,9 +595,10 @@ const calendarOptions = ref({
   eventContent: (arg: any) => {
     const timeText = arg.timeText;
     const props = arg.event.extendedProps;
+    const apptStatus = props.fullAppointment?.status;
 
-    // 1. Check if the appointment status is cancelled
-    const isCancelled = props.fullAppointment?.status === "cancelled";
+    const isCancelled = apptStatus === "cancelled";
+    const isConfirmed = apptStatus === "confirmed";
 
     const isMonthView = arg.view.type === "dayGridMonth";
     const start = arg.event.start;
@@ -612,32 +613,39 @@ const calendarOptions = ref({
         ? "text-[9px] md:text-[10px] leading-tight"
         : "text-[10px] md:text-xs leading-tight";
 
-    // 2. Define conditional styles for Cancelled status
-    // We use 'line-through' for strikethrough and 'text-red-600' for color
-    const cancelledClasses = isCancelled
+    const statusTextClasses = isCancelled
       ? "line-through text-red-600"
       : "text-gray-900";
-    const cancelledServiceClasses = isCancelled ? "text-red-500" : "opacity-80";
+    const serviceTextClasses = isCancelled ? "text-red-500" : "opacity-80";
 
     const showTime = !isShort && !isMonthView;
     const showService = !isShort || isMonthView;
 
+    const doubleCheckHtml = isConfirmed
+      ? `
+    <div class="absolute top-1 right-1 flex items-center" style="color: #6b21a8;">
+      <i class="pi pi-check text-[10px]"></i>
+    </div>
+  `
+      : "";
+
     return {
       html: `
-      <div class="w-full ${paddingClass} flex flex-col leading-tight overflow-hidden rounded-md hover:brightness-95 transition-all ${
+      <div class="relative w-full ${paddingClass} flex flex-col leading-tight overflow-hidden rounded-md hover:brightness-95 transition-all ${
         isMonthView ? "" : "h-full"
       }">
+        ${doubleCheckHtml}
         ${
           showTime
             ? `<div class="text-[9px] md:text-[12px] font-bold opacity-70 mb-0.5 ${isCancelled ? "text-red-400" : ""}">${timeText}</div>`
             : ""
         }
-        <div class="font-bold ${titleClass} break-words whitespace-normal ${cancelledClasses}">
+        <div class="font-bold ${titleClass} pr-4 break-words whitespace-normal ${statusTextClasses}">
           ${props.client_name}
         </div>
         ${
           showService
-            ? `<div class="text-[9px] md:text-[12px] font-medium opacity-90 mt-0.5 break-words whitespace-normal ${cancelledServiceClasses}">
+            ? `<div class="text-[9px] md:text-[12px] font-medium opacity-90 mt-0.5 break-words whitespace-normal ${serviceTextClasses}">
                 ${props.service_name}
                </div>`
             : ""

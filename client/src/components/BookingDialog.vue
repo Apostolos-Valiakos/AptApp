@@ -525,25 +525,70 @@ const originalDebtContribution = computed(() => {
     return -originalSnapshot.value.deposit;
   }
 });
+const isApptInDatabaseBalance = computed(() => {
+  if (!form.value.id || !form.value.start_time) return false;
 
-// Update these in your <script setup>
+  const apptDate = new Date(form.value.start_time);
+  const startDateLimit = new Date("2026-03-01T00:00:00");
+
+  // 1. If the appointment is before March 1st, 2026, it is NOT in the balance calculation
+  if (apptDate < startDateLimit) return false;
+
+  // 2. Matches SQL: Only appointments that have already happened (<= NOW)
+  // are included in the database's outstanding_balance field.
+  return apptDate <= new Date();
+});
+
+// Replace your existing previousDebt and totalDueNow with this:
+
 const previousDebt = computed(() => {
-  // Now reflects ONLY past unpaid appointments thanks to the backend fix
-  return Number(selectedClient.value?.outstanding_balance || 0);
+  if (!selectedClient.value) return 0;
+
+  const totalBalance = Number(selectedClient.value.outstanding_balance || 0);
+
+  // If we are editing an appointment that is already "Past" (and thus included in the DB balance)
+  if (isEditMode.value && isApptInDatabaseBalance.value) {
+    // We subtract today's total from the balance to see what was owed BEFORE today.
+    // Important: We use the full cost, not the unpaid part.
+    return Math.max(0, totalBalance - currentApptTotal.value);
+  }
+
+  // For NEW or FUTURE appointments, the database balance IS the previous debt
+  return totalBalance;
 });
 
 const totalDueNow = computed(() => {
-  // Total = Unpaid from the past + Cost of this specific appointment - What we paid today
+  // 1. Calculate what is still owed specifically for THIS appointment
   const currentApptUnpaid = Math.max(
     0,
     currentApptTotal.value - form.value.deposit_amount,
   );
+
+  // 2. Total Due = (Old Debt) + (Unpaid part of current visit)
   return previousDebt.value + currentApptUnpaid;
 });
 
-watch(totalDueNow, (val) => {
-  amountToPayNow.value = val;
-});
+watch(
+  totalDueNow,
+  (newVal) => {
+    // Determine if today's visit still has a balance
+    const currentApptUnpaid = Math.max(
+      0,
+      currentApptTotal.value - form.value.deposit_amount,
+    );
+
+    if (currentApptUnpaid > 0) {
+      // Prioritize paying off today's visit first
+      amountToPayNow.value = currentApptUnpaid;
+    } else if (newVal > 0) {
+      // If today is paid but there is old debt, suggest the debt amount
+      amountToPayNow.value = newVal;
+    } else {
+      amountToPayNow.value = 0;
+    }
+  },
+  { immediate: true },
+);
 
 // === INITIALIZATION ===
 watch(
@@ -769,12 +814,9 @@ const recordPayment = async () => {
   paymentLoading.value = true;
   const token = localStorage.getItem("token");
 
+  // Automatically mark as completed upon payment
+  form.value.status = "completed";
   await save(false);
-
-  if (!form.value.id) {
-    paymentLoading.value = false;
-    return;
-  }
 
   try {
     const res = await fetch("/api/v1/transactions", {
@@ -792,12 +834,15 @@ const recordPayment = async () => {
     });
 
     if (res.ok) {
+      // 1. Update the 'Paid' amount for THIS appointment
       form.value.deposit_amount += amountToPayNow.value;
+
+      // 2. Update the CLIENT'S total balance
       if (selectedClient.value) {
         selectedClient.value.outstanding_balance -= amountToPayNow.value;
       }
-      originalSnapshot.value.deposit = form.value.deposit_amount;
-      emit("save");
+
+      emit("save"); // Refresh the background calendar
     }
   } catch (e) {
     console.error(e);
