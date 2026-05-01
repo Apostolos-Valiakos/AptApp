@@ -1944,25 +1944,27 @@ app.get(
       // We join with active_clients as the source of truth for client data
       // Updated query to filter for past appointments only
       const query = `
-      SELECT 
-        s.name as service_name,
-        COUNT(aps.id) as service_count,
-        SUM(COALESCE(aps.price_override, s.price)) as total_value,
-        SUM(COALESCE((
-          SELECT SUM(t.amount) 
-          FROM transactions t 
-          WHERE t.appointment_id = a.id
-        ), 0)) as total_paid
-      FROM appointment_services aps
-      JOIN services s ON aps.service_id = s.id
-      JOIN appointments a ON aps.appointment_id = a.id
-      JOIN active_clients c ON a.client_id = c.id
-      WHERE a.shop_id = $1 
-        AND aps.start_time <= CURRENT_TIMESTAMP  -- This line excludes future appointments
-        ${dateFilter}
-      GROUP BY s.name
-      ORDER BY total_value DESC
-    `;
+        SELECT 
+          s.name as service_name,
+          COUNT(aps.id) as service_count,
+          SUM(COALESCE(aps.price_override, s.price)) as total_value,
+          SUM(COALESCE((
+            SELECT SUM(t.amount) 
+            FROM transactions t 
+            WHERE t.appointment_id = a.id
+          ), 0)) as total_paid
+        FROM appointment_services aps
+        JOIN services s ON aps.service_id = s.id
+        JOIN appointments a ON aps.appointment_id = a.id
+        JOIN active_clients c ON a.client_id = c.id
+        WHERE a.shop_id = $1 
+          AND aps.start_time <= CURRENT_TIMESTAMP 
+          -- Exclude cancelled and no-show statuses
+          AND a.status NOT IN ('cancelled', 'no-show') 
+          ${dateFilter}
+        GROUP BY s.name
+        ORDER BY total_value DESC
+      `;
 
       const { rows } = await pool.query(query, params);
 
