@@ -253,7 +253,65 @@
           </Dialog>
         </div>
       </TabPanel>
+      <TabPanel header="Service Performance (All Statuses)">
+        <DataTable
+          :value="serviceSummaryReport"
+          responsiveLayout="scroll"
+          :paginator="true"
+          :rows="10"
+          class="p-datatable-sm"
+          stripedRows
+        >
+          <Column field="service_name" header="Service Name" font-bold></Column>
 
+          <Column
+            field="service_count"
+            header="Quantity"
+            sortable
+            class="text-center"
+          >
+            <template #body="slotProps">
+              <span class="font-medium"
+                >{{ slotProps.data.service_count }} Appts</span
+              >
+            </template>
+          </Column>
+
+          <Column field="total_paid" header="Money Paid" sortable>
+            <template #body="slotProps">
+              <span class="text-green-700 font-bold">
+                €{{ formatCurrency(slotProps.data.total_paid) }}
+              </span>
+            </template>
+          </Column>
+
+          <Column field="total_owed" header="Money Owed" sortable>
+            <template #body="slotProps">
+              <span
+                :class="
+                  Number(slotProps.data.total_owed) > 0
+                    ? 'text-red-600 font-bold'
+                    : 'text-gray-400'
+                "
+              >
+                €{{ formatCurrency(slotProps.data.total_owed) }}
+              </span>
+            </template>
+          </Column>
+
+          <Column field="total_value" header="Total Value" sortable>
+            <template #body="slotProps">
+              <span class="text-gray-600 italic">
+                €{{ formatCurrency(slotProps.data.total_value) }}
+              </span>
+            </template>
+          </Column>
+        </DataTable>
+        <p class="text-[10px] text-gray-500 mt-2 italic">
+          * This report includes all appointments (New, Confirmed, Completed,
+          etc.) within the selected date range.
+        </p>
+      </TabPanel>
       <TabPanel header="Sales by Service">
         <DataTable
           :value="salesReport"
@@ -355,7 +413,7 @@ import ClientDemographics from "./ClientDemographics.vue";
 
 const toast = useToast();
 const loading = ref(false);
-
+const serviceSummaryReport = ref([]);
 // Initialize filters with Current Month
 const today = new Date();
 const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -448,16 +506,25 @@ const fetchAllReports = async () => {
   const qs = params.toString() ? `?${params.toString()}` : "";
 
   try {
-    const [finRes, salesRes, staffRes, payRes, apptRes, anaRes, clientsRes] =
-      await Promise.all([
-        fetch(`/api/v1/reports/finances${qs}`, { headers }),
-        fetch(`/api/v1/reports/sales${qs}`, { headers }),
-        fetch(`/api/v1/reports/staff${qs}`, { headers }),
-        fetch(`/api/v1/reports/payments${qs}`, { headers }),
-        fetch(`/api/v1/reports/appointments${qs}`, { headers }),
-        fetch(`/api/v1/reports/analytics${qs}`, { headers }),
-        fetch(`/api/v1/reports/clients`, { headers }),
-      ]);
+    const [
+      finRes,
+      salesRes,
+      staffRes,
+      payRes,
+      apptRes,
+      anaRes,
+      clientsRes,
+      serviceSumRes,
+    ] = await Promise.all([
+      fetch(`/api/v1/reports/finances${qs}`, { headers }),
+      fetch(`/api/v1/reports/sales${qs}`, { headers }),
+      fetch(`/api/v1/reports/staff${qs}`, { headers }),
+      fetch(`/api/v1/reports/payments${qs}`, { headers }),
+      fetch(`/api/v1/reports/appointments${qs}`, { headers }),
+      fetch(`/api/v1/reports/analytics${qs}`, { headers }),
+      fetch(`/api/v1/reports/clients`, { headers }),
+      fetch(`/api/v1/reports/service-summary${qs}`, { headers }),
+    ]);
 
     if (finRes.status === 401) throw new Error("Unauthorized");
 
@@ -470,6 +537,7 @@ const fetchAllReports = async () => {
     ) {
       throw new Error("Failed to fetch reports");
     }
+    if (!serviceSumRes.ok) throw new Error("Failed to fetch service summary");
 
     const finData = await finRes.json();
     const salesData = await salesRes.json();
@@ -482,6 +550,7 @@ const fetchAllReports = async () => {
     paymentsReport.value = await payRes.json();
     appointmentsReport.value = await apptRes.json();
     clientsReport.value = await clientsRes.json();
+    serviceSummaryReport.value = await serviceSumRes.json();
   } catch (err: any) {
     console.error(err);
     toast.add({
