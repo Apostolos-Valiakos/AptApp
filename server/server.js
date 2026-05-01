@@ -16,7 +16,7 @@ const PORT = process.env.PORT || 3000;
 
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "http://localhost:5173";
 
-// require("./reminderService");
+require("./reminderService");
 
 // ==================== FILE UPLOAD SETUP ====================
 const storage = multer.diskStorage({
@@ -1845,7 +1845,11 @@ app.get("/api/v1/reports/finances", authenticateToken, async (req, res) => {
   const appointmentSubquery = `
     SELECT DISTINCT a2.id FROM appointments a2
     JOIN appointment_services aps2 ON a2.id = aps2.appointment_id
-    WHERE a2.shop_id = $1 AND a2.status = 'completed'
+    WHERE a2.shop_id = $1 
+    AND (
+      a2.status = 'completed' 
+      OR (a2.status = 'new' AND aps2.start_time < CURRENT_TIMESTAMP)
+    )
     ${!isSuperAdmin ? "AND a2.save_receipt = true" : ""} 
     ${apptDateFilter}
   `;
@@ -1919,7 +1923,65 @@ app.get("/api/v1/reports/finances", authenticateToken, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+app.get(
+  "/api/v1/reports/service-summary",
+  authenticateToken,
+  async (req, res) => {
+    const { from, to } = req.query;
+    const params = [req.shopId];
+    let dateFilter = "";
 
+    if (from) {
+      params.push(from);
+      dateFilter += ` AND aps.start_time >= $${params.length}`;
+    }
+    if (to) {
+      params.push(to);
+      dateFilter += ` AND aps.start_time <= $${params.length}`;
+    }
+
+    try {
+      // We join with active_clients as the source of truth for client data
+      // Updated query to filter for past appointments only
+      const query = `
+      SELECT 
+        s.name as service_name,
+        COUNT(aps.id) as service_count,
+        SUM(COALESCE(aps.price_override, s.price)) as total_value,
+        SUM(COALESCE((
+          SELECT SUM(t.amount) 
+          FROM transactions t 
+          WHERE t.appointment_id = a.id
+        ), 0)) as total_paid
+      FROM appointment_services aps
+      JOIN services s ON aps.service_id = s.id
+      JOIN appointments a ON aps.appointment_id = a.id
+      JOIN active_clients c ON a.client_id = c.id
+      WHERE a.shop_id = $1 
+        AND aps.start_time <= CURRENT_TIMESTAMP  -- This line excludes future appointments
+        ${dateFilter}
+      GROUP BY s.name
+      ORDER BY total_value DESC
+    `;
+
+      const { rows } = await pool.query(query, params);
+
+      // Calculate owed amount for each row
+      const reportData = rows.map((row) => ({
+        ...row,
+        total_owed: Math.max(
+          0,
+          Number(row.total_value) - Number(row.total_paid),
+        ),
+      }));
+
+      res.json(reportData);
+    } catch (err) {
+      console.error("Service Summary Error:", err);
+      res.status(500).json({ error: "Failed to generate service summary" });
+    }
+  },
+);
 const io = new Server(server, {
   cors: {
     // You can use an array or a single string from your .env
