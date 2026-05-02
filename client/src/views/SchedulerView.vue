@@ -260,6 +260,8 @@ const selectedAppointment = ref<any>(null);
 const fullCalendar = ref<any>(null);
 const currentTitle = ref("");
 const currentView = ref("resourceTimeGridDay");
+const currentStart = ref("");
+const currentEnd = ref("");
 // showViewMenu is no longer needed with native select
 const showViewMenu = ref(false);
 
@@ -290,7 +292,7 @@ const handleSwap = async (swapData: {
     if (!data.success) throw new Error("Swap failed");
 
     swapDialogVisible.value = false;
-    calendarStore.fetchAll();
+    await calendarStore.fetchAppointments(currentStart.value, currentEnd.value); // <-- Changed from fetchAll()
 
     toast.add({
       severity: "success",
@@ -439,9 +441,9 @@ const openNewAppointment = () => {
   dialogVisible.value = true;
 };
 
-const handleSave = () => {
+const handleSave = async () => {
   dialogVisible.value = false;
-  calendarStore.fetchAll();
+  await calendarStore.fetchAppointments(currentStart.value, currentEnd.value); // <-- Changed from fetchAll()
 };
 
 const updateAppointment = async (id: string, updates: any) => {
@@ -455,7 +457,7 @@ const updateAppointment = async (id: string, updates: any) => {
       },
       body: JSON.stringify(updates),
     });
-    calendarStore.fetchAll();
+    await calendarStore.fetchAppointments(currentStart.value, currentEnd.value);
   } catch (e) {
     console.error("Update failed", e);
     alert("Failed to update appointment");
@@ -554,6 +556,19 @@ const calendarOptions = ref({
   expandRows: true,
   // dayMinWidth: 150,
   dayMinWidth: getDayMinWidth(),
+  datesSet: async (arg: any) => {
+    currentTitle.value = arg.view.title;
+    currentView.value = arg.view.type;
+
+    // Save the new date range
+    currentStart.value = arg.startStr;
+    currentEnd.value = arg.endStr;
+
+    // Fetch only the appointments for the active calendar view
+    if (calendarStore.fetchAppointments) {
+      await calendarStore.fetchAppointments(arg.startStr, arg.endStr);
+    }
+  },
 
   // 2. Add this listener to handle screen resizing/rotation
   windowResize: (arg: any) => {
@@ -655,10 +670,10 @@ const calendarOptions = ref({
     };
   },
 
-  datesSet: (arg: any) => {
-    currentTitle.value = arg.view.title;
-    currentView.value = arg.view.type;
-  },
+  // datesSet: (arg: any) => {
+  //   currentTitle.value = arg.view.title;
+  //   currentView.value = arg.view.type;
+  // },
 
   eventClick: (info: any) => {
     const fullAppt = info.event.extendedProps.fullAppointment;
@@ -736,7 +751,8 @@ watch(
 );
 
 onMounted(async () => {
-  await calendarStore.fetchAll();
+  await calendarStore.fetchBaseResources();
+
   nextTick(() => {
     if (fullCalendar.value) {
       currentTitle.value = fullCalendar.value.getApi().view.title;

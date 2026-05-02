@@ -1065,7 +1065,23 @@ app.delete("/api/v1/services/:id", authenticateToken, async (req, res) => {
 
 app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
   try {
+    // 1. Capture date parameters from the request
+    const { date, start, end } = req.query;
     const visibilityClause = getVisibilityClause(req.user, "a");
+
+    let dateFilter = "";
+    const params = [req.shopId];
+
+    // 2. Build the dynamic date filter
+    if (date) {
+      // Filter for a specific single day
+      params.push(date);
+      dateFilter = ` AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id)::date = $${params.length}::date`;
+    } else if (start && end) {
+      // Filter for a range (e.g., a full week or month)
+      params.push(start, end);
+      dateFilter = ` AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) BETWEEN $${params.length - 1} AND $${params.length}`;
+    }
 
     const { rows } = await pool.query(
       `
@@ -1085,21 +1101,12 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
         c.first_name, 
         c.last_name, 
         c.phone as client_phone,
-        -- 1. GET CLIENT'S CURRENT OUTSTANDING BALANCE
         COALESCE(c.outstanding_balance, 0) as client_outstanding_balance,
-
-        -- 2. CALCULATE ACTUAL PAID AMOUNT FROM TRANSACTIONS TABLE
-        COALESCE((
-          SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id
-        ), 0) as deposit_amount,
-
-        -- 3. CALCULATE TOTAL COST (SERVICES + PRODUCTS)
+        COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0) as deposit_amount,
         (
           COALESCE((SELECT SUM(price_override) FROM appointment_services WHERE appointment_id = a.id), 0) +
           COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = a.id), 0)
         ) as total_cost,
-
-        -- AGGREGATE SERVICES (with the earliest start_time for sorting)
         COALESCE((
           SELECT json_agg(json_build_object(
             'service_id', s.id,
@@ -1114,25 +1121,14 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
           LEFT JOIN services s ON aps.service_id = s.id
           LEFT JOIN staff st ON aps.staff_id = st.id
           WHERE aps.appointment_id = a.id
-        ), '[]') as services,
-
-        -- AGGREGATE PRODUCTS
-        COALESCE((
-          SELECT json_agg(json_build_object(
-            'product_id', ps.inventory_id,
-            'quantity', ps.quantity,
-            'price', CASE WHEN ps.quantity > 0 THEN ps.total_price / ps.quantity ELSE 0 END
-          ))
-          FROM product_sales ps
-          WHERE ps.appointment_id = a.id
-        ), '[]') as products
+        ), '[]') as services
       FROM appointments a
       LEFT JOIN clients c ON a.client_id = c.id
-      WHERE a.shop_id = $1 ${visibilityClause}
+      WHERE a.shop_id = $1 ${visibilityClause} ${dateFilter}
       GROUP BY a.id, c.first_name, c.last_name, c.phone, c.outstanding_balance
-      ORDER BY (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) DESC
+      ORDER BY (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) ASC
     `,
-      [req.shopId],
+      params,
     );
 
     const formatted = rows.map((row) => ({
@@ -1958,7 +1954,7 @@ app.get(
         JOIN appointments a ON aps.appointment_id = a.id
         JOIN active_clients c ON a.client_id = c.id
         WHERE a.shop_id = $1 
-          AND aps.start_time <= CURRENT_TIMESTAMP 
+          -- AND aps.start_time <= CURRENT_TIMESTAMP 
           -- Exclude cancelled and no-show statuses
           AND a.status NOT IN ('cancelled', 'no-show') 
           ${dateFilter}
