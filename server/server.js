@@ -1104,7 +1104,7 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
         COALESCE(c.outstanding_balance, 0) as client_outstanding_balance,
         COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0) as deposit_amount,
         (
-          COALESCE((SELECT SUM(price_override) FROM appointment_services WHERE appointment_id = a.id), 0) +
+          COALESCE((SELECT SUM(COALESCE(aps2.price_override, s2.price)) FROM appointment_services aps2 JOIN services s2 ON aps2.service_id = s2.id WHERE aps2.appointment_id = a.id), 0) +
           COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = a.id), 0)
         ) as total_cost,
         COALESCE((
@@ -1468,56 +1468,114 @@ app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
     amount,
     payment_method = "card",
   } = req.body;
+
+  if (!amount || Number(amount) <= 0) {
+    return res.status(400).json({ error: "Invalid payment amount" });
+  }
+
   const client = await pool.connect();
 
   try {
     await client.query("BEGIN");
 
-    await client.query(
-      `INSERT INTO transactions (appointment_id, client_id, amount, payment_method, transaction_type, shop_id, created_at)
-       VALUES ($1, $2, $3, $4, 'payment', $5, NOW())`,
-      [appointment_id, client_id, amount, payment_method, req.shopId],
-    );
+    // Helper: create a transaction record and update the appointment's status/deposit_amount
+    const applyPaymentToAppointment = async (apptId, paymentAmount) => {
+      await client.query(
+        `INSERT INTO transactions (appointment_id, client_id, amount, payment_method, transaction_type, shop_id, created_at)
+         VALUES ($1, $2, $3, $4, 'payment', $5, NOW())`,
+        [apptId, client_id, paymentAmount, payment_method, req.shopId],
+      );
 
-    // Calculate updated payment status
-    const priceRes = await client.query(
-      `SELECT SUM(price_override) as total_price FROM appointment_services WHERE appointment_id = $1`,
+      const priceRes = await client.query(
+        `SELECT COALESCE(SUM(price_override), 0) as total_price
+         FROM appointment_services WHERE appointment_id = $1`,
+        [apptId],
+      );
+      const totalPrice = Number(priceRes.rows[0].total_price);
+
+      const alreadyPaidRes = await client.query(
+        `SELECT COALESCE(SUM(amount), 0) as paid
+         FROM transactions WHERE appointment_id = $1`,
+        [apptId],
+      );
+      const totalPaid = Number(alreadyPaidRes.rows[0].paid);
+
+      const isFullyPaid = totalPaid >= totalPrice - 0.01;
+      await client.query(
+        `UPDATE appointments
+         SET payment_status = $1, status = $2, deposit_amount = deposit_amount + $3
+         WHERE id = $4 AND shop_id = $5`,
+        [
+          isFullyPaid ? "paid" : "partial",
+          isFullyPaid ? "completed" : "confirmed",
+          paymentAmount,
+          apptId,
+          req.shopId,
+        ],
+      );
+    };
+
+    // 1. Calculate what is still owed for the current appointment (from transactions, not deposit_amount column)
+    const currentPriceRes = await client.query(
+      `SELECT COALESCE(SUM(price_override), 0) as total_price
+       FROM appointment_services WHERE appointment_id = $1`,
       [appointment_id],
     );
-    const totalPrice = Number(priceRes.rows[0].total_price || 0);
+    const currentApptCost = Number(currentPriceRes.rows[0].total_price);
 
-    const apptRes = await client.query(
-      `SELECT deposit_amount FROM appointments WHERE id = $1`,
+    const currentPaidRes = await client.query(
+      `SELECT COALESCE(SUM(amount), 0) as paid FROM transactions WHERE appointment_id = $1`,
       [appointment_id],
     );
-    const currentPaid = Number(apptRes.rows[0]?.deposit_amount || 0);
-    const newTotalPaid = currentPaid + Number(amount);
+    const currentApptAlreadyPaid = Number(currentPaidRes.rows[0].paid);
+    const currentApptOwed = Math.max(0, currentApptCost - currentApptAlreadyPaid);
 
-    const isFullyPaid = newTotalPaid >= totalPrice - 0.01;
-    const newPaymentStatus = isFullyPaid ? "paid" : "partial";
-    const newStatus = isFullyPaid ? "completed" : "confirmed";
+    // 2. Allocate: pay current appointment first, then apply the remainder to old debt (FIFO)
+    let remaining = Number(amount);
 
-    // Update appointment
-    // Note: visibility logic checks 'completed' status, which is set here.
-    await client.query(
-      `UPDATE appointments 
-       SET payment_status = $1, status = $2, deposit_amount = deposit_amount + $3 
-       WHERE id = $4 AND shop_id = $5`,
-      [newPaymentStatus, newStatus, amount, appointment_id, req.shopId],
-    );
+    const forCurrentAppt = Math.min(remaining, currentApptOwed);
+    if (forCurrentAppt > 0.009) {
+      await applyPaymentToAppointment(appointment_id, forCurrentAppt);
+      remaining -= forCurrentAppt;
+    }
 
-    await client.query(
-      `UPDATE clients SET total_sales = COALESCE(total_sales, 0) + $1 WHERE id = $2 AND shop_id = $3`,
-      [amount, client_id, req.shopId],
-    );
+    // 3. Distribute the remainder to older unpaid appointments (oldest first)
+    if (remaining > 0.009) {
+      const oldAppts = await client.query(
+        `SELECT
+           a.id,
+           COALESCE(SUM(aps.price_override), 0) as total_cost,
+           COALESCE((SELECT SUM(t2.amount) FROM transactions t2 WHERE t2.appointment_id = a.id), 0) as total_paid
+         FROM appointments a
+         JOIN appointment_services aps ON aps.appointment_id = a.id
+         WHERE a.client_id = $1
+           AND a.id != $2
+           AND a.shop_id = $3
+           AND a.status NOT IN ('cancelled', 'completed')
+         GROUP BY a.id
+         ORDER BY (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) ASC`,
+        [client_id, appointment_id, req.shopId],
+      );
 
-    // CRITICAL: Update outstanding balance
-    await recalculateClientBalance(client, client_id);
+      for (const row of oldAppts.rows) {
+        if (remaining <= 0.009) break;
+        const owed = Number(row.total_cost) - Number(row.total_paid);
+        if (owed <= 0.009) continue;
+
+        const forThisAppt = Math.min(remaining, owed);
+        await applyPaymentToAppointment(row.id, forThisAppt);
+        remaining -= forThisAppt;
+      }
+    }
+
+    // 4. Recalculate client balance and return it so the frontend can update without guessing
+    const newBalance = await recalculateClientBalance(client, client_id);
 
     await client.query("COMMIT");
-    res.json({ success: true });
+    res.json({ success: true, new_balance: newBalance });
   } catch (e) {
     await client.query("ROLLBACK");
+    console.error("Payment error:", e);
     res.status(500).json({ error: "Payment failed" });
   } finally {
     client.release();
@@ -1837,16 +1895,18 @@ app.get("/api/v1/reports/finances", authenticateToken, async (req, res) => {
     apptDateFilter += ` AND aps2.start_time <= $${apptParams.length}`;
   }
 
-  // Subquery to find appointments in the date range
+  // Subquery to find appointments in the date range.
+  // Includes completed appointments and any past appointment that is not cancelled/no-show
+  // (covers 'new', 'confirmed', and 'started' statuses that have already occurred).
   const appointmentSubquery = `
     SELECT DISTINCT a2.id FROM appointments a2
     JOIN appointment_services aps2 ON a2.id = aps2.appointment_id
-    WHERE a2.shop_id = $1 
+    WHERE a2.shop_id = $1
     AND (
-      a2.status = 'completed' 
-      OR (a2.status = 'new' AND aps2.start_time < CURRENT_TIMESTAMP)
+      a2.status = 'completed'
+      OR (a2.status IN ('new', 'confirmed', 'started') AND aps2.start_time < CURRENT_TIMESTAMP)
     )
-    ${!isSuperAdmin ? "AND a2.save_receipt = true" : ""} 
+    ${!isSuperAdmin ? "AND a2.save_receipt = true" : ""}
     ${apptDateFilter}
   `;
 

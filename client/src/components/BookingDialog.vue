@@ -398,7 +398,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from "vue";
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from "vue";
 import BookingProducts from "./booking/bookingProducts.vue";
 import BookingServices from "./booking/bookingServices.vue";
 import BookingPayments from "./booking/bookingPayments.vue";
@@ -548,9 +548,13 @@ const previousDebt = computed(() => {
 
   // If we are editing an appointment that is already "Past" (and thus included in the DB balance)
   if (isEditMode.value && isApptInDatabaseBalance.value) {
-    // We subtract today's total from the balance to see what was owed BEFORE today.
-    // Important: We use the full cost, not the unpaid part.
-    return Math.max(0, totalBalance - currentApptTotal.value);
+    // The DB balance contains: other_debt + (currentApptTotal - alreadyPaid).
+    // Subtract only the unpaid portion of this appointment so we isolate other_debt.
+    const currentApptUnpaid = Math.max(
+      0,
+      currentApptTotal.value - form.value.deposit_amount,
+    );
+    return Math.max(0, totalBalance - currentApptUnpaid);
   }
 
   // For NEW or FUTURE appointments, the database balance IS the previous debt
@@ -568,27 +572,14 @@ const totalDueNow = computed(() => {
   return previousDebt.value + currentApptUnpaid;
 });
 
-watch(
-  totalDueNow,
-  (newVal) => {
-    // Determine if today's visit still has a balance
-    const currentApptUnpaid = Math.max(
-      0,
-      currentApptTotal.value - form.value.deposit_amount,
-    );
-
-    if (currentApptUnpaid > 0) {
-      // Prioritize paying off today's visit first
-      amountToPayNow.value = currentApptUnpaid;
-    } else if (newVal > 0) {
-      // If today is paid but there is old debt, suggest the debt amount
-      amountToPayNow.value = newVal;
-    } else {
-      amountToPayNow.value = 0;
-    }
-  },
-  { immediate: true },
-);
+// Only clamp the entered amount when the total due drops below it (e.g. a service is removed).
+// The initial suggestion is set by the appointment watcher via nextTick so a user's
+// custom partial-payment amount is never silently overwritten by a service-price change.
+watch(totalDueNow, (newVal) => {
+  if (amountToPayNow.value > newVal) {
+    amountToPayNow.value = newVal;
+  }
+});
 
 // === INITIALIZATION ===
 watch(
@@ -711,7 +702,19 @@ watch(
       originalSnapshot.value = { price: 0, deposit: 0, isPast: false };
     }
 
-    amountToPayNow.value = 0;
+    // Suggest a sensible default amount after the form (and computed values) have settled.
+    // Using nextTick so computed properties (currentApptTotal, totalDueNow) read the new form state.
+    nextTick(() => {
+      const currentApptUnpaid = Math.max(
+        0,
+        currentApptTotal.value - form.value.deposit_amount,
+      );
+      if (currentApptUnpaid > 0) {
+        amountToPayNow.value = currentApptUnpaid;
+      } else {
+        amountToPayNow.value = Math.max(0, totalDueNow.value);
+      }
+    });
     currentTab.value = "Booking";
     showMobileSidebar.value = false;
   },
@@ -814,8 +817,9 @@ const recordPayment = async () => {
   paymentLoading.value = true;
   const token = localStorage.getItem("token");
 
-  // Automatically mark as completed upon payment
-  form.value.status = "completed";
+  // Save any pending form changes (services, notes) before processing payment.
+  // Do NOT force status='completed' here — the transaction endpoint handles that
+  // atomically so a failed payment can't leave the appointment marked complete.
   await save(false);
 
   try {
@@ -834,12 +838,14 @@ const recordPayment = async () => {
     });
 
     if (res.ok) {
-      // 1. Update the 'Paid' amount for THIS appointment
+      const data = await res.json();
+
+      // Update local deposit_amount for immediate UI feedback
       form.value.deposit_amount += amountToPayNow.value;
 
-      // 2. Update the CLIENT'S total balance
-      if (selectedClient.value) {
-        selectedClient.value.outstanding_balance -= amountToPayNow.value;
+      // Use the authoritative balance returned by the server instead of guessing by subtraction
+      if (data.new_balance !== undefined && selectedClient.value) {
+        selectedClient.value.outstanding_balance = Number(data.new_balance);
       }
 
       emit("save"); // Refresh the background calendar

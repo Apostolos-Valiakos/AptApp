@@ -9,12 +9,16 @@
         >
       </div>
       <div class="text-5xl font-extrabold mb-6 tracking-tight">
-        €{{ previousDebt.toFixed(2) }}
+        €{{ totalDueNow.toFixed(2) }}
       </div>
       <div class="space-y-2 border-t border-gray-700 pt-4 text-sm opacity-90">
         <div class="flex justify-between">
           <span>Κόστος ραντεβού</span>
           <span class="font-medium">€{{ currentApptTotal.toFixed(2) }}</span>
+        </div>
+        <div v-if="previousDebt > 0" class="flex justify-between">
+          <span>Παλαιό υπόλοιπο</span>
+          <span class="font-medium text-red-300">+ €{{ previousDebt.toFixed(2) }}</span>
         </div>
         <div class="border-t border-gray-700 pt-2 flex justify-between">
           <span>Πληρώθηκαν</span>
