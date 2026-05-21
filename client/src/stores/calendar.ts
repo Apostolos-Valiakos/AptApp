@@ -37,12 +37,6 @@ export const useCalendarStore = defineStore("calendar", () => {
       services.value = await servicesRes.json();
       // products.value = await productsRes.json();
 
-      console.log("BASE RESOURCES LOADED", {
-        resources: resources.value,
-        clients: clients.value,
-        services: services.value,
-        products: products.value,
-      });
     } catch (err) {
       console.error("fetchBaseResources failed", err);
     }
@@ -76,10 +70,6 @@ export const useCalendarStore = defineStore("calendar", () => {
 
       events.value = await eventsRes.json();
 
-      console.log(
-        `APPOINTMENTS LOADED FOR RANGE: ${start} to ${end}`,
-        events.value,
-      );
     } catch (err) {
       console.error("fetchAppointments failed", err);
     }

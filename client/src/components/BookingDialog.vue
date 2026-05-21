@@ -4,8 +4,8 @@
     modal
     class="fresha-dialog h-full md:h-auto md:rounded-xl rounded-none"
     :showHeader="false"
-    :breakpoints="{ '960px': '100vw' }"
-    :style="{ width: '80vw', maxWidth: '1200px' }"
+    :breakpoints="{ '960px': '100vw', '640px': '100vw' }"
+    :style="{ width: '95vw', maxWidth: '1200px' }"
     :contentStyle="{
       padding: '0',
       borderRadius: '12px',
@@ -17,21 +17,31 @@
     <div
       class="flex flex-col md:flex-row h-full md:max-h-[90vh] md:h-[800px] bg-white"
     >
+      <!-- Left pane: form -->
       <div
         class="flex-grow flex flex-col w-full md:w-2/3 border-b md:border-b-0 md:border-r border-gray-200 order-2 md:order-1 h-full overflow-hidden"
+        :class="
+          isEditMode ? 'border-l-4 border-l-[var(--p-primary-color)]' : ''
+        "
       >
+        <!-- Header -->
         <div
-          class="px-4 md:px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-white sticky top-0 z-10 flex-shrink-0"
+          class="px-4 md:px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-white sticky top-0 z-10 flex-shrink-0"
         >
           <div>
             <h2 class="text-lg md:text-xl font-bold text-gray-900">
-              {{ isEditMode ? "Edit Appointment" : "New Appointment" }}
+              {{
+                isEditMode
+                  ? t("booking.editAppointment")
+                  : t("booking.newAppointment")
+              }}
             </h2>
             <div class="text-sm text-gray-500 mt-1 flex items-center gap-2">
+              <i class="pi pi-clock text-xs opacity-60"></i>
               <span>{{ formatDate(form.start_time) }}</span>
               <span
                 v-if="isEditMode"
-                class="px-2 py-0.5 rounded text-xs font-bold uppercase"
+                class="rounded-full px-3 py-1 text-xs font-bold uppercase"
                 :class="getStatusColor(form.status)"
               >
                 {{ form.status }}
@@ -40,36 +50,40 @@
           </div>
           <button
             @click="dialogVisible = false"
-            class="text-red-500 hover:text-red-700 transition-colors duration-200"
+            class="w-8 h-8 rounded-full bg-gray-100 hover:bg-red-50 flex items-center justify-center text-gray-400 hover:text-red-500 transition-colors duration-200"
           >
-            <i class="pi pi-times text-xl"></i>
+            <i class="pi pi-times text-sm"></i>
           </button>
         </div>
 
-        <div
-          class="flex border-b border-gray-200 px-4 md:px-6 overflow-x-auto flex-shrink-0"
-        >
-          <button
-            v-for="tab in tabs"
-            :key="tab"
-            @click="currentTab = tab"
-            class="py-3 px-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap"
-            :class="
-              currentTab === tab
-                ? 'border-black text-black'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            "
-          >
-            {{ tab }}
-          </button>
+        <!-- Tab bar — pill group -->
+        <div class="flex px-4 md:px-6 py-2 flex-shrink-0">
+          <div class="flex gap-1 p-1 bg-gray-50 rounded-full">
+            <button
+              v-for="tab in tabs"
+              :key="tab.key"
+              @click="currentTab = tab.key"
+              class="py-2 px-4 text-sm font-medium transition-colors whitespace-nowrap rounded-full"
+              :class="
+                currentTab === tab.key
+                  ? 'bg-[var(--p-primary-50)] text-[var(--p-primary-700)] font-bold'
+                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+              "
+            >
+              {{ tab.label }}
+            </button>
+          </div>
         </div>
 
+        <!-- Tab content -->
         <div class="flex-grow overflow-y-auto p-4 md:p-6 space-y-6">
+          <!-- BOOKING TAB -->
           <div v-if="currentTab === 'Booking'" class="space-y-6">
+            <!-- Client selector -->
             <div class="space-y-2">
               <label
                 class="text-xs font-bold text-gray-500 uppercase tracking-wider"
-                >Client</label
+                >{{ t("booking.clientLabel") }}</label
               >
 
               <div v-if="!form.client_id" class="flex gap-2">
@@ -78,26 +92,26 @@
                   :options="clients"
                   optionLabel="full_name"
                   optionValue="id"
-                  placeholder="Search or select client..."
+                  :placeholder="t('booking.searchClient')"
                   filter
                   class="w-full"
                 />
                 <Button
                   icon="pi pi-plus"
                   class="p-button-outlined"
-                  v-tooltip="'New Client'"
+                  v-tooltip="t('booking.newClientBtn')"
                   @click="showQuickAddClient = true"
                 />
               </div>
 
               <div v-else class="flex gap-2">
                 <div
-                  class="flex-grow flex justify-between items-center p-3 border border-gray-300 rounded-lg bg-gray-50 hover:border-gray-400 transition-colors cursor-pointer group"
+                  class="flex-grow flex justify-between items-center p-3 border border-gray-200 rounded-xl bg-gray-50 hover:bg-red-50 hover:border-red-200 transition-colors cursor-pointer group"
                   @click="form.client_id = null"
                 >
                   <div class="flex items-center gap-3">
                     <div
-                      class="w-8 h-8 rounded-full bg-blue-100 text-blue-600 font-bold flex items-center justify-center text-sm"
+                      class="w-8 h-8 rounded-full bg-[var(--p-primary-100)] text-[var(--p-primary-600)] font-bold flex items-center justify-center text-sm"
                     >
                       {{ selectedClient?.first_name?.[0] || "?"
                       }}{{ selectedClient?.last_name?.[0] || "?" }}
@@ -111,9 +125,13 @@
                       </div>
                     </div>
                   </div>
-                  <i
-                    class="pi pi-times text-gray-400 group-hover:text-red-500"
-                  ></i>
+                  <div
+                    class="w-6 h-6 rounded-full bg-gray-200 group-hover:bg-red-100 flex items-center justify-center transition-colors"
+                  >
+                    <i
+                      class="pi pi-times text-xs text-gray-400 group-hover:text-red-500"
+                    ></i>
+                  </div>
                 </div>
                 <Button
                   icon="pi pi-eye"
@@ -122,12 +140,13 @@
                     color: var(--p-primary-color);
                     border-color: var(--p-primary-color);
                   "
-                  v-tooltip.top="'View Full Profile'"
+                  v-tooltip.top="t('booking.viewProfile')"
                   @click="openClientProfile"
                 />
               </div>
             </div>
 
+            <!-- Services -->
             <BookingServices
               v-model="servicesList"
               :services="services"
@@ -136,14 +155,15 @@
               :default-staff-id="currentStaffId"
             />
 
-            <div class="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+            <!-- Recurring appointment -->
+            <div class="p-4 bg-gray-50 rounded-xl border border-gray-200">
               <div class="flex items-center gap-2 mb-3">
                 <Checkbox v-model="isRecurring" binary inputId="isRecurring" />
                 <label
                   for="isRecurring"
                   class="font-bold text-gray-700 cursor-pointer text-sm"
                 >
-                  Repeat Appointment
+                  {{ t("booking.repeatAppointment") }}
                 </label>
               </div>
 
@@ -151,7 +171,7 @@
                 <div>
                   <label
                     class="text-xs font-bold text-gray-500 uppercase block mb-1"
-                    >Frequency</label
+                    >{{ t("booking.frequency") }}</label
                   >
                   <Dropdown
                     v-model="recurrenceForm.freq"
@@ -162,7 +182,7 @@
                 <div>
                   <label
                     class="text-xs font-bold text-gray-500 uppercase block mb-1"
-                    >Ends On</label
+                    >{{ t("booking.endsOn") }}</label
                   >
                   <Calendar
                     v-model="recurrenceForm.end_date"
@@ -173,8 +193,10 @@
                 </div>
               </div>
             </div>
+
+            <!-- ΕΟΠΠΥ toggle -->
             <div
-              class="mb-4 p-3 bg-[var(--p-primary-50)] rounded-lg border border-[var(--p-primary-100)] flex items-center justify-between"
+              class="p-3 bg-[var(--p-primary-50)] rounded-lg border border-[var(--p-primary-100)] flex items-center justify-between"
             >
               <div class="flex items-center gap-3">
                 <div
@@ -187,26 +209,27 @@
                     for="eoppySwitch"
                     class="font-bold text-[var(--p-primary-700)] cursor-pointer text-sm"
                   >
-                    Συμβεβλημμένο με τον ΕΟΠΠΥ
+                    {{ t("booking.eoppy") }}
                   </label>
                   <span
                     class="text-xs text-[var(--p-primary-500)]"
                     v-if="isRecurring"
                   >
-                    Εφαρμόζεται μόνο στο πρώτο ραντεβού στα επαναλαμβανόμενα
+                    {{ t("booking.eoppyRecurringNote") }}
                   </span>
                 </div>
               </div>
               <ToggleSwitch v-model="form.is_eoppy" inputId="eoppySwitch" />
             </div>
 
+            <!-- Status + Block time -->
             <div
               class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-gray-100"
             >
               <div>
                 <label
                   class="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-2"
-                  >Status</label
+                  >{{ t("booking.statusLabel") }}</label
                 >
                 <Dropdown
                   v-model="form.status"
@@ -227,30 +250,34 @@
                 </Dropdown>
               </div>
 
-              <div class="flex flex-col justify-end gap-3 pb-2">
-                <div class="flex items-center gap-2">
+              <div class="flex flex-col justify-end pb-2">
+                <div
+                  class="p-3 bg-gray-50 rounded-lg border border-gray-100 flex items-center gap-2"
+                >
                   <Checkbox v-model="form.is_block" binary inputId="isBlock" />
                   <label
                     for="isBlock"
                     class="text-sm text-gray-700 cursor-pointer"
                   >
-                    Block time off (Unavailable)
+                    {{ t("booking.blockTime") }}
                   </label>
                 </div>
               </div>
             </div>
           </div>
 
+          <!-- PRODUCTS TAB -->
           <div v-if="currentTab === 'Products'" class="space-y-4">
             <div
-              class="bg-blue-50 border border-blue-100 p-4 rounded-lg flex items-start gap-3"
+              class="bg-blue-50 border border-blue-100 p-4 rounded-xl flex items-start gap-3"
             >
               <i class="pi pi-shopping-bag text-blue-600 mt-1"></i>
               <div>
-                <h4 class="text-sm font-bold text-blue-900">Retail Products</h4>
+                <h4 class="text-sm font-bold text-blue-900">
+                  {{ t("booking.retailProducts.title") }}
+                </h4>
                 <p class="text-xs text-blue-700">
-                  Add products to this appointment. Stock will be deducted
-                  automatically upon saving.
+                  {{ t("booking.retailProducts.note") }}
                 </p>
               </div>
             </div>
@@ -261,6 +288,7 @@
             />
           </div>
 
+          <!-- PAYMENT TAB -->
           <div v-if="currentTab === 'Payment'">
             <BookingPayments
               :totalDueNow="totalDueNow"
@@ -274,38 +302,48 @@
             />
           </div>
 
+          <!-- NOTES TAB -->
           <div v-if="currentTab === 'Notes'" class="space-y-4">
             <div>
-              <label class="text-sm font-semibold text-gray-700 block mb-1">
-                Booking Note (Visible to Client)
+              <label
+                class="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-2"
+              >
+                {{ t("booking.notes.bookingNote") }}
               </label>
               <Textarea
                 v-model="form.booking_notes"
                 rows="3"
                 class="w-full"
-                placeholder="e.g. Please arrive 10 mins early"
+                :placeholder="t('booking.notes.bookingPlaceholder')"
               />
             </div>
             <div>
-              <label class="text-sm font-semibold text-gray-700 block mb-1">
-                Internal Note (Staff Only)
+              <label
+                class="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-2"
+              >
+                {{ t("booking.notes.internalNote") }}
               </label>
-              <Textarea
-                v-model="form.internal_notes"
-                rows="3"
-                class="w-full bg-yellow-50"
-                placeholder="e.g. Client prefers tea, be careful with sensitive scalp"
-              />
+              <div
+                class="border-l-4 border-l-amber-400 rounded-r-lg overflow-hidden"
+              >
+                <Textarea
+                  v-model="form.internal_notes"
+                  rows="3"
+                  class="w-full bg-amber-50"
+                  :placeholder="t('booking.notes.internalPlaceholder')"
+                />
+              </div>
             </div>
           </div>
         </div>
 
+        <!-- Footer bar -->
         <div
-          class="px-4 md:px-6 py-4 border-t border-gray-200 flex flex-col-reverse sm:flex-row justify-between items-center bg-gray-50 flex-shrink-0 gap-3"
+          class="px-4 md:px-6 py-4 border-t border-gray-200 flex flex-col-reverse sm:flex-row justify-between items-center bg-gradient-to-r from-gray-50 to-white flex-shrink-0 gap-3"
         >
           <Button
             v-if="isEditMode"
-            label="Cancel Appt"
+            :label="t('booking.cancelAppt')"
             icon="pi pi-trash"
             class="p-button-danger p-button-text p-button-sm w-full sm:w-auto"
             @click="confirmDelete"
@@ -316,11 +354,11 @@
             >
               <Checkbox v-model="notifyClient" binary inputId="notify" />
               <label for="notify" class="text-sm text-gray-600">
-                Email client
+                {{ t("booking.emailClient") }}
               </label>
             </div>
             <Button
-              label="Save"
+              :label="t('booking.save')"
               @click="save()"
               :loading="loading"
               class="w-full sm:w-auto px-8"
@@ -329,6 +367,7 @@
         </div>
       </div>
 
+      <!-- Right pane: client sidebar -->
       <div
         class="w-full md:w-[35%] bg-gray-50 order-1 md:order-2 border-b md:border-b-0 md:border-l border-gray-200 md:h-full md:overflow-y-auto flex-shrink-0"
       >
@@ -337,7 +376,8 @@
           @click="toggleMobileSidebar"
         >
           <span class="font-bold text-sm text-gray-700">
-            Client Details: {{ selectedClient?.full_name || "None selected" }}
+            {{ t("bookingSidebar.clientDetails") }}:
+            {{ selectedClient?.full_name || t("bookingSidebar.noneSelected") }}
           </span>
           <i
             class="pi"
@@ -355,36 +395,47 @@
       </div>
     </div>
 
+    <!-- Quick-add client dialog -->
     <Dialog
       v-model:visible="showQuickAddClient"
-      header="Add New Client"
+      :header="t('booking.quickAdd.title')"
       modal
       :style="{ width: '400px', maxWidth: '90vw' }"
     >
       <div class="space-y-4 pt-2">
-        <span class="p-float-label">
-          <label for="qa_first">First Name</label>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{
+            t("booking.quickAdd.firstName")
+          }}</label>
           <InputText
             id="qa_first"
             v-model="newClient.first_name"
             class="w-full"
           />
-        </span>
-        <span class="p-float-label">
-          <label for="qa_last">Last Name</label>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{
+            t("booking.quickAdd.lastName")
+          }}</label>
           <InputText
             id="qa_last"
             v-model="newClient.last_name"
             class="w-full"
           />
-        </span>
-        <span class="p-float-label">
-          <label for="qa_phone">Mobile</label>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{
+            t("booking.quickAdd.mobile")
+          }}</label>
           <InputText id="qa_phone" v-model="newClient.phone" class="w-full" />
-        </span>
+        </div>
       </div>
       <template #footer>
-        <Button label="Save Client" @click="saveNewClient" class="w-full" />
+        <Button
+          :label="t('booking.quickAdd.saveClient')"
+          @click="saveNewClient"
+          class="w-full"
+        />
       </template>
     </Dialog>
 
@@ -399,13 +450,17 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from "vue";
+import { useI18n } from "vue-i18n";
 import BookingProducts from "./booking/bookingProducts.vue";
 import BookingServices from "./booking/bookingServices.vue";
 import BookingPayments from "./booking/bookingPayments.vue";
 import BookingSidebar from "./booking/bookingSideBar.vue";
 import ClientProfileDialog from "./ClientProfileDialog.vue";
 import { useConfirm } from "primevue/useconfirm";
+import { useToast } from "primevue/usetoast";
 const confirm = useConfirm();
+const toast = useToast();
+const { t } = useI18n();
 
 const props = defineProps([
   "visible",
@@ -452,7 +507,11 @@ const productsList = ref<Array<any>>([]);
 
 // UI State
 const currentTab = ref("Booking");
-const tabs = ["Booking", "Notes", "Payment"] as const;
+const tabs = [
+  { key: "Booking", label: computed(() => t("booking.tabs.booking")) },
+  { key: "Notes", label: computed(() => t("booking.tabs.notes")) },
+  { key: "Payment", label: computed(() => t("booking.tabs.payment")) },
+] as const;
 
 const loading = ref(false);
 const paymentLoading = ref(false);
@@ -464,15 +523,15 @@ const newClient = ref({ first_name: "", last_name: "", phone: "" });
 const amountToPayNow = ref(0);
 const selectedPaymentMethod = ref<"card" | "cash" | "gift-card">("card");
 
-const statusOptions = [
-  { label: "New", value: "new" },
-  { label: "Confirmed", value: "confirmed" },
-  { label: "Arrived", value: "arrived" },
-  { label: "Started", value: "started" },
-  { label: "Completed", value: "completed" },
-  { label: "No-Show", value: "no-show" },
-  { label: "Cancelled", value: "cancelled" },
-];
+const statusOptions = computed(() => [
+  { label: t("common.status.new"), value: "new" },
+  { label: t("common.status.confirmed"), value: "confirmed" },
+  { label: t("common.status.arrived"), value: "arrived" },
+  { label: t("common.status.started"), value: "started" },
+  { label: t("common.status.completed"), value: "completed" },
+  { label: t("common.status.noShow"), value: "no-show" },
+  { label: t("common.status.cancelled"), value: "cancelled" },
+]);
 
 // Mobile Sidebar Logic
 const showMobileSidebar = ref(false);
@@ -731,11 +790,11 @@ const save = async (close = true) => {
 
   if (isSeriesEdit) {
     confirm.require({
-      message: "This is a recurring appointment. Apply changes to?",
-      header: "Edit Appointment",
+      message: t("booking.editDialog.message"),
+      header: t("booking.editDialog.header"),
       icon: "pi pi-question-circle",
-      rejectLabel: "This Only",
-      acceptLabel: "This and Future",
+      rejectLabel: t("booking.editDialog.thisOnly"),
+      acceptLabel: t("booking.editDialog.thisAndFuture"),
       accept: () => executeSave(close, "series"),
       reject: () => executeSave(close, "single"),
     });
@@ -747,6 +806,25 @@ const save = async (close = true) => {
 };
 
 const executeSave = async (close = true, scope = "single") => {
+  if (!form.value.client_id && !form.value.is_block) {
+    toast.add({
+      severity: "warn",
+      summary: t("common.error"),
+      detail: t("booking.validation.selectClient"),
+      life: 3000,
+    });
+    return;
+  }
+  if (servicesList.value.length === 0) {
+    toast.add({
+      severity: "warn",
+      summary: t("common.error"),
+      detail: t("booking.validation.addService"),
+      life: 3000,
+    });
+    return;
+  }
+
   loading.value = true;
   const token = localStorage.getItem("token");
 
@@ -807,6 +885,12 @@ const executeSave = async (close = true, scope = "single") => {
     }
   } catch (e) {
     console.error(e);
+    toast.add({
+      severity: "error",
+      summary: t("booking.toast.saveFailed"),
+      detail: (e as Error).message || t("booking.toast.saveFailedDetail"),
+      life: 4000,
+    });
   } finally {
     loading.value = false;
   }
@@ -849,9 +933,23 @@ const recordPayment = async () => {
       }
 
       emit("save"); // Refresh the background calendar
+    } else {
+      const errData = await res.json().catch(() => ({}));
+      toast.add({
+        severity: "error",
+        summary: t("booking.toast.paymentFailed"),
+        detail: errData.error || t("booking.toast.paymentFailedDetail"),
+        life: 4000,
+      });
     }
   } catch (e) {
     console.error(e);
+    toast.add({
+      severity: "error",
+      summary: t("booking.toast.paymentFailed"),
+      detail: t("booking.toast.networkError"),
+      life: 4000,
+    });
   } finally {
     paymentLoading.value = false;
   }
@@ -862,12 +960,16 @@ const confirmDelete = () => {
 
   confirm.require({
     message: isSeries
-      ? "This is a recurring appointment. What would you like to delete?"
-      : "Are you sure you want to cancel this appointment?",
-    header: "Cancel Appointment",
+      ? t("booking.deleteDialog.messageRecurring")
+      : t("booking.deleteDialog.messageSingle"),
+    header: t("booking.deleteDialog.header"),
     icon: "pi pi-exclamation-triangle",
-    rejectLabel: isSeries ? "This Only" : "No",
-    acceptLabel: isSeries ? "This and Future" : "Yes",
+    rejectLabel: isSeries
+      ? t("booking.editDialog.thisOnly")
+      : t("booking.deleteDialog.no"),
+    acceptLabel: isSeries
+      ? t("booking.editDialog.thisAndFuture")
+      : t("booking.deleteDialog.yes"),
     rejectClass: "p-button-outlined p-button-secondary",
     acceptClass: "p-button-danger",
 
@@ -884,12 +986,35 @@ const confirmDelete = () => {
 
 const executeDelete = async (scope: string) => {
   const token = localStorage.getItem("token");
-  await fetch(`/api/v1/appointments/${form.value.id}?scope=${scope}`, {
-    method: "DELETE",
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  emit("save");
-  dialogVisible.value = false;
+  try {
+    const res = await fetch(
+      `/api/v1/appointments/${form.value.id}?scope=${scope}`,
+      {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      },
+    );
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      toast.add({
+        severity: "error",
+        summary: t("booking.toast.deleteFailed"),
+        detail: data.error || t("booking.toast.deleteFailedDetail"),
+        life: 4000,
+      });
+      return;
+    }
+    emit("save");
+    dialogVisible.value = false;
+  } catch (e) {
+    console.error(e);
+    toast.add({
+      severity: "error",
+      summary: t("booking.toast.deleteFailed"),
+      detail: t("booking.toast.networkError"),
+      life: 4000,
+    });
+  }
 };
 
 // --- Client Helpers ---

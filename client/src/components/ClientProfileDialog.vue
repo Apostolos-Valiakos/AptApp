@@ -418,7 +418,9 @@
 import { ref, watch, computed } from "vue";
 import Exercises from "./Exercises.vue";
 import { useAuthStore } from "../stores/auth";
+import { useToast } from "primevue/usetoast";
 const authStore = useAuthStore();
+const toast = useToast();
 const isOwner = authStore.isOwner;
 
 const props = defineProps(["visible", "clientId"]);
@@ -504,8 +506,6 @@ const fetchClientData = async () => {
     if (editForm.value.date_of_birth) {
       editForm.value.date_of_birth = new Date(editForm.value.date_of_birth);
     }
-  } catch (e) {
-    console.error(e);
   } finally {
     loading.value = false;
   }
@@ -590,7 +590,7 @@ const handleFileUpload = async (event: any) => {
     if (res.ok) {
       await fetchClientData();
     } else {
-      alert("File upload failed. Ensure it is under 5MB.");
+      toast.add({ severity: "error", summary: "Upload Failed", detail: "File upload failed. Ensure it is under 5MB.", life: 4000 });
     }
   } finally {
     uploading.value = false;
@@ -651,8 +651,7 @@ const viewFile = async (file: any) => {
       window.URL.revokeObjectURL(blobUrl);
     }, 100);
   } catch (err) {
-    console.error(err);
-    alert("Could not open file preview.");
+    toast.add({ severity: "error", summary: "Preview Failed", detail: "Could not open file preview.", life: 3000 });
   } finally {
     viewingFileId.value = null;
   }

@@ -351,9 +351,11 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from "vue";
 import { useChatStore } from "../stores/chat";
 import { useAuthStore } from "../stores/auth";
+import { useToast } from "primevue/usetoast";
 
 const chatStore = useChatStore();
 const authStore = useAuthStore();
+const toast = useToast();
 
 // UI State
 const isMobile = ref(window.innerWidth < 768);
@@ -521,7 +523,7 @@ const createChannel = async () => {
     showCreateChannel.value = false;
     newChannel.value = { name: "", description: "", memberIds: [] };
   } catch (err) {
-    alert("Failed to create channel");
+    toast.add({ severity: "error", summary: "Error", detail: "Failed to create channel", life: 3000 });
   }
 };
 

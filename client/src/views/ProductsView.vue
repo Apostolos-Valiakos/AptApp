@@ -1,9 +1,18 @@
 <template>
-  <div class="bg-white rounded-xl shadow-lg p-6">
+  <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+    <!-- Page Header -->
     <div class="flex justify-between items-center mb-6">
-      <h1 class="text-2xl font-bold">Inventory Management</h1>
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-[var(--p-primary-50)] flex items-center justify-center">
+          <i class="pi pi-box text-[var(--p-primary-600)]"></i>
+        </div>
+        <div>
+          <h1 class="text-2xl font-bold text-gray-900">{{ t('products.title') }}</h1>
+          <p class="text-sm text-gray-500 mt-0.5">{{ t('products.subtitle') }}</p>
+        </div>
+      </div>
       <Button
-        label="Add New Product"
+        :label="t('products.addNew')"
         icon="pi pi-plus"
         @click="openNewProductDialog"
       />
@@ -12,41 +21,47 @@
     <DataTable
       :value="productStore.products"
       responsiveLayout="scroll"
-      class="p-datatable-sm shadow-sm border rounded"
+      class="p-datatable-sm"
       :rowHover="true"
     >
+      <template #empty>
+        <div class="flex flex-col items-center justify-center py-16 text-center">
+          <i class="pi pi-box text-4xl text-gray-300 mb-3"></i>
+          <h3 class="text-base font-medium text-gray-400">{{ t('products.empty.title') }}</h3>
+          <p class="text-sm text-gray-400 mt-1">{{ t('products.empty.subtitle') }}</p>
+        </div>
+      </template>
+
       <Column
         field="name"
-        header="Product Name"
+        :header="t('products.table.productName')"
         sortable
         class="font-semibold"
-        style="width: 20%"
       ></Column>
 
       <Column
         field="description"
-        header="Description"
-        style="width: 25%"
+        :header="t('products.table.description')"
       ></Column>
 
-      <Column header="Variations & Stock" style="width: 40%">
+      <Column :header="t('products.table.variationsAndStock')">
         <template #body="slotProps">
-          <div class="space-y-2">
+          <div class="space-y-1.5">
             <div
               v-for="variation in slotProps.data.variations"
               :key="variation.id"
-              class="flex items-center justify-between p-2 bg-[#fff5f9] rounded border border-gray-100"
+              class="flex items-center justify-between p-1.5 bg-[#fff5f9] rounded border border-gray-100"
             >
               <div class="flex flex-col">
-                <span class="text-sm font-medium">
-                  {{ variation.variation_name || "Standard" }}
+                <span class="text-xs font-medium">
+                  {{ variation.variation_name || t('products.table.standard') }}
                 </span>
                 <span class="text-xs text-gray-500">
-                  Price: {{ variation.price }}€
+                  {{ t('products.table.price') }}: {{ variation.price }}€
                 </span>
               </div>
 
-              <div class="flex items-center gap-3">
+              <div class="flex items-center gap-2">
                 <Tag
                   :value="variation.stock_quantity"
                   :severity="getStockSeverity(variation.stock_quantity)"
@@ -73,21 +88,20 @@
         </template>
       </Column>
 
-      <Column header="Actions" style="width: 15%" headerClass="text-center">
+      <Column :header="t('common.actions')" headerClass="text-center">
         <template #body="slotProps">
-          <div class="gap-2">
+          <div class="flex gap-2">
             <Button
               icon="pi pi-pencil"
               class="p-button-rounded p-button-text p-button-sm"
-              v-tooltip.top="'Edit Product'"
+              v-tooltip.top="t('products.tooltips.edit')"
               @click="editProduct(slotProps.data)"
             />
             <Button
               icon="pi pi-trash"
-              c
               class="p-button-rounded p-button-text p-button-sm"
               severity="danger"
-              v-tooltip.top="'Delete Product'"
+              v-tooltip.top="t('products.tooltips.delete')"
               @click="confirmDeleteProduct(slotProps.data)"
             />
           </div>
@@ -95,24 +109,25 @@
       </Column>
     </DataTable>
 
+    <!-- Product Dialog -->
     <Dialog
       v-model:visible="productDialog"
-      :header="isEdit ? 'Edit Product' : 'Create New Product'"
+      :header="isEdit ? t('products.dialog.editProduct') : t('products.dialog.createProduct')"
       modal
       :style="{ width: '50vw' }"
     >
-      <div class="flex flex-col gap-4">
-        <div class="field">
-          <label for="name" class="font-bold block mb-2">Product Name</label>
+      <div class="space-y-4">
+        <div>
+          <label for="name" class="block text-sm font-medium text-gray-700 mb-1">{{ t('products.dialog.productName') }}</label>
           <InputText
             id="name"
             v-model="newProduct.name"
             class="w-full"
-            placeholder="e.g., Shampoo"
+            :placeholder="t('products.dialog.productNamePlaceholder')"
           />
         </div>
-        <div class="field">
-          <label for="desc" class="font-bold block mb-2">Description</label>
+        <div>
+          <label for="desc" class="block text-sm font-medium text-gray-700 mb-1">{{ t('products.dialog.description') }}</label>
           <Textarea
             id="desc"
             v-model="newProduct.description"
@@ -123,9 +138,9 @@
 
         <div class="border-t pt-4">
           <div class="flex justify-between items-center mb-3">
-            <span class="font-bold">Variations (Price & Stock per Type)</span>
+            <span class="text-sm font-semibold text-gray-700">{{ t('products.dialog.variations') }}</span>
             <Button
-              label="Add Variation"
+              :label="t('products.dialog.addVariation')"
               icon="pi pi-plus"
               size="small"
               text
@@ -136,18 +151,18 @@
           <div
             v-for="(v, index) in newProduct.variations"
             :key="index"
-            class="flex gap-2 mb-2 items-start bg-gray-50 p-2 rounded"
+            class="flex gap-2 mb-2 items-start bg-gray-50 border border-gray-100 p-3 rounded-lg"
           >
             <div class="flex-1">
-              <label class="text-xs font-semibold">Variation Name</label>
+              <label class="block text-xs font-medium text-gray-600 mb-1">{{ t('products.dialog.variationName') }}</label>
               <InputText
                 v-model="v.variation_name"
                 class="w-full h-full p-inputtext-sm"
-                placeholder="e.g., 250ml"
+                :placeholder="t('products.dialog.variationNamePlaceholder')"
               />
             </div>
             <div class="flex-1">
-              <label class="text-xs font-semibold">Price (€)</label>
+              <label class="block text-xs font-medium text-gray-600 mb-1">{{ t('products.dialog.price') }}</label>
               <InputNumber
                 v-model="v.price"
                 mode="decimal"
@@ -156,7 +171,7 @@
               />
             </div>
             <div class="flex-1">
-              <label class="text-xs font-semibold">Initial Stock</label>
+              <label class="block text-xs font-medium text-gray-600 mb-1">{{ t('products.dialog.initialStock') }}</label>
               <InputNumber
                 v-model="v.stock_quantity"
                 class="p-inputtext-sm"
@@ -169,6 +184,7 @@
               text
               @click="removeVariationRow(index)"
               v-if="newProduct.variations.length > 1"
+              class="mt-5"
             />
           </div>
         </div>
@@ -176,13 +192,13 @@
 
       <template #footer>
         <Button
-          label="Cancel"
+          :label="t('common.cancel')"
           icon="pi pi-times"
           text
           @click="productDialog = false"
         />
         <Button
-          label="Save Product"
+          :label="t('products.dialog.saveProduct')"
           icon="pi pi-check"
           @click="saveProduct"
           :disabled="!newProduct.name || newProduct.variations.length === 0"
@@ -190,9 +206,10 @@
       </template>
     </Dialog>
 
+    <!-- Stock Adjust Dialog -->
     <Dialog
       v-model:visible="stockDialog"
-      header="Adjust Stock"
+      :header="t('products.adjustStock')"
       modal
       :style="{ width: '300px' }"
     >
@@ -208,8 +225,8 @@
         />
       </div>
       <template #footer>
-        <Button label="Cancel" text @click="stockDialog = false" />
-        <Button label="Update" @click="confirmStockAdjustment" />
+        <Button :label="t('common.cancel')" text @click="stockDialog = false" />
+        <Button :label="t('common.save')" @click="confirmStockAdjustment" />
       </template>
     </Dialog>
 
@@ -219,9 +236,12 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
+import { useI18n } from "vue-i18n";
 import { useProductStore } from "../stores/products";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
+
+const { t } = useI18n();
 
 // --- Type Definitions to fix errors ---
 interface Variation {
@@ -271,7 +291,6 @@ const openNewProductDialog = () => {
 const editProduct = (product: Product) => {
   isEdit.value = true;
   newProduct.value = JSON.parse(JSON.stringify(product));
-  console.log(newProduct);
   productDialog.value = true;
 };
 
@@ -286,15 +305,15 @@ const adjustStock = async (inventoryId: any, amount: number) => {
     await productStore.updateStock(inventoryId, amount);
     toast.add({
       severity: "success",
-      summary: "Success",
-      detail: "Stock updated",
+      summary: t('common.success'),
+      detail: t('products.toast.stockUpdated'),
       life: 3000,
     });
   } catch (err) {
     toast.add({
       severity: "error",
-      summary: "Error",
-      detail: "Update failed",
+      summary: t('common.error'),
+      detail: t('products.toast.stockFailed'),
       life: 3000,
     });
   }
@@ -339,8 +358,8 @@ const saveProduct = async () => {
     if (res.ok) {
       toast.add({
         severity: "success",
-        summary: "Success",
-        detail: isEdit.value ? "Product updated" : "Product created",
+        summary: t('common.success'),
+        detail: isEdit.value ? t('products.toast.updated') : t('products.toast.created'),
         life: 3000,
       });
       productDialog.value = false;
@@ -349,16 +368,16 @@ const saveProduct = async () => {
       const errorData = await res.json();
       toast.add({
         severity: "error",
-        summary: "Error",
-        detail: errorData.error || "Operation failed",
+        summary: t('common.error'),
+        detail: errorData.error || t('products.toast.saveFailed'),
         life: 3000,
       });
     }
   } catch (err) {
     toast.add({
       severity: "error",
-      summary: "Error",
-      detail: "Network error",
+      summary: t('common.error'),
+      detail: t('products.toast.saveFailed'),
       life: 3000,
     });
   }
@@ -366,8 +385,8 @@ const saveProduct = async () => {
 
 const confirmDeleteProduct = (product: Product) => {
   confirm.require({
-    message: `Are you sure you want to delete "${product.name}"? This will also remove all stock.`,
-    header: "Danger Zone",
+    message: t('products.confirmDelete', { name: product.name }),
+    header: t('common.confirmDelete'),
     icon: "pi pi-exclamation-triangle",
     acceptClass: "p-button-danger",
     accept: async () => {
@@ -382,8 +401,8 @@ const confirmDeleteProduct = (product: Product) => {
         if (res.ok) {
           toast.add({
             severity: "success",
-            summary: "Deleted",
-            detail: "Product removed",
+            summary: t('common.success'),
+            detail: t('products.toast.deleted'),
             life: 3000,
           });
           await productStore.fetchProducts();
@@ -393,8 +412,8 @@ const confirmDeleteProduct = (product: Product) => {
       } catch (err) {
         toast.add({
           severity: "error",
-          summary: "Error",
-          detail: "Could not delete product",
+          summary: t('common.error'),
+          detail: t('products.toast.deleteFailed'),
           life: 3000,
         });
       }
