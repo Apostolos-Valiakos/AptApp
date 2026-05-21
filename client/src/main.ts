@@ -44,6 +44,7 @@ import DataTable from "primevue/datatable";
 import Column from "primevue/column";
 import Chart from "primevue/chart";
 import { useThemeStore } from "./stores/themes";
+import { i18n } from "./i18n";
 
 const MyPreset = definePreset(Aura, {
   semantic: {
@@ -63,6 +64,7 @@ const initApp = async () => {
   await themeStore.fetchAndApplyTheme();
 
   app.use(router);
+  app.use(i18n);
   app.use(ToastService);
   app.use(ConfirmationService);
 
