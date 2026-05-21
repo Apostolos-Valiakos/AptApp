@@ -1,172 +1,136 @@
 <template>
   <div class="flex flex-col h-[calc(100vh-64px)] bg-white" @click="closeMenus">
-    <div
-      class="flex flex-col md:flex-row justify-between items-center px-4 md:px-6 py-4 border-b border-gray-200 flex-shrink-0 gap-4"
-    >
-      <div class="flex items-center justify-between w-full md:w-auto space-x-2">
-        <div class="flex bg-[var(--p-primary-100)] rounded-lg p-1">
-          <button
-            @click="calendarApi?.today()"
-            class="px-4 py-1.5 text-sm font-medium text-[var(--p-primary-700)] hover:bg-white hover:shadow-sm rounded-md transition-all"
-          >
-            Today
-          </button>
-        </div>
-        <div class="flex items-center space-x-2">
-          <button
-            @click="calendarApi?.prev()"
-            class="p-1.5 hover:bg-[var(--p-primary-100)] rounded-full text-gray-500 transition-colors"
-          >
-            <svg
-              class="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M15 19l-7-7 7-7"
-              ></path>
-            </svg>
-          </button>
-          <h2
-            class="text-sm md:text-lg font-semibold text-gray-800 min-w-[140px] md:min-w-[200px] text-center select-none"
-          >
-            {{ currentTitle }}
-          </h2>
-          <button
-            @click="calendarApi?.next()"
-            class="p-1.5 hover:bg-gray-100 rounded-full text-gray-500 transition-colors"
-          >
-            <svg
-              class="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M9 5l7 7-7 7"
-              ></path>
-            </svg>
-          </button>
-        </div>
+
+    <!-- ===== TOOLBAR ===== -->
+    <div class="flex flex-wrap items-center justify-between gap-3 px-4 md:px-6 py-3 border-b border-gray-100 bg-white flex-shrink-0">
+
+      <!-- LEFT: Navigation -->
+      <div class="flex items-center gap-2">
+        <button
+          @click="calendarApi?.prev()"
+          class="p-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-800 transition-colors"
+          title="Previous"
+        >
+          <i class="pi pi-chevron-left text-sm"></i>
+        </button>
+        <button
+          @click="calendarApi?.today()"
+          class="px-3 py-1.5 text-xs font-bold text-[var(--p-primary-700)] bg-[var(--p-primary-50)] hover:bg-[var(--p-primary-100)] rounded-lg transition-colors"
+        >
+          Today
+        </button>
+        <button
+          @click="calendarApi?.next()"
+          class="p-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-800 transition-colors"
+          title="Next"
+        >
+          <i class="pi pi-chevron-right text-sm"></i>
+        </button>
+        <h2 class="text-sm md:text-base font-bold text-gray-800 min-w-[120px] md:min-w-[180px] select-none">
+          {{ currentTitle }}
+        </h2>
       </div>
 
-      <div
-        class="flex items-center gap-2 overflow-x-auto w-full md:w-auto pb-1 md:pb-0 scrollbar-hide"
-      >
-        <div
-          class="hidden sm:flex items-center bg-gray-100 rounded-lg p-1 mr-2"
-        >
+      <!-- RIGHT: Controls -->
+      <div class="flex items-center gap-2 flex-wrap">
+
+        <!-- Status Filter -->
+        <div class="flex items-center bg-gray-100 rounded-lg p-0.5 gap-0.5">
           <button
-            @click="zoomOut"
-            class="p-1.5 text-gray-600 hover:bg-white hover:shadow-sm rounded-md transition-all"
-            title="Zoom Out"
+            v-for="opt in statusFilterOptions"
+            :key="opt.value"
+            @click="statusFilter = opt.value"
+            :class="statusFilter === opt.value
+              ? 'bg-white shadow-sm text-gray-900 font-semibold'
+              : 'text-gray-500 hover:text-gray-700'"
+            class="px-2.5 py-1.5 rounded-md text-xs font-medium transition-all whitespace-nowrap"
           >
-            <svg
-              class="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M20 12H4"
-              ></path>
-            </svg>
-          </button>
-          <span class="text-xs font-medium text-gray-500 px-2">Zoom</span>
-          <button
-            @click="zoomIn"
-            class="p-1.5 text-gray-600 hover:bg-white hover:shadow-sm rounded-md transition-all"
-            title="Zoom In"
-          >
-            <svg
-              class="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M12 4v16m8-8H4"
-              ></path>
-            </svg>
+            <i v-if="opt.icon" :class="opt.icon + ' mr-1 text-[10px]'"></i>
+            {{ opt.label }}
           </button>
         </div>
 
-        <div class="relative">
-          <select
-            :value="currentView"
-            @change="(e) => changeView((e.target as HTMLSelectElement).value)"
-            class="appearance-none pl-4 pr-10 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all min-w-[100px] cursor-pointer"
+        <!-- View Toggle -->
+        <div class="flex items-center bg-gray-100 rounded-lg p-0.5 gap-0.5">
+          <button
+            v-for="view in viewOptions"
+            :key="view.value"
+            @click="changeView(view.value)"
+            :class="currentView === view.value
+              ? 'bg-white shadow-sm text-gray-900 font-semibold'
+              : 'text-gray-500 hover:text-gray-700'"
+            class="px-3 py-1.5 rounded-md text-xs font-medium transition-all"
           >
-            <option
-              v-for="view in viewOptions"
-              :key="view.value"
-              :value="view.value"
-            >
-              {{ view.label }}
-            </option>
-          </select>
-          <div
-            class="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none"
+            {{ view.label }}
+          </button>
+        </div>
+
+        <!-- Zoom -->
+        <div class="hidden sm:flex items-center bg-gray-100 rounded-lg p-0.5">
+          <button
+            @click="zoomOut"
+            class="p-1.5 rounded-md text-gray-500 hover:bg-white hover:shadow-sm hover:text-gray-800 transition-all"
+            title="Zoom Out"
           >
-            <svg
-              class="w-4 h-4 text-gray-500"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M19 9l-7 7-7-7"
-              ></path>
-            </svg>
-          </div>
+            <i class="pi pi-minus text-xs"></i>
+          </button>
+          <span class="text-xs font-medium text-gray-400 px-1.5">Zoom</span>
+          <button
+            @click="zoomIn"
+            class="p-1.5 rounded-md text-gray-500 hover:bg-white hover:shadow-sm hover:text-gray-800 transition-all"
+            title="Zoom In"
+          >
+            <i class="pi pi-plus text-xs"></i>
+          </button>
         </div>
 
         <ColorModelToggle />
 
+        <!-- Add New -->
         <button
           @click="openNewAppointment"
-          class="bg-[var(--p-primary-color)] hover:bg-white text-white hover:text-[var(--p-primary-color)] border border-[var(--p-primary-color)] px-4 md:px-6 py-2.5 rounded-full text-sm font-medium shadow-lg transform active:scale-95 transition-all flex items-center gap-2 flex-shrink-0"
+          class="flex items-center gap-1.5 bg-[var(--p-primary-color)] hover:brightness-105 text-white px-3 md:px-4 py-2 rounded-lg text-xs font-bold shadow-sm active:scale-95 transition-all flex-shrink-0"
         >
-          <span class="hidden sm:inline">Add New</span>
-          <span class="sm:hidden"><i class="pi pi-plus"></i></span>
+          <i class="pi pi-plus text-xs"></i>
+          <span class="hidden sm:inline">New</span>
         </button>
-        <button
-          @click="openSwapDialog"
-          class="bg-white hover:bg-[var(--p-primary-color)] text-[var(--p-primary-color)] hover:text-white border border-[var(--p-primary-color)] px-4 md:px-6 py-2.5 rounded-full text-sm font-medium shadow-lg transform active:scale-95 transition-all flex items-center gap-2 flex-shrink-0"
-        >
-          <span class="hidden sm:inline">Swap</span>
-          <span class="sm:hidden">
-            <i class="pi pi-arrow-right-arrow-left"> </i>
-          </span>
-        </button>
-        <button
-          @click="reorderDialogVisible = true"
-          class="bg-[var(--p-primary-color)] hover:bg-white text-white hover:text-[var(--p-primary-color)] border border-[var(--p-primary-color)] px-4 md:px-6 py-2.5 rounded-full text-sm font-medium shadow-lg transform active:scale-95 transition-all flex items-center gap-2 flex-shrink-0"
-          title="Reorder Staff"
-        >
-          <i class="pi pi-sort-alt"></i>
-          <span class="hidden sm:inline">Reorder Staff</span>
-        </button>
+
+        <!-- Secondary: Swap + Reorder -->
+        <div class="flex items-center gap-1">
+          <button
+            @click="openSwapDialog"
+            class="p-2 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-800 transition-colors flex-shrink-0"
+            title="Swap Appointments"
+          >
+            <i class="pi pi-arrow-right-arrow-left text-sm"></i>
+          </button>
+          <button
+            @click="reorderDialogVisible = true"
+            class="p-2 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-800 transition-colors flex-shrink-0"
+            title="Reorder Staff"
+          >
+            <i class="pi pi-sort-alt text-sm"></i>
+          </button>
+        </div>
       </div>
     </div>
 
-    <div class="flex-grow overflow-auto relative bg-gray-50/50">
+    <!-- ===== CALENDAR AREA ===== -->
+    <div class="flex-grow overflow-auto relative">
+
+      <!-- Loading overlay -->
+      <transition name="fade">
+        <div
+          v-if="isFetching"
+          class="absolute inset-0 z-10 bg-white/60 backdrop-blur-[1px] flex items-center justify-center pointer-events-none"
+        >
+          <div class="flex items-center gap-2 bg-white rounded-full px-4 py-2 shadow-md border border-gray-100">
+            <i class="pi pi-spin pi-spinner text-[var(--p-primary-color)]"></i>
+            <span class="text-xs font-medium text-gray-500">Loading…</span>
+          </div>
+        </div>
+      </transition>
+
       <FullCalendar
         v-if="calendarResources.length > 0"
         ref="fullCalendar"
@@ -174,34 +138,26 @@
         class="h-full w-full"
       />
 
+      <!-- Empty state -->
       <div
         v-else
-        class="h-full flex flex-col items-center justify-center bg-gray-50"
+        class="h-full flex flex-col items-center justify-center bg-gray-50/50"
       >
-        <div
-          class="p-8 bg-white rounded-2xl shadow-sm text-center border border-gray-100"
-        >
-          <div
-            class="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mx-auto mb-4"
-          >
-            <svg
-              class="w-8 h-8"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
-              ></path>
-            </svg>
+        <div class="p-10 bg-white rounded-2xl shadow-sm text-center border border-gray-100 max-w-sm">
+          <div class="w-16 h-16 bg-[var(--p-primary-50)] text-[var(--p-primary-600)] rounded-full flex items-center justify-center mx-auto mb-4">
+            <i class="pi pi-users text-2xl"></i>
           </div>
-          <h3 class="text-xl font-bold text-gray-900 mb-2">No Team Members</h3>
-          <p class="text-gray-500 max-w-sm mb-6">
-            Add staff members to your database to start scheduling appointments.
+          <h3 class="text-lg font-bold text-gray-900 mb-2">No Team Members</h3>
+          <p class="text-sm text-gray-500 mb-6">
+            Add staff members to start scheduling appointments.
           </p>
+          <a
+            href="/app/staff"
+            class="inline-flex items-center gap-2 bg-[var(--p-primary-color)] text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:brightness-105 transition-all"
+          >
+            <i class="pi pi-plus text-xs"></i>
+            Add Staff
+          </a>
         </div>
       </div>
     </div>
@@ -222,6 +178,7 @@
       @swap="handleSwap"
     />
   </div>
+
   <StaffReorderDialog
     v-model:visible="reorderDialogVisible"
     :staff-list="calendarStore.resources"
@@ -236,6 +193,7 @@ import resourceTimeGridPlugin from "@fullcalendar/resource-timegrid";
 import scrollGridPlugin from "@fullcalendar/scrollgrid";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin from "@fullcalendar/interaction";
+import timeGridPlugin from "@fullcalendar/timegrid";
 import { useCalendarStore } from "../stores/calendar";
 import { useSettingsStore } from "../stores/settings";
 import BookingDialog from "../components/BookingDialog.vue";
@@ -247,7 +205,6 @@ import elLocale from "@fullcalendar/core/locales/el";
 import StaffReorderDialog from "../components/StaffReorderDialog.vue";
 
 const reorderDialogVisible = ref(false);
-
 const authStore = useAuthStore();
 const toast = useToast();
 const calendarStore = useCalendarStore();
@@ -262,112 +219,106 @@ const currentTitle = ref("");
 const currentView = ref("resourceTimeGridDay");
 const currentStart = ref("");
 const currentEnd = ref("");
-// showViewMenu is no longer needed with native select
-const showViewMenu = ref(false);
+const isFetching = ref(false);
 
-const openSwapDialog = () => {
-  swapDialogVisible.value = true;
-};
+// --- Status filter ---
+const statusFilter = ref<"all" | "active" | "cancelled">("all");
+const statusFilterOptions = [
+  { label: "All", value: "all", icon: "" },
+  { label: "Active", value: "active", icon: "pi pi-check-circle" },
+  { label: "Cancelled", value: "cancelled", icon: "pi pi-times-circle" },
+];
 
-const handleSwap = async (swapData: {
-  appointment1_id: number;
-  appointment2_id: number;
-}) => {
+// --- View options ---
+const viewOptions = [
+  { label: "Day",   value: "resourceTimeGridDay" },
+  { label: "Week",  value: "resourceTimeGridWeek" },
+  { label: "Month", value: "dayGridMonth" },
+];
+
+const calendarApi = computed(() => fullCalendar.value?.getApi());
+
+// --- Swap ---
+const openSwapDialog = () => { swapDialogVisible.value = true; };
+
+const handleSwap = async (swapData: { appointment1_id: number; appointment2_id: number }) => {
   try {
     const res = await fetch("/api/v1/appointments/swap", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        appointment1_id: swapData.appointment1_id,
-        appointment2_id: swapData.appointment2_id,
-      }),
+      body: JSON.stringify(swapData),
     });
-
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error || "Swap failed");
     }
-
     const data = await res.json();
     if (!data.success) throw new Error("Swap failed");
 
     swapDialogVisible.value = false;
-    await calendarStore.fetchAppointments(currentStart.value, currentEnd.value); // <-- Changed from fetchAll()
-
-    toast.add({
-      severity: "success",
-      summary: "Swap Complete",
-      detail: "Appointments swapped successfully.",
-      life: 2500,
-    });
+    await calendarStore.fetchAppointments(currentStart.value, currentEnd.value);
+    toast.add({ severity: "success", summary: "Swap Complete", detail: "Appointments swapped successfully.", life: 2500 });
   } catch (err: any) {
-    console.error("SWAP ERROR", err);
-    toast.add({
-      severity: "error",
-      summary: "Swap Failed",
-      detail: err.message || "Unable to swap appointments.",
-      life: 3000,
-    });
+    toast.add({ severity: "error", summary: "Swap Failed", detail: err.message || "Unable to swap appointments.", life: 3000 });
   }
 };
+
 const handleReorderSave = async (newOrder: any[]) => {
   await calendarStore.updateResourceOrder(newOrder);
-  toast.add({
-    severity: "success",
-    summary: "Success",
-    detail: "Staff order updated",
-    life: 3000,
-  });
+  toast.add({ severity: "success", summary: "Success", detail: "Staff order updated", life: 3000 });
 };
-// Zoom State
+
+// --- Zoom ---
 const slotDurationMinutes = ref(30);
 
-// --- View Configuration ---
-const viewOptions = [
-  { label: "Day", value: "resourceTimeGridDay" },
-  { label: "Week", value: "resourceTimeGridWeek" },
-  { label: "Month", value: "dayGridMonth" },
-];
+const zoomIn = () => {
+  if (slotDurationMinutes.value > 10) { slotDurationMinutes.value -= 10; updateSlotDuration(); }
+};
+const zoomOut = () => {
+  if (slotDurationMinutes.value < 120) { slotDurationMinutes.value += 10; updateSlotDuration(); }
+};
+const updateSlotDuration = () => {
+  const api = calendarApi.value;
+  if (api) {
+    const h = Math.floor(slotDurationMinutes.value / 60).toString().padStart(2, "0");
+    const m = (slotDurationMinutes.value % 60).toString().padStart(2, "0");
+    api.setOption("slotDuration", `${h}:${m}:00`);
+  }
+};
 
-const currentViewLabel = computed(
-  () => viewOptions.find((v) => v.value === currentView.value)?.label || "Day",
-);
+const changeView = (viewName: string) => {
+  const api = calendarApi.value;
+  if (api) {
+    api.changeView(viewName);
+    currentView.value = viewName;
+    currentTitle.value = api.view.title;
+  }
+};
 
-const calendarApi = computed(() => fullCalendar.value?.getApi());
+const closeMenus = () => {};
 
-// --- Color Generation ---
+// --- Color helpers ---
 const stringToPastelColor = (str: string) => {
   if (!str) return "#e5e7eb";
   let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = str.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const h = Math.abs(hash) % 360;
-  return `hsl(${h}, 70%, 90%)`;
+  for (let i = 0; i < str.length; i++) { hash = str.charCodeAt(i) + ((hash << 5) - hash); }
+  return `hsl(${Math.abs(hash) % 360}, 70%, 90%)`;
 };
 
 const getCategoryColor = (category: string) => {
   const map: Record<string, string> = {
-    Hair: "#bae6fd",
-    Nails: "#fde047",
-    Massage: "#99f6e4",
-    Face: "#fbcfe8",
-    Body: "#fed7aa",
-    Barber: "#bfdbfe",
-    Spa: "#a5f3fc",
+    Hair: "#bae6fd", Nails: "#fde047", Massage: "#99f6e4",
+    Face: "#fbcfe8", Body: "#fed7aa", Barber: "#bfdbfe", Spa: "#a5f3fc",
   };
   return map[category] || stringToPastelColor(category);
 };
 
-// --- Computed Data ---
+// --- Computed data ---
 const calendarResources = computed(() => {
   const res = calendarStore.resources;
   if (!Array.isArray(res)) return [];
 
-  // 1. Filter Active Staff
   let filtered = res.filter((r: any) => r.is_active);
-
-  // 2. Apply "My Schedule" Filter
   if (settings.resourceFilter === "me" && authStore.user?.staff_id) {
     filtered = filtered.filter((r: any) => r.id === authStore.user.staff_id);
   }
@@ -376,9 +327,7 @@ const calendarResources = computed(() => {
     id: r.id.toString(),
     title: r.name,
     eventBackgroundColor: "#f3f4f6",
-    imageUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(
-      r.name,
-    )}&background=random&color=fff&rounded=true&bold=true`,
+    imageUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(r.name)}&background=random&color=fff&rounded=true&bold=true`,
   }));
 });
 
@@ -387,21 +336,20 @@ const calendarEvents = computed(() => {
   if (!Array.isArray(appointments)) return [];
 
   const events: any[] = [];
-
   appointments.forEach((appt) => {
-    if (!appt.services || appt.services.length === 0) {
-      return;
-    }
+    if (!appt.services || appt.services.length === 0) return;
+
+    // Apply status filter
+    const status = appt.status || "new";
+    if (statusFilter.value === "active" && (status === "cancelled" || status === "no_show")) return;
+    if (statusFilter.value === "cancelled" && status !== "cancelled" && status !== "no_show") return;
 
     appt.services.forEach((svc: any, index: number) => {
       const bgColor = getCategoryColor(svc.service_name || "General");
       const duration = svc.duration_minutes || 60;
-      let endTime = null;
-      if (svc.start_time) {
-        endTime = new Date(
-          new Date(svc.start_time).getTime() + duration * 60000,
-        ).toISOString();
-      }
+      const endTime = svc.start_time
+        ? new Date(new Date(svc.start_time).getTime() + duration * 60000).toISOString()
+        : null;
 
       events.push({
         id: `${appt.id}_${index}`,
@@ -418,20 +366,13 @@ const calendarEvents = computed(() => {
           appointmentId: appt.id,
           group_id: appt.group_id,
           serviceIndex: index,
-          fullAppointment: {
-            ...appt,
-            group_id: appt.group_id,
-            products: appt.products || [],
-          },
-          client_name: `${appt.first_name || "Unknown"} ${
-            appt.last_name || ""
-          }`,
+          fullAppointment: { ...appt, group_id: appt.group_id, products: appt.products || [] },
+          client_name: `${appt.first_name || "Unknown"} ${appt.last_name || ""}`,
           service_name: svc.service_name || "Service",
         },
       });
     });
   });
-
   return events;
 });
 
@@ -443,88 +384,36 @@ const openNewAppointment = () => {
 
 const handleSave = async () => {
   dialogVisible.value = false;
-  await calendarStore.fetchAppointments(currentStart.value, currentEnd.value); // <-- Changed from fetchAll()
+  await calendarStore.fetchAppointments(currentStart.value, currentEnd.value);
 };
+
+const prepareServicesForUpdate = (services: any[]) =>
+  services.map((s) => ({
+    ...s,
+    price_override: s.price_override !== undefined ? s.price_override : Number(s.price || 0),
+    duration_override: s.duration_override !== undefined ? s.duration_override : s.duration_minutes,
+  }));
 
 const updateAppointment = async (id: string, updates: any) => {
   try {
     const token = localStorage.getItem("token");
-    await fetch(`/api/v1/appointments/${id}`, {
+    const res = await fetch(`/api/v1/appointments/${id}`, {
       method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify(updates),
     });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || "Update failed");
+    }
     await calendarStore.fetchAppointments(currentStart.value, currentEnd.value);
-  } catch (e) {
-    console.error("Update failed", e);
-    alert("Failed to update appointment");
+  } catch (e: any) {
+    toast.add({ severity: "error", summary: "Update Failed", detail: e.message || "Failed to update appointment", life: 3000 });
   }
 };
 
-const zoomIn = () => {
-  if (slotDurationMinutes.value > 10) {
-    slotDurationMinutes.value -= 10;
-    updateSlotDuration();
-  }
-};
+const getDayMinWidth = () => (window.innerWidth < 768 ? 130 : 160);
 
-const zoomOut = () => {
-  if (slotDurationMinutes.value < 120) {
-    slotDurationMinutes.value += 10;
-    updateSlotDuration();
-  }
-};
-
-const updateSlotDuration = () => {
-  const api = calendarApi.value;
-  if (api) {
-    const minutes = slotDurationMinutes.value;
-    const h = Math.floor(minutes / 60)
-      .toString()
-      .padStart(2, "0");
-    const m = (minutes % 60).toString().padStart(2, "0");
-    api.setOption("slotDuration", `${h}:${m}:00`);
-  }
-};
-
-// No longer needed
-const toggleViewMenu = () => {
-  showViewMenu.value = !showViewMenu.value;
-};
-
-const closeMenus = () => {
-  showViewMenu.value = false;
-};
-
-const changeView = (viewName: string) => {
-  const api = calendarApi.value;
-  if (api) {
-    api.changeView(viewName);
-    currentView.value = viewName;
-    currentTitle.value = api.view.title;
-  }
-  closeMenus();
-};
-
-const prepareServicesForUpdate = (services: any[]) => {
-  return services.map((s) => ({
-    ...s,
-    price_override:
-      s.price_override !== undefined ? s.price_override : Number(s.price || 0),
-    duration_override:
-      s.duration_override !== undefined
-        ? s.duration_override
-        : s.duration_minutes,
-  }));
-};
-const getDayMinWidth = () => {
-  // If mobile (less than 768px), use 60px (tight columns)
-  // If desktop, use 160px (wide columns for names)
-  return window.innerWidth < 768 ? 130 : 160;
-};
 // --- Calendar Options ---
 const calendarOptions = ref({
   schedulerLicenseKey: "CC-Attribution-NonCommercial-NoDerivatives",
@@ -533,18 +422,8 @@ const calendarOptions = ref({
   selectLongPressDelay: 350,
   eventResizableFromStart: true,
   locale: elLocale,
-  plugins: [
-    resourceTimeGridPlugin,
-    scrollGridPlugin,
-    dayGridPlugin,
-    interactionPlugin,
-  ],
-  titleFormat: {
-    weekday: "long", // Adds "Mon"
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  },
+  plugins: [resourceTimeGridPlugin, scrollGridPlugin, dayGridPlugin, interactionPlugin, timeGridPlugin],
+  titleFormat: { weekday: "long", year: "numeric", month: "short", day: "numeric" },
   resourceOrder: "sort_order",
   initialView: "resourceTimeGridDay",
   allDaySlot: false,
@@ -554,52 +433,45 @@ const calendarOptions = ref({
   slotMaxTime: "23:00:00",
   height: "100%",
   expandRows: true,
-  // dayMinWidth: 150,
   dayMinWidth: getDayMinWidth(),
-  datesSet: async (arg: any) => {
-    currentTitle.value = arg.view.title;
-    currentView.value = arg.view.type;
-
-    // Save the new date range
-    currentStart.value = arg.startStr;
-    currentEnd.value = arg.endStr;
-
-    // Fetch only the appointments for the active calendar view
-    if (calendarStore.fetchAppointments) {
-      await calendarStore.fetchAppointments(arg.startStr, arg.endStr);
-    }
-  },
-
-  // 2. Add this listener to handle screen resizing/rotation
-  windowResize: (arg: any) => {
-    if (fullCalendar.value) {
-      const api = fullCalendar.value.getApi();
-      api.setOption("dayMinWidth", getDayMinWidth());
-    }
-  },
   stickyHeaderDates: true,
   nowIndicator: true,
-  weekends: true, // Default enabled, can be toggled by prop if needed
-  headerToolbar: {
-    left: "prev,next today",
-    center: "title",
-    right: "dayGridMonth,timeGridWeek,timeGridDay",
-  },
+  weekends: true,
+  headerToolbar: false,
   editable: true,
   selectable: true,
   selectMirror: true,
   resources: [],
   events: [],
 
+  datesSet: async (arg: any) => {
+    currentTitle.value = arg.view.title;
+    currentView.value = arg.view.type;
+    currentStart.value = arg.startStr;
+    currentEnd.value = arg.endStr;
+    if (calendarStore.fetchAppointments) {
+      isFetching.value = true;
+      try {
+        await calendarStore.fetchAppointments(arg.startStr, arg.endStr);
+      } finally {
+        isFetching.value = false;
+      }
+    }
+  },
+
+  windowResize: () => {
+    if (fullCalendar.value) {
+      fullCalendar.value.getApi().setOption("dayMinWidth", getDayMinWidth());
+    }
+  },
+
   resourceLabelContent: (arg: any) => {
     const src = arg.resource.extendedProps.imageUrl;
     return {
       html: `
-        <div class="flex flex-col items-center justify-center py-2 group cursor-pointer hover:bg-gray-50 transition-colors w-full h-full">
-          <div class="relative">
-            <img src="${src}" class="w-8 h-8 rounded-full border-2 border-white shadow-sm mb-2 object-cover group-hover:scale-105 transition-transform" />
-          </div>
-          <div style="white-space: normal;" class="font-bold text-gray-800 text-[10px] md:text-sm mt-1 leading-tight w-full text-center px-1 break-words">
+        <div class="flex flex-col items-center justify-center py-2 w-full h-full">
+          <img src="${src}" class="w-8 h-8 rounded-full border-2 border-white shadow-sm mb-1.5 object-cover" />
+          <div style="white-space:normal;word-break:break-word;" class="font-bold text-gray-800 text-[10px] md:text-xs leading-tight text-center px-1">
             ${arg.resource.title}
           </div>
         </div>
@@ -610,70 +482,40 @@ const calendarOptions = ref({
   eventContent: (arg: any) => {
     const timeText = arg.timeText;
     const props = arg.event.extendedProps;
-    const apptStatus = props.fullAppointment?.status;
+    const status = props.fullAppointment?.status;
 
-    const isCancelled = apptStatus === "cancelled";
-    const isConfirmed = apptStatus === "confirmed";
-
+    const isCancelled = status === "cancelled" || status === "no_show";
+    const isConfirmed = status === "confirmed";
+    const isCompleted = status === "completed";
     const isMonthView = arg.view.type === "dayGridMonth";
     const start = arg.event.start;
     const end = arg.event.end;
-    const durationMins =
-      end && start ? (end.getTime() - start.getTime()) / 60000 : 60;
+    const durationMins = end && start ? (end.getTime() - start.getTime()) / 60000 : 60;
     const isShort = durationMins < 45;
 
     const paddingClass = isShort && !isMonthView ? "p-0.5 pl-1" : "p-2";
-    const titleClass =
-      isShort && !isMonthView
-        ? "text-[9px] md:text-[10px] leading-tight"
-        : "text-[10px] md:text-xs leading-tight";
+    const titleClass = isShort && !isMonthView ? "text-[9px] md:text-[10px] leading-tight" : "text-[10px] md:text-xs leading-tight";
 
-    const statusTextClasses = isCancelled
-      ? "line-through text-red-600"
-      : "text-gray-900";
-    const serviceTextClasses = isCancelled ? "text-red-500" : "opacity-80";
+    const textClass = isCancelled ? "line-through opacity-60 text-gray-500" : "text-gray-900";
+    const serviceClass = isCancelled ? "opacity-40 text-gray-500" : "opacity-80";
 
-    const showTime = !isShort && !isMonthView;
-    const showService = !isShort || isMonthView;
-
-    const doubleCheckHtml = isConfirmed
-      ? `
-    <div class="absolute top-1 right-1 flex items-center" style="color: #6b21a8;">
-      <i class="pi pi-check text-[10px]"></i>
-    </div>
-  `
+    const statusBadge = isConfirmed
+      ? `<span class="absolute top-1 right-1 text-violet-700"><i class="pi pi-check text-[9px]"></i></span>`
+      : isCompleted
+      ? `<span class="absolute top-1 right-1 text-green-600"><i class="pi pi-check-circle text-[9px]"></i></span>`
       : "";
 
     return {
       html: `
-      <div class="relative w-full ${paddingClass} flex flex-col leading-tight overflow-hidden rounded-md hover:brightness-95 transition-all ${
-        isMonthView ? "" : "h-full"
-      }">
-        ${doubleCheckHtml}
-        ${
-          showTime
-            ? `<div class="text-[9px] md:text-[12px] font-bold opacity-70 mb-0.5 ${isCancelled ? "text-red-400" : ""}">${timeText}</div>`
-            : ""
-        }
-        <div class="font-bold ${titleClass} pr-4 break-words whitespace-normal ${statusTextClasses}">
-          ${props.client_name}
-        </div>
-        ${
-          showService
-            ? `<div class="text-[9px] md:text-[12px] font-medium opacity-90 mt-0.5 break-words whitespace-normal ${serviceTextClasses}">
-                ${props.service_name}
-               </div>`
-            : ""
-        }
+      <div class="relative w-full ${paddingClass} flex flex-col leading-tight overflow-hidden rounded-md hover:brightness-95 transition-all ${isMonthView ? "" : "h-full"}">
+        ${statusBadge}
+        ${!isShort && !isMonthView ? `<div class="text-[9px] md:text-[11px] font-bold opacity-60 mb-0.5 ${isCancelled ? "text-red-400" : ""}">${timeText}</div>` : ""}
+        <div class="font-bold ${titleClass} pr-4 break-words whitespace-normal ${textClass}">${props.client_name}</div>
+        ${!isShort || isMonthView ? `<div class="text-[9px] md:text-[11px] font-medium mt-0.5 break-words whitespace-normal ${serviceClass}">${props.service_name}</div>` : ""}
       </div>
     `,
     };
   },
-
-  // datesSet: (arg: any) => {
-  //   currentTitle.value = arg.view.title;
-  //   currentView.value = arg.view.type;
-  // },
 
   eventClick: (info: any) => {
     const fullAppt = info.event.extendedProps.fullAppointment;
@@ -684,56 +526,40 @@ const calendarOptions = ref({
   },
 
   eventDrop: (info: any) => {
-    const { appointmentId, serviceIndex, fullAppointment } =
-      info.event.extendedProps;
+    const { appointmentId, serviceIndex, fullAppointment } = info.event.extendedProps;
     const newResourceId = info.newResource?.id;
     const start = info.event.start.getTime();
     const end = info.event.end.getTime();
-    const currentDurationMinutes = (end - start) / 60000;
-    let services = JSON.parse(JSON.stringify(fullAppointment.services));
-    services = prepareServicesForUpdate(services);
+    let services = prepareServicesForUpdate(JSON.parse(JSON.stringify(fullAppointment.services)));
     if (services[serviceIndex]) {
       services[serviceIndex].start_time = info.event.start.toISOString();
-      services[serviceIndex].duration_minutes = currentDurationMinutes;
-      services[serviceIndex].duration_override = currentDurationMinutes;
-      if (newResourceId) {
-        services[serviceIndex].staff_id = newResourceId;
-      }
+      services[serviceIndex].duration_minutes = (end - start) / 60000;
+      services[serviceIndex].duration_override = (end - start) / 60000;
+      if (newResourceId) services[serviceIndex].staff_id = newResourceId;
     }
-    updateAppointment(appointmentId, {
-      ...fullAppointment,
-      services: services,
-    });
+    updateAppointment(appointmentId, { ...fullAppointment, services });
   },
 
   eventResize: (info: any) => {
-    const { appointmentId, serviceIndex, fullAppointment } =
-      info.event.extendedProps;
+    const { appointmentId, serviceIndex, fullAppointment } = info.event.extendedProps;
     const start = info.event.start.getTime();
     const end = info.event.end.getTime();
     const newDuration = (end - start) / 60000;
-    let services = JSON.parse(JSON.stringify(fullAppointment.services));
-    services = prepareServicesForUpdate(services);
+    let services = prepareServicesForUpdate(JSON.parse(JSON.stringify(fullAppointment.services)));
     if (services[serviceIndex]) {
       services[serviceIndex].start_time = info.event.start.toISOString();
       services[serviceIndex].duration_minutes = newDuration;
       services[serviceIndex].duration_override = newDuration;
     }
-    updateAppointment(appointmentId, {
-      ...fullAppointment,
-      services: services,
-    });
+    updateAppointment(appointmentId, { ...fullAppointment, services });
   },
 
   select: (info: any) => {
-    const resourceId = info.resource ? info.resource.id : null;
-    const resourceName = info.resource ? info.resource.title : "";
-
     selectedAppointment.value = {
       start_time: info.startStr,
       end_time: info.endStr,
-      staff_id: resourceId,
-      staff_name: resourceName,
+      staff_id: info.resource ? info.resource.id : null,
+      staff_name: info.resource ? info.resource.title : "",
     };
     dialogVisible.value = true;
   },
@@ -752,10 +578,24 @@ watch(
 
 onMounted(async () => {
   await calendarStore.fetchBaseResources();
-
-  nextTick(() => {
+  nextTick(async () => {
     if (fullCalendar.value) {
       currentTitle.value = fullCalendar.value.getApi().view.title;
+    }
+    const token = localStorage.getItem("token");
+    if (token) {
+      try {
+        const res = await fetch("/api/v1/shop", { headers: { Authorization: `Bearer ${token}` } });
+        if (res.ok) {
+          const shop = await res.json();
+          const api = calendarApi.value;
+          if (api) {
+            if (shop.slot_min_time) api.setOption("slotMinTime", shop.slot_min_time + ":00");
+            if (shop.slot_max_time) api.setOption("slotMaxTime", shop.slot_max_time + ":00");
+            if (typeof shop.show_weekends === "boolean") api.setOption("weekends", shop.show_weekends);
+          }
+        }
+      } catch {}
     }
   });
 });
@@ -797,7 +637,7 @@ onMounted(async () => {
 .fc-v-event {
   border: none;
   background-color: transparent;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
   border-radius: 6px;
 }
 .fc-v-event .fc-event-main {
@@ -805,27 +645,9 @@ onMounted(async () => {
   color: inherit;
 }
 
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(-5px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-.animate-fade-in {
-  animation: fadeIn 0.15s ease-out;
-}
+.fade-enter-active, .fade-leave-active { transition: opacity 0.2s ease; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
 
-/* Hide scrollbar for chrome/safari/opera */
-.scrollbar-hide::-webkit-scrollbar {
-  display: none;
-}
-/* Hide scrollbar for IE, Edge and Firefox */
-.scrollbar-hide {
-  -ms-overflow-style: none; /* IE and Edge */
-  scrollbar-width: none; /* Firefox */
-}
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
 </style>
