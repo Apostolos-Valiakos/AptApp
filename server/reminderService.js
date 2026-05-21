@@ -53,6 +53,8 @@ const processReminders = async () => {
 			c.last_name AS client_last_name,
             c.email AS client_email,
             s.name AS shop_name,
+            s.reply_email AS shop_reply_email,
+            s.reminder_hours_before AS reminder_hours_before,
             aps.start_time,
             (aps.start_time + (COALESCE(aps.duration_override, 60)) * INTERVAL '1 minute') AS end_time,
             ser.name AS service_name,
@@ -63,8 +65,8 @@ const processReminders = async () => {
         JOIN appointment_services aps ON a.id = aps.appointment_id
         JOIN services ser ON aps.service_id = ser.id
         LEFT JOIN staff st ON aps.staff_id = st.id
-        WHERE aps.start_time <= (NOW() + INTERVAL '24 hours 5 minutes') 
-            AND aps.start_time >= (NOW() + INTERVAL '23 hours 55 minutes')
+        WHERE aps.start_time <= (NOW() + ((s.reminder_hours_before || ' hours')::interval) + INTERVAL '5 minutes')
+            AND aps.start_time >= (NOW() + ((s.reminder_hours_before || ' hours')::interval) - INTERVAL '5 minutes')
             AND a.email_reminder_sent = false
             AND a.status != 'cancelled'
             AND c.receive_emails = true 
@@ -444,8 +446,8 @@ const processReminders = async () => {
 
       try {
         await transporter.sendMail({
-          from: `"${appt.shop_name} Booking" ${process.env.EMAIL_USER}`, //   ${process.env.EMAIL_USER}
-          replyTo: "vlachogianni@petalouda.blahogianni.gr",
+          from: `"${appt.shop_name} Booking" <${process.env.EMAIL_USER}>`,
+          ...(appt.shop_reply_email && { replyTo: appt.shop_reply_email }),
           to: appt.client_email,
           subject: "Υπενθύμιση Ραντεβού - 1 μέρα απομένει",
           html: htmlContent,
@@ -456,7 +458,6 @@ const processReminders = async () => {
           "UPDATE appointments SET email_reminder_sent = true WHERE id = $1",
           [appt.appointment_id],
         );
-        console.log(`Email sent to ${appt.client_email}`);
       } catch (mailErr) {
         console.error("Mail send error:", mailErr);
       }
