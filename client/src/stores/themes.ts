@@ -73,9 +73,7 @@ export const useThemeStore = defineStore("theme", {
         // Success! (No action needed, UI is already updated)
       } catch (error) {
         console.error("Theme save failed:", error);
-        // Revert UI on failure
         this.applyTheme(oldColor);
-        alert("Failed to save color. Please try again.");
       }
     },
   },

@@ -26,6 +26,7 @@ import InputNumber from "primevue/inputnumber";
 import DatePicker from "primevue/datepicker";
 import Textarea from "primevue/textarea";
 import Checkbox from "primevue/checkbox";
+import ProgressBar from "primevue/progressbar";
 import { MultiSelect } from "primevue";
 
 import Chip from "primevue/chip";
@@ -43,6 +44,7 @@ import DataTable from "primevue/datatable";
 import Column from "primevue/column";
 import Chart from "primevue/chart";
 import { useThemeStore } from "./stores/themes";
+import { i18n } from "./i18n";
 
 const MyPreset = definePreset(Aura, {
   semantic: {
@@ -62,6 +64,7 @@ const initApp = async () => {
   await themeStore.fetchAndApplyTheme();
 
   app.use(router);
+  app.use(i18n);
   app.use(ToastService);
   app.use(ConfirmationService);
 
@@ -87,6 +90,7 @@ const initApp = async () => {
   app.component("InputNumber", InputNumber);
   app.component("Chart", Chart);
   app.component("ColorPicker", ColorPicker);
+  app.component("ProgressBar", ProgressBar);
 
   app.component("DatePicker", DatePicker);
   app.component("Calendar", DatePicker);

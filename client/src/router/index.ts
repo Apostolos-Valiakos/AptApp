@@ -12,6 +12,8 @@ import ServicesView from "../views/ServicesView.vue";
 import ProductsView from "../views/ProductsView.vue";
 import FinancialsView from "../components/FinancialsView.vue";
 import profileView from "../views/profileView.vue";
+import ClientPortalView from "../views/ClientPortalView.vue";
+import SignupView from "../views/SignupView.vue";
 
 const routes = [
   {
@@ -27,6 +29,17 @@ const routes = [
         path: "login", // Αυτό είναι το "/login"
         name: "login",
         component: LoginView,
+      },
+      {
+        path: "/signup",
+        name: "Signup",
+        component: SignupView,
+      },
+      {
+        path: "/portal",
+        name: "ClientPortal",
+        component: ClientPortalView,
+        meta: { requiresAuth: true, role: "client" },
       },
       {
         path: "app", // Εσωτερικές σελίδες
@@ -59,12 +72,29 @@ const router = createRouter({
 });
 
 router.beforeEach((to, from, next) => {
-  const auth = useAuthStore();
-  if (to.meta.requiresAuth && !auth.isAuthenticated) {
-    next("/login");
-  } else {
-    next();
+  const authStore = useAuthStore();
+
+  if (to.meta.requiresAuth && !authStore.isAuthenticated) {
+    return next("/login");
   }
+
+  if (to.path === "/login" && authStore.isAuthenticated) {
+    return authStore.isClient ? next("/portal") : next("/app/scheduler");
+  }
+
+  if (to.path.startsWith("/app") && authStore.isClient) {
+    return next("/portal");
+  }
+
+  if (
+    to.path === "/portal" &&
+    !authStore.isClient &&
+    authStore.isAuthenticated
+  ) {
+    return next("/app/scheduler");
+  }
+
+  next();
 });
 
 export default router;

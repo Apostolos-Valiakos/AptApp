@@ -1,53 +1,83 @@
 <template>
   <div class="space-y-6 pt-4">
+    <!-- Balance summary card -->
     <div
-      class="bg-gray-900 text-white rounded-xl p-8 shadow-xl relative overflow-hidden"
+      class="bg-gradient-to-br from-gray-900 to-gray-800 text-white rounded-xl p-8 shadow-xl relative overflow-hidden"
     >
       <div class="flex justify-between items-center mb-1 opacity-70">
-        <span class="text-xs uppercase tracking-wider font-bold"
-          >Total Due Now</span
-        >
+        <span class="text-xs uppercase tracking-wider font-bold">{{ t('payment.totalBalance') }}</span>
       </div>
-      <div class="text-5xl font-extrabold mb-6 tracking-tight">
+      <div
+        class="text-5xl font-extrabold mb-6 tracking-tight"
+        :class="{ 'animate-pulse': totalDueNow > 0 }"
+      >
         €{{ totalDueNow.toFixed(2) }}
       </div>
-      <div class="space-y-2 border-t border-gray-700 pt-4 text-sm opacity-90">
-        <div class="flex justify-between">
-          <span>Current Appointment</span>
+      <div class="space-y-0 border-t border-gray-700 pt-4 text-sm opacity-90">
+        <div class="flex justify-between py-2 border-b border-gray-700/50">
+          <span>{{ t('payment.appointmentCost') }}</span>
           <span class="font-medium">€{{ currentApptTotal.toFixed(2) }}</span>
         </div>
-        <div
-          v-if="previousDebt > 0"
-          class="flex justify-between text-orange-300"
-        >
-          <span>Previous Unpaid Balance</span>
-          <span class="font-bold">+ €{{ previousDebt.toFixed(2) }}</span>
+        <div v-if="previousDebt > 0" class="flex justify-between py-2 border-b border-gray-700/50">
+          <span>{{ t('payment.previousDebt') }}</span>
+          <span class="font-medium text-red-300">+ €{{ previousDebt.toFixed(2) }}</span>
         </div>
-        <div class="border-t border-gray-700 pt-2 flex justify-between">
-          <span>Paid Today</span>
+        <div class="flex justify-between pt-2">
+          <span>{{ t('payment.paid') }}</span>
           <span>- €{{ depositAmount.toFixed(2) }}</span>
         </div>
       </div>
     </div>
 
     <div v-if="totalDueNow > 0" class="animate-fade-in">
+      <!-- Appointment settled info box -->
+      <div
+        v-if="depositAmount >= currentApptTotal && previousDebt > 0"
+        class="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl flex items-center gap-3"
+      >
+        <div
+          class="w-10 h-10 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center flex-shrink-0"
+        >
+          <i class="pi pi-info-circle"></i>
+        </div>
+        <div>
+          <h4 class="text-sm font-bold text-blue-900">{{ t('payment.settled') }}</h4>
+          <p class="text-xs text-blue-700">{{ t('payment.settledNote') }}</p>
+        </div>
+      </div>
+
+      <!-- Payment method -->
       <div class="mb-6">
         <label
           class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2"
-          >Payment Method</label
+          >{{ t('payment.paymentMethod') }}</label
         >
         <Dropdown
           :modelValue="paymentMethod"
           @update:modelValue="$emit('update:paymentMethod', $event)"
-          :options="['card', 'cash', 'gift-card']"
+          :options="['cash', 'card', 'bank-transfer']"
           class="w-full"
-        />
+        >
+          <template #value="slotProps">
+            <div class="flex items-center gap-2">
+              <i class="pi pi-credit-card text-gray-400"></i>
+              <span>{{ slotProps.value }}</span>
+            </div>
+          </template>
+        </Dropdown>
       </div>
+
+      <!-- Amount to pay -->
       <div class="mb-6">
         <label
           class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2"
-          >Amount to Pay</label
         >
+          {{
+            depositAmount >= currentApptTotal
+              ? t('payment.amountTowardBalance')
+              : t('payment.amountNow')
+          }}
+        </label>
         <InputNumber
           :modelValue="amountToPay"
           @update:modelValue="$emit('update:amountToPay', $event)"
@@ -58,8 +88,14 @@
           :max="totalDueNow"
         />
       </div>
+
+      <!-- Pay button -->
       <Button
-        label="Charge & Complete"
+        :label="
+          depositAmount >= currentApptTotal
+            ? t('payment.clearDebt')
+            : t('payment.chargeComplete')
+        "
         icon="pi pi-check"
         class="w-full !py-4 !text-lg !bg-green-600 hover:!bg-green-700 !border-none"
         :loading="loading"
@@ -67,26 +103,35 @@
       />
     </div>
 
+    <!-- Payment complete state -->
     <div
       v-else
-      class="text-center p-8 bg-green-50 rounded-xl border border-green-100"
+      class="text-center p-8 bg-green-50 rounded-xl border border-green-100 animate-fade-in"
     >
-      <h3 class="text-xl font-bold text-green-900">Payment Complete</h3>
-      <p class="text-green-700 text-sm">No outstanding balance.</p>
+      <div
+        class="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4"
+      >
+        <i class="pi pi-check text-3xl"></i>
+      </div>
+      <h3 class="text-xl font-bold text-green-900">{{ t('payment.paymentComplete') }}</h3>
+      <p class="text-green-700 text-sm">{{ t('payment.noOutstandingBalance') }}</p>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from "vue-i18n";
+const { t } = useI18n();
+
 defineProps({
   totalDueNow: { type: Number, default: 0 },
   currentApptTotal: { type: Number, default: 0 },
   previousDebt: { type: Number, default: 0 },
   depositAmount: { type: Number, default: 0 },
-  paymentMethod: { type: String, default: "card" },
   amountToPay: { type: Number, default: 0 },
   loading: { type: Boolean, default: false },
+  paymentMethod: { type: String, default: "cash" },
 });
 
-defineEmits(["pay", "update:paymentMethod", "update:amountToPay"]);
+defineEmits(["update:amountToPay", "update:paymentMethod", "pay"]);
 </script>

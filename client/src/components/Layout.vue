@@ -51,9 +51,10 @@
                 v-for="item in visibleNavItems"
                 :key="item.path"
                 :to="item.path"
-                active-class="bg-white/20 text-white shadow-inner"
+                active-class="bg-white/25 text-white font-bold shadow-inner"
                 class="px-4 py-2 rounded-xl text-sm font-bold text-white/90 hover:bg-white/10 hover:text-white transition-all"
               >
+                <i :class="item.icon + ' mr-1.5 text-xs'"></i>
                 {{ item.label }}
               </router-link>
             </div>
@@ -61,18 +62,31 @@
 
           <div class="flex items-center gap-4">
             <div class="hidden md:flex items-center gap-4">
+              <button
+                @click="toggleLocale"
+                class="bg-white/15 hover:bg-white/25 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all border border-white/20"
+                :title="t('nav.language')"
+              >
+                {{ locale === 'el' ? '🇬🇧 EN' : '🇬🇷 EL' }}
+              </button>
+
               <template v-if="authStore.isAuthenticated">
                 <router-link
                   to="/app/profile"
-                  class="text-sm font-bold text-white hover:text-white/80 transition-colors"
+                  class="flex items-center gap-2 text-white/90 hover:text-white transition-colors"
                 >
-                  {{ authStore.user?.username }}
+                  <div
+                    class="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm bg-[var(--p-primary-100)] text-[var(--p-primary-600)]"
+                  >
+                    {{ authStore.user?.username?.charAt(0).toUpperCase() }}
+                  </div>
+                  <span class="text-sm font-bold">{{ authStore.user?.username }}</span>
                 </router-link>
                 <button
                   @click="logout"
                   class="bg-white text-[var(--p-primary-color)] hover:bg-[var(--p-primary-50)] px-5 py-2 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95"
                 >
-                  Logout
+                  {{ t('nav.logout') }}
                 </button>
               </template>
 
@@ -81,7 +95,7 @@
                   @click="router.push('/login')"
                   class="bg-white text-[var(--p-primary-color)] hover:bg-[var(--p-primary-50)] px-6 py-2 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95"
                 >
-                  Login
+                  {{ t('nav.login') }}
                 </button>
               </template>
             </div>
@@ -119,16 +133,23 @@
               class="block px-4 py-3 rounded-xl text-base font-bold text-white hover:bg-white/10"
               @click="mobileMenuOpen = false"
             >
+              <i :class="item.icon + ' mr-2 text-sm'"></i>
               {{ item.label }}
             </router-link>
 
-            <div class="pt-4 mt-4 border-t border-white/20">
+            <div class="pt-4 mt-4 border-t border-white/20 space-y-1">
+              <button
+                @click="toggleLocale"
+                class="w-full text-left px-4 py-3 rounded-xl text-base font-bold text-white hover:bg-white/10"
+              >
+                {{ locale === 'el' ? '🇬🇧 Switch to English' : '🇬🇷 Αλλαγή σε Ελληνικά' }}
+              </button>
               <template v-if="authStore.isAuthenticated">
                 <button
                   @click="logout"
                   class="w-full text-left px-4 py-3 rounded-xl text-base font-bold text-white hover:bg-white/10"
                 >
-                  Logout ({{ authStore.user?.username }})
+                  {{ t('nav.logout') }} ({{ authStore.user?.username }})
                 </button>
               </template>
               <template v-else>
@@ -139,7 +160,7 @@
                   "
                   class="w-full text-left px-4 py-3 rounded-xl text-base font-bold text-white hover:bg-white/10"
                 >
-                  Login
+                  {{ t('nav.login') }}
                 </button>
               </template>
             </div>
@@ -158,7 +179,7 @@
       <router-view />
     </main>
 
-    <FloatingChat v-if="authStore.isAuthenticated" />
+    <FloatingChat v-if="authStore.isAuthenticated && !authStore.isClient" />
   </div>
 </template>
 
@@ -167,32 +188,54 @@ import { ref, onMounted, computed } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { useAuthStore } from "../stores/auth";
 import FloatingChat from "../components/FloatingChat.vue";
+import { useI18n } from "vue-i18n";
 
 const router = useRouter();
 const route = useRoute();
 const authStore = useAuthStore();
 const mobileMenuOpen = ref(false);
+const { t, locale } = useI18n();
 
-// Dark mode state kept for system preferences, though toggle is removed
 const isDark = ref(false);
 
-const navItems = [
-  { label: "Calendar", path: "/app/scheduler", ownerOnly: false },
-  { label: "Staff", path: "/app/staff", ownerOnly: true },
-  { label: "Services", path: "/app/services", ownerOnly: true },
-  // { label: "Products", path: "/app/products", ownerOnly: false },
-  { label: "Clients", path: "/app/clients", ownerOnly: false },
-  { label: "Analytics", path: "/app/financials", ownerOnly: true },
-];
+const navItems = computed(() => [
+  { label: t('nav.calendar'), path: "/app/scheduler", ownerOnly: false, icon: "pi pi-calendar" },
+  { label: t('nav.staff'), path: "/app/staff", ownerOnly: true, icon: "pi pi-users" },
+  { label: t('nav.services'), path: "/app/services", ownerOnly: true, icon: "pi pi-wrench" },
+  { label: t('nav.clients'), path: "/app/clients", ownerOnly: false, icon: "pi pi-address-book" },
+  { label: t('nav.analytics'), path: "/app/financials", ownerOnly: true, icon: "pi pi-chart-bar" },
+  {
+    label: t('nav.myPortal'),
+    path: "/portal",
+    ownerOnly: false,
+    adminOnly: false,
+    clientOnly: true,
+    icon: "pi pi-home",
+  },
+]);
+
+const toggleLocale = () => {
+  const next = locale.value === 'el' ? 'en' : 'el';
+  locale.value = next;
+  localStorage.setItem('locale', next);
+};
 
 const isOwner = computed(() => {
   const role = authStore.user?.role;
   return role === "admin" || role === "super_admin";
 });
+const isClient = computed(() => authStore.isClient);
 
 const visibleNavItems = computed(() => {
   if (!authStore.isAuthenticated) return [];
-  return navItems.filter((item) => !item.ownerOnly || isOwner.value);
+
+  return navItems.value.filter((item) => {
+    if (isClient.value) return item.clientOnly;
+    if (item.clientOnly) return false;
+    if (item.ownerOnly && !isOwner.value) return false;
+
+    return true;
+  });
 });
 
 const isFullWidthPage = computed(() => route.path.includes("/app/scheduler"));

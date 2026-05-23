@@ -1,137 +1,174 @@
 <template>
-  <div class="bg-white rounded-xl shadow-lg p-6">
-    <div class="flex justify-between mb-6">
-      <h2 class="text-2xl font-bold">Staff Management</h2>
-      <Button label="Add Staff" icon="pi pi-plus" @click="openNew" />
+  <div class="space-y-6">
+    <!-- Page Header -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+      <div class="flex justify-between items-center">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-[var(--p-primary-50)] flex items-center justify-center">
+            <i class="pi pi-id-card text-[var(--p-primary-600)]"></i>
+          </div>
+          <div>
+            <h1 class="text-2xl font-bold text-gray-900">{{ t('staff.title') }}</h1>
+            <p class="text-sm text-gray-500">{{ t('staff.addNew') }}</p>
+          </div>
+        </div>
+        <Button :label="t('staff.addNew')" icon="pi pi-plus" @click="openNew" />
+      </div>
     </div>
 
-    <DataTable
-      :value="filteredStaff"
-      :rows="10"
-      paginator
-      :rowsPerPageOptions="[10, 20, 50]"
-      responsiveLayout="scroll"
-      class="p-datatable-sm"
-    >
-      <template #header>
-        <div class="flex justify-between items-center">
-          <span class="p-input-icon-left">
-            <i class="pi pi-search mr-3" />
-            <InputText
-              v-model="search"
-              placeholder="Search staff..."
-              class="w-80"
-            />
-          </span>
-        </div>
-      </template>
-
-      <Column field="name" header="Name">
-        <template #body="slotProps">
-          <div class="font-bold">{{ slotProps.data.name }}</div>
-          <div class="text-xs text-gray-500">{{ slotProps.data.email }}</div>
-        </template>
-      </Column>
-      <Column field="phone" header="Phone" />
-      <Column field="specialty" header="Specialty" />
-
-      <Column header="Actions" style="width: 140px">
-        <template #body="slotProps">
-          <div class="flex gap-2">
-            <!-- Edit Button -->
-            <Button
-              icon="pi pi-pencil"
-              class="p-button-rounded p-button-text p-button-sm"
-              v-tooltip.top="'Edit Details'"
-              @click="editStaff(slotProps.data)"
-            />
-            <!-- NEW: Create Login Button -->
-            <Button
-              icon="pi pi-key"
-              class="p-button-rounded p-button-text p-button-sm p-button-secondary"
-              v-tooltip.top="'Create/Reset Login'"
-              @click="openLoginDialog(slotProps.data)"
-            />
-            <!-- NEW: Delete Button (Added for consistency) -->
-            <Button
-              icon="pi pi-trash"
-              class="p-button-rounded p-button-text p-button-danger p-button-sm"
-              v-tooltip.top="'Delete Staff'"
-              @click="confirmDelete(slotProps.data)"
-            />
+    <!-- Data Table Card -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+      <DataTable
+        :value="filteredStaff"
+        :rows="10"
+        paginator
+        :rowsPerPageOptions="[10, 20, 50]"
+        responsiveLayout="scroll"
+        class="p-datatable-sm"
+      >
+        <template #header>
+          <div class="flex justify-between items-center">
+            <span class="p-input-icon-left">
+              <i class="pi pi-search mr-3" />
+              <InputText
+                v-model="search"
+                :placeholder="t('staff.search')"
+                class="w-80"
+              />
+            </span>
           </div>
         </template>
-      </Column>
-    </DataTable>
+
+        <template #empty>
+          <div class="flex flex-col items-center justify-center py-16 text-center">
+            <i class="pi pi-users text-5xl text-gray-200 mb-4"></i>
+            <p class="text-gray-500 font-semibold text-lg">{{ t('staff.empty.title') }}</p>
+            <p class="text-gray-400 text-sm mt-1">{{ t('staff.empty.subtitle') }}</p>
+          </div>
+        </template>
+
+        <!-- Name + Email column with avatar -->
+        <Column field="name" :header="t('staff.table.name')">
+          <template #body="slotProps">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm bg-[var(--p-primary-100)] text-[var(--p-primary-600)] flex-shrink-0">
+                {{ slotProps.data.name?.charAt(0)?.toUpperCase() }}
+              </div>
+              <div class="min-w-0">
+                <div class="font-semibold text-gray-900">{{ slotProps.data.name }}</div>
+                <div class="text-xs text-gray-400 truncate">{{ slotProps.data.email || '—' }}</div>
+              </div>
+            </div>
+          </template>
+        </Column>
+
+        <Column field="phone" :header="t('staff.table.phone')">
+          <template #body="slotProps">
+            <span class="text-sm text-gray-700">{{ slotProps.data.phone || '—' }}</span>
+          </template>
+        </Column>
+
+        <Column field="specialty" :header="t('staff.table.specialty')">
+          <template #body="slotProps">
+            <Tag
+              v-if="slotProps.data.specialty"
+              :value="slotProps.data.specialty"
+              severity="secondary"
+            />
+            <span v-else class="text-xs text-gray-400">—</span>
+          </template>
+        </Column>
+
+        <Column :header="t('common.actions')" style="width: 130px">
+          <template #body="slotProps">
+            <div class="flex gap-1.5 items-center">
+              <Button
+                icon="pi pi-pencil"
+                class="p-button-rounded p-button-text p-button-sm"
+                v-tooltip.top="t('staff.tooltips.edit')"
+                @click="editStaff(slotProps.data)"
+              />
+              <Button
+                icon="pi pi-key"
+                class="p-button-rounded p-button-text p-button-sm p-button-secondary"
+                v-tooltip.top="t('staff.tooltips.createLogin')"
+                @click="openLoginDialog(slotProps.data)"
+              />
+              <Button
+                icon="pi pi-trash"
+                class="p-button-rounded p-button-text p-button-danger p-button-sm"
+                v-tooltip.top="t('staff.tooltips.delete')"
+                @click="confirmDelete(slotProps.data)"
+              />
+            </div>
+          </template>
+        </Column>
+      </DataTable>
+    </div>
   </div>
 
-  <!-- Add/Edit Staff Dialog (Existing) -->
+  <!-- Add/Edit Staff Dialog -->
   <Dialog
     v-model:visible="showDialog"
-    :header="editingStaff.id ? 'Edit Staff' : 'New Staff'"
+    :header="editingStaff.id ? t('staff.dialog.editStaff') : t('staff.dialog.newStaff')"
     modal
     class="w-full max-w-2xl"
   >
-    <!-- ... (Existing Form Code) ... -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-2">
-      <div>
-        <label class="block text-sm font-bold text-gray-700 mb-1"
-          >First Name</label
-        ><InputText v-model="editingStaff.first_name" class="w-full" />
-      </div>
-      <div>
-        <label class="block text-sm font-bold text-gray-700 mb-1"
-          >Last Name</label
-        ><InputText v-model="editingStaff.last_name" class="w-full" />
-      </div>
-      <div>
-        <label class="block text-sm font-bold text-gray-700 mb-1">Email</label
-        ><InputText v-model="editingStaff.email" class="w-full" />
-      </div>
-      <div>
-        <label class="block text-sm font-bold text-gray-700 mb-1">Phone</label
-        ><InputText v-model="editingStaff.phone" class="w-full" />
-      </div>
-      <div>
-        <label class="block text-sm font-bold text-gray-700 mb-1"
-          >Specialty</label
-        ><InputText v-model="editingStaff.specialty" class="w-full" />
-      </div>
-      <div>
-        <label class="block text-sm font-bold text-gray-700 mb-1"
-          >Hourly Rate (€)</label
-        ><InputNumber
-          v-model="editingStaff.hourly_rate"
-          mode="currency"
-          currency="EUR"
-          class="w-full"
-        />
-      </div>
-      <div class="md:col-span-2">
-        <label class="block text-sm font-bold text-gray-700 mb-1"
-          >Services Provided</label
-        >
-        <MultiSelect
-          v-model="editingStaff.service_ids"
-          :options="services"
-          optionLabel="name"
-          optionValue="id"
-          display="chip"
-          placeholder="Select services"
-          class="w-full"
-          filter
-        />
+    <div class="space-y-5 mt-2">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('staff.dialog.firstName') }}</label>
+          <InputText v-model="editingStaff.first_name" class="w-full" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('staff.dialog.lastName') }}</label>
+          <InputText v-model="editingStaff.last_name" class="w-full" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('common.email') }}</label>
+          <InputText v-model="editingStaff.email" class="w-full" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('common.phone') }}</label>
+          <InputText v-model="editingStaff.phone" class="w-full" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('staff.dialog.specialty') }}</label>
+          <InputText v-model="editingStaff.specialty" class="w-full" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('staff.dialog.hourlyRate') }}</label>
+          <InputNumber
+            v-model="editingStaff.hourly_rate"
+            mode="currency"
+            currency="EUR"
+            class="w-full"
+          />
+        </div>
+        <div class="md:col-span-2">
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('staff.dialog.servicesProvided') }}</label>
+          <MultiSelect
+            v-model="editingStaff.service_ids"
+            :options="services"
+            optionLabel="name"
+            optionValue="id"
+            display="chip"
+            :placeholder="t('staff.dialog.selectServices')"
+            class="w-full"
+            filter
+          />
+        </div>
       </div>
     </div>
     <template #footer>
       <Button
-        label="Cancel"
+        :label="t('common.cancel')"
         icon="pi pi-times"
         text
         @click="showDialog = false"
       />
       <Button
-        label="Save"
+        :label="t('common.save')"
         icon="pi pi-check"
         @click="saveStaff"
         :loading="loading"
@@ -139,23 +176,19 @@
     </template>
   </Dialog>
 
-  <!-- NEW: Create Login Dialog -->
+  <!-- Create Login Dialog -->
   <Dialog
     v-model:visible="showLoginDialog"
-    header="Create Staff Login"
+    :header="t('staff.loginDialog.title')"
     modal
     class="w-full max-w-md"
   >
-    <div class="space-y-4 pt-2">
-      <p class="text-sm text-gray-600 mb-4">
-        Create a username and password for
-        <strong>{{ loginStaffTarget?.name }}</strong
-        >. They will use this to log in to the app.
+    <div class="space-y-5 pt-2">
+      <p class="text-sm text-gray-600">
+        {{ t('staff.loginDialog.description', { name: loginStaffTarget?.name }) }}
       </p>
       <div>
-        <label class="block text-sm font-bold text-gray-700 mb-1"
-          >Username</label
-        >
+        <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('staff.loginDialog.username') }}</label>
         <InputText
           v-model="newLogin.username"
           class="w-full"
@@ -163,9 +196,7 @@
         />
       </div>
       <div>
-        <label class="block text-sm font-bold text-gray-700 mb-1"
-          >Password</label
-        >
+        <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('staff.loginDialog.password') }}</label>
         <InputText
           v-model="newLogin.password"
           class="w-full"
@@ -176,13 +207,13 @@
     </div>
     <template #footer>
       <Button
-        label="Cancel"
+        :label="t('common.cancel')"
         icon="pi pi-times"
         text
         @click="showLoginDialog = false"
       />
       <Button
-        label="Create Account"
+        :label="t('staff.loginDialog.createAccount')"
         icon="pi pi-user-plus"
         class="p-button-success"
         @click="createLogin"
@@ -196,8 +227,11 @@
 
 <script setup lang="ts">
 import { ref, onMounted, computed } from "vue";
+import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
+
+const { t } = useI18n();
 
 // ... (imports remain same) ...
 
@@ -270,8 +304,8 @@ const saveStaff = async () => {
     if (!res.ok) throw new Error("Failed");
     toast.add({
       severity: "success",
-      summary: "Success",
-      detail: "Staff saved",
+      summary: t('common.success'),
+      detail: t('staff.toast.saved'),
       life: 3000,
     });
     showDialog.value = false;
@@ -279,8 +313,8 @@ const saveStaff = async () => {
   } catch (err) {
     toast.add({
       severity: "error",
-      summary: "Error",
-      detail: "Failed to save",
+      summary: t('common.error'),
+      detail: t('staff.toast.saveFailed'),
       life: 3000,
     });
   } finally {
@@ -322,15 +356,15 @@ const createLogin = async () => {
 
     toast.add({
       severity: "success",
-      summary: "Account Created",
-      detail: `Login enabled for ${loginStaffTarget.value.name}`,
+      summary: t('staff.toast.accountCreated'),
+      detail: t('staff.toast.accountDetail', { name: loginStaffTarget.value.name }),
       life: 4000,
     });
     showLoginDialog.value = false;
   } catch (e: any) {
     toast.add({
       severity: "error",
-      summary: "Error",
+      summary: t('common.error'),
       detail: e.message,
       life: 4000,
     });
@@ -342,8 +376,8 @@ const createLogin = async () => {
 // Add confirmDelete and deleteStaff functions
 const confirmDelete = (staff: any) => {
   confirm.require({
-    message: `Delete staff "${staff.name}" permanently?`,
-    header: "Confirm Delete",
+    message: t('staff.confirmDelete', { name: staff.name }),
+    header: t('common.confirmDelete'),
     icon: "pi pi-exclamation-triangle",
     acceptClass: "p-button-danger",
     accept: () => deleteStaff(staff),
@@ -362,16 +396,16 @@ const deleteStaff = async (staff: any) => {
 
     toast.add({
       severity: "success",
-      summary: "Deleted",
-      detail: "Staff deactivated",
+      summary: t('common.success'),
+      detail: t('staff.toast.deleted'),
       life: 3000,
     });
     fetchData();
   } catch (err) {
     toast.add({
       severity: "error",
-      summary: "Error",
-      detail: "Failed to delete staff",
+      summary: t('common.error'),
+      detail: t('staff.toast.deleteFailed'),
       life: 4000,
     });
   }

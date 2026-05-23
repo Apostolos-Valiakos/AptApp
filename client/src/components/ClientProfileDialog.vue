@@ -262,7 +262,32 @@
           </div>
         </div>
 
-        <div v-if="activeTab === 'History'" class="space-y-3">
+        <div v-if="activeTab === 'History'" class="space-y-4">
+          <div
+            class="bg-white p-4 rounded-lg border border-gray-100 shadow-sm mb-2"
+          >
+            <div class="flex justify-between items-end mb-2">
+              <div>
+                <div
+                  class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1"
+                >
+                  Attendance Rate
+                </div>
+                <div class="text-xs text-gray-400">
+                  Past & current day appointments
+                </div>
+              </div>
+              <div class="text-xl font-bold text-indigo-600">
+                {{ attendanceRate }}%
+              </div>
+            </div>
+            <ProgressBar
+              :value="attendanceRate"
+              :showValue="false"
+              style="height: 8px"
+            />
+          </div>
+
           <div
             v-if="history.length === 0"
             class="text-center text-gray-400 py-8"
@@ -298,7 +323,6 @@
                 {{ appt.status }}
               </span>
               <span class="font-bold" v-if="isOwner">
-                {{ isOwner }}
                 €{{
                   (
                     Number(appt.total_service_price || 0) +
@@ -394,7 +418,9 @@
 import { ref, watch, computed } from "vue";
 import Exercises from "./Exercises.vue";
 import { useAuthStore } from "../stores/auth";
+import { useToast } from "primevue/usetoast";
 const authStore = useAuthStore();
+const toast = useToast();
 const isOwner = authStore.isOwner;
 
 const props = defineProps(["visible", "clientId"]);
@@ -425,6 +451,43 @@ const initials = computed(() => {
   return `${f}${l}`.toUpperCase();
 });
 
+const attendanceRate = computed(() => {
+  if (!history.value || history.value.length === 0) return 0;
+
+  // Calculate the end of the current day (23:59:59)
+  const endOfToday = new Date();
+  endOfToday.setHours(23, 59, 59, 999);
+
+  // Filter appointments up to the end of today
+  const relevantAppointments = history.value.filter((appt) => {
+    return new Date(appt.start_time) <= endOfToday;
+  });
+
+  if (relevantAppointments.length === 0) return 0;
+
+  // Calculate Numerator: (Completed + New)
+  const successCount = relevantAppointments.filter((appt) =>
+    ["completed", "new"].includes(appt.status?.toLowerCase()),
+  ).length;
+
+  // Calculate Denominator: (Completed + No-Show + New + Confirmed + Cancelled)
+  const validStatuses = [
+    "completed",
+    "no-show",
+    "new",
+    "confirmed",
+    "cancelled",
+  ];
+  const totalCount = relevantAppointments.filter((appt) =>
+    validStatuses.includes(appt.status?.toLowerCase()),
+  ).length;
+
+  if (totalCount === 0) return 0;
+
+  // Return as a whole percentage
+  return Math.round((successCount / totalCount) * 100);
+});
+
 const fetchClientData = async () => {
   if (!props.clientId) return;
   loading.value = true;
@@ -443,8 +506,6 @@ const fetchClientData = async () => {
     if (editForm.value.date_of_birth) {
       editForm.value.date_of_birth = new Date(editForm.value.date_of_birth);
     }
-  } catch (e) {
-    console.error(e);
   } finally {
     loading.value = false;
   }
@@ -529,7 +590,7 @@ const handleFileUpload = async (event: any) => {
     if (res.ok) {
       await fetchClientData();
     } else {
-      alert("File upload failed. Ensure it is under 5MB.");
+      toast.add({ severity: "error", summary: "Upload Failed", detail: "File upload failed. Ensure it is under 5MB.", life: 4000 });
     }
   } finally {
     uploading.value = false;
@@ -590,8 +651,7 @@ const viewFile = async (file: any) => {
       window.URL.revokeObjectURL(blobUrl);
     }, 100);
   } catch (err) {
-    console.error(err);
-    alert("Could not open file preview.");
+    toast.add({ severity: "error", summary: "Preview Failed", detail: "Could not open file preview.", life: 3000 });
   } finally {
     viewingFileId.value = null;
   }

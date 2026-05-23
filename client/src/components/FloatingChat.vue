@@ -129,7 +129,7 @@
                   v-if="message.user_id !== currentUserId"
                   :label="
                     getInitials(
-                      message.user.staff_name || message.user.username
+                      message.user.staff_name || message.user.username,
                     )
                   "
                   shape="circle"
@@ -351,9 +351,11 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from "vue";
 import { useChatStore } from "../stores/chat";
 import { useAuthStore } from "../stores/auth";
+import { useToast } from "primevue/usetoast";
 
 const chatStore = useChatStore();
 const authStore = useAuthStore();
+const toast = useToast();
 
 // UI State
 const isMobile = ref(window.innerWidth < 768);
@@ -376,7 +378,7 @@ const checkMobile = () => {
 window.addEventListener("resize", checkMobile);
 
 const currentUserId = computed(
-  () => authStore.user?.id || localStorage.getItem("userId")
+  () => authStore.user?.id || localStorage.getItem("userId"),
 );
 
 const typingUsers = computed(() => {
@@ -516,12 +518,12 @@ const createChannel = async () => {
     await chatStore.createChannel(
       newChannel.value.name,
       newChannel.value.description,
-      newChannel.value.memberIds
+      newChannel.value.memberIds,
     );
     showCreateChannel.value = false;
     newChannel.value = { name: "", description: "", memberIds: [] };
   } catch (err) {
-    alert("Failed to create channel");
+    toast.add({ severity: "error", summary: "Error", detail: "Failed to create channel", life: 3000 });
   }
 };
 
@@ -586,7 +588,7 @@ watch(
   () => {
     setTimeout(scrollToBottom, 100);
   },
-  { deep: true }
+  { deep: true },
 );
 </script>
 
@@ -594,8 +596,9 @@ watch(
 .floating-chat {
   position: fixed;
   z-index: 9999;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
-    Arial, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 

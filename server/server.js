@@ -1,10 +1,23 @@
 require("dotenv").config();
+
+// Fail fast if critical secrets are missing
+if (!process.env.JWT_SECRET) {
+  console.error("FATAL: JWT_SECRET environment variable is not set");
+  process.exit(1);
+}
+if (!process.env.MESSAGE_ENCRYPTION_KEY) {
+  console.error("FATAL: MESSAGE_ENCRYPTION_KEY environment variable is not set");
+  process.exit(1);
+}
+
 const express = require("express");
 const http = require("http");
 const jwt = require("jsonwebtoken");
 const pool = require("./db");
 const path = require("path");
 const cors = require("cors");
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
 const multer = require("multer");
 const fs = require("fs");
 const { Server } = require("socket.io");
@@ -15,6 +28,35 @@ const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
 
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "http://localhost:5173";
+
+const allowedOrigins =
+  process.env.NODE_ENV === "production"
+    ? [ALLOWED_ORIGIN]
+    : [ALLOWED_ORIGIN, "http://localhost:5173", "http://localhost:3000"];
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: "Too many login attempts, please try again in 15 minutes" },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const signupLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  message: { error: "Too many signup attempts, please try again later" },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const publicActionLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: { error: "Too many requests, please try again later" },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 require("./reminderService");
 
@@ -357,8 +399,24 @@ const upload = multer({
 });
 // ==================== MIDDLEWARE ====================
 app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", "data:", "https:"],
+        connectSrc: ["'self'", "ws:", "wss:"],
+        fontSrc: ["'self'", "data:"],
+        objectSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+      },
+    },
+  }),
+);
+app.use(
   cors({
-    origin: true,
+    origin: allowedOrigins,
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
@@ -384,46 +442,45 @@ const safeUUID = (id) => {
   return cleanId.length === 36 ? cleanId : null;
 };
 
+// --- HELPER: Recalculate Outstanding Balance for a Client ---
 const recalculateClientBalance = async (client, clientId) => {
-  if (!clientId) return 0;
+  try {
+    // We use a subquery to find the appointment time from appointment_services
+    // since 'start_time' does not exist on the appointments table directly.
+    const balanceRes = await client.query(
+      `SELECT 
+         COALESCE(SUM(total_cost - total_paid), 0) as new_balance
+       FROM (
+         SELECT 
+           a.id,
+           COALESCE(SUM(COALESCE(aps.price_override, s.price)), 0) as total_cost,
+           COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0) as total_paid,
+           (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) as appt_time
+         FROM appointments a
+         LEFT JOIN appointment_services aps ON a.id = aps.appointment_id
+         LEFT JOIN services s ON aps.service_id = s.id
+         WHERE a.client_id = $1 
+           AND a.status != 'cancelled'
+         GROUP BY a.id
+       ) subquery
+       WHERE appt_time <= CURRENT_TIMESTAMP
+         AND appt_time >= '2026-03-01 00:00:00'`,
+      [clientId],
+    );
 
-  const res = await client.query(
-    `
-    UPDATE clients 
-    SET outstanding_balance = (
-      SELECT COALESCE(SUM(
-        (
-          -- LOGIC: Only count the Price/Products as "Debt" if the appointment has started (is in the past)
-          CASE 
-            WHEN (
-              SELECT MIN(start_time) 
-              FROM appointment_services aps 
-              WHERE aps.appointment_id = a.id
-            ) < NOW() 
-            THEN 
-              (
-                COALESCE((SELECT SUM(price_override) FROM appointment_services aps WHERE aps.appointment_id = a.id), 0) 
-                + 
-                COALESCE((SELECT SUM(total_price) FROM product_sales ps WHERE ps.appointment_id = a.id), 0)
-              )
-            ELSE 
-              0 
-          END
-        ) 
-        -- LOGIC: Always subtract the deposit (Credit), even for future appointments
-        - a.deposit_amount
-      ), 0)
-      FROM appointments a
-      WHERE a.client_id = $1 
-      AND a.status != 'cancelled'
-    )
-    WHERE id = $1
-    RETURNING outstanding_balance
-  `,
-    [clientId],
-  );
+    const newBalance = balanceRes.rows[0].new_balance;
 
-  return Number(res.rows[0]?.outstanding_balance || 0);
+    // This updates the 'Clients' list you see in your second image
+    await client.query(
+      "UPDATE clients SET outstanding_balance = $1 WHERE id = $2",
+      [newBalance, clientId],
+    );
+
+    return newBalance;
+  } catch (err) {
+    console.error("Error recalculating balance:", err);
+    throw err;
+  }
 };
 
 // --- VISIBILITY HELPER ---
@@ -444,7 +501,7 @@ const authenticateToken = (req, res, next) => {
 
   if (!token) return res.sendStatus(401);
 
-  jwt.verify(token, process.env.JWT_SECRET || "secret", (err, user) => {
+  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
     if (err) return res.sendStatus(403);
     req.user = user;
     req.shopId = user.shopId;
@@ -454,7 +511,7 @@ const authenticateToken = (req, res, next) => {
 
 // --- AUTH ROUTE ---
 
-app.post("/api/v1/login", async (req, res) => {
+app.post("/api/v1/login", loginLimiter, async (req, res) => {
   const { username, password } = req.body;
   try {
     // 1. Find user by username only (don't check password in SQL)
@@ -487,9 +544,10 @@ app.post("/api/v1/login", async (req, res) => {
         role: user.role,
         shopId: user.shop_id,
         staffId: user.staff_id,
+        clientId: user.client_id,
       },
-      process.env.JWT_SECRET || "supersecret",
-      { expiresIn: "7d" },
+      process.env.JWT_SECRET,
+      { expiresIn: "24h" },
     );
 
     res.json({ token, user });
@@ -518,8 +576,9 @@ app.put("/api/v1/profile", authenticateToken, async (req, res) => {
     await client.query("COMMIT");
     res.json({ success: true });
   } catch (err) {
+    console.error(err);
     await client.query("ROLLBACK");
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal server error" });
   } finally {
     client.release();
   }
@@ -537,10 +596,19 @@ app.get("/api/v1/profile", authenticateToken, async (req, res) => {
         s.ergotherapia as ergotherapia,
         s.physiotherapia as physiotherapia,
         s.logotherapia as logotherapia,
+        s.reply_email as shop_reply_email,
+        s.phone as shop_phone,
+        s.address as shop_address,
+        s.website as shop_website,
+        s.slot_min_time,
+        s.slot_max_time,
+        s.show_weekends,
+        s.reminder_hours_before,
         st.id as staff_id,
         st.name as staff_name,
         st.email as staff_email,
         st.phone as staff_phone,
+        st.photo_url as staff_photo_url,
         st.specialty
       FROM users u
       LEFT JOIN shops s ON u.shop_id = s.id
@@ -563,7 +631,8 @@ app.get("/api/v1/profile", authenticateToken, async (req, res) => {
 
     res.json(profile);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -599,7 +668,8 @@ app.put("/api/v1/profile/password", authenticateToken, async (req, res) => {
     ]);
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -626,7 +696,8 @@ app.get("/api/v1/staff", authenticateToken, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -669,13 +740,13 @@ app.post("/api/v1/staff", authenticateToken, async (req, res) => {
   } catch (err) {
     await client.query("ROLLBACK");
     console.error(err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal server error" });
   } finally {
     client.release();
   }
 });
 // server.js
-app.post("/api/v1/staff/reorder", async (req, res) => {
+app.post("/api/v1/staff/reorder", authenticateToken, async (req, res) => {
   const { orders } = req.body; // Expects [{id: 1, sort_order: 0}, {id: 2, sort_order: 1}]
 
   try {
@@ -734,6 +805,7 @@ app.put("/api/v1/staff/:id", authenticateToken, async (req, res) => {
     await client.query("COMMIT");
     res.json({ success: true });
   } catch (err) {
+    console.error(err);
     await client.query("ROLLBACK");
     res.status(500).json({ error: "Failed to update staff" });
   } finally {
@@ -749,7 +821,8 @@ app.delete("/api/v1/staff/:id", authenticateToken, async (req, res) => {
     );
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -785,6 +858,7 @@ app.post("/api/v1/staff/:id/login", authenticateToken, async (req, res) => {
     await client.query("COMMIT");
     res.json({ success: true });
   } catch (err) {
+    console.error(err);
     await client.query("ROLLBACK");
     res.status(500).json({ error: "Failed to create login" });
   } finally {
@@ -816,7 +890,7 @@ app.post("/api/v1/staff/:id/login", authenticateToken, async (req, res) => {
 
 //     res.json(data);
 //   } catch (err) {
-//     res.status(500).json({ error: err.message });
+//     res.status(500).json({ error: "Internal server error" });
 //   }
 // });
 app.get("/api/v1/clients", authenticateToken, async (req, res) => {
@@ -856,7 +930,7 @@ app.get("/api/v1/clients", authenticateToken, async (req, res) => {
          ) s_inner
         ) as non_eoppy_breakdown
 
-      FROM clients c
+      FROM active_clients c
       WHERE c.shop_id = $1
       ORDER BY c.last_name;
     `;
@@ -877,8 +951,6 @@ app.get("/api/v1/clients", authenticateToken, async (req, res) => {
     // Use 'return' to ensure the function stops here
     return res.json(data);
   } catch (err) {
-    console.error("SQL Error Detail:", err);
-
     // Check if headers were already sent to avoid the ERR_HTTP_HEADERS_SENT crash
     if (!res.headersSent) {
       return res.status(500).json({ error: "Internal Server Error" });
@@ -898,6 +970,11 @@ app.post("/api/v1/clients", authenticateToken, async (req, res) => {
     logotherapia,
     date_of_birth,
   } = req.body;
+
+  if (!first_name?.trim() || !last_name?.trim()) {
+    return res.status(400).json({ error: "First name and last name are required" });
+  }
+
   try {
     const { rows } = await pool.query(
       `INSERT INTO clients (first_name, last_name, email, phone, notes, custom_fields, shop_id, ergotherapia, physiotherapia, logotherapia, date_of_birth) 
@@ -920,7 +997,8 @@ app.post("/api/v1/clients", authenticateToken, async (req, res) => {
     rows[0].full_name = `${rows[0].first_name} ${rows[0].last_name}`;
     res.json({ success: true, client: rows[0] });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -962,35 +1040,49 @@ app.put("/api/v1/clients/:id", authenticateToken, async (req, res) => {
     );
     res.json({ success: true });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: "Update failed" });
   }
 });
 
+// app.delete("/api/v1/clients/:id", authenticateToken, async (req, res) => {
+//   try {
+//     const result = await pool.query(
+//       "DELETE FROM clients WHERE id = $1 AND shop_id = $2",
+//       [req.params.id, req.shopId],
+//     );
+
+//     // Optional check if the client even existed
+//     if (result.rowCount === 0) {
+//       return res.status(404).json({ error: "Client not found" });
+//     }
+
+//     res.json({ success: true });
+//   } catch (err) {
+//     // 1. Intercept the PostgreSQL Foreign Key Violation Error (Code 23503)
+//     if (err.code === "23503") {
+//       return res.status(409).json({
+//         error:
+//           "Δεν μπορείτε να διαγράψετε αυτόν τον πελάτη, επειδή υπάρχουν ραντεβού καταχωρημένα στο όνομά του.",
+//       });
+//     }
+
+//     // 2. Generic fallback error (hides the ugly SQL from the user)
+//     console.error("Delete Client Error:", err);
+//     res.status(500).json({ error: "Αποτυχία διαγραφής πελάτη." });
+//   }
+// });
 app.delete("/api/v1/clients/:id", authenticateToken, async (req, res) => {
+  const { id } = req.params;
   try {
-    const result = await pool.query(
-      "DELETE FROM clients WHERE id = $1 AND shop_id = $2",
-      [req.params.id, req.shopId],
-    );
-
-    // Optional check if the client even existed
-    if (result.rowCount === 0) {
-      return res.status(404).json({ error: "Client not found" });
-    }
-
-    res.json({ success: true });
+    // We don't DELETE anymore, we just mark them
+    await pool.query("UPDATE clients SET is_deleted = TRUE WHERE id = $1", [
+      id,
+    ]);
+    res.json({ success: true, message: "Client archived" });
   } catch (err) {
-    // 1. Intercept the PostgreSQL Foreign Key Violation Error (Code 23503)
-    if (err.code === "23503") {
-      return res.status(409).json({
-        error:
-          "Δεν μπορείτε να διαγράψετε αυτόν τον πελάτη, επειδή υπάρχουν ραντεβού καταχωρημένα στο όνομά του.",
-      });
-    }
-
-    // 2. Generic fallback error (hides the ugly SQL from the user)
-    console.error("Delete Client Error:", err);
-    res.status(500).json({ error: "Αποτυχία διαγραφής πελάτη." });
+    console.error(err);
+    res.status(500).json({ error: "Failed to archive client" });
   }
 });
 
@@ -1004,12 +1096,24 @@ app.get("/api/v1/services", authenticateToken, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
 app.post("/api/v1/services", authenticateToken, async (req, res) => {
   const { name, duration_minutes, price, category, color_code } = req.body;
+
+  if (!name?.trim()) {
+    return res.status(400).json({ error: "Service name is required" });
+  }
+  if (!duration_minutes || Number(duration_minutes) <= 0) {
+    return res.status(400).json({ error: "Duration must be a positive number" });
+  }
+  if (price == null || Number(price) < 0) {
+    return res.status(400).json({ error: "Price must be a non-negative number" });
+  }
+
   try {
     await pool.query(
       `INSERT INTO services (name, duration_minutes, price, category, color_code, shop_id) VALUES ($1, $2, $3, $4, $5, $6)`,
@@ -1017,7 +1121,8 @@ app.post("/api/v1/services", authenticateToken, async (req, res) => {
     );
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -1031,6 +1136,7 @@ app.put("/api/v1/services/:id", authenticateToken, async (req, res) => {
     );
     res.json({ success: true });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: "Update failed" });
   }
 });
@@ -1043,7 +1149,8 @@ app.delete("/api/v1/services/:id", authenticateToken, async (req, res) => {
     ]);
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -1053,7 +1160,23 @@ app.delete("/api/v1/services/:id", authenticateToken, async (req, res) => {
 
 app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
   try {
+    // 1. Capture date parameters from the request
+    const { date, start, end } = req.query;
     const visibilityClause = getVisibilityClause(req.user, "a");
+
+    let dateFilter = "";
+    const params = [req.shopId];
+
+    // 2. Build the dynamic date filter
+    if (date) {
+      // Filter for a specific single day
+      params.push(date);
+      dateFilter = ` AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id)::date = $${params.length}::date`;
+    } else if (start && end) {
+      // Filter for a range (e.g., a full week or month)
+      params.push(start, end);
+      dateFilter = ` AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) BETWEEN $${params.length - 1} AND $${params.length}`;
+    }
 
     const { rows } = await pool.query(
       `
@@ -1063,7 +1186,6 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
         a.status, 
         a.internal_notes, 
         a.booking_notes, 
-        a.deposit_amount, 
         a.payment_status, 
         a.is_block, 
         a.is_eoppy,
@@ -1074,8 +1196,12 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
         c.first_name, 
         c.last_name, 
         c.phone as client_phone,
-        
-        -- (Rest of your query: COALESCE services, products, etc...)
+        COALESCE(c.outstanding_balance, 0) as client_outstanding_balance,
+        COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0) as deposit_amount,
+        (
+          COALESCE((SELECT SUM(COALESCE(aps2.price_override, s2.price)) FROM appointment_services aps2 JOIN services s2 ON aps2.service_id = s2.id WHERE aps2.appointment_id = a.id), 0) +
+          COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = a.id), 0)
+        ) as total_cost,
         COALESCE((
           SELECT json_agg(json_build_object(
             'service_id', s.id,
@@ -1085,39 +1211,33 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
             'staff_id', aps.staff_id,
             'staff_name', st.name,
             'start_time', aps.start_time
-          ))
+          ) ORDER BY aps.start_time ASC)
           FROM appointment_services aps
           LEFT JOIN services s ON aps.service_id = s.id
           LEFT JOIN staff st ON aps.staff_id = st.id
           WHERE aps.appointment_id = a.id
-        ), '[]') as services,
-        -- Aggregate Products
-        COALESCE((
-          SELECT json_agg(json_build_object(
-            'product_id', ps.inventory_id,
-            'quantity', ps.quantity,
-            'price', CASE WHEN ps.quantity > 0 THEN ps.total_price / ps.quantity ELSE 0 END
-          ))
-          FROM product_sales ps
-          WHERE ps.appointment_id = a.id
-        ), '[]') as products
+        ), '[]') as services
       FROM appointments a
       LEFT JOIN clients c ON a.client_id = c.id
-      WHERE a.shop_id = $1 ${visibilityClause}
-      GROUP BY a.id, c.first_name, c.last_name, c.phone
-      ORDER BY a.created_at DESC
+      WHERE a.shop_id = $1 ${visibilityClause} ${dateFilter}
+      GROUP BY a.id, c.first_name, c.last_name, c.phone, c.outstanding_balance
+      ORDER BY (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) ASC
     `,
-      [req.shopId],
+      params,
     );
+
     const formatted = rows.map((row) => ({
       ...row,
       start_time: row.services?.[0]?.start_time || row.created_at,
       staff_id: row.services?.[0]?.staff_id,
+      current_appt_total: parseFloat(row.total_cost),
+      deposit_amount: parseFloat(row.deposit_amount),
     }));
 
     res.json(formatted);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -1148,12 +1268,12 @@ app.post("/api/v1/appointments", authenticateToken, async (req, res) => {
     console.error("Create Appointment Error:", err);
     res
       .status(500)
-      .json({ error: "Failed to create appointment", details: err.message });
+      .json({ error: "Failed to create appointment" });
   } finally {
     client.release();
   }
 });
-app.get("/api/v1/unsubscribe", async (req, res) => {
+app.get("/api/v1/unsubscribe", publicActionLimiter, async (req, res) => {
   const crypto = require("crypto");
 
   const { id, token } = req.query;
@@ -1195,6 +1315,53 @@ app.get("/api/v1/unsubscribe", async (req, res) => {
   } catch (err) {
     console.error("Unsubscribe Error:", err);
     res.status(500).send("Παρουσιάστηκε σφάλμα κατά τη διαγραφή.");
+  }
+});
+app.get("/api/v1/confirm-appointment", publicActionLimiter, async (req, res) => {
+  const crypto = require("crypto");
+  const { id, token } = req.query;
+
+  if (!id || !token) {
+    return res.status(400).send("Μη έγκυρο αίτημα.");
+  }
+
+  // Verify the token matches the Appointment ID
+  const expectedToken = crypto
+    .createHmac("sha256", process.env.JWT_SECRET)
+    .update(id.toString())
+    .digest("hex");
+
+  if (token !== expectedToken) {
+    return res.status(403).send("Ο σύνδεσμος είναι άκυρος ή έχει λήξει.");
+  }
+
+  try {
+    // Update status to 'confirmed' only if it's not already cancelled
+    const result = await pool.query(
+      "UPDATE appointments SET status = 'confirmed' WHERE id = $1 AND status != 'cancelled' RETURNING id",
+      [id],
+    );
+
+    if (result.rowCount === 0) {
+      return res
+        .status(404)
+        .send("Το ραντεβού δεν βρέθηκε ή έχει ήδη ακυρωθεί.");
+    }
+
+    // Success Styled Page
+    res.send(`
+      <div style="font-family: sans-serif; text-align: center; padding: 100px 20px; background: #fff5f9; min-height: 100vh;">
+          <div style="background: white; padding: 40px; border-radius: 32px; display: inline-block; box-shadow: 0 20px 25px rgba(255,147,212,0.1); max-width: 400px;">
+              <div style="font-size: 48px; margin-bottom: 20px;">✅</div>
+              <h1 style="color: #111827; margin-bottom: 10px; font-size: 24px;">Το ραντεβού επιβεβαιώθηκε!</h1>
+              <p style="color: #4b5563; line-height: 1.5;">Σας ευχαριστούμε. Η κράτησή σας έχει επισημανθεί ως επιβεβαιωμένη στο σύστημά μας. Ανυπομονούμε να σας δούμε!</p>
+              <a href="https://interventio.gr" style="display: inline-block; margin-top: 30px; background: #ff93d4; color: white; padding: 12px 24px; border-radius: 12px; text-decoration: none; font-weight: bold;">Επιστροφή στην Αρχική</a>
+          </div>
+      </div>
+    `);
+  } catch (err) {
+    console.error("Confirmation Error:", err);
+    res.status(500).send("Παρουσιάστηκε σφάλμα κατά την επιβεβαίωση.");
   }
 });
 app.put("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
@@ -1280,7 +1447,7 @@ app.put("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
   } catch (err) {
     await client.query("ROLLBACK");
     console.error("Update Appointment Error:", err);
-    res.status(500).json({ error: "Update failed", details: err.message });
+    res.status(500).json({ error: "Update failed" });
   } finally {
     client.release();
   }
@@ -1327,8 +1494,9 @@ app.delete("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
     await client.query("COMMIT");
     res.json({ success: true });
   } catch (err) {
+    console.error(err);
     await client.query("ROLLBACK");
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal server error" });
   } finally {
     client.release();
   }
@@ -1381,6 +1549,7 @@ app.post("/api/v1/appointments/swap", authenticateToken, async (req, res) => {
     await client.query("COMMIT");
     res.json({ success: true });
   } catch (err) {
+    console.error(err);
     await client.query("ROLLBACK");
     res.status(500).json({ error: "Swap failed" });
   } finally {
@@ -1397,56 +1566,115 @@ app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
     amount,
     payment_method = "card",
   } = req.body;
+
+  if (!amount || Number(amount) <= 0) {
+    return res.status(400).json({ error: "Invalid payment amount" });
+  }
+
   const client = await pool.connect();
 
   try {
     await client.query("BEGIN");
 
-    await client.query(
-      `INSERT INTO transactions (appointment_id, client_id, amount, payment_method, transaction_type, shop_id, created_at)
-       VALUES ($1, $2, $3, $4, 'payment', $5, NOW())`,
-      [appointment_id, client_id, amount, payment_method, req.shopId],
-    );
+    // Helper: create a transaction record and update the appointment's status/deposit_amount
+    const applyPaymentToAppointment = async (apptId, paymentAmount) => {
+      await client.query(
+        `INSERT INTO transactions (appointment_id, client_id, amount, payment_method, transaction_type, shop_id, created_at)
+         VALUES ($1, $2, $3, $4, 'payment', $5, NOW())`,
+        [apptId, client_id, paymentAmount, payment_method, req.shopId],
+      );
 
-    // Calculate updated payment status
-    const priceRes = await client.query(
-      `SELECT SUM(price_override) as total_price FROM appointment_services WHERE appointment_id = $1`,
+      const priceRes = await client.query(
+        `SELECT COALESCE(SUM(price_override), 0) as total_price
+         FROM appointment_services WHERE appointment_id = $1`,
+        [apptId],
+      );
+      const totalPrice = Number(priceRes.rows[0].total_price);
+
+      const alreadyPaidRes = await client.query(
+        `SELECT COALESCE(SUM(amount), 0) as paid
+         FROM transactions WHERE appointment_id = $1`,
+        [apptId],
+      );
+      const totalPaid = Number(alreadyPaidRes.rows[0].paid);
+
+      const isFullyPaid = totalPaid >= totalPrice - 0.01;
+      await client.query(
+        `UPDATE appointments
+         SET payment_status = $1, status = $2, deposit_amount = deposit_amount + $3
+         WHERE id = $4 AND shop_id = $5`,
+        [
+          isFullyPaid ? "paid" : "partial",
+          isFullyPaid ? "completed" : "confirmed",
+          paymentAmount,
+          apptId,
+          req.shopId,
+        ],
+      );
+    };
+
+    // 1. Calculate what is still owed for the current appointment (from transactions, not deposit_amount column)
+    const currentPriceRes = await client.query(
+      `SELECT COALESCE(SUM(price_override), 0) as total_price
+       FROM appointment_services WHERE appointment_id = $1`,
       [appointment_id],
     );
-    const totalPrice = Number(priceRes.rows[0].total_price || 0);
+    const currentApptCost = Number(currentPriceRes.rows[0].total_price);
 
-    const apptRes = await client.query(
-      `SELECT deposit_amount FROM appointments WHERE id = $1`,
+    const currentPaidRes = await client.query(
+      `SELECT COALESCE(SUM(amount), 0) as paid FROM transactions WHERE appointment_id = $1`,
       [appointment_id],
     );
-    const currentPaid = Number(apptRes.rows[0]?.deposit_amount || 0);
-    const newTotalPaid = currentPaid + Number(amount);
+    const currentApptAlreadyPaid = Number(currentPaidRes.rows[0].paid);
+    const currentApptOwed = Math.max(0, currentApptCost - currentApptAlreadyPaid);
 
-    const isFullyPaid = newTotalPaid >= totalPrice - 0.01;
-    const newPaymentStatus = isFullyPaid ? "paid" : "partial";
-    const newStatus = isFullyPaid ? "completed" : "confirmed";
+    // 2. Allocate: pay current appointment first, then apply the remainder to old debt (FIFO)
+    let remaining = Number(amount);
 
-    // Update appointment
-    // Note: visibility logic checks 'completed' status, which is set here.
-    await client.query(
-      `UPDATE appointments 
-       SET payment_status = $1, status = $2, deposit_amount = deposit_amount + $3 
-       WHERE id = $4 AND shop_id = $5`,
-      [newPaymentStatus, newStatus, amount, appointment_id, req.shopId],
-    );
+    const forCurrentAppt = Math.min(remaining, currentApptOwed);
+    if (forCurrentAppt > 0.009) {
+      await applyPaymentToAppointment(appointment_id, forCurrentAppt);
+      remaining -= forCurrentAppt;
+    }
 
-    await client.query(
-      `UPDATE clients SET total_sales = COALESCE(total_sales, 0) + $1 WHERE id = $2 AND shop_id = $3`,
-      [amount, client_id, req.shopId],
-    );
+    // 3. Distribute the remainder to older unpaid appointments (oldest first, March 1 2026+)
+    if (remaining > 0.009) {
+      const oldAppts = await client.query(
+        `SELECT
+           a.id,
+           COALESCE(SUM(aps.price_override), 0) as total_cost,
+           COALESCE((SELECT SUM(t2.amount) FROM transactions t2 WHERE t2.appointment_id = a.id), 0) as total_paid
+         FROM appointments a
+         JOIN appointment_services aps ON aps.appointment_id = a.id
+         WHERE a.client_id = $1
+           AND a.id != $2
+           AND a.shop_id = $3
+           AND a.status NOT IN ('cancelled', 'completed')
+           AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) >= '2026-03-01 00:00:00'
+         GROUP BY a.id
+         ORDER BY (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) ASC`,
+        [client_id, appointment_id, req.shopId],
+      );
 
-    // CRITICAL: Update outstanding balance
-    await recalculateClientBalance(client, client_id);
+      for (const row of oldAppts.rows) {
+        if (remaining <= 0.009) break;
+        const owed = Number(row.total_cost) - Number(row.total_paid);
+        if (owed <= 0.009) continue;
+
+        const forThisAppt = Math.min(remaining, owed);
+        await applyPaymentToAppointment(row.id, forThisAppt);
+        remaining -= forThisAppt;
+      }
+    }
+
+    // 4. Recalculate client balance and return it so the frontend can update without guessing
+    const newBalance = await recalculateClientBalance(client, client_id);
 
     await client.query("COMMIT");
-    res.json({ success: true });
+    res.json({ success: true, new_balance: newBalance });
   } catch (e) {
     await client.query("ROLLBACK");
+    console.error("Payment error:", e);
     res.status(500).json({ error: "Payment failed" });
   } finally {
     client.release();
@@ -1470,7 +1698,8 @@ app.get("/api/v1/financials", authenticateToken, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -1565,7 +1794,8 @@ app.get("/api/v1/reports/analytics", authenticateToken, async (req, res) => {
       client.release();
     }
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -1599,7 +1829,8 @@ app.get("/api/v1/reports/appointments", authenticateToken, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -1630,7 +1861,8 @@ app.get("/api/v1/reports/clients", authenticateToken, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -1674,7 +1906,8 @@ app.get("/api/v1/reports/sales", authenticateToken, async (req, res) => {
     );
     res.json({ summary: { total_revenue: summary }, details: rows });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -1707,7 +1940,8 @@ app.get("/api/v1/reports/staff", authenticateToken, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -1746,101 +1980,176 @@ app.get("/api/v1/reports/payments", authenticateToken, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
-
 app.get("/api/v1/reports/finances", authenticateToken, async (req, res) => {
   const { from, to } = req.query;
-  const params = [req.shopId];
+  const shopId = req.shopId;
+  const isSuperAdmin = req.user.role === "super_admin";
 
-  // A. Sales Logic (Completed & Visible)
-  let salesWhere = "WHERE a.shop_id = $1 AND a.status = 'completed'";
-
-  // Visibility: If not super_admin, require save_receipt = true
-  if (req.user.role !== "super_admin") {
-    salesWhere += " AND a.save_receipt = true";
-  }
-
-  // Date filters for Sales (Revenue)
-  let salesDateClause = "";
+  // 1. Setup Parameters for Appointments (Sales/Debt)
+  const apptParams = [shopId];
+  let apptDateFilter = "";
   if (from) {
-    salesDateClause += ` AND aps.start_time >= $${params.length + 1}`;
-    params.push(from);
+    apptParams.push(from);
+    apptDateFilter += ` AND aps2.start_time >= $${apptParams.length}`;
   }
   if (to) {
-    salesDateClause += ` AND aps.start_time <= $${params.length + 1}`;
-    params.push(to);
+    apptParams.push(to);
+    apptDateFilter += ` AND aps2.start_time <= $${apptParams.length}`;
   }
+
+  // Subquery to find appointments in the date range.
+  // Includes completed appointments and any past appointment that is not cancelled/no-show
+  // (covers 'new', 'confirmed', and 'started' statuses that have already occurred).
+  const appointmentSubquery = `
+    SELECT DISTINCT a2.id FROM appointments a2
+    JOIN appointment_services aps2 ON a2.id = aps2.appointment_id
+    WHERE a2.shop_id = $1
+    AND (
+      a2.status = 'completed'
+      OR (a2.status IN ('new', 'confirmed', 'started') AND aps2.start_time < CURRENT_TIMESTAMP)
+    )
+    ${!isSuperAdmin ? "AND a2.save_receipt = true" : ""}
+    ${apptDateFilter}
+  `;
 
   try {
     const client = await pool.connect();
-    try {
-      const salesRes = await client.query(
-        `SELECT SUM(
-            (SELECT COALESCE(SUM(COALESCE(aps_inner.price_override, s_inner.price)), 0)
-             FROM appointment_services aps_inner
-             LEFT JOIN services s_inner ON aps_inner.service_id = s_inner.id
-             WHERE aps_inner.appointment_id = a.id)
-            +
-            (SELECT COALESCE(SUM(ps.total_price), 0)
-             FROM product_sales ps
-             WHERE ps.appointment_id = a.id)
-         ) as total
-         FROM appointments a
-         WHERE a.id IN (
-           SELECT DISTINCT a2.id
-           FROM appointments a2
-           JOIN appointment_services aps2 ON a2.id = aps2.appointment_id
-           ${salesWhere.replace("a.shop_id", "a2.shop_id").replace("a.status", "a2.status").replace("a.save_receipt", "a2.save_receipt")} 
-           ${salesDateClause.replace(/aps\./g, "aps2.")}
-         )`,
-        params,
-      );
 
-      // 2. Total Collected (in Date Range)
-      // Note: We reuse params for date checking, so we need to rebuild params for this query or use distinct ones.
-      // Simpler approach: Run separate queries with clean params to avoid index confusion.
-      const payRes = await client.query(
-        `SELECT SUM(amount) as total FROM transactions t 
-         WHERE shop_id = $1 
-         AND created_at >= $2 AND created_at <= $3`,
-        [req.shopId, from || "1970-01-01", to || "2100-01-01"],
-      );
+    // --- A. TOTAL SALES (Services Only) ---
+    const salesRes = await client.query(
+      `
+      SELECT SUM(COALESCE(aps.price_override, s.price)) as total
+      FROM appointment_services aps
+      LEFT JOIN services s ON aps.service_id = s.id
+      WHERE aps.appointment_id IN (${appointmentSubquery})
+    `,
+      apptParams,
+    );
+    const totalSales = Number(salesRes.rows[0].total) || 0;
 
-      // 3. SPECIAL: Collected TODAY (Hardcoded date check)
-      const todayRes = await client.query(
-        `SELECT SUM(amount) as total FROM transactions 
-         WHERE shop_id = $1 AND created_at >= CURRENT_DATE`,
-        [req.shopId],
-      );
+    // --- B. PERIOD DEBT ---
+    const periodPaymentsRes = await client.query(
+      `
+      SELECT SUM(amount) as total FROM transactions WHERE appointment_id IN (${appointmentSubquery})
+    `,
+      apptParams,
+    );
+    const periodPaymentsApplied = Number(periodPaymentsRes.rows[0].total) || 0;
+    const totalDebt = totalSales - periodPaymentsApplied;
 
-      // 4. SPECIAL: Total Business Debt (Live Snapshot)
-      // Sum of all positive outstanding balances
-      const debtRes = await client.query(
-        `SELECT SUM(outstanding_balance) as total FROM clients 
-         WHERE shop_id = $1 AND outstanding_balance > 0`,
-        [req.shopId],
-      );
-
-      res.json({
-        total_sales: Number(salesRes.rows[0].total) || 0,
-        total_payments: Number(payRes.rows[0].total) || 0,
-        collected_today: Number(todayRes.rows[0].total) || 0,
-        total_debt: Number(debtRes.rows[0].total) || 0,
-      });
-    } finally {
-      client.release();
+    // --- C. TOTAL COLLECTED (Cash Flow for Period) ---
+    const flowParams = [shopId];
+    let flowFilter = "";
+    if (from) {
+      flowParams.push(from);
+      flowFilter += ` AND created_at >= $${flowParams.length}`;
     }
+    if (to) {
+      flowParams.push(to);
+      flowFilter += ` AND created_at <= $${flowParams.length}`;
+    }
+
+    const payRes = await client.query(
+      `
+      SELECT SUM(amount) as total FROM transactions WHERE shop_id = $1 ${flowFilter}
+    `,
+      flowParams,
+    );
+    const totalPayments = Number(payRes.rows[0].total) || 0;
+
+    // --- D. COLLECTED TODAY (The missing piece) ---
+    const todayRes = await client.query(
+      `
+      SELECT SUM(amount) as total FROM transactions 
+      WHERE shop_id = $1 AND created_at >= CURRENT_DATE
+    `,
+      [shopId],
+    );
+    const collectedToday = Number(todayRes.rows[0].total) || 0;
+
+    // --- Final Response (All keys required by FinancialsView.vue) ---
+    res.json({
+      total_sales: totalSales,
+      total_payments: totalPayments,
+      collected_today: collectedToday,
+      total_debt: totalDebt,
+    });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("Finance Report Error:", err);
+    res.status(500).json({ error: "Failed to generate report" });
+  } finally {
+    client.release();
   }
 });
+app.get(
+  "/api/v1/reports/service-summary",
+  authenticateToken,
+  async (req, res) => {
+    const { from, to } = req.query;
+    const params = [req.shopId];
+    let dateFilter = "";
 
+    if (from) {
+      params.push(from);
+      dateFilter += ` AND aps.start_time >= $${params.length}`;
+    }
+    if (to) {
+      params.push(to);
+      dateFilter += ` AND aps.start_time <= $${params.length}`;
+    }
+
+    try {
+      // We join with active_clients as the source of truth for client data
+      // Updated query to filter for past appointments only
+      const query = `
+        SELECT 
+          s.name as service_name,
+          COUNT(aps.id) as service_count,
+          SUM(COALESCE(aps.price_override, s.price)) as total_value,
+          SUM(COALESCE((
+            SELECT SUM(t.amount) 
+            FROM transactions t 
+            WHERE t.appointment_id = a.id
+          ), 0)) as total_paid
+        FROM appointment_services aps
+        JOIN services s ON aps.service_id = s.id
+        JOIN appointments a ON aps.appointment_id = a.id
+        JOIN active_clients c ON a.client_id = c.id
+        WHERE a.shop_id = $1 
+          -- AND aps.start_time <= CURRENT_TIMESTAMP 
+          -- Exclude cancelled and no-show statuses
+          AND a.status NOT IN ('cancelled', 'no-show') 
+          ${dateFilter}
+        GROUP BY s.name
+        ORDER BY total_value DESC
+      `;
+
+      const { rows } = await pool.query(query, params);
+
+      // Calculate owed amount for each row
+      const reportData = rows.map((row) => ({
+        ...row,
+        total_owed: Math.max(
+          0,
+          Number(row.total_value) - Number(row.total_paid),
+        ),
+      }));
+
+      res.json(reportData);
+    } catch (err) {
+      console.error("Service Summary Error:", err);
+      res.status(500).json({ error: "Failed to generate service summary" });
+    }
+  },
+);
 const io = new Server(server, {
   cors: {
     // You can use an array or a single string from your .env
-    origin: [ALLOWED_ORIGIN, "http://localhost:5173"],
+    origin: allowedOrigins,
     credentials: true,
   },
 });
@@ -1850,7 +2159,7 @@ io.use((socket, next) => {
   const token = socket.handshake.auth.token;
   if (!token) return next(new Error("Authentication error"));
 
-  jwt.verify(token, process.env.JWT_SECRET || "secret", (err, user) => {
+  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
     if (err) return next(new Error("Authentication error"));
     socket.user = user;
     next();
@@ -1898,7 +2207,7 @@ io.on("connection", (socket) => {
           fileSize || null,
           fileType || null,
           binaryData,
-          process.env.MESSAGE_ENCRYPTION_KEY || "SecretKey123", // $9: The Key
+          process.env.MESSAGE_ENCRYPTION_KEY, // $9: The Key
         ],
       );
 
@@ -2035,7 +2344,7 @@ app.get("/api/v1/chat/channels", authenticateToken, async (req, res) => {
     res.json(rows);
   } catch (err) {
     console.error("Error fetching channels:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -2123,7 +2432,7 @@ app.get(
 
       // Update params to include the key first
       const params = [
-        process.env.MESSAGE_ENCRYPTION_KEY || "SecretKey123",
+        process.env.MESSAGE_ENCRYPTION_KEY,
         channelId,
       ];
 
@@ -2142,7 +2451,7 @@ app.get(
       res.json(rows.reverse());
     } catch (err) {
       console.error("Error fetching messages:", err);
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: "Internal server error" });
     }
   },
 );
@@ -2161,7 +2470,7 @@ app.get("/api/v1/chat/shop-users", authenticateToken, async (req, res) => {
     res.json(rows);
   } catch (err) {
     console.error("Error fetching shop users:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -2210,69 +2519,10 @@ app.post("/api/v1/chat/channels", authenticateToken, async (req, res) => {
   }
 });
 
-// Get messages for a channel
-app.get(
-  "/api/v1/chat/channels/:channelId/messages",
-  authenticateToken,
-  async (req, res) => {
-    const { channelId } = req.params;
-    const { limit = 100, before } = req.query;
-
-    try {
-      const memberCheck = await pool.query(
-        `SELECT 1 FROM channel_members WHERE channel_id = $1 AND user_id = $2`,
-        [channelId, req.user.userId],
-      );
-
-      if (memberCheck.rows.length === 0) {
-        return res.status(403).json({ error: "Not a member of this channel" });
-      }
-
-      let query = `
-      SELECT m.*, 
-        json_build_object(
-          'id', u.id,
-          'username', u.username,
-          'staff_name', s.name
-        ) as user,
-        COALESCE(
-          json_agg(
-            json_build_object('user_id', r.user_id, 'read_at', r.read_at)
-          ) FILTER (WHERE r.id IS NOT NULL),
-          '[]'
-        ) as read_by
-      FROM chat_messages m
-      JOIN users u ON m.user_id = u.id
-      LEFT JOIN staff s ON u.staff_id = s.id
-      LEFT JOIN message_read_receipts r ON m.id = r.message_id
-      WHERE m.channel_id = $1
-    `;
-
-      const params = [channelId];
-
-      if (before) {
-        params.push(before);
-        query += ` AND m.created_at < $${params.length}`;
-      }
-
-      query += ` GROUP BY m.id, u.id, u.username, s.name
-               ORDER BY m.created_at DESC
-               LIMIT $${params.length + 1}`;
-      params.push(limit);
-
-      const { rows } = await pool.query(query, params);
-      res.json(rows.reverse());
-    } catch (err) {
-      console.error("Error fetching messages:", err);
-      res.status(500).json({ error: err.message });
-    }
-  },
-);
-
 const fileStorage = multer.memoryStorage();
 const fileUpload = multer({
   storage: fileStorage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
 });
 
 app.post(
@@ -2301,6 +2551,7 @@ app.post(
         base64: base64Data,
       });
     } catch (err) {
+      console.error(err);
       res.status(500).json({ error: "Upload processing failed" });
     }
   },
@@ -2330,6 +2581,7 @@ app.get("/api/v1/chat/file/:messageId", authenticateToken, async (req, res) => {
     );
     res.send(file_blob);
   } catch (err) {
+    console.error(err);
     res.status(500).send("Error retrieving file");
   }
 });
@@ -2351,7 +2603,8 @@ app.get(
       );
       res.json(rows);
     } catch (err) {
-      res.status(500).json({ error: err.message });
+      console.error(err);
+      res.status(500).json({ error: "Internal server error" });
     }
   },
 );
@@ -2372,7 +2625,8 @@ app.post(
       );
       res.json({ success: true });
     } catch (err) {
-      res.status(500).json({ error: err.message });
+      console.error(err);
+      res.status(500).json({ error: "Internal server error" });
     }
   },
 );
@@ -2391,7 +2645,7 @@ app.get("/api/v1/chat/shop-users", authenticateToken, async (req, res) => {
     res.json(rows);
   } catch (err) {
     console.error("Error fetching shop users:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 app.get("/api/v1/shop", authenticateToken, async (req, res) => {
@@ -2413,7 +2667,7 @@ app.get("/api/v1/shop", authenticateToken, async (req, res) => {
     res.json(rows[0]);
   } catch (err) {
     console.error("Error fetching shop:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 // PUT: Update Shop Theme Color
@@ -2440,7 +2694,7 @@ app.put("/api/v1/shop/theme", authenticateToken, async (req, res) => {
     res.json({ message: "Theme updated successfully", primaryColor });
   } catch (err) {
     console.error("Error updating theme:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -2477,9 +2731,108 @@ app.put("/api/v1/shop/services", authenticateToken, async (req, res) => {
     });
   } catch (err) {
     console.error("Error updating shop services:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
+app.put("/api/v1/shop/reply-email", authenticateToken, async (req, res) => {
+  const { reply_email } = req.body;
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (reply_email && !emailRegex.test(reply_email)) {
+    return res.status(400).json({ error: "Invalid email format" });
+  }
+  try {
+    await pool.query(
+      `UPDATE shops SET reply_email = $1 WHERE id = $2`,
+      [reply_email || null, req.shopId],
+    );
+    res.json({ success: true, reply_email: reply_email || null });
+  } catch (err) {
+    console.error("Error updating reply email:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.put("/api/v1/shop/contact", authenticateToken, async (req, res) => {
+  const { phone, address, website } = req.body;
+  if (website && !website.startsWith("http://") && !website.startsWith("https://")) {
+    return res.status(400).json({ error: "Website must start with http:// or https://" });
+  }
+  try {
+    await pool.query(
+      `UPDATE shops SET phone = $1, address = $2, website = $3 WHERE id = $4`,
+      [phone || null, address || null, website || null, req.shopId],
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Error updating shop contact:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.put("/api/v1/shop/calendar-settings", authenticateToken, async (req, res) => {
+  const { slot_min_time, slot_max_time, show_weekends, reminder_hours_before } = req.body;
+  const timePattern = /^\d{2}:\d{2}$/;
+  if (!timePattern.test(slot_min_time) || !timePattern.test(slot_max_time)) {
+    return res.status(400).json({ error: "slot_min_time and slot_max_time must be in HH:MM format" });
+  }
+  const hours = parseInt(reminder_hours_before, 10);
+  if (!Number.isInteger(hours) || hours < 1 || hours > 72) {
+    return res.status(400).json({ error: "reminder_hours_before must be an integer between 1 and 72" });
+  }
+  try {
+    await pool.query(
+      `UPDATE shops SET slot_min_time = $1, slot_max_time = $2, show_weekends = $3, reminder_hours_before = $4 WHERE id = $5`,
+      [slot_min_time, slot_max_time, !!show_weekends, hours, req.shopId],
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Error updating calendar settings:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.post(
+  "/api/v1/staff/:id/photo",
+  authenticateToken,
+  dbFileUpload.single("photo"),
+  async (req, res) => {
+    if (req.user.role !== "admin" && req.user.role !== "super_admin") {
+      return res.status(403).json({ error: "Admins only" });
+    }
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+    if (!req.file.mimetype.startsWith("image/")) {
+      return res.status(400).json({ error: "File must be an image" });
+    }
+    const dataUrl = `data:${req.file.mimetype};base64,${req.file.buffer.toString("base64")}`;
+    try {
+      await pool.query(
+        `UPDATE staff SET photo_url = $1 WHERE id = $2 AND shop_id = $3`,
+        [dataUrl, req.params.id, req.shopId],
+      );
+      res.json({ success: true, photo_url: dataUrl });
+    } catch (err) {
+      console.error("Error uploading staff photo:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
+
+app.delete("/api/v1/staff/:id/photo", authenticateToken, async (req, res) => {
+  if (req.user.role !== "admin" && req.user.role !== "super_admin") {
+    return res.status(403).json({ error: "Admins only" });
+  }
+  try {
+    await pool.query(
+      `UPDATE staff SET photo_url = NULL WHERE id = $1 AND shop_id = $2`,
+      [req.params.id, req.shopId],
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Error deleting staff photo:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // ==================== KEEP ALL YOUR OTHER ROUTES ====================
 // (Profile, Staff, Clients, Services, Appointments, Reports, etc.)
 // ... Copy all routes from your original server.js here ...
@@ -2502,7 +2855,8 @@ app.get("/api/v1/profile", authenticateToken, async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     res.json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -2528,7 +2882,8 @@ app.get("/api/v1/products", authenticateToken, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -2556,8 +2911,9 @@ app.post("/api/v1/products", authenticateToken, async (req, res) => {
     await client.query("COMMIT");
     res.json({ success: true, productId });
   } catch (err) {
+    console.error(err);
     await client.query("ROLLBACK");
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal server error" });
   } finally {
     client.release();
   }
@@ -2578,6 +2934,7 @@ app.patch(
       );
       res.json(rows[0]);
     } catch (err) {
+      console.error(err);
       res.status(500).json({ error: "Insufficient stock or update failed" });
     }
   },
@@ -2620,8 +2977,9 @@ app.put("/api/v1/products/:id", authenticateToken, async (req, res) => {
     await client.query("COMMIT");
     res.json({ success: true });
   } catch (err) {
+    console.error(err);
     await client.query("ROLLBACK");
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal server error" });
   } finally {
     client.release();
   }
@@ -2648,6 +3006,16 @@ app.delete("/api/v1/products/:id", authenticateToken, async (req, res) => {
 // GET FULL CLIENT PROFILE (Info + History + File Metadata)
 app.get("/api/v1/clients/:id/full", authenticateToken, async (req, res) => {
   const { id } = req.params;
+  if (req.user.role === "client") {
+    if (String(req.user.clientId) !== String(id)) {
+      console.log(
+        `Blocked access: User ${req.user.clientId} tried to view ${id}`,
+      );
+      return res
+        .status(403)
+        .json({ error: "Unauthorized to view this profile" });
+    }
+  }
   try {
     // 1. Fetch Client Details
     const clientRes = await pool.query(
@@ -2662,46 +3030,48 @@ app.get("/api/v1/clients/:id/full", authenticateToken, async (req, res) => {
 
     // 2. Fetch Appointment History
     // FIX: logic calculates start_time from subquery and orders by it safely
+    // 2. Fetch Appointment History
     const historyRes = await pool.query(
       `SELECT 
           a.id, 
           a.status, 
           a.deposit_amount,
           a.created_at,
-          -- Get the earliest service start time for this appointment
           (
             SELECT MIN(start_time) 
             FROM appointment_services 
             WHERE appointment_id = a.id
           ) as start_time,
           
-          -- Sum of services prices
           COALESCE((
             SELECT SUM(price_override) 
             FROM appointment_services 
             WHERE appointment_id = a.id
           ), 0) as total_service_price,
           
-          -- Sum of product sales linked to this appointment
           COALESCE((
             SELECT SUM(total_price) 
             FROM product_sales 
             WHERE appointment_id = a.id
           ), 0) as total_product_price,
           
-          -- Concatenate service names
           (
             SELECT string_agg(s.name, ', ') 
             FROM appointment_services aps 
             JOIN services s ON aps.service_id = s.id 
             WHERE aps.appointment_id = a.id
-          ) as service_names
+          ) as service_names,
 
-       FROM appointments a
-       WHERE a.client_id = $1 AND a.shop_id = $2
-       
-       -- Order by the calculated start_time (using index 5 to avoid alias ambiguity)
-       ORDER BY 5 DESC`,
+          (
+            SELECT string_agg(DISTINCT st.name, ', ') 
+            FROM appointment_services aps 
+            JOIN staff st ON aps.staff_id = st.id 
+            WHERE aps.appointment_id = a.id
+          ) as staff_names
+
+        FROM appointments a
+        WHERE a.client_id = $1 AND a.shop_id = $2
+        ORDER BY 5 DESC`, // 5 refers to start_time
       [id, req.shopId],
     );
 
@@ -2724,7 +3094,7 @@ app.get("/api/v1/clients/:id/full", authenticateToken, async (req, res) => {
   } catch (err) {
     console.error("Profile Fetch Error:", err);
     // Return JSON error so frontend doesn't crash with SyntaxError
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -2764,27 +3134,51 @@ app.get(
   authenticateToken,
   async (req, res) => {
     try {
-      const { rows } = await pool.query(
-        `SELECT cf.file_data, cf.file_type, cf.file_name 
-       FROM client_files cf
-       JOIN clients c ON cf.client_id = c.id
-       WHERE cf.id = $1 AND c.shop_id = $2`,
-        [req.params.fileId, req.shopId],
-      );
+      const { fileId } = req.params;
+      let query = `
+      SELECT cf.file_data, cf.file_type, cf.file_name 
+      FROM client_files cf
+      JOIN clients c ON cf.client_id = c.id
+      WHERE cf.id = $1
+    `;
+      let params = [fileId];
 
-      if (rows.length === 0)
-        return res.status(404).json({ error: "File not found" });
+      // 2. Add Role-Based Security
+      if (req.user.role === "client") {
+        // CLIENTS: Must match the file ID AND their own clientId
+        query += ` AND cf.client_id = $2`;
+        params.push(req.user.clientId);
+      } else {
+        // STAFF/ADMIN: Must match the file ID AND the shop_id they belong to
+        query += ` AND c.shop_id = $2`;
+        params.push(req.shopId);
+      }
+
+      // 3. Execute the query AFTER building it
+      const { rows } = await pool.query(query, params);
+
+      if (rows.length === 0) {
+        return res
+          .status(404)
+          .json({ error: "File not found or access denied" });
+      }
 
       const file = rows[0];
       const encodedName = encodeURIComponent(file.file_name);
 
-      res.setHeader("Content-Type", file.file_type);
+      // 4. Send the file
+      res.setHeader(
+        "Content-Type",
+        file.file_type || "application/octet-stream",
+      );
       res.setHeader(
         "Content-Disposition",
         `attachment; filename*=UTF-8''${encodedName}`,
       );
+
       res.send(file.file_data);
     } catch (err) {
+      console.error("Download Error:", err);
       res.status(500).json({ error: "Download failed" });
     }
   },
@@ -2804,6 +3198,7 @@ app.delete(
       );
       res.json({ success: true });
     } catch (err) {
+      console.error(err);
       res.status(500).json({ error: "Delete failed" });
     }
   },
@@ -2816,7 +3211,8 @@ app.get("/api/v1/exercises", authenticateToken, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -2831,7 +3227,8 @@ app.post("/api/v1/exercises", authenticateToken, async (req, res) => {
     );
     res.json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -2848,7 +3245,8 @@ app.get(
       // Return simple array of IDs: ['uuid-1', 'uuid-2']
       res.json(rows.map((r) => r.exercise_id));
     } catch (err) {
-      res.status(500).json({ error: err.message });
+      console.error(err);
+      res.status(500).json({ error: "Internal server error" });
     }
   },
 );
@@ -2907,6 +3305,269 @@ app.delete("/api/v1/exercises/:id", authenticateToken, async (req, res) => {
     res.status(500).json({ error: "Failed to delete exercise" });
   }
 });
+
+// Invite Endpoint
+app.post("/api/v1/clients/:id/invite", authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { rows } = await pool.query(
+      "SELECT * FROM clients WHERE id = $1 AND shop_id = $2",
+      [id, req.shopId],
+    );
+    if (rows.length === 0)
+      return res.status(404).json({ error: "Client not found" });
+    const client = rows[0];
+
+    if (!client.email)
+      return res
+        .status(400)
+        .json({ error: "Client does not have an email address" });
+
+    const userCheck = await pool.query(
+      "SELECT id FROM users WHERE client_id = $1",
+      [id],
+    );
+    if (userCheck.rows.length > 0)
+      return res.status(400).json({ error: "Client already has an account" });
+
+    // Fetch shop reply_email
+    const shopRes = await pool.query(
+      "SELECT reply_email FROM shops WHERE id = $1",
+      [req.shopId],
+    );
+    const replyEmail = shopRes.rows[0]?.reply_email || null;
+
+    // Generate temporary token for signup
+    const inviteToken = jwt.sign(
+      { clientId: id, shopId: req.shopId, email: client.email },
+      process.env.JWT_SECRET,
+      { expiresIn: "48h" },
+    );
+
+    const signupUrl = `https://interventio.gr/signup?token=${inviteToken}`;
+    const nodemailer = require("nodemailer");
+
+    const transporter = nodemailer.createTransport({
+      host: process.env.EMAIL_HOST,
+      port: process.env.EMAIL_PORT,
+      secure: process.env.EMAIL_PORT == 465,
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
+      },
+      family: 4,
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+    });
+
+    await transporter.sendMail({
+      from: `"${req.user.shopName || "Booking"}" <${process.env.EMAIL_USER}>`,
+      ...(replyEmail && { replyTo: replyEmail }),
+      to: client.email,
+      subject: "Invitation to your Client Portal",
+      html: `
+<!doctype html>
+<html>
+  <head>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet" />
+    <style>
+      /* Mobile responsiveness */
+      @media only screen and (max-width: 600px) {
+        .inner-padding { padding: 30px 15px !important; }
+        .button-stack { display: block !important; width: 100% !important; margin: 10px 0 !important; box-sizing: border-box !important; }
+      }
+      /* Hover effect for buttons */
+      .btn-hover:hover { background-color: #ff7ec7 !important; transform: translateY(-2px); }
+    </style>
+  </head>
+  <body style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #fff5f9; padding: 40px 10px; margin: 0; -webkit-font-smoothing: antialiased;">
+    <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 32px; overflow: hidden; box-shadow: 0 20px 25px -5px rgba(255, 147, 212, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);">
+      
+      <div style="padding: 40px 40px 20px 40px; text-align: left">
+        <div style="display: inline-block; background-color: #ff93d4; color: white; padding: 4px 12px; border-radius: 9999px; font-size: 12px; font-weight: 700; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 0.05em;">
+          Πρόσκληση
+        </div>
+        <h2 style="margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.025em;">
+          <span style="color: #111827">${req.user.shopName || "Petalouda"}</span><span style="color: #ff93d4">Portal</span>
+        </h2>
+      </div>
+
+      <div class="inner-padding" style="padding: 0 40px 40px 40px">
+        <h1 style="color: #111827; font-size: 32px; font-weight: 800; margin-bottom: 24px; line-height: 1.1; letter-spacing: -1px;">
+          Καλώς ήρθατε στο <span style="color: #ff7ec7">Online Portal</span> μας
+        </h1>
+
+        <p style="color: #4b5563; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
+          Γεια σας ${client.first_name},
+        </p>
+        <p style="color: #4b5563; font-size: 16px; line-height: 1.6">
+          Είμαστε ενθουσιασμένοι που σας προσκαλούμε στη νέα μας πλατφόρμα. Εδώ μπορείτε να διαχειρίζεστε τα ραντεβού σας και να έχετε πρόσβαση στα έγγραφά σας 24/7.
+        </p>
+
+        <div style="background-color: #fff5f9; border-radius: 24px; padding: 30px; margin: 32px 0; border: 1px solid rgba(255, 147, 212, 0.2);">
+          <ul style="color: #374151; font-size: 15px; padding-left: 0; list-style: none; margin: 0;">
+            <li style="margin-bottom: 12px; display: flex; align-items: center;">
+              <span style="color: #ff93d4; margin-right: 12px; font-size: 18px;">📅</span> 
+              <strong>Προβολή ραντεβού:</strong> Δείτε τα επόμενα ραντεβού σας.
+            </li>
+            <li style="margin-bottom: 12px; display: flex; align-items: center;">
+              <span style="color: #ff93d4; margin-right: 12px; font-size: 18px;">🕒</span> 
+              <strong>Ιστορικό:</strong> Πλήρης έλεγχος των επισκέψεών σας.
+            </li>
+            <li style="display: flex; align-items: center;">
+              <span style="color: #ff93d4; margin-right: 12px; font-size: 18px;">📁</span> 
+              <strong>Αρχεία:</strong> Κατεβάστε σημαντικά έγγραφα και οδηγίες.
+            </li>
+          </ul>
+        </div>
+
+        <div style="text-align: center; margin-top: 40px;">
+          <a href="${signupUrl}" class="btn-hover button-stack" style="display: inline-block; background-color: #ff93d4; color: white; padding: 18px 40px; border-radius: 16px; text-decoration: none; font-weight: 700; font-size: 16px; transition: all 0.2s ease; box-shadow: 0 10px 15px -3px rgba(255, 147, 212, 0.3);">
+            Ενεργοποίηση Λογαριασμού
+          </a>
+          <p style="color: #9ca3af; font-size: 12px; margin-top: 25px;">
+             Αυτός ο σύνδεσμος θα λήξει σε 48 ώρες για την ασφάλειά σας.
+          </p>
+        </div>
+      </div>
+
+      <div style="background-color: #fff; padding: 40px; text-align: center; border-top: 1px solid rgba(255, 147, 212, 0.1);">
+        <p style="color: #111827; font-size: 16px; font-weight: 700; margin-bottom: 8px;">
+          ${req.user.shopName || "Petalouda"}<span style="color: #ff93d4"> Booking</span>
+        </p>
+        <p style="color: #9ca3af; font-size: 12px; margin: 0;">
+          © 2026 Powered by Interventio Booking System
+        </p>
+      </div>
+    </div>
+  </body>
+</html>
+      `,
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Invite Error:", err);
+    res.status(500).json({ error: "Failed to send invitation" });
+  }
+});
+
+// Signup Endpoint
+app.post("/api/v1/signup", signupLimiter, async (req, res) => {
+  const { token, password } = req.body;
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    const userCheck = await pool.query(
+      "SELECT id FROM users WHERE username = $1",
+      [decoded.email],
+    );
+    if (userCheck.rows.length > 0)
+      return res
+        .status(400)
+        .json({ error: "An account with this email already exists" });
+
+    const hashedPassword = await bcrypt.hash(password, 12);
+
+    await pool.query(
+      `INSERT INTO users (username, password, role, shop_id, client_id) VALUES ($1, $2, 'client', $3, $4)`,
+      [decoded.email, hashedPassword, decoded.shopId, decoded.clientId],
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(400).json({ error: "Invalid or expired invitation link" });
+  }
+});
+// ==================== CLIENT PORTAL ROUTES ====================
+
+app.put("/api/v1/portal/profile", authenticateToken, async (req, res) => {
+  if (req.user.role !== "client") {
+    return res.status(403).json({ error: "Clients only" });
+  }
+  const { first_name, last_name, email, phone } = req.body;
+  if (!first_name?.trim() || !last_name?.trim()) {
+    return res.status(400).json({ error: "First name and last name are required" });
+  }
+  try {
+    await pool.query(
+      `UPDATE clients SET first_name = $1, last_name = $2, email = $3, phone = $4 WHERE id = $5 AND shop_id = $6`,
+      [first_name, last_name, email || null, phone || null, req.user.clientId, req.shopId],
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Portal profile update error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.put("/api/v1/portal/password", authenticateToken, async (req, res) => {
+  if (req.user.role !== "client") {
+    return res.status(403).json({ error: "Clients only" });
+  }
+  const { currentPassword, newPassword } = req.body;
+  if (!newPassword || newPassword.length < 6) {
+    return res.status(400).json({ error: "New password must be at least 6 characters" });
+  }
+  try {
+    const { rows } = await pool.query(
+      "SELECT password FROM users WHERE id = $1",
+      [req.user.userId],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: "User not found" });
+    const match = await bcrypt.compare(currentPassword, rows[0].password);
+    if (!match) return res.status(400).json({ error: "Current password is incorrect" });
+    const hashed = await bcrypt.hash(newPassword, 10);
+    await pool.query("UPDATE users SET password = $1 WHERE id = $2", [hashed, req.user.userId]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Portal password change error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.post("/api/v1/portal/appointments/:id/cancel", authenticateToken, async (req, res) => {
+  if (req.user.role !== "client") {
+    return res.status(403).json({ error: "Clients only" });
+  }
+  const { id } = req.params;
+  try {
+    const check = await pool.query(
+      `SELECT id FROM appointments WHERE id = $1 AND client_id = $2 AND shop_id = $3 AND status NOT IN ('cancelled', 'completed')`,
+      [id, req.user.clientId, req.shopId],
+    );
+    if (check.rows.length === 0) {
+      return res.status(404).json({ error: "Appointment not found or cannot be cancelled" });
+    }
+    await pool.query(
+      `UPDATE appointments SET status = 'cancelled' WHERE id = $1`,
+      [id],
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Portal appointment cancel error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.put("/api/v1/portal/notifications", authenticateToken, async (req, res) => {
+  if (req.user.role !== "client") {
+    return res.status(403).json({ error: "Clients only" });
+  }
+  const { receive_emails } = req.body;
+  try {
+    await pool.query(
+      `UPDATE clients SET receive_emails = $1 WHERE id = $2 AND shop_id = $3`,
+      [!!receive_emails, req.user.clientId, req.shopId],
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Portal notifications update error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 app.get(/(.*)/, (req, res) => {
   if (req.path.startsWith("/api")) {
     return res.status(404).json({ error: "API Route Not Found" });
