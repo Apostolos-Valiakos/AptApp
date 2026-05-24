@@ -6,7 +6,7 @@
     "dev": "concurrently \"npm run server\" \"npm run client:dev\"",
     "server": "node server/server.js",
     "client:dev": "vite --host",
-    "build": "npm --prefix client run build",
+    "build": "vite build",
     "start": "node server/server.js"
   },
   "devDependencies": {
