@@ -92,7 +92,9 @@ export const useChatStore = defineStore("chat", () => {
     //   auth: { token },
     //   transports: ["websocket", "polling"],
     // });
-    socket.value = io({
+    const socketUrl =
+      (import.meta.env.VITE_API_BASE_URL as string) || window.location.origin;
+    socket.value = io(socketUrl, {
       auth: { token },
       transports: ["websocket", "polling"],
     });
