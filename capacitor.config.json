@@ -1,5 +1,5 @@
 {
   "appId": "com.interventio.app",
   "appName": "Interventio Booking",
-  "webDir": "www"
+  "webDir": "client/dist"
 }
