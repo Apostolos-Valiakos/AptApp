@@ -6,9 +6,9 @@
     "dev": "concurrently \"npm run server\" \"npm run client:dev\"",
     "server": "node server/server.js",
     "client:dev": "vite --host",
-    "build": "npm --prefix client run build", // ◄--- CHANGE THIS LINE
+    "build": "npm --prefix client run build",
     "start": "node server/server.js"
-},
+  },
   "devDependencies": {
     "@types/nodemailer": "^7.0.11",
     "autoprefixer": "^10.4.22",
