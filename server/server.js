@@ -6,7 +6,9 @@ if (!process.env.JWT_SECRET) {
   process.exit(1);
 }
 if (!process.env.MESSAGE_ENCRYPTION_KEY) {
-  console.error("FATAL: MESSAGE_ENCRYPTION_KEY environment variable is not set");
+  console.error(
+    "FATAL: MESSAGE_ENCRYPTION_KEY environment variable is not set",
+  );
   process.exit(1);
 }
 
@@ -27,7 +29,9 @@ const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
 
-const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "http://localhost:5173";
+const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(",")
+  : ["http://localhost:5173"];
 
 const allowedOrigins =
   process.env.NODE_ENV === "production"
@@ -972,7 +976,9 @@ app.post("/api/v1/clients", authenticateToken, async (req, res) => {
   } = req.body;
 
   if (!first_name?.trim() || !last_name?.trim()) {
-    return res.status(400).json({ error: "First name and last name are required" });
+    return res
+      .status(400)
+      .json({ error: "First name and last name are required" });
   }
 
   try {
@@ -1108,10 +1114,14 @@ app.post("/api/v1/services", authenticateToken, async (req, res) => {
     return res.status(400).json({ error: "Service name is required" });
   }
   if (!duration_minutes || Number(duration_minutes) <= 0) {
-    return res.status(400).json({ error: "Duration must be a positive number" });
+    return res
+      .status(400)
+      .json({ error: "Duration must be a positive number" });
   }
   if (price == null || Number(price) < 0) {
-    return res.status(400).json({ error: "Price must be a non-negative number" });
+    return res
+      .status(400)
+      .json({ error: "Price must be a non-negative number" });
   }
 
   try {
@@ -1266,9 +1276,7 @@ app.post("/api/v1/appointments", authenticateToken, async (req, res) => {
   } catch (err) {
     await client.query("ROLLBACK");
     console.error("Create Appointment Error:", err);
-    res
-      .status(500)
-      .json({ error: "Failed to create appointment" });
+    res.status(500).json({ error: "Failed to create appointment" });
   } finally {
     client.release();
   }
@@ -1317,39 +1325,42 @@ app.get("/api/v1/unsubscribe", publicActionLimiter, async (req, res) => {
     res.status(500).send("Παρουσιάστηκε σφάλμα κατά τη διαγραφή.");
   }
 });
-app.get("/api/v1/confirm-appointment", publicActionLimiter, async (req, res) => {
-  const crypto = require("crypto");
-  const { id, token } = req.query;
+app.get(
+  "/api/v1/confirm-appointment",
+  publicActionLimiter,
+  async (req, res) => {
+    const crypto = require("crypto");
+    const { id, token } = req.query;
 
-  if (!id || !token) {
-    return res.status(400).send("Μη έγκυρο αίτημα.");
-  }
-
-  // Verify the token matches the Appointment ID
-  const expectedToken = crypto
-    .createHmac("sha256", process.env.JWT_SECRET)
-    .update(id.toString())
-    .digest("hex");
-
-  if (token !== expectedToken) {
-    return res.status(403).send("Ο σύνδεσμος είναι άκυρος ή έχει λήξει.");
-  }
-
-  try {
-    // Update status to 'confirmed' only if it's not already cancelled
-    const result = await pool.query(
-      "UPDATE appointments SET status = 'confirmed' WHERE id = $1 AND status != 'cancelled' RETURNING id",
-      [id],
-    );
-
-    if (result.rowCount === 0) {
-      return res
-        .status(404)
-        .send("Το ραντεβού δεν βρέθηκε ή έχει ήδη ακυρωθεί.");
+    if (!id || !token) {
+      return res.status(400).send("Μη έγκυρο αίτημα.");
     }
 
-    // Success Styled Page
-    res.send(`
+    // Verify the token matches the Appointment ID
+    const expectedToken = crypto
+      .createHmac("sha256", process.env.JWT_SECRET)
+      .update(id.toString())
+      .digest("hex");
+
+    if (token !== expectedToken) {
+      return res.status(403).send("Ο σύνδεσμος είναι άκυρος ή έχει λήξει.");
+    }
+
+    try {
+      // Update status to 'confirmed' only if it's not already cancelled
+      const result = await pool.query(
+        "UPDATE appointments SET status = 'confirmed' WHERE id = $1 AND status != 'cancelled' RETURNING id",
+        [id],
+      );
+
+      if (result.rowCount === 0) {
+        return res
+          .status(404)
+          .send("Το ραντεβού δεν βρέθηκε ή έχει ήδη ακυρωθεί.");
+      }
+
+      // Success Styled Page
+      res.send(`
       <div style="font-family: sans-serif; text-align: center; padding: 100px 20px; background: #fff5f9; min-height: 100vh;">
           <div style="background: white; padding: 40px; border-radius: 32px; display: inline-block; box-shadow: 0 20px 25px rgba(255,147,212,0.1); max-width: 400px;">
               <div style="font-size: 48px; margin-bottom: 20px;">✅</div>
@@ -1359,11 +1370,12 @@ app.get("/api/v1/confirm-appointment", publicActionLimiter, async (req, res) => 
           </div>
       </div>
     `);
-  } catch (err) {
-    console.error("Confirmation Error:", err);
-    res.status(500).send("Παρουσιάστηκε σφάλμα κατά την επιβεβαίωση.");
-  }
-});
+    } catch (err) {
+      console.error("Confirmation Error:", err);
+      res.status(500).send("Παρουσιάστηκε σφάλμα κατά την επιβεβαίωση.");
+    }
+  },
+);
 app.put("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
   const { id } = req.params;
   const { scope } = req.query;
@@ -1626,7 +1638,10 @@ app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
       [appointment_id],
     );
     const currentApptAlreadyPaid = Number(currentPaidRes.rows[0].paid);
-    const currentApptOwed = Math.max(0, currentApptCost - currentApptAlreadyPaid);
+    const currentApptOwed = Math.max(
+      0,
+      currentApptCost - currentApptAlreadyPaid,
+    );
 
     // 2. Allocate: pay current appointment first, then apply the remainder to old debt (FIFO)
     let remaining = Number(amount);
@@ -2431,10 +2446,7 @@ app.get(
 `;
 
       // Update params to include the key first
-      const params = [
-        process.env.MESSAGE_ENCRYPTION_KEY,
-        channelId,
-      ];
+      const params = [process.env.MESSAGE_ENCRYPTION_KEY, channelId];
 
       if (before) {
         params.push(before);
@@ -2741,10 +2753,10 @@ app.put("/api/v1/shop/reply-email", authenticateToken, async (req, res) => {
     return res.status(400).json({ error: "Invalid email format" });
   }
   try {
-    await pool.query(
-      `UPDATE shops SET reply_email = $1 WHERE id = $2`,
-      [reply_email || null, req.shopId],
-    );
+    await pool.query(`UPDATE shops SET reply_email = $1 WHERE id = $2`, [
+      reply_email || null,
+      req.shopId,
+    ]);
     res.json({ success: true, reply_email: reply_email || null });
   } catch (err) {
     console.error("Error updating reply email:", err);
@@ -2754,8 +2766,14 @@ app.put("/api/v1/shop/reply-email", authenticateToken, async (req, res) => {
 
 app.put("/api/v1/shop/contact", authenticateToken, async (req, res) => {
   const { phone, address, website } = req.body;
-  if (website && !website.startsWith("http://") && !website.startsWith("https://")) {
-    return res.status(400).json({ error: "Website must start with http:// or https://" });
+  if (
+    website &&
+    !website.startsWith("http://") &&
+    !website.startsWith("https://")
+  ) {
+    return res
+      .status(400)
+      .json({ error: "Website must start with http:// or https://" });
   }
   try {
     await pool.query(
@@ -2769,27 +2787,44 @@ app.put("/api/v1/shop/contact", authenticateToken, async (req, res) => {
   }
 });
 
-app.put("/api/v1/shop/calendar-settings", authenticateToken, async (req, res) => {
-  const { slot_min_time, slot_max_time, show_weekends, reminder_hours_before } = req.body;
-  const timePattern = /^\d{2}:\d{2}$/;
-  if (!timePattern.test(slot_min_time) || !timePattern.test(slot_max_time)) {
-    return res.status(400).json({ error: "slot_min_time and slot_max_time must be in HH:MM format" });
-  }
-  const hours = parseInt(reminder_hours_before, 10);
-  if (!Number.isInteger(hours) || hours < 1 || hours > 72) {
-    return res.status(400).json({ error: "reminder_hours_before must be an integer between 1 and 72" });
-  }
-  try {
-    await pool.query(
-      `UPDATE shops SET slot_min_time = $1, slot_max_time = $2, show_weekends = $3, reminder_hours_before = $4 WHERE id = $5`,
-      [slot_min_time, slot_max_time, !!show_weekends, hours, req.shopId],
-    );
-    res.json({ success: true });
-  } catch (err) {
-    console.error("Error updating calendar settings:", err);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
+app.put(
+  "/api/v1/shop/calendar-settings",
+  authenticateToken,
+  async (req, res) => {
+    const {
+      slot_min_time,
+      slot_max_time,
+      show_weekends,
+      reminder_hours_before,
+    } = req.body;
+    const timePattern = /^\d{2}:\d{2}$/;
+    if (!timePattern.test(slot_min_time) || !timePattern.test(slot_max_time)) {
+      return res
+        .status(400)
+        .json({
+          error: "slot_min_time and slot_max_time must be in HH:MM format",
+        });
+    }
+    const hours = parseInt(reminder_hours_before, 10);
+    if (!Number.isInteger(hours) || hours < 1 || hours > 72) {
+      return res
+        .status(400)
+        .json({
+          error: "reminder_hours_before must be an integer between 1 and 72",
+        });
+    }
+    try {
+      await pool.query(
+        `UPDATE shops SET slot_min_time = $1, slot_max_time = $2, show_weekends = $3, reminder_hours_before = $4 WHERE id = $5`,
+        [slot_min_time, slot_max_time, !!show_weekends, hours, req.shopId],
+      );
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Error updating calendar settings:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
 
 app.post(
   "/api/v1/staff/:id/photo",
@@ -3488,12 +3523,21 @@ app.put("/api/v1/portal/profile", authenticateToken, async (req, res) => {
   }
   const { first_name, last_name, email, phone } = req.body;
   if (!first_name?.trim() || !last_name?.trim()) {
-    return res.status(400).json({ error: "First name and last name are required" });
+    return res
+      .status(400)
+      .json({ error: "First name and last name are required" });
   }
   try {
     await pool.query(
       `UPDATE clients SET first_name = $1, last_name = $2, email = $3, phone = $4 WHERE id = $5 AND shop_id = $6`,
-      [first_name, last_name, email || null, phone || null, req.user.clientId, req.shopId],
+      [
+        first_name,
+        last_name,
+        email || null,
+        phone || null,
+        req.user.clientId,
+        req.shopId,
+      ],
     );
     res.json({ success: true });
   } catch (err) {
@@ -3508,18 +3552,25 @@ app.put("/api/v1/portal/password", authenticateToken, async (req, res) => {
   }
   const { currentPassword, newPassword } = req.body;
   if (!newPassword || newPassword.length < 6) {
-    return res.status(400).json({ error: "New password must be at least 6 characters" });
+    return res
+      .status(400)
+      .json({ error: "New password must be at least 6 characters" });
   }
   try {
     const { rows } = await pool.query(
       "SELECT password FROM users WHERE id = $1",
       [req.user.userId],
     );
-    if (rows.length === 0) return res.status(404).json({ error: "User not found" });
+    if (rows.length === 0)
+      return res.status(404).json({ error: "User not found" });
     const match = await bcrypt.compare(currentPassword, rows[0].password);
-    if (!match) return res.status(400).json({ error: "Current password is incorrect" });
+    if (!match)
+      return res.status(400).json({ error: "Current password is incorrect" });
     const hashed = await bcrypt.hash(newPassword, 10);
-    await pool.query("UPDATE users SET password = $1 WHERE id = $2", [hashed, req.user.userId]);
+    await pool.query("UPDATE users SET password = $1 WHERE id = $2", [
+      hashed,
+      req.user.userId,
+    ]);
     res.json({ success: true });
   } catch (err) {
     console.error("Portal password change error:", err);
@@ -3527,29 +3578,35 @@ app.put("/api/v1/portal/password", authenticateToken, async (req, res) => {
   }
 });
 
-app.post("/api/v1/portal/appointments/:id/cancel", authenticateToken, async (req, res) => {
-  if (req.user.role !== "client") {
-    return res.status(403).json({ error: "Clients only" });
-  }
-  const { id } = req.params;
-  try {
-    const check = await pool.query(
-      `SELECT id FROM appointments WHERE id = $1 AND client_id = $2 AND shop_id = $3 AND status NOT IN ('cancelled', 'completed')`,
-      [id, req.user.clientId, req.shopId],
-    );
-    if (check.rows.length === 0) {
-      return res.status(404).json({ error: "Appointment not found or cannot be cancelled" });
+app.post(
+  "/api/v1/portal/appointments/:id/cancel",
+  authenticateToken,
+  async (req, res) => {
+    if (req.user.role !== "client") {
+      return res.status(403).json({ error: "Clients only" });
     }
-    await pool.query(
-      `UPDATE appointments SET status = 'cancelled' WHERE id = $1`,
-      [id],
-    );
-    res.json({ success: true });
-  } catch (err) {
-    console.error("Portal appointment cancel error:", err);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
+    const { id } = req.params;
+    try {
+      const check = await pool.query(
+        `SELECT id FROM appointments WHERE id = $1 AND client_id = $2 AND shop_id = $3 AND status NOT IN ('cancelled', 'completed')`,
+        [id, req.user.clientId, req.shopId],
+      );
+      if (check.rows.length === 0) {
+        return res
+          .status(404)
+          .json({ error: "Appointment not found or cannot be cancelled" });
+      }
+      await pool.query(
+        `UPDATE appointments SET status = 'cancelled' WHERE id = $1`,
+        [id],
+      );
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Portal appointment cancel error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
 
 app.put("/api/v1/portal/notifications", authenticateToken, async (req, res) => {
   if (req.user.role !== "client") {
