@@ -3631,5 +3631,5 @@ app.get(/(.*)/, (req, res) => {
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`Allowed Origin: ${ALLOWED_ORIGIN}`);
+  console.log(`Allowed Origins: ${allowedOrigins.join(", ")}`);
 });
