@@ -33,7 +33,7 @@ const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(",")
   : ["http://localhost:5173"];
 
-const allowedOrigins = [ALLOWED_ORIGIN, "http://localhost:5173", "http://localhost:3000"];
+const allowedOrigins = [ ...ALLOWED_ORIGINS];
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
