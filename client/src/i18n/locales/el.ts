@@ -100,6 +100,7 @@ export default {
       requiredFields: 'Απαιτούνται όνομα και επώνυμο',
       saveFailed: 'Αποτυχία αποθήκευσης πελάτη',
       deleteDenied: 'Αποτυχία διαγραφής πελάτη',
+      loadFailed: 'Αδυναμία φόρτωσης πελατών. Δοκιμάστε ξανά.',
     },
     confirmDelete: 'Οριστική διαγραφή πελάτη "{name}";',
   },
@@ -140,6 +141,7 @@ export default {
       accountDetail: 'Ο λογαριασμός για τον/την {name} ενεργοποιήθηκε',
       saveFailed: 'Αποτυχία αποθήκευσης',
       deleteFailed: 'Αποτυχία διαγραφής μέλους',
+      loadFailed: 'Αδυναμία φόρτωσης προσωπικού. Δοκιμάστε ξανά.',
     },
     confirmDelete: 'Οριστική διαγραφή μέλους "{name}";',
     tooltips: {
@@ -216,6 +218,7 @@ export default {
       price: 'Τιμή (€)',
       initialStock: 'Αρχικό Απόθεμα',
       saveProduct: 'Αποθήκευση',
+      removeVariation: 'Αφαίρεση Παραλλαγής',
     },
     adjustStock: 'Ρύθμιση Αποθέματος',
     confirmDelete: 'Διαγραφή "{name}"; Θα αφαιρεθεί και το απόθεμα.',
@@ -442,6 +445,7 @@ export default {
       networkError: 'Σφάλμα δικτύου. Ελέγξτε τη σύνδεσή σας.',
       deleteFailed: 'Αποτυχία Διαγραφής',
       deleteFailedDetail: 'Αδυναμία ακύρωσης ραντεβού.',
+      quickAddFailedDetail: 'Αδυναμία αποθήκευσης πελάτη. Δοκιμάστε ξανά.',
     },
     validation: {
       selectClient: 'Επιλέξτε πελάτη πριν αποθηκεύσετε.',

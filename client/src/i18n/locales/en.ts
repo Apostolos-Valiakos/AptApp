@@ -100,6 +100,7 @@ export default {
       requiredFields: 'First and last name are required',
       saveFailed: 'Failed to save client',
       deleteDenied: 'Failed to delete client',
+      loadFailed: 'Could not load clients. Please try again.',
     },
     confirmDelete: 'Delete client "{name}" permanently?',
   },
@@ -140,6 +141,7 @@ export default {
       accountDetail: 'Login enabled for {name}',
       saveFailed: 'Failed to save',
       deleteFailed: 'Failed to delete staff',
+      loadFailed: 'Could not load staff. Please try again.',
     },
     confirmDelete: 'Delete staff "{name}" permanently?',
     tooltips: {
@@ -216,6 +218,7 @@ export default {
       price: 'Price (€)',
       initialStock: 'Initial Stock',
       saveProduct: 'Save Product',
+      removeVariation: 'Remove Variation',
     },
     adjustStock: 'Adjust Stock',
     confirmDelete: 'Are you sure you want to delete "{name}"? This will also remove all stock.',
@@ -442,6 +445,7 @@ export default {
       networkError: 'Network error. Please check your connection.',
       deleteFailed: 'Delete Failed',
       deleteFailedDetail: 'Could not cancel the appointment.',
+      quickAddFailedDetail: 'Could not save the client. Please try again.',
     },
     validation: {
       selectClient: 'Please select a client before saving.',

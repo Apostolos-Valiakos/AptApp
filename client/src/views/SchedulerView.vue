@@ -470,7 +470,7 @@ const calendarOptions = ref({
     return {
       html: `
         <div class="flex flex-col items-center justify-center py-2 w-full h-full">
-          <img src="${src}" class="w-8 h-8 rounded-full border-2 border-white shadow-sm mb-1.5 object-cover" />
+          <img src="${src}" alt="${arg.resource.title}" class="w-8 h-8 rounded-full border-2 border-white shadow-sm mb-1.5 object-cover" />
           <div style="white-space:normal;word-break:break-word;" class="font-bold text-gray-800 text-[10px] md:text-xs leading-tight text-center px-1">
             ${arg.resource.title}
           </div>

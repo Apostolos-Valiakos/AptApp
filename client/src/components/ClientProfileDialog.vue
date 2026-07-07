@@ -139,7 +139,13 @@
             <div class="grid grid-cols-3 gap-3">
               <div
                 v-if="shopSettings.ergotherapia"
+                role="checkbox"
+                :aria-checked="editForm.ergotherapia"
+                aria-label="Εργοθεραπεία"
+                tabindex="0"
                 @click="editForm.ergotherapia = !editForm.ergotherapia"
+                @keydown.enter.prevent="editForm.ergotherapia = !editForm.ergotherapia"
+                @keydown.space.prevent="editForm.ergotherapia = !editForm.ergotherapia"
                 :class="[
                   'flex flex-col items-center p-3 rounded-xl border-2 cursor-pointer transition-all text-center',
                   editForm.ergotherapia
@@ -157,7 +163,13 @@
 
               <div
                 v-if="shopSettings.physiotherapia"
+                role="checkbox"
+                :aria-checked="editForm.physiotherapia"
+                aria-label="Φυσιοθεραπεία"
+                tabindex="0"
                 @click="editForm.physiotherapia = !editForm.physiotherapia"
+                @keydown.enter.prevent="editForm.physiotherapia = !editForm.physiotherapia"
+                @keydown.space.prevent="editForm.physiotherapia = !editForm.physiotherapia"
                 :class="[
                   'flex flex-col items-center p-3 rounded-xl border-2 cursor-pointer transition-all text-center',
                   editForm.physiotherapia
@@ -175,7 +187,13 @@
 
               <div
                 v-if="shopSettings.logotherapia"
+                role="checkbox"
+                :aria-checked="editForm.logotherapia"
+                aria-label="Λογοθεραπεία"
+                tabindex="0"
                 @click="editForm.logotherapia = !editForm.logotherapia"
+                @keydown.enter.prevent="editForm.logotherapia = !editForm.logotherapia"
+                @keydown.space.prevent="editForm.logotherapia = !editForm.logotherapia"
                 :class="[
                   'flex flex-col items-center p-3 rounded-xl border-2 cursor-pointer transition-all text-center',
                   editForm.logotherapia
@@ -412,16 +430,23 @@
       </div>
     </div>
   </Dialog>
+  <ConfirmDialog group="clientProfileFile"></ConfirmDialog>
 </template>
 
 <script setup lang="ts">
 import { ref, watch, computed } from "vue";
 import Exercises from "./Exercises.vue";
 import { useAuthStore } from "../stores/auth";
+import { useSettingsStore } from "../stores/settings";
+import { storeToRefs } from "pinia";
 import { useToast } from "primevue/usetoast";
+import { useConfirm } from "primevue/useconfirm";
 const authStore = useAuthStore();
 const toast = useToast();
+const confirm = useConfirm();
 const isOwner = authStore.isOwner;
+const settingsStore = useSettingsStore();
+const { shopSettings } = storeToRefs(settingsStore);
 
 const props = defineProps(["visible", "clientId"]);
 const emit = defineEmits(["update:visible", "refresh"]);
@@ -510,37 +535,16 @@ const fetchClientData = async () => {
     loading.value = false;
   }
 };
-const shopSettings = ref<any>(null);
-
-const fetchShopSettings = async () => {
-  try {
-    const res = await fetch("/api/v1/shop", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    shopSettings.value = await res.json();
-  } catch (e) {
-    console.error("Error loading shop settings", e);
-  }
-};
-
 watch(
   () => props.visible,
   (val) => {
     if (val && props.clientId) {
       activeTab.value = "Info";
       fetchClientData();
-      fetchShopSettings();
+      settingsStore.fetchShopSettings();
     }
   },
-);
-watch(
-  () => props.visible,
-  (val) => {
-    if (val && props.clientId) {
-      activeTab.value = "Info";
-      fetchClientData();
-    }
-  },
+  { immediate: true },
 );
 
 const addCustomField = () =>
@@ -598,13 +602,31 @@ const handleFileUpload = async (event: any) => {
   }
 };
 
-const deleteFile = async (fileId: number) => {
-  if (!confirm("Delete this file?")) return;
-  await fetch(`/api/v1/clients/files/${fileId}`, {
-    method: "DELETE",
-    headers: { Authorization: `Bearer ${token}` },
+const deleteFile = (fileId: number) => {
+  confirm.require({
+    group: "clientProfileFile",
+    message: "Delete this file?",
+    header: "Confirm Delete",
+    icon: "pi pi-exclamation-triangle",
+    acceptClass: "p-button-danger",
+    accept: async () => {
+      try {
+        const res = await fetch(`/api/v1/clients/files/${fileId}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) throw new Error("Request failed");
+        files.value = files.value.filter((f: any) => f.id !== fileId);
+      } catch (e) {
+        toast.add({
+          severity: "error",
+          summary: "Delete Failed",
+          detail: "Could not delete the file. Please try again.",
+          life: 4000,
+        });
+      }
+    },
   });
-  files.value = files.value.filter((f: any) => f.id !== fileId);
 };
 
 const formatSize = (bytes: number) => {
@@ -657,9 +679,3 @@ const viewFile = async (file: any) => {
   }
 };
 </script>
-<style>
-.p-dialog-close-button {
-  background-color: red;
-  color: red !important;
-}
-</style>

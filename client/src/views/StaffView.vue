@@ -25,6 +25,7 @@
         :rowsPerPageOptions="[10, 20, 50]"
         responsiveLayout="scroll"
         class="p-datatable-sm"
+        :loading="tableLoading"
       >
         <template #header>
           <div class="flex justify-between items-center">
@@ -86,18 +87,21 @@
                 icon="pi pi-pencil"
                 class="p-button-rounded p-button-text p-button-sm"
                 v-tooltip.top="t('staff.tooltips.edit')"
+                :aria-label="t('staff.tooltips.edit')"
                 @click="editStaff(slotProps.data)"
               />
               <Button
                 icon="pi pi-key"
                 class="p-button-rounded p-button-text p-button-sm p-button-secondary"
                 v-tooltip.top="t('staff.tooltips.createLogin')"
+                :aria-label="t('staff.tooltips.createLogin')"
                 @click="openLoginDialog(slotProps.data)"
               />
               <Button
                 icon="pi pi-trash"
                 class="p-button-rounded p-button-text p-button-danger p-button-sm"
                 v-tooltip.top="t('staff.tooltips.delete')"
+                :aria-label="t('staff.tooltips.delete')"
                 @click="confirmDelete(slotProps.data)"
               />
             </div>
@@ -240,6 +244,7 @@ const confirm = useConfirm();
 const staff = ref([]);
 const services = ref([]);
 const loading = ref(false);
+const tableLoading = ref(false);
 const showDialog = ref(false);
 const search = ref("");
 
@@ -252,14 +257,28 @@ const newLogin = ref({ username: "", password: "" });
 
 // ... (Existing fetch/save logic remains same) ...
 const fetchData = async () => {
-  const token = localStorage.getItem("token");
-  const headers = { Authorization: `Bearer ${token}` };
-  const [staffRes, servicesRes] = await Promise.all([
-    fetch("/api/v1/staff", { headers }),
-    fetch("/api/v1/services", { headers }),
-  ]);
-  staff.value = await staffRes.json();
-  services.value = await servicesRes.json();
+  tableLoading.value = true;
+  try {
+    const token = localStorage.getItem("token");
+    const headers = { Authorization: `Bearer ${token}` };
+    const [staffRes, servicesRes] = await Promise.all([
+      fetch("/api/v1/staff", { headers }),
+      fetch("/api/v1/services", { headers }),
+    ]);
+    if (!staffRes.ok || !servicesRes.ok) throw new Error("Request failed");
+    staff.value = await staffRes.json();
+    services.value = await servicesRes.json();
+  } catch (err) {
+    console.error(err);
+    toast.add({
+      severity: "error",
+      summary: t('common.error'),
+      detail: t('staff.toast.loadFailed'),
+      life: 4000,
+    });
+  } finally {
+    tableLoading.value = false;
+  }
 };
 
 const openNew = () => {

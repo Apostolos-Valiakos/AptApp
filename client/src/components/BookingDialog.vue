@@ -434,6 +434,7 @@
         <Button
           :label="t('booking.quickAdd.saveClient')"
           @click="saveNewClient"
+          :loading="savingNewClient"
           class="w-full"
         />
       </template>
@@ -1004,6 +1005,10 @@ const executeDelete = async (scope: string) => {
       });
       return;
     }
+    const data = await res.json().catch(() => ({}));
+    if (data.new_balance !== undefined && selectedClient.value) {
+      selectedClient.value.outstanding_balance = Number(data.new_balance);
+    }
     emit("save");
     dialogVisible.value = false;
   } catch (e) {
@@ -1018,19 +1023,25 @@ const executeDelete = async (scope: string) => {
 };
 
 // --- Client Helpers ---
+const savingNewClient = ref(false);
 const saveNewClient = async () => {
-  const token = localStorage.getItem("token");
-  const res = await fetch("/api/v1/clients", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(newClient.value),
-  });
-  const data = await res.json();
+  savingNewClient.value = true;
+  try {
+    const token = localStorage.getItem("token");
+    const res = await fetch("/api/v1/clients", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(newClient.value),
+    });
+    const data = await res.json();
 
-  if (data.success || data.client) {
+    if (!res.ok || !(data.success || data.client)) {
+      throw new Error("Request failed");
+    }
+
     const client = data.client || data;
 
     // 1. Format the name
@@ -1046,6 +1057,16 @@ const saveNewClient = async () => {
     form.value.client_id = client.id;
     showQuickAddClient.value = false;
     newClient.value = { first_name: "", last_name: "", phone: "" };
+  } catch (e) {
+    console.error(e);
+    toast.add({
+      severity: "error",
+      summary: t("booking.toast.saveFailed"),
+      detail: t("booking.toast.quickAddFailedDetail"),
+      life: 4000,
+    });
+  } finally {
+    savingNewClient.value = false;
   }
 };
 
@@ -1054,6 +1075,19 @@ const openClientProfile = () => {
   currentProfileId.value = form.value.client_id;
   showClientProfile.value = true;
 };
+
+// Closing the booking dialog while the client profile is open leaves
+// showClientProfile stuck true (this component instance is never unmounted),
+// so the next open would remount ClientProfileDialog already-visible and empty.
+watch(
+  () => props.visible,
+  (val) => {
+    if (!val) {
+      showClientProfile.value = false;
+      currentProfileId.value = null;
+    }
+  },
+);
 
 // --- Formatters ---
 const formatDate = (d: Date) =>

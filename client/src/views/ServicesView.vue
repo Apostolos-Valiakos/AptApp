@@ -118,6 +118,7 @@
                 icon="pi pi-pencil"
                 class="p-button-rounded p-button-text p-button-sm"
                 v-tooltip.top="t('common.edit')"
+                :aria-label="t('common.edit')"
                 @click="editService(slotProps.data)"
               />
               <Button
@@ -125,6 +126,7 @@
                 class="p-button-rounded p-button-text p-button-sm"
                 severity="danger"
                 v-tooltip.top="t('common.delete')"
+                :aria-label="t('common.delete')"
                 @click="confirmDelete(slotProps.data)"
               />
             </div>
@@ -232,21 +234,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed, onUnmounted } from "vue";
+import { ref, onMounted, computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 
 const { t } = useI18n();
 
-let interval: any;
 onMounted(() => {
   fetchServices();
-  interval = setInterval(fetchServices, 10000);
-});
-
-onUnmounted(() => {
-  clearInterval(interval);
 });
 
 const toast = useToast();

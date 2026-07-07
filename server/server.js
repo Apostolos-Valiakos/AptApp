@@ -69,32 +69,6 @@ const storage = multer.diskStorage({
     cb(null, uniqueSuffix + "-" + file.originalname);
   },
 });
-// --- HELPER: Check for duplicate appointment ---
-const checkAppointmentExists = async (
-  client,
-  shopId,
-  clientId,
-  startTime,
-  staffId,
-) => {
-  // Add staffId to the initial check so we don't query with undefined
-  if (!clientId || !startTime || !staffId) return false;
-
-  const res = await client.query(
-    `SELECT 1 
-     FROM appointments a
-     JOIN appointment_services aps ON a.id = aps.appointment_id
-     WHERE a.shop_id = $1 
-       AND a.client_id = $2
-       AND aps.start_time = $3
-       AND aps.staff_id = $4 
-       AND a.status != 'cancelled'
-     LIMIT 1`,
-    [shopId, clientId, startTime, staffId], // <-- Add staffId here
-  );
-  return res.rows.length > 0;
-};
-
 const eoppyReport = (rows) => {
   return rows.reduce(
     (acc, row) => {
@@ -173,6 +147,29 @@ const createAppointmentSeries = async (client, data, shopId) => {
 
   let firstAppointmentId = null;
 
+  // === DUPLICATE CHECK (batched) ===
+  // A recurring series can book up to 52 dates; checking one-by-one meant up
+  // to 52 sequential round-trips just to look for collisions. staffId is the
+  // same for every instance (services[0].staff_id doesn't vary per date), so
+  // fetch this client+staff's existing start times once and check in memory.
+  const seriesStaffId = services[0]?.staff_id;
+  let existingStartTimes = null;
+  if (!is_block && validClientId && seriesStaffId) {
+    const existingRes = await client.query(
+      `SELECT aps.start_time
+       FROM appointments a
+       JOIN appointment_services aps ON a.id = aps.appointment_id
+       WHERE a.shop_id = $1
+         AND a.client_id = $2
+         AND aps.staff_id = $3
+         AND a.status != 'cancelled'`,
+      [shopId, validClientId, seriesStaffId],
+    );
+    existingStartTimes = new Set(
+      existingRes.rows.map((r) => new Date(r.start_time).toISOString()),
+    );
+  }
+
   for (let i = 0; i < datesToBook.length; i++) {
     const currentDate = datesToBook[i];
     const isFirstInstance = i === 0;
@@ -187,20 +184,10 @@ const createAppointmentSeries = async (client, data, shopId) => {
       0,
     );
     const instanceStartIso = instanceStart.toISOString();
-    const staffId = services[0]?.staff_id;
 
     // === DUPLICATE CHECK ===
-    if (!is_block && validClientId) {
-      const exists = await checkAppointmentExists(
-        client,
-        shopId,
-        validClientId,
-        instanceStartIso,
-        staffId, // <-- Pass it into the helper
-      );
-      if (exists) {
-        continue;
-      }
+    if (!is_block && validClientId && existingStartTimes?.has(instanceStartIso)) {
+      continue;
     }
 
     const currentEoppyStatus = !!is_eoppy;
@@ -449,18 +436,19 @@ const recalculateClientBalance = async (client, clientId) => {
     // We use a subquery to find the appointment time from appointment_services
     // since 'start_time' does not exist on the appointments table directly.
     const balanceRes = await client.query(
-      `SELECT 
+      `SELECT
          COALESCE(SUM(total_cost - total_paid), 0) as new_balance
        FROM (
-         SELECT 
+         SELECT
            a.id,
-           COALESCE(SUM(COALESCE(aps.price_override, s.price)), 0) as total_cost,
+           COALESCE(SUM(COALESCE(aps.price_override, s.price)), 0)
+             + COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = a.id), 0) as total_cost,
            COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0) as total_paid,
            (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) as appt_time
          FROM appointments a
          LEFT JOIN appointment_services aps ON a.id = aps.appointment_id
          LEFT JOIN services s ON aps.service_id = s.id
-         WHERE a.client_id = $1 
+         WHERE a.client_id = $1
            AND a.status != 'cancelled'
          GROUP BY a.id
        ) subquery
@@ -1184,6 +1172,10 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
       params.push(start, end);
       dateFilter = ` AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) BETWEEN $${params.length - 1} AND $${params.length}`;
     }
+    // NOTE: no date/start/end at all is a real, relied-upon contract (returns
+    // every appointment for the shop — see server/tests/workflows.test.js).
+    // Left unbounded; the shop_id/client_id indexes added alongside this
+    // change already remove the sequential-scan cost for that case.
 
     const { rows } = await pool.query(
       `
@@ -1470,6 +1462,15 @@ app.delete("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
   try {
     await client.query("BEGIN");
 
+    // Capture the client before deleting so the cached balance can be
+    // recalculated afterwards — otherwise the deleted appointment's debt
+    // stays in clients.outstanding_balance until an unrelated write.
+    const ownerRes = await client.query(
+      "SELECT client_id FROM appointments WHERE id = $1 AND shop_id = $2",
+      [id, req.shopId],
+    );
+    const affectedClientId = ownerRes.rows[0]?.client_id || null;
+
     if (scope === "series") {
       const groupInfo = await getGroupDetails(client, id, req.shopId);
       if (groupInfo && groupInfo.group_id) {
@@ -1500,8 +1501,13 @@ app.delete("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
       );
     }
 
+    let newBalance;
+    if (affectedClientId) {
+      newBalance = await recalculateClientBalance(client, affectedClientId);
+    }
+
     await client.query("COMMIT");
-    res.json({ success: true });
+    res.json({ success: true, new_balance: newBalance });
   } catch (err) {
     console.error(err);
     await client.query("ROLLBACK");
@@ -1593,9 +1599,11 @@ app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
         [apptId, client_id, paymentAmount, payment_method, req.shopId],
       );
 
+      // Total cost = services + products, matching recalculateClientBalance
       const priceRes = await client.query(
-        `SELECT COALESCE(SUM(price_override), 0) as total_price
-         FROM appointment_services WHERE appointment_id = $1`,
+        `SELECT
+           COALESCE((SELECT SUM(price_override) FROM appointment_services WHERE appointment_id = $1), 0)
+           + COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = $1), 0) as total_price`,
         [apptId],
       );
       const totalPrice = Number(priceRes.rows[0].total_price);
@@ -1608,9 +1616,13 @@ app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
       const totalPaid = Number(alreadyPaidRes.rows[0].paid);
 
       const isFullyPaid = totalPaid >= totalPrice - 0.01;
+      // A FIFO allocation may land on an appointment staff already marked
+      // completed — a partial payment must not downgrade it to 'confirmed'.
       await client.query(
         `UPDATE appointments
-         SET payment_status = $1, status = $2, deposit_amount = deposit_amount + $3
+         SET payment_status = $1,
+             status = CASE WHEN status = 'completed' THEN 'completed' ELSE $2 END,
+             deposit_amount = deposit_amount + $3
          WHERE id = $4 AND shop_id = $5`,
         [
           isFullyPaid ? "paid" : "partial",
@@ -1624,8 +1636,9 @@ app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
 
     // 1. Calculate what is still owed for the current appointment (from transactions, not deposit_amount column)
     const currentPriceRes = await client.query(
-      `SELECT COALESCE(SUM(price_override), 0) as total_price
-       FROM appointment_services WHERE appointment_id = $1`,
+      `SELECT
+         COALESCE((SELECT SUM(price_override) FROM appointment_services WHERE appointment_id = $1), 0)
+         + COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = $1), 0) as total_price`,
       [appointment_id],
     );
     const currentApptCost = Number(currentPriceRes.rows[0].total_price);
@@ -1640,7 +1653,43 @@ app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
       currentApptCost - currentApptAlreadyPaid,
     );
 
-    // 2. Allocate: pay current appointment first, then apply the remainder to old debt (FIFO)
+    // 2. Fetch the client's other unpaid appointments (oldest first, March 1 2026+).
+    // Completed appointments are included: marking an appointment completed
+    // must not make its debt uncollectable (the balance formula counts it too).
+    const oldAppts = await client.query(
+      `SELECT
+         a.id,
+         COALESCE(SUM(aps.price_override), 0)
+           + COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = a.id), 0) as total_cost,
+         COALESCE((SELECT SUM(t2.amount) FROM transactions t2 WHERE t2.appointment_id = a.id), 0) as total_paid
+       FROM appointments a
+       JOIN appointment_services aps ON aps.appointment_id = a.id
+       WHERE a.client_id = $1
+         AND a.id != $2
+         AND a.shop_id = $3
+         AND a.status != 'cancelled'
+         AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) >= '2026-03-01 00:00:00'
+       GROUP BY a.id
+       ORDER BY (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) ASC`,
+      [client_id, appointment_id, req.shopId],
+    );
+
+    // 3. Reject payments that exceed everything owed — silently dropping the
+    // excess (old behavior) meant real money was never recorded anywhere.
+    const oldOwedTotal = oldAppts.rows.reduce(
+      (sum, row) =>
+        sum + Math.max(0, Number(row.total_cost) - Number(row.total_paid)),
+      0,
+    );
+    const totalOwed = currentApptOwed + oldOwedTotal;
+    if (Number(amount) > totalOwed + 0.01) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({
+        error: `Amount exceeds total owed (€${totalOwed.toFixed(2)}). Refresh and try again.`,
+      });
+    }
+
+    // 4. Allocate: pay current appointment first, then apply the remainder to old debt (FIFO)
     let remaining = Number(amount);
 
     const forCurrentAppt = Math.min(remaining, currentApptOwed);
@@ -1649,37 +1698,17 @@ app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
       remaining -= forCurrentAppt;
     }
 
-    // 3. Distribute the remainder to older unpaid appointments (oldest first, March 1 2026+)
-    if (remaining > 0.009) {
-      const oldAppts = await client.query(
-        `SELECT
-           a.id,
-           COALESCE(SUM(aps.price_override), 0) as total_cost,
-           COALESCE((SELECT SUM(t2.amount) FROM transactions t2 WHERE t2.appointment_id = a.id), 0) as total_paid
-         FROM appointments a
-         JOIN appointment_services aps ON aps.appointment_id = a.id
-         WHERE a.client_id = $1
-           AND a.id != $2
-           AND a.shop_id = $3
-           AND a.status NOT IN ('cancelled', 'completed')
-           AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) >= '2026-03-01 00:00:00'
-         GROUP BY a.id
-         ORDER BY (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) ASC`,
-        [client_id, appointment_id, req.shopId],
-      );
+    for (const row of oldAppts.rows) {
+      if (remaining <= 0.009) break;
+      const owed = Number(row.total_cost) - Number(row.total_paid);
+      if (owed <= 0.009) continue;
 
-      for (const row of oldAppts.rows) {
-        if (remaining <= 0.009) break;
-        const owed = Number(row.total_cost) - Number(row.total_paid);
-        if (owed <= 0.009) continue;
-
-        const forThisAppt = Math.min(remaining, owed);
-        await applyPaymentToAppointment(row.id, forThisAppt);
-        remaining -= forThisAppt;
-      }
+      const forThisAppt = Math.min(remaining, owed);
+      await applyPaymentToAppointment(row.id, forThisAppt);
+      remaining -= forThisAppt;
     }
 
-    // 4. Recalculate client balance and return it so the frontend can update without guessing
+    // 5. Recalculate client balance and return it so the frontend can update without guessing
     const newBalance = await recalculateClientBalance(client, client_id);
 
     await client.query("COMMIT");
@@ -1695,6 +1724,13 @@ app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
 
 app.get("/api/v1/financials", authenticateToken, async (req, res) => {
   try {
+    const { from, to } = req.query;
+    // Safety net: without a range this scanned every transaction ever recorded.
+    // Default to the last 12 months when the caller doesn't specify one.
+    const startDate =
+      from || new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString();
+    const endDate = to || new Date().toISOString();
+
     const { rows } = await pool.query(
       `
       SELECT t.*, c.first_name, c.last_name, s.name AS service_name
@@ -1703,10 +1739,10 @@ app.get("/api/v1/financials", authenticateToken, async (req, res) => {
       LEFT JOIN appointments a ON t.appointment_id = a.id
       LEFT JOIN appointment_services aps ON a.id = aps.appointment_id
       LEFT JOIN services s ON aps.service_id = s.id
-      WHERE t.shop_id = $1
+      WHERE t.shop_id = $1 AND t.created_at BETWEEN $2 AND $3
       ORDER BY t.created_at DESC
     `,
-      [req.shopId],
+      [req.shopId, startDate, endDate],
     );
     res.json(rows);
   } catch (err) {
@@ -3060,6 +3096,11 @@ app.get("/api/v1/clients/:id/full", authenticateToken, async (req, res) => {
     }
     const client = clientRes.rows[0];
 
+    // The cached balance is only refreshed on writes, but its formula is
+    // time-dependent (appointments crossing into the past start counting).
+    // Recalculate on read so the profile always shows the true balance.
+    client.outstanding_balance = await recalculateClientBalance(pool, id);
+
     // 2. Fetch Appointment History
     // FIX: logic calculates start_time from subquery and orders by it safely
     // 2. Fetch Appointment History
@@ -3629,7 +3670,11 @@ app.get(/(.*)/, (req, res) => {
   res.sendFile(path.join(distPath, "index.html"));
 });
 
-server.listen(PORT, "0.0.0.0", () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`Allowed Origins: ${allowedOrigins.join(", ")}`);
-});
+if (require.main === module) {
+  server.listen(PORT, "0.0.0.0", () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`Allowed Origins: ${allowedOrigins.join(", ")}`);
+  });
+}
+
+module.exports = { app, server, pool };
