@@ -263,8 +263,16 @@
       <!-- Tab: Sales by Service -->
       <TabPanel :header="t('analytics.tabs.sales')">
         <!-- Pie Chart -->
-        <div class="mb-6 bg-white rounded-xl border border-gray-100 p-4" style="height: 300px">
-          <Chart type="pie" :data="serviceChartData" :options="pieChartOptions" style="height: 260px" />
+        <div
+          class="mb-6 bg-white rounded-xl border border-gray-100 p-4"
+          :style="{ height: isNarrowViewport ? '380px' : '300px' }"
+        >
+          <Chart
+            type="pie"
+            :data="serviceChartData"
+            :options="pieChartOptions"
+            :style="{ height: isNarrowViewport ? '340px' : '260px' }"
+          />
         </div>
         <DataTable
           :value="salesReport"
@@ -371,7 +379,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
 import TabView from "primevue/tabview";
@@ -597,11 +605,18 @@ const chartOptions = computed(() => ({
   },
 }));
 
+const isNarrowViewport = ref(window.innerWidth < 640);
+const updateViewportWidth = () => {
+  isNarrowViewport.value = window.innerWidth < 640;
+};
+onMounted(() => window.addEventListener('resize', updateViewportWidth));
+onUnmounted(() => window.removeEventListener('resize', updateViewportWidth));
+
 const pieChartOptions = computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
   plugins: {
-    legend: { position: 'right' as const },
+    legend: { position: isNarrowViewport.value ? 'bottom' as const : 'right' as const },
   },
 }));
 
