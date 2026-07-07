@@ -234,21 +234,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed, onUnmounted } from "vue";
+import { ref, onMounted, computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 
 const { t } = useI18n();
 
-let interval: any;
 onMounted(() => {
   fetchServices();
-  interval = setInterval(fetchServices, 10000);
-});
-
-onUnmounted(() => {
-  clearInterval(interval);
 });
 
 const toast = useToast();

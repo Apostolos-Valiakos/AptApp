@@ -68,32 +68,6 @@ const storage = multer.diskStorage({
     cb(null, uniqueSuffix + "-" + file.originalname);
   },
 });
-// --- HELPER: Check for duplicate appointment ---
-const checkAppointmentExists = async (
-  client,
-  shopId,
-  clientId,
-  startTime,
-  staffId,
-) => {
-  // Add staffId to the initial check so we don't query with undefined
-  if (!clientId || !startTime || !staffId) return false;
-
-  const res = await client.query(
-    `SELECT 1 
-     FROM appointments a
-     JOIN appointment_services aps ON a.id = aps.appointment_id
-     WHERE a.shop_id = $1 
-       AND a.client_id = $2
-       AND aps.start_time = $3
-       AND aps.staff_id = $4 
-       AND a.status != 'cancelled'
-     LIMIT 1`,
-    [shopId, clientId, startTime, staffId], // <-- Add staffId here
-  );
-  return res.rows.length > 0;
-};
-
 const eoppyReport = (rows) => {
   return rows.reduce(
     (acc, row) => {
@@ -172,6 +146,29 @@ const createAppointmentSeries = async (client, data, shopId) => {
 
   let firstAppointmentId = null;
 
+  // === DUPLICATE CHECK (batched) ===
+  // A recurring series can book up to 52 dates; checking one-by-one meant up
+  // to 52 sequential round-trips just to look for collisions. staffId is the
+  // same for every instance (services[0].staff_id doesn't vary per date), so
+  // fetch this client+staff's existing start times once and check in memory.
+  const seriesStaffId = services[0]?.staff_id;
+  let existingStartTimes = null;
+  if (!is_block && validClientId && seriesStaffId) {
+    const existingRes = await client.query(
+      `SELECT aps.start_time
+       FROM appointments a
+       JOIN appointment_services aps ON a.id = aps.appointment_id
+       WHERE a.shop_id = $1
+         AND a.client_id = $2
+         AND aps.staff_id = $3
+         AND a.status != 'cancelled'`,
+      [shopId, validClientId, seriesStaffId],
+    );
+    existingStartTimes = new Set(
+      existingRes.rows.map((r) => new Date(r.start_time).toISOString()),
+    );
+  }
+
   for (let i = 0; i < datesToBook.length; i++) {
     const currentDate = datesToBook[i];
     const isFirstInstance = i === 0;
@@ -186,20 +183,10 @@ const createAppointmentSeries = async (client, data, shopId) => {
       0,
     );
     const instanceStartIso = instanceStart.toISOString();
-    const staffId = services[0]?.staff_id;
 
     // === DUPLICATE CHECK ===
-    if (!is_block && validClientId) {
-      const exists = await checkAppointmentExists(
-        client,
-        shopId,
-        validClientId,
-        instanceStartIso,
-        staffId, // <-- Pass it into the helper
-      );
-      if (exists) {
-        continue;
-      }
+    if (!is_block && validClientId && existingStartTimes?.has(instanceStartIso)) {
+      continue;
     }
 
     const currentEoppyStatus = !!is_eoppy;
@@ -1177,6 +1164,10 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
       params.push(start, end);
       dateFilter = ` AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) BETWEEN $${params.length - 1} AND $${params.length}`;
     }
+    // NOTE: no date/start/end at all is a real, relied-upon contract (returns
+    // every appointment for the shop — see server/tests/workflows.test.js).
+    // Left unbounded; the shop_id/client_id indexes added alongside this
+    // change already remove the sequential-scan cost for that case.
 
     const { rows } = await pool.query(
       `
@@ -1683,6 +1674,13 @@ app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
 
 app.get("/api/v1/financials", authenticateToken, async (req, res) => {
   try {
+    const { from, to } = req.query;
+    // Safety net: without a range this scanned every transaction ever recorded.
+    // Default to the last 12 months when the caller doesn't specify one.
+    const startDate =
+      from || new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString();
+    const endDate = to || new Date().toISOString();
+
     const { rows } = await pool.query(
       `
       SELECT t.*, c.first_name, c.last_name, s.name AS service_name
@@ -1691,10 +1689,10 @@ app.get("/api/v1/financials", authenticateToken, async (req, res) => {
       LEFT JOIN appointments a ON t.appointment_id = a.id
       LEFT JOIN appointment_services aps ON a.id = aps.appointment_id
       LEFT JOIN services s ON aps.service_id = s.id
-      WHERE t.shop_id = $1
+      WHERE t.shop_id = $1 AND t.created_at BETWEEN $2 AND $3
       ORDER BY t.created_at DESC
     `,
-      [req.shopId],
+      [req.shopId, startDate, endDate],
     );
     res.json(rows);
   } catch (err) {

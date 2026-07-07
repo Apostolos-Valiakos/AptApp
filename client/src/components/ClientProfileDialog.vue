@@ -437,12 +437,16 @@
 import { ref, watch, computed } from "vue";
 import Exercises from "./Exercises.vue";
 import { useAuthStore } from "../stores/auth";
+import { useSettingsStore } from "../stores/settings";
+import { storeToRefs } from "pinia";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 const authStore = useAuthStore();
 const toast = useToast();
 const confirm = useConfirm();
 const isOwner = authStore.isOwner;
+const settingsStore = useSettingsStore();
+const { shopSettings } = storeToRefs(settingsStore);
 
 const props = defineProps(["visible", "clientId"]);
 const emit = defineEmits(["update:visible", "refresh"]);
@@ -531,26 +535,13 @@ const fetchClientData = async () => {
     loading.value = false;
   }
 };
-const shopSettings = ref<any>(null);
-
-const fetchShopSettings = async () => {
-  try {
-    const res = await fetch("/api/v1/shop", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    shopSettings.value = await res.json();
-  } catch (e) {
-    console.error("Error loading shop settings", e);
-  }
-};
-
 watch(
   () => props.visible,
   (val) => {
     if (val && props.clientId) {
       activeTab.value = "Info";
       fetchClientData();
-      fetchShopSettings();
+      settingsStore.fetchShopSettings();
     }
   },
   { immediate: true },
