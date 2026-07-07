@@ -532,15 +532,7 @@ watch(
       fetchShopSettings();
     }
   },
-);
-watch(
-  () => props.visible,
-  (val) => {
-    if (val && props.clientId) {
-      activeTab.value = "Info";
-      fetchClientData();
-    }
-  },
+  { immediate: true },
 );
 
 const addCustomField = () =>

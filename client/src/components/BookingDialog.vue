@@ -1055,6 +1055,19 @@ const openClientProfile = () => {
   showClientProfile.value = true;
 };
 
+// Closing the booking dialog while the client profile is open leaves
+// showClientProfile stuck true (this component instance is never unmounted),
+// so the next open would remount ClientProfileDialog already-visible and empty.
+watch(
+  () => props.visible,
+  (val) => {
+    if (!val) {
+      showClientProfile.value = false;
+      currentProfileId.value = null;
+    }
+  },
+);
+
 // --- Formatters ---
 const formatDate = (d: Date) =>
   d
