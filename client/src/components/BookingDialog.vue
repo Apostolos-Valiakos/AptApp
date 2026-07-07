@@ -1005,6 +1005,10 @@ const executeDelete = async (scope: string) => {
       });
       return;
     }
+    const data = await res.json().catch(() => ({}));
+    if (data.new_balance !== undefined && selectedClient.value) {
+      selectedClient.value.outstanding_balance = Number(data.new_balance);
+    }
     emit("save");
     dialogVisible.value = false;
   } catch (e) {
