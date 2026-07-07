@@ -3575,7 +3575,11 @@ app.get(/(.*)/, (req, res) => {
   res.sendFile(path.join(distPath, "index.html"));
 });
 
-server.listen(PORT, "0.0.0.0", () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`Allowed Origin: ${ALLOWED_ORIGIN}`);
-});
+if (require.main === module) {
+  server.listen(PORT, "0.0.0.0", () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`Allowed Origin: ${ALLOWED_ORIGIN}`);
+  });
+}
+
+module.exports = { app, server, pool };
