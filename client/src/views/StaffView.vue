@@ -25,6 +25,7 @@
         :rowsPerPageOptions="[10, 20, 50]"
         responsiveLayout="scroll"
         class="p-datatable-sm"
+        :loading="tableLoading"
       >
         <template #header>
           <div class="flex justify-between items-center">
@@ -240,6 +241,7 @@ const confirm = useConfirm();
 const staff = ref([]);
 const services = ref([]);
 const loading = ref(false);
+const tableLoading = ref(false);
 const showDialog = ref(false);
 const search = ref("");
 
@@ -252,14 +254,28 @@ const newLogin = ref({ username: "", password: "" });
 
 // ... (Existing fetch/save logic remains same) ...
 const fetchData = async () => {
-  const token = localStorage.getItem("token");
-  const headers = { Authorization: `Bearer ${token}` };
-  const [staffRes, servicesRes] = await Promise.all([
-    fetch("/api/v1/staff", { headers }),
-    fetch("/api/v1/services", { headers }),
-  ]);
-  staff.value = await staffRes.json();
-  services.value = await servicesRes.json();
+  tableLoading.value = true;
+  try {
+    const token = localStorage.getItem("token");
+    const headers = { Authorization: `Bearer ${token}` };
+    const [staffRes, servicesRes] = await Promise.all([
+      fetch("/api/v1/staff", { headers }),
+      fetch("/api/v1/services", { headers }),
+    ]);
+    if (!staffRes.ok || !servicesRes.ok) throw new Error("Request failed");
+    staff.value = await staffRes.json();
+    services.value = await servicesRes.json();
+  } catch (err) {
+    console.error(err);
+    toast.add({
+      severity: "error",
+      summary: t('common.error'),
+      detail: t('staff.toast.loadFailed'),
+      life: 4000,
+    });
+  } finally {
+    tableLoading.value = false;
+  }
 };
 
 const openNew = () => {

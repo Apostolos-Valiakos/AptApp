@@ -312,16 +312,23 @@ onMounted(() => {
 });
 
 const fetchClients = async () => {
+  loading.value = true;
   try {
     const res = await fetch("/api/v1/clients", {
       headers: { Authorization: `Bearer ${token}` },
     });
-    if (res.ok) {
-      clients.value = await res.json();
-    }
-    loading.value = false;
+    if (!res.ok) throw new Error("Request failed");
+    clients.value = await res.json();
   } catch (err) {
     console.error(err);
+    toast.add({
+      severity: "error",
+      summary: t('common.error'),
+      detail: t('clients.toast.loadFailed'),
+      life: 4000,
+    });
+  } finally {
+    loading.value = false;
   }
 };
 

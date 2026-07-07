@@ -67,7 +67,8 @@
             <i class="pi pi-chart-line text-indigo-600"></i>
           </div>
         </div>
-        <div class="text-3xl font-bold text-gray-900">€{{ formatCurrency(finances.total_sales) }}</div>
+        <Skeleton v-if="loading" height="2.25rem" width="60%" />
+        <div v-else class="text-3xl font-bold text-gray-900">€{{ formatCurrency(finances.total_sales) }}</div>
         <p class="text-xs text-gray-400 mt-2">
           {{ t('analytics.kpi.totalSalesNote') }} ({{ formatDate(filters.from) }} – {{ formatDate(filters.to) }})
         </p>
@@ -84,7 +85,8 @@
             <i class="pi pi-wallet text-green-600"></i>
           </div>
         </div>
-        <div class="text-3xl font-bold text-gray-900">€{{ formatCurrency(finances.collected_today) }}</div>
+        <Skeleton v-if="loading" height="2.25rem" width="60%" />
+        <div v-else class="text-3xl font-bold text-gray-900">€{{ formatCurrency(finances.collected_today) }}</div>
         <p class="text-xs text-gray-400 mt-2">{{ t('analytics.kpi.collectedTodayNote') }}</p>
         <p class="text-[10px] text-gray-400 mt-1 leading-tight">
           * {{ t('analytics.kpi.collectedTodayNote') }}
@@ -99,7 +101,8 @@
             <i class="pi pi-exclamation-circle text-red-500"></i>
           </div>
         </div>
-        <div class="text-3xl font-bold text-gray-900">€{{ formatCurrency(finances.total_debt) }}</div>
+        <Skeleton v-if="loading" height="2.25rem" width="60%" />
+        <div v-else class="text-3xl font-bold text-gray-900">€{{ formatCurrency(finances.total_debt) }}</div>
         <p class="text-xs text-gray-400 mt-2">{{ t('analytics.kpi.totalDebtNote') }}</p>
       </div>
 
@@ -111,7 +114,8 @@
             <i class="pi pi-users text-blue-600"></i>
           </div>
         </div>
-        <div class="text-3xl font-bold text-gray-900">{{ analytics.retention_rate }}%</div>
+        <Skeleton v-if="loading" height="2.25rem" width="40%" />
+        <div v-else class="text-3xl font-bold text-gray-900">{{ analytics.retention_rate }}%</div>
         <p class="text-xs text-gray-400 mt-2">
           {{ t('analytics.kpi.retentionReturning', { returning: analytics.returning_clients, new: analytics.new_clients }) }}
         </p>
@@ -125,7 +129,8 @@
         <div class="flex items-center justify-between">
           <div>
             <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide mb-1">{{ t('analytics.kpi.cancellationRate') }}</h4>
-            <div class="text-2xl font-bold text-gray-800">{{ analytics.cancellation_rate }}%</div>
+            <Skeleton v-if="loading" height="1.75rem" width="4rem" />
+            <div v-else class="text-2xl font-bold text-gray-800">{{ analytics.cancellation_rate }}%</div>
             <div class="text-xs text-gray-400 mt-1">{{ t('analytics.kpi.cancellationNote') }}</div>
           </div>
           <div class="w-12 h-12 rounded-full flex items-center justify-center bg-gray-100 text-gray-500">
@@ -139,7 +144,8 @@
         <div class="flex items-center justify-between">
           <div>
             <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide mb-1">{{ t('analytics.kpi.periodPayments') }}</h4>
-            <div class="text-2xl font-bold text-gray-800">€{{ formatCurrency(finances.total_payments) }}</div>
+            <Skeleton v-if="loading" height="1.75rem" width="6rem" />
+            <div v-else class="text-2xl font-bold text-gray-800">€{{ formatCurrency(finances.total_payments) }}</div>
             <div class="text-xs text-gray-400 mt-1">{{ t('analytics.kpi.periodPaymentsNote') }}</div>
           </div>
           <div class="w-12 h-12 rounded-full flex items-center justify-center bg-green-50 text-green-600">
@@ -370,11 +376,12 @@ import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
 import TabView from "primevue/tabview";
 import TabPanel from "primevue/tabpanel";
+import Skeleton from "primevue/skeleton";
 import ClientDemographics from "./ClientDemographics.vue";
 
 const { t } = useI18n();
 const toast = useToast();
-const loading = ref(false);
+const loading = ref(true);
 const serviceSummaryReport = ref([]);
 
 // Initialize filters with Current Month

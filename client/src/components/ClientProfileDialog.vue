@@ -412,6 +412,7 @@
       </div>
     </div>
   </Dialog>
+  <ConfirmDialog group="clientProfileFile"></ConfirmDialog>
 </template>
 
 <script setup lang="ts">
@@ -419,8 +420,10 @@ import { ref, watch, computed } from "vue";
 import Exercises from "./Exercises.vue";
 import { useAuthStore } from "../stores/auth";
 import { useToast } from "primevue/usetoast";
+import { useConfirm } from "primevue/useconfirm";
 const authStore = useAuthStore();
 const toast = useToast();
+const confirm = useConfirm();
 const isOwner = authStore.isOwner;
 
 const props = defineProps(["visible", "clientId"]);
@@ -590,13 +593,31 @@ const handleFileUpload = async (event: any) => {
   }
 };
 
-const deleteFile = async (fileId: number) => {
-  if (!confirm("Delete this file?")) return;
-  await fetch(`/api/v1/clients/files/${fileId}`, {
-    method: "DELETE",
-    headers: { Authorization: `Bearer ${token}` },
+const deleteFile = (fileId: number) => {
+  confirm.require({
+    group: "clientProfileFile",
+    message: "Delete this file?",
+    header: "Confirm Delete",
+    icon: "pi pi-exclamation-triangle",
+    acceptClass: "p-button-danger",
+    accept: async () => {
+      try {
+        const res = await fetch(`/api/v1/clients/files/${fileId}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) throw new Error("Request failed");
+        files.value = files.value.filter((f: any) => f.id !== fileId);
+      } catch (e) {
+        toast.add({
+          severity: "error",
+          summary: "Delete Failed",
+          detail: "Could not delete the file. Please try again.",
+          life: 4000,
+        });
+      }
+    },
   });
-  files.value = files.value.filter((f: any) => f.id !== fileId);
 };
 
 const formatSize = (bytes: number) => {
@@ -649,9 +670,3 @@ const viewFile = async (file: any) => {
   }
 };
 </script>
-<style>
-.p-dialog-close-button {
-  background-color: red;
-  color: red !important;
-}
-</style>
