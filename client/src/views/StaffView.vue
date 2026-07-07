@@ -87,18 +87,21 @@
                 icon="pi pi-pencil"
                 class="p-button-rounded p-button-text p-button-sm"
                 v-tooltip.top="t('staff.tooltips.edit')"
+                :aria-label="t('staff.tooltips.edit')"
                 @click="editStaff(slotProps.data)"
               />
               <Button
                 icon="pi pi-key"
                 class="p-button-rounded p-button-text p-button-sm p-button-secondary"
                 v-tooltip.top="t('staff.tooltips.createLogin')"
+                :aria-label="t('staff.tooltips.createLogin')"
                 @click="openLoginDialog(slotProps.data)"
               />
               <Button
                 icon="pi pi-trash"
                 class="p-button-rounded p-button-text p-button-danger p-button-sm"
                 v-tooltip.top="t('staff.tooltips.delete')"
+                :aria-label="t('staff.tooltips.delete')"
                 @click="confirmDelete(slotProps.data)"
               />
             </div>

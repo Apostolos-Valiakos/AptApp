@@ -218,6 +218,7 @@ export default {
       price: 'Price (€)',
       initialStock: 'Initial Stock',
       saveProduct: 'Save Product',
+      removeVariation: 'Remove Variation',
     },
     adjustStock: 'Adjust Stock',
     confirmDelete: 'Are you sure you want to delete "{name}"? This will also remove all stock.',

@@ -118,6 +118,7 @@
                 icon="pi pi-pencil"
                 class="p-button-rounded p-button-text p-button-sm"
                 v-tooltip.top="t('common.edit')"
+                :aria-label="t('common.edit')"
                 @click="editService(slotProps.data)"
               />
               <Button
@@ -125,6 +126,7 @@
                 class="p-button-rounded p-button-text p-button-sm"
                 severity="danger"
                 v-tooltip.top="t('common.delete')"
+                :aria-label="t('common.delete')"
                 @click="confirmDelete(slotProps.data)"
               />
             </div>

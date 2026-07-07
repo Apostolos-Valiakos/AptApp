@@ -99,12 +99,14 @@
                 icon="pi pi-envelope"
                 class="p-button-rounded p-button-text p-button-sm p-button-info"
                 v-tooltip.top="t('clients.actions.inviteToPortal')"
+                :aria-label="t('clients.actions.inviteToPortal')"
                 @click.stop="inviteClient(slotProps.data)"
               />
               <Button
                 icon="pi pi-pencil"
                 class="p-button-rounded p-button-text p-button-sm"
                 v-tooltip.top="t('clients.actions.viewProfile')"
+                :aria-label="t('clients.actions.viewProfile')"
                 @click.stop="openProfile(slotProps.data)"
               />
               <Button
@@ -113,6 +115,7 @@
                 class="p-button-rounded p-button-text p-button-sm"
                 severity="danger"
                 v-tooltip.top="t('clients.actions.delete')"
+                :aria-label="t('clients.actions.delete')"
                 @click.stop="confirmDelete(slotProps.data)"
               />
             </div>
@@ -155,7 +158,13 @@
           <div class="grid grid-cols-3 gap-3">
             <div
               v-if="shopSettings.ergotherapia"
+              role="checkbox"
+              :aria-checked="editingClient.ergotherapia"
+              :aria-label="t('common.services.ergotherapia')"
+              tabindex="0"
               @click="editingClient.ergotherapia = !editingClient.ergotherapia"
+              @keydown.enter.prevent="editingClient.ergotherapia = !editingClient.ergotherapia"
+              @keydown.space.prevent="editingClient.ergotherapia = !editingClient.ergotherapia"
               :class="[
                 'flex flex-col items-center p-3 rounded-xl border-2 cursor-pointer transition-all text-center',
                 editingClient.ergotherapia
@@ -169,7 +178,13 @@
 
             <div
               v-if="shopSettings.physiotherapia"
+              role="checkbox"
+              :aria-checked="editingClient.physiotherapia"
+              :aria-label="t('common.services.physiotherapia')"
+              tabindex="0"
               @click="editingClient.physiotherapia = !editingClient.physiotherapia"
+              @keydown.enter.prevent="editingClient.physiotherapia = !editingClient.physiotherapia"
+              @keydown.space.prevent="editingClient.physiotherapia = !editingClient.physiotherapia"
               :class="[
                 'flex flex-col items-center p-3 rounded-xl border-2 cursor-pointer transition-all text-center',
                 editingClient.physiotherapia
@@ -183,7 +198,13 @@
 
             <div
               v-if="shopSettings.logotherapia"
+              role="checkbox"
+              :aria-checked="editingClient.logotherapia"
+              :aria-label="t('common.services.logotherapia')"
+              tabindex="0"
               @click="editingClient.logotherapia = !editingClient.logotherapia"
+              @keydown.enter.prevent="editingClient.logotherapia = !editingClient.logotherapia"
+              @keydown.space.prevent="editingClient.logotherapia = !editingClient.logotherapia"
               :class="[
                 'flex flex-col items-center p-3 rounded-xl border-2 cursor-pointer transition-all text-center',
                 editingClient.logotherapia

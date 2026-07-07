@@ -218,6 +218,7 @@ export default {
       price: 'Τιμή (€)',
       initialStock: 'Αρχικό Απόθεμα',
       saveProduct: 'Αποθήκευση',
+      removeVariation: 'Αφαίρεση Παραλλαγής',
     },
     adjustStock: 'Ρύθμιση Αποθέματος',
     confirmDelete: 'Διαγραφή "{name}"; Θα αφαιρεθεί και το απόθεμα.',

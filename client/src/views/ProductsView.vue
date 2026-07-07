@@ -95,6 +95,7 @@
               icon="pi pi-pencil"
               class="p-button-rounded p-button-text p-button-sm"
               v-tooltip.top="t('products.tooltips.edit')"
+              :aria-label="t('products.tooltips.edit')"
               @click="editProduct(slotProps.data)"
             />
             <Button
@@ -102,6 +103,7 @@
               class="p-button-rounded p-button-text p-button-sm"
               severity="danger"
               v-tooltip.top="t('products.tooltips.delete')"
+              :aria-label="t('products.tooltips.delete')"
               @click="confirmDeleteProduct(slotProps.data)"
             />
           </div>
@@ -115,6 +117,7 @@
       :header="isEdit ? t('products.dialog.editProduct') : t('products.dialog.createProduct')"
       modal
       :style="{ width: '50vw' }"
+      :breakpoints="{ '960px': '90vw', '640px': '95vw' }"
     >
       <div class="space-y-4">
         <div>
@@ -151,9 +154,9 @@
           <div
             v-for="(v, index) in newProduct.variations"
             :key="index"
-            class="flex gap-2 mb-2 items-start bg-gray-50 border border-gray-100 p-3 rounded-lg"
+            class="flex flex-col sm:flex-row gap-2 mb-2 items-start bg-gray-50 border border-gray-100 p-3 rounded-lg"
           >
-            <div class="flex-1">
+            <div class="flex-1 w-full">
               <label class="block text-xs font-medium text-gray-600 mb-1">{{ t('products.dialog.variationName') }}</label>
               <InputText
                 v-model="v.variation_name"
@@ -161,20 +164,20 @@
                 :placeholder="t('products.dialog.variationNamePlaceholder')"
               />
             </div>
-            <div class="flex-1">
+            <div class="flex-1 w-full">
               <label class="block text-xs font-medium text-gray-600 mb-1">{{ t('products.dialog.price') }}</label>
               <InputNumber
                 v-model="v.price"
                 mode="decimal"
                 :minFractionDigits="2"
-                class="p-inputtext-sm"
+                class="w-full p-inputtext-sm"
               />
             </div>
-            <div class="flex-1">
+            <div class="flex-1 w-full">
               <label class="block text-xs font-medium text-gray-600 mb-1">{{ t('products.dialog.initialStock') }}</label>
               <InputNumber
                 v-model="v.stock_quantity"
-                class="p-inputtext-sm"
+                class="w-full p-inputtext-sm"
                 :min="0"
               />
             </div>
@@ -184,7 +187,8 @@
               text
               @click="removeVariationRow(index)"
               v-if="newProduct.variations.length > 1"
-              class="mt-5"
+              class="sm:mt-5"
+              :aria-label="t('products.dialog.removeVariation')"
             />
           </div>
         </div>

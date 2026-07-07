@@ -139,7 +139,13 @@
             <div class="grid grid-cols-3 gap-3">
               <div
                 v-if="shopSettings.ergotherapia"
+                role="checkbox"
+                :aria-checked="editForm.ergotherapia"
+                aria-label="Εργοθεραπεία"
+                tabindex="0"
                 @click="editForm.ergotherapia = !editForm.ergotherapia"
+                @keydown.enter.prevent="editForm.ergotherapia = !editForm.ergotherapia"
+                @keydown.space.prevent="editForm.ergotherapia = !editForm.ergotherapia"
                 :class="[
                   'flex flex-col items-center p-3 rounded-xl border-2 cursor-pointer transition-all text-center',
                   editForm.ergotherapia
@@ -157,7 +163,13 @@
 
               <div
                 v-if="shopSettings.physiotherapia"
+                role="checkbox"
+                :aria-checked="editForm.physiotherapia"
+                aria-label="Φυσιοθεραπεία"
+                tabindex="0"
                 @click="editForm.physiotherapia = !editForm.physiotherapia"
+                @keydown.enter.prevent="editForm.physiotherapia = !editForm.physiotherapia"
+                @keydown.space.prevent="editForm.physiotherapia = !editForm.physiotherapia"
                 :class="[
                   'flex flex-col items-center p-3 rounded-xl border-2 cursor-pointer transition-all text-center',
                   editForm.physiotherapia
@@ -175,7 +187,13 @@
 
               <div
                 v-if="shopSettings.logotherapia"
+                role="checkbox"
+                :aria-checked="editForm.logotherapia"
+                aria-label="Λογοθεραπεία"
+                tabindex="0"
                 @click="editForm.logotherapia = !editForm.logotherapia"
+                @keydown.enter.prevent="editForm.logotherapia = !editForm.logotherapia"
+                @keydown.space.prevent="editForm.logotherapia = !editForm.logotherapia"
                 :class="[
                   'flex flex-col items-center p-3 rounded-xl border-2 cursor-pointer transition-all text-center',
                   editForm.logotherapia
