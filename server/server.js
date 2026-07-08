@@ -31,7 +31,12 @@ const PORT = process.env.PORT || 3000;
 
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(",")
-  : ["http://localhost:5173"];
+  : [
+      "http://localhost:5173", // Web dev
+      "capacitor://localhost", // iOS Capacitor
+      "http://localhost", // Android Capacitor
+      "ionic://localhost", // Legacy iOS
+    ];
 
 const allowedOrigins = [...ALLOWED_ORIGINS];
 
