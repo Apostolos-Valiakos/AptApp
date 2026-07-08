@@ -24,7 +24,7 @@ const multer = require("multer");
 const fs = require("fs");
 const { Server } = require("socket.io");
 const bcrypt = require("bcrypt");
-
+app.set("trust proxy", 1);
 const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
@@ -33,7 +33,7 @@ const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(",")
   : ["http://localhost:5173"];
 
-const allowedOrigins = [ ...ALLOWED_ORIGINS];
+const allowedOrigins = [...ALLOWED_ORIGINS];
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -186,7 +186,11 @@ const createAppointmentSeries = async (client, data, shopId) => {
     const instanceStartIso = instanceStart.toISOString();
 
     // === DUPLICATE CHECK ===
-    if (!is_block && validClientId && existingStartTimes?.has(instanceStartIso)) {
+    if (
+      !is_block &&
+      validClientId &&
+      existingStartTimes?.has(instanceStartIso)
+    ) {
       continue;
     }
 
@@ -2832,19 +2836,15 @@ app.put(
     } = req.body;
     const timePattern = /^\d{2}:\d{2}$/;
     if (!timePattern.test(slot_min_time) || !timePattern.test(slot_max_time)) {
-      return res
-        .status(400)
-        .json({
-          error: "slot_min_time and slot_max_time must be in HH:MM format",
-        });
+      return res.status(400).json({
+        error: "slot_min_time and slot_max_time must be in HH:MM format",
+      });
     }
     const hours = parseInt(reminder_hours_before, 10);
     if (!Number.isInteger(hours) || hours < 1 || hours > 72) {
-      return res
-        .status(400)
-        .json({
-          error: "reminder_hours_before must be an integer between 1 and 72",
-        });
+      return res.status(400).json({
+        error: "reminder_hours_before must be an integer between 1 and 72",
+      });
     }
     try {
       await pool.query(
