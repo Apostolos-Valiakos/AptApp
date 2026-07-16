@@ -62,6 +62,13 @@
 
           <div class="flex items-center gap-4">
             <div class="hidden md:flex items-center gap-4">
+              <router-link
+                to="/tutorials"
+                class="flex items-center gap-1.5 text-sm font-bold text-white/90 hover:text-white transition-colors"
+              >
+                <i class="pi pi-book text-xs"></i>
+                {{ t('nav.tutorials') }}
+              </router-link>
               <button
                 @click="toggleLocale"
                 class="bg-white/15 hover:bg-white/25 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all border border-white/20"
@@ -135,6 +142,15 @@
             >
               <i :class="item.icon + ' mr-2 text-sm'"></i>
               {{ item.label }}
+            </router-link>
+
+            <router-link
+              to="/tutorials"
+              class="block px-4 py-3 rounded-xl text-base font-bold text-white hover:bg-white/10"
+              @click="mobileMenuOpen = false"
+            >
+              <i class="pi pi-book mr-2 text-sm"></i>
+              {{ t('nav.tutorials') }}
             </router-link>
 
             <div class="pt-4 mt-4 border-t border-white/20 space-y-1">

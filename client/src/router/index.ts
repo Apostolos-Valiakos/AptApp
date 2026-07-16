@@ -16,6 +16,7 @@ const FinancialsView = () => import("../components/FinancialsView.vue");
 const profileView = () => import("../views/profileView.vue");
 const ClientPortalView = () => import("../views/ClientPortalView.vue");
 const SignupView = () => import("../views/SignupView.vue");
+const TutorialsView = () => import("../views/TutorialsView.vue");
 
 const routes = [
   {
@@ -36,6 +37,11 @@ const routes = [
         path: "/signup",
         name: "Signup",
         component: SignupView,
+      },
+      {
+        path: "/tutorials",
+        name: "Tutorials",
+        component: TutorialsView,
       },
       {
         path: "/portal",

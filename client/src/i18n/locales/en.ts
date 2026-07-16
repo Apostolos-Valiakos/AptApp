@@ -52,6 +52,7 @@ export default {
     logout: 'Logout',
     login: 'Login',
     language: 'Language',
+    tutorials: 'Guides',
   },
   login: {
     subtitle: 'Welcome back! Sign in to your account.',

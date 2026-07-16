@@ -52,6 +52,7 @@ export default {
     logout: 'Αποσύνδεση',
     login: 'Είσοδος',
     language: 'Γλώσσα',
+    tutorials: 'Οδηγοί',
   },
   login: {
     subtitle: 'Καλώς ήρθατε! Συνδεθείτε στο λογαριασμό σας.',

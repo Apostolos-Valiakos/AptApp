@@ -68,6 +68,13 @@
               />
             </div>
 
+            <router-link
+              to="/tutorials"
+              class="inline-flex items-center gap-1.5 mt-4 text-sm font-bold text-gray-500 hover:text-[#ff93d4] transition-colors"
+            >
+              <i class="pi pi-book"></i> Δείτε τους Οδηγούς Χρήσης
+            </router-link>
+
             <!-- trust badges -->
             <div class="flex items-center gap-6 mt-8 text-xs text-gray-400">
               <span class="flex items-center gap-1"
@@ -839,6 +846,14 @@
                   class="hover:text-white transition-colors"
                   @click.prevent="router.push('/login')"
                   >Είσοδος</a
+                >
+              </li>
+              <li>
+                <a
+                  href="#"
+                  class="hover:text-white transition-colors"
+                  @click.prevent="router.push('/tutorials')"
+                  >Οδηγοί Χρήσης</a
                 >
               </li>
             </ul>
