@@ -24,6 +24,7 @@ const multer = require("multer");
 const fs = require("fs");
 const { Server } = require("socket.io");
 const bcrypt = require("bcrypt");
+const crypto = require("crypto");
 
 const app = express();
 const server = http.createServer(app);
@@ -33,7 +34,7 @@ const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(",")
   : ["http://localhost:5173"];
 
-const allowedOrigins = [ ...ALLOWED_ORIGINS];
+const allowedOrigins = [...ALLOWED_ORIGINS];
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -59,7 +60,7 @@ const publicActionLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-require("./reminderService");
+const { PUBLIC_BASE_URL } = require("./reminderService");
 
 // ==================== FILE UPLOAD SETUP ====================
 const storage = multer.diskStorage({
@@ -186,7 +187,11 @@ const createAppointmentSeries = async (client, data, shopId) => {
     const instanceStartIso = instanceStart.toISOString();
 
     // === DUPLICATE CHECK ===
-    if (!is_block && validClientId && existingStartTimes?.has(instanceStartIso)) {
+    if (
+      !is_block &&
+      validClientId &&
+      existingStartTimes?.has(instanceStartIso)
+    ) {
       continue;
     }
 
@@ -258,7 +263,7 @@ const createAppointmentSeries = async (client, data, shopId) => {
 
             await client.query(
               `INSERT INTO product_sales (
-                    appointment_id, inventory_id, staff_id, client_id, 
+                    appointment_id, inventory_id, staff_id, client_id,
                     quantity, total_price, shop_id, sale_date
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
               [
@@ -270,6 +275,10 @@ const createAppointmentSeries = async (client, data, shopId) => {
                 lineTotal,
                 shopId,
               ],
+            );
+            await client.query(
+              `UPDATE product_inventory SET stock_quantity = GREATEST(0, stock_quantity - $1) WHERE id = $2`,
+              [qty, prod.product_id],
             );
           }
         }
@@ -342,10 +351,19 @@ const performSingleUpdate = async (client, id, shopId, body) => {
     }
   }
 
+  // Restore stock for the sales being removed, then delete and re-insert
+  await client.query(
+    `UPDATE product_inventory pi
+     SET stock_quantity = pi.stock_quantity + ps.quantity
+     FROM product_sales ps
+     WHERE ps.inventory_id = pi.id AND ps.appointment_id = $1`,
+    [id],
+  );
   await client.query("DELETE FROM product_sales WHERE appointment_id = $1", [
     id,
   ]);
-  if (!is_block && products.length > 0) {
+  // Cancelled appointments keep no product sales — stock stays restored
+  if (!is_block && status !== "cancelled" && products.length > 0) {
     for (const prod of products) {
       if (prod.product_id) {
         const unitPrice = Number(prod.price || 0);
@@ -363,6 +381,10 @@ const performSingleUpdate = async (client, id, shopId, body) => {
             unitPrice * qty,
             shopId,
           ],
+        );
+        await client.query(
+          `UPDATE product_inventory SET stock_quantity = GREATEST(0, stock_quantity - $1) WHERE id = $2`,
+          [qty, prod.product_id],
         );
       }
     }
@@ -479,7 +501,24 @@ const getVisibilityClause = (user, tableAlias = "a") => {
   if (user.role === "super_admin") {
     return "";
   }
-  return ` AND (${tableAlias}.status != 'completed' OR ${tableAlias}.save_receipt = true)`;
+  return ` AND ${tableAlias}.save_receipt = true`;
+};
+
+// --- REVENUE EXCLUSION HELPERS (Ctrl+1 hides cash+gift-card, Ctrl+8 hides card — independent toggles) ---
+const buildRevenueExclusionClause = (excludeCash, excludeCard, alias = "a") => {
+  const methods = [];
+  if (excludeCash === "true") methods.push("'cash'", "'gift-card'");
+  if (excludeCard === "true") methods.push("'card'");
+  if (methods.length === 0) return "";
+  return `AND NOT (${alias}.payment_status = 'paid' AND EXISTS (SELECT 1 FROM transactions _t WHERE _t.appointment_id = ${alias}.id AND _t.payment_method IN (${methods.join(", ")})))`;
+};
+
+const buildTxnMethodExclusionClause = (excludeCash, excludeCard, columnPrefix = "") => {
+  const methods = [];
+  if (excludeCash === "true") methods.push("'cash'", "'gift-card'");
+  if (excludeCard === "true") methods.push("'card'");
+  if (methods.length === 0) return "";
+  return `AND ${columnPrefix}payment_method NOT IN (${methods.join(", ")})`;
 };
 
 // --- MIDDLEWARE ---
@@ -668,15 +707,16 @@ app.get("/api/v1/staff", authenticateToken, async (req, res) => {
   try {
     const { rows } = await pool.query(
       `
-      SELECT 
-        st.*,
+      SELECT
+        st.id, st.name, st.color_code, st.hourly_rate, st.is_active,
+        st.email, st.phone, st.specialty, st.shop_id, st.sort_order,
         COALESCE(
-          json_agg(ss.service_id) FILTER (WHERE ss.service_id IS NOT NULL), 
+          json_agg(ss.service_id) FILTER (WHERE ss.service_id IS NOT NULL),
           '[]'
         ) as service_ids
       FROM staff st
       LEFT JOIN staff_services ss ON st.id = ss.staff_id
-      WHERE st.is_active = true 
+      WHERE st.is_active = true
       AND st.shop_id = $1
       GROUP BY st.id
       ORDER BY st.name
@@ -883,12 +923,49 @@ app.post("/api/v1/staff/:id/login", authenticateToken, async (req, res) => {
 //   }
 // });
 app.get("/api/v1/clients", authenticateToken, async (req, res) => {
+  const { slim, search, limit, offset } = req.query;
   try {
-    const query = `
-      SELECT 
+    // Slim mode: lightweight list for dropdowns (scheduler, booking dialog).
+    // With `search` + `limit` it becomes a fast autocomplete lookup instead of
+    // shipping the entire client table (used by the Gift Cards client picker).
+    if (slim === "true") {
+      const slimParams = [req.shopId];
+      let slimSearchClause = "";
+      if (search) {
+        slimParams.push(`%${String(search).trim()}%`);
+        slimSearchClause = ` AND (first_name || ' ' || last_name ILIKE $${slimParams.length}
+          OR email ILIKE $${slimParams.length}
+          OR REPLACE(phone, ' ', '') ILIKE REPLACE($${slimParams.length}, ' ', ''))`;
+      }
+      const slimLimitClause = limit
+        ? ` LIMIT ${Math.min(parseInt(limit) || 10, 50)}`
+        : "";
+
+      const { rows } = await pool.query(
+        `SELECT id, first_name, last_name,
+                first_name || ' ' || last_name as full_name,
+                email, phone, outstanding_balance, custom_fields
+         FROM active_clients WHERE shop_id = $1 ${slimSearchClause}
+         ORDER BY NULLIF(TRIM(last_name), '') NULLS LAST, first_name
+         ${slimLimitClause}`,
+        slimParams,
+      );
+      return res.json(rows);
+    }
+
+    const params = [req.shopId];
+    let searchClause = "";
+    if (search) {
+      params.push(`%${String(search).trim()}%`);
+      searchClause = ` AND (c.first_name || ' ' || c.last_name ILIKE $${params.length}
+        OR c.email ILIKE $${params.length}
+        OR REPLACE(c.phone, ' ', '') ILIKE REPLACE($${params.length}, ' ', ''))`;
+    }
+
+    const heavyColumns = `
         c.*,
         c.first_name || ' ' || c.last_name as full_name,
-        
+
         -- EOPPY Breakdown
         (SELECT jsonb_build_object(
             'total', COALESCE(SUM(s_inner.count_per_service), 0),
@@ -917,19 +994,54 @@ app.get("/api/v1/clients", authenticateToken, async (req, res) => {
            WHERE a.client_id = c.id AND (a.is_eoppy = false OR a.is_eoppy IS NULL)
            GROUP BY s.name
          ) s_inner
-        ) as non_eoppy_breakdown
+        ) as non_eoppy_breakdown`;
 
-      FROM active_clients c
-      WHERE c.shop_id = $1
-      ORDER BY c.last_name;
-    `;
+    // Paged mode: server-side search + pagination, heavy aggregates only for the page
+    if (limit !== undefined) {
+      const pageSize = Math.min(parseInt(limit) || 50, 200);
+      const pageOffset = parseInt(offset) || 0;
 
-    const { rows } = await pool.query(query, [req.shopId]);
+      const countRes = await pool.query(
+        `SELECT COUNT(*) as total FROM active_clients c WHERE c.shop_id = $1 ${searchClause}`,
+        params,
+      );
 
-    // Format the data safely
+      const pagedParams = [...params, pageSize, pageOffset];
+      const { rows } = await pool.query(
+        `SELECT ${heavyColumns}
+         FROM active_clients c
+         WHERE c.shop_id = $1 ${searchClause}
+         ORDER BY NULLIF(TRIM(c.last_name), '') NULLS LAST, c.first_name
+         LIMIT $${pagedParams.length - 1} OFFSET $${pagedParams.length}`,
+        pagedParams,
+      );
+
+      const data = rows.map((row) => ({
+        ...row,
+        eoppy_breakdown: row.eoppy_breakdown || { total: 0, services: {} },
+        non_eoppy_breakdown: row.non_eoppy_breakdown || {
+          total: 0,
+          services: {},
+        },
+      }));
+
+      return res.json({
+        total: parseInt(countRes.rows[0].total),
+        clients: data,
+      });
+    }
+
+    // Legacy mode: full list with aggregates (backward compatible)
+    const { rows } = await pool.query(
+      `SELECT ${heavyColumns}
+       FROM active_clients c
+       WHERE c.shop_id = $1 ${searchClause}
+       ORDER BY NULLIF(TRIM(c.last_name), '') NULLS LAST, c.first_name`,
+      params,
+    );
+
     const data = rows.map((row) => ({
       ...row,
-      // The COALESCE in SQL helps, but we ensure the structure exists here too
       eoppy_breakdown: row.eoppy_breakdown || { total: 0, services: {} },
       non_eoppy_breakdown: row.non_eoppy_breakdown || {
         total: 0,
@@ -937,10 +1049,9 @@ app.get("/api/v1/clients", authenticateToken, async (req, res) => {
       },
     }));
 
-    // Use 'return' to ensure the function stops here
     return res.json(data);
   } catch (err) {
-    // Check if headers were already sent to avoid the ERR_HTTP_HEADERS_SENT crash
+    console.error("Clients fetch error:", err);
     if (!res.headersSent) {
       return res.status(500).json({ error: "Internal Server Error" });
     }
@@ -1082,7 +1193,7 @@ app.delete("/api/v1/clients/:id", authenticateToken, async (req, res) => {
 app.get("/api/v1/services", authenticateToken, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT * FROM services WHERE shop_id = $1 ORDER BY name`,
+      `SELECT * FROM services WHERE shop_id = $1 AND is_active = true ORDER BY name`,
       [req.shopId],
     );
     res.json(rows);
@@ -1164,18 +1275,18 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
 
     // 2. Build the dynamic date filter
     if (date) {
-      // Filter for a specific single day
       params.push(date);
       dateFilter = ` AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id)::date = $${params.length}::date`;
     } else if (start && end) {
-      // Filter for a range (e.g., a full week or month)
       params.push(start, end);
       dateFilter = ` AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) BETWEEN $${params.length - 1} AND $${params.length}`;
     }
-    // NOTE: no date/start/end at all is a real, relied-upon contract (returns
-    // every appointment for the shop — see server/tests/workflows.test.js).
-    // Left unbounded; the shop_id/client_id indexes added alongside this
-    // change already remove the sequential-scan cost for that case.
+
+    // 3. Non-super_admin users cannot retrieve appointments older than 3 months
+    const threeMonthClause =
+      req.user.role !== "super_admin"
+        ? ` AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) >= NOW() - INTERVAL '3 months'`
+        : "";
 
     const { rows } = await pool.query(
       `
@@ -1197,6 +1308,7 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
         c.phone as client_phone,
         COALESCE(c.outstanding_balance, 0) as client_outstanding_balance,
         COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0) as deposit_amount,
+        (SELECT payment_method FROM transactions WHERE appointment_id = a.id ORDER BY created_at DESC LIMIT 1) as payment_method,
         (
           COALESCE((SELECT SUM(COALESCE(aps2.price_override, s2.price)) FROM appointment_services aps2 JOIN services s2 ON aps2.service_id = s2.id WHERE aps2.appointment_id = a.id), 0) +
           COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = a.id), 0)
@@ -1218,7 +1330,7 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
         ), '[]') as services
       FROM appointments a
       LEFT JOIN clients c ON a.client_id = c.id
-      WHERE a.shop_id = $1 ${visibilityClause} ${dateFilter}
+      WHERE a.shop_id = $1 ${visibilityClause} ${dateFilter} ${threeMonthClause}
       GROUP BY a.id, c.first_name, c.last_name, c.phone, c.outstanding_balance
       ORDER BY (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) ASC
     `,
@@ -1301,11 +1413,11 @@ app.get("/api/v1/unsubscribe", publicActionLimiter, async (req, res) => {
 
     // Return a nice styled confirmation page
     res.send(`
-            <div style="font-family: sans-serif; text-align: center; padding: 100px 20px; background: #fff5f9; min-height: 100vh;">
-                <div style="background: white; padding: 40px; border-radius: 20px; display: inline-block; box-shadow: 0 10px 25px rgba(0,0,0,0.05);">
-                    <h1 style="color: #111827; margin-bottom: 10px;">Επιτυχής Διαγραφή</h1>
-                    <p style="color: #4b5563;">Έχετε διαγραφεί με επιτυχία από τη λίστα των υπενθυμίσεων.</p>
-                    <a href="https://interventio.gr" style="display: inline-block; margin-top: 20px; color: #ff93d4; text-decoration: none; font-weight: bold;">Επιστροφή στην Αρχική</a>
+            <div style="font-family: 'Inter', sans-serif; text-align: center; padding: 100px 20px; background: #F9F5F0; min-height: 100vh;">
+                <div style="background: white; padding: 40px; border-radius: 20px; display: inline-block; box-shadow: 0 10px 25px rgba(139, 111, 78, 0.1);">
+                    <h1 style="color: #2C2C2C; font-family: Georgia, serif; margin-bottom: 10px;">Επιτυχής Διαγραφή</h1>
+                    <p style="color: #5C4A3A;">Έχετε διαγραφεί με επιτυχία από τη λίστα των υπενθυμίσεων.</p>
+                    <a href="${PUBLIC_BASE_URL}/" style="display: inline-block; margin-top: 20px; color: #8B6F4E; text-decoration: none; font-weight: bold;">Επιστροφή στην Αρχική</a>
                 </div>
             </div>
         `);
@@ -1350,12 +1462,12 @@ app.get(
 
       // Success Styled Page
       res.send(`
-      <div style="font-family: sans-serif; text-align: center; padding: 100px 20px; background: #fff5f9; min-height: 100vh;">
-          <div style="background: white; padding: 40px; border-radius: 32px; display: inline-block; box-shadow: 0 20px 25px rgba(255,147,212,0.1); max-width: 400px;">
+      <div style="font-family: 'Inter', sans-serif; text-align: center; padding: 100px 20px; background: #F9F5F0; min-height: 100vh;">
+          <div style="background: white; padding: 40px; border-radius: 32px; display: inline-block; box-shadow: 0 20px 25px rgba(139, 111, 78, 0.12); max-width: 400px;">
               <div style="font-size: 48px; margin-bottom: 20px;">✅</div>
-              <h1 style="color: #111827; margin-bottom: 10px; font-size: 24px;">Το ραντεβού επιβεβαιώθηκε!</h1>
-              <p style="color: #4b5563; line-height: 1.5;">Σας ευχαριστούμε. Η κράτησή σας έχει επισημανθεί ως επιβεβαιωμένη στο σύστημά μας. Ανυπομονούμε να σας δούμε!</p>
-              <a href="https://interventio.gr" style="display: inline-block; margin-top: 30px; background: #ff93d4; color: white; padding: 12px 24px; border-radius: 12px; text-decoration: none; font-weight: bold;">Επιστροφή στην Αρχική</a>
+              <h1 style="color: #2C2C2C; font-family: Georgia, serif; margin-bottom: 10px; font-size: 24px;">Το ραντεβού επιβεβαιώθηκε!</h1>
+              <p style="color: #5C4A3A; line-height: 1.5;">Σας ευχαριστούμε. Η κράτησή σας έχει επισημανθεί ως επιβεβαιωμένη στο σύστημά μας. Ανυπομονούμε να σας δούμε!</p>
+              <a href="${PUBLIC_BASE_URL}/" style="display: inline-block; margin-top: 30px; background: #8B6F4E; color: white; padding: 12px 24px; border-radius: 12px; text-decoration: none; font-weight: bold;">Επιστροφή στην Αρχική</a>
           </div>
       </div>
     `);
@@ -1462,38 +1574,40 @@ app.delete("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
   try {
     await client.query("BEGIN");
 
-    // Capture the client before deleting so the cached balance can be
-    // recalculated afterwards — otherwise the deleted appointment's debt
-    // stays in clients.outstanding_balance until an unrelated write.
-    const ownerRes = await client.query(
-      "SELECT client_id FROM appointments WHERE id = $1 AND shop_id = $2",
-      [id, req.shopId],
-    );
-    const affectedClientId = ownerRes.rows[0]?.client_id || null;
-
+    // Collect the appointment ids being deleted so product stock can be restored
+    let deletedIds = [id];
+    let groupInfo = null;
     if (scope === "series") {
-      const groupInfo = await getGroupDetails(client, id, req.shopId);
+      groupInfo = await getGroupDetails(client, id, req.shopId);
       if (groupInfo && groupInfo.group_id) {
-        await client.query(
-          `
-          DELETE FROM appointments 
-          WHERE group_id = $1 
-          AND shop_id = $2
-          AND id IN (
-            SELECT a.id FROM appointments a
-            JOIN appointment_services aps ON a.id = aps.appointment_id
-            WHERE a.group_id = $1 
-            AND aps.start_time >= $3
-          )
-        `,
+        const idsRes = await client.query(
+          `SELECT DISTINCT a.id FROM appointments a
+           JOIN appointment_services aps ON a.id = aps.appointment_id
+           WHERE a.group_id = $1 AND a.shop_id = $2 AND aps.start_time >= $3`,
           [groupInfo.group_id, req.shopId, groupInfo.start_time],
         );
-      } else {
-        await client.query(
-          "DELETE FROM appointments WHERE id = $1 AND shop_id = $2",
-          [id, req.shopId],
-        );
+        deletedIds = idsRes.rows.map((r) => r.id);
       }
+    }
+
+    // Restore stock for any product sales on the deleted appointments
+    await client.query(
+      `UPDATE product_inventory pi
+       SET stock_quantity = pi.stock_quantity + ps.quantity
+       FROM product_sales ps
+       WHERE ps.inventory_id = pi.id AND ps.appointment_id = ANY($1)`,
+      [deletedIds],
+    );
+    await client.query(
+      "DELETE FROM product_sales WHERE appointment_id = ANY($1)",
+      [deletedIds],
+    );
+
+    if (scope === "series" && groupInfo && groupInfo.group_id) {
+      await client.query(
+        `DELETE FROM appointments WHERE id = ANY($1) AND shop_id = $2`,
+        [deletedIds, req.shopId],
+      );
     } else {
       await client.query(
         "DELETE FROM appointments WHERE id = $1 AND shop_id = $2",
@@ -1580,26 +1694,79 @@ app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
     client_id,
     amount,
     payment_method = "card",
+    gift_card_id,
+    amount2,
+    payment_method2,
+    gift_card_id2,
   } = req.body;
 
   if (!amount || Number(amount) <= 0) {
     return res.status(400).json({ error: "Invalid payment amount" });
   }
+  if (payment_method === "gift-card" && !gift_card_id) {
+    return res
+      .status(400)
+      .json({ error: "gift_card_id is required for gift-card payments" });
+  }
+  const hasSecondLeg =
+    amount2 !== undefined && amount2 !== null && Number(amount2) > 0;
+  if (hasSecondLeg) {
+    if (!payment_method2) {
+      return res
+        .status(400)
+        .json({ error: "payment_method2 is required when amount2 is set" });
+    }
+    if (payment_method2 === "gift-card" && !gift_card_id2) {
+      return res
+        .status(400)
+        .json({
+          error: "gift_card_id2 is required for a gift-card second payment",
+        });
+    }
+  }
 
   const client = await pool.connect();
 
-  try {
-    await client.query("BEGIN");
+  // Processes ONE payment leg against the client's current owed appointments
+  // (current appointment first, then oldest debt first). Re-reads owed state
+  // fresh on every call, so calling it twice in sequence for a split payment
+  // naturally continues the FIFO allocation from where the first leg left off.
+  // Returns an error message string on failure, or null on success.
+  const processLeg = async ({
+    legAmount,
+    legMethod,
+    legGiftCardId,
+    splitGroupId,
+  }) => {
+    if (legMethod === "gift-card") {
+      const cardRes = await client.query(
+        `SELECT * FROM gift_cards WHERE id = $1 AND shop_id = $2`,
+        [legGiftCardId, req.shopId],
+      );
+      if (cardRes.rows.length === 0) return "Gift card not found";
+      const card = cardRes.rows[0];
+      if (new Date(card.expires_at) < new Date())
+        return "This gift card has expired";
+      if (Number(legAmount) > Number(card.remaining_balance) + 0.01) {
+        return `Amount exceeds the card's remaining balance (€${Number(card.remaining_balance).toFixed(2)})`;
+      }
+    }
 
-    // Helper: create a transaction record and update the appointment's status/deposit_amount
     const applyPaymentToAppointment = async (apptId, paymentAmount) => {
       await client.query(
-        `INSERT INTO transactions (appointment_id, client_id, amount, payment_method, transaction_type, shop_id, created_at)
-         VALUES ($1, $2, $3, $4, 'payment', $5, NOW())`,
-        [apptId, client_id, paymentAmount, payment_method, req.shopId],
+        `INSERT INTO transactions (appointment_id, client_id, amount, payment_method, transaction_type, shop_id, gift_card_id, split_group_id, created_at)
+         VALUES ($1, $2, $3, $4, 'payment', $5, $6, $7, NOW())`,
+        [
+          apptId,
+          client_id,
+          paymentAmount,
+          legMethod,
+          req.shopId,
+          legGiftCardId || null,
+          splitGroupId,
+        ],
       );
 
-      // Total cost = services + products, matching recalculateClientBalance
       const priceRes = await client.query(
         `SELECT
            COALESCE((SELECT SUM(price_override) FROM appointment_services WHERE appointment_id = $1), 0)
@@ -1616,8 +1783,6 @@ app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
       const totalPaid = Number(alreadyPaidRes.rows[0].paid);
 
       const isFullyPaid = totalPaid >= totalPrice - 0.01;
-      // A FIFO allocation may land on an appointment staff already marked
-      // completed — a partial payment must not downgrade it to 'confirmed'.
       await client.query(
         `UPDATE appointments
          SET payment_status = $1,
@@ -1634,7 +1799,6 @@ app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
       );
     };
 
-    // 1. Calculate what is still owed for the current appointment (from transactions, not deposit_amount column)
     const currentPriceRes = await client.query(
       `SELECT
          COALESCE((SELECT SUM(price_override) FROM appointment_services WHERE appointment_id = $1), 0)
@@ -1653,9 +1817,9 @@ app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
       currentApptCost - currentApptAlreadyPaid,
     );
 
-    // 2. Fetch the client's other unpaid appointments (oldest first, March 1 2026+).
-    // Completed appointments are included: marking an appointment completed
-    // must not make its debt uncollectable (the balance formula counts it too).
+    // Other unpaid appointments (oldest first, March 1 2026+). Completed
+    // appointments are included: marking one completed must not make its
+    // debt uncollectable (the balance formula counts it too).
     const oldAppts = await client.query(
       `SELECT
          a.id,
@@ -1674,23 +1838,18 @@ app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
       [client_id, appointment_id, req.shopId],
     );
 
-    // 3. Reject payments that exceed everything owed — silently dropping the
-    // excess (old behavior) meant real money was never recorded anywhere.
     const oldOwedTotal = oldAppts.rows.reduce(
       (sum, row) =>
         sum + Math.max(0, Number(row.total_cost) - Number(row.total_paid)),
       0,
     );
     const totalOwed = currentApptOwed + oldOwedTotal;
-    if (Number(amount) > totalOwed + 0.01) {
-      await client.query("ROLLBACK");
-      return res.status(400).json({
-        error: `Amount exceeds total owed (€${totalOwed.toFixed(2)}). Refresh and try again.`,
-      });
+    if (Number(legAmount) > totalOwed + 0.01) {
+      return `Amount exceeds total owed (€${totalOwed.toFixed(2)}). Refresh and try again.`;
     }
 
-    // 4. Allocate: pay current appointment first, then apply the remainder to old debt (FIFO)
-    let remaining = Number(amount);
+    // Allocate: pay current appointment first, then apply the remainder to old debt (FIFO)
+    let remaining = Number(legAmount);
 
     const forCurrentAppt = Math.min(remaining, currentApptOwed);
     if (forCurrentAppt > 0.009) {
@@ -1708,7 +1867,52 @@ app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
       remaining -= forThisAppt;
     }
 
-    // 5. Recalculate client balance and return it so the frontend can update without guessing
+    if (legMethod === "gift-card") {
+      const deductRes = await client.query(
+        `UPDATE gift_cards SET remaining_balance = remaining_balance - $1
+         WHERE id = $2 AND remaining_balance >= $1
+         RETURNING id`,
+        [Number(legAmount), legGiftCardId],
+      );
+      if (deductRes.rows.length === 0) {
+        return "Gift card balance changed — please retry";
+      }
+    }
+
+    return null;
+  };
+
+  try {
+    await client.query("BEGIN");
+
+    // A shared id links both rows of a split payment so reports can flag them
+    const splitGroupId = hasSecondLeg ? crypto.randomUUID() : null;
+
+    const leg1Error = await processLeg({
+      legAmount: amount,
+      legMethod: payment_method,
+      legGiftCardId: gift_card_id,
+      splitGroupId,
+    });
+    if (leg1Error) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: leg1Error });
+    }
+
+    if (hasSecondLeg) {
+      const leg2Error = await processLeg({
+        legAmount: amount2,
+        legMethod: payment_method2,
+        legGiftCardId: gift_card_id2,
+        splitGroupId,
+      });
+      if (leg2Error) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: leg2Error });
+      }
+    }
+
+    // Recalculate client balance and return it so the frontend can update without guessing
     const newBalance = await recalculateClientBalance(client, client_id);
 
     await client.query("COMMIT");
@@ -1753,7 +1957,7 @@ app.get("/api/v1/financials", authenticateToken, async (req, res) => {
 
 // --- REPORT ENDPOINTS (ALL FILTERED BY SHOP_ID AND VISIBILITY) ---
 app.get("/api/v1/reports/analytics", authenticateToken, async (req, res) => {
-  const { from, to } = req.query;
+  const { from, to, excludeCash, excludeCard } = req.query;
   // Default to last 30 days if no dates provided
   const startDate =
     from || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
@@ -1818,15 +2022,17 @@ app.get("/api/v1/reports/analytics", authenticateToken, async (req, res) => {
       // C. Staff Utilization
       // Returns hours booked per staff member
       const utilRes = await client.query(
-        `SELECT st.name, 
+        `SELECT st.name,
            SUM(COALESCE(aps.duration_override, s.duration_minutes))/60.0 as hours_booked,
            COUNT(aps.id) as appt_count,
            SUM(COALESCE(aps.price_override, s.price)) as total_revenue
          FROM appointment_services aps
          JOIN staff st ON aps.staff_id = st.id
          LEFT JOIN services s ON aps.service_id = s.id
+         JOIN appointments a ON aps.appointment_id = a.id
          WHERE st.shop_id = $1
          AND aps.start_time >= $2 AND aps.start_time <= $3
+         ${buildRevenueExclusionClause(excludeCash, excludeCard, "a")}
          GROUP BY st.name`,
         [req.shopId, startDate, endDate],
       );
@@ -1848,11 +2054,11 @@ app.get("/api/v1/reports/analytics", authenticateToken, async (req, res) => {
 });
 
 app.get("/api/v1/reports/appointments", authenticateToken, async (req, res) => {
-  const { from, to } = req.query;
+  const { from, to, excludeCash, excludeCard } = req.query;
   const params = [req.shopId];
 
-  // Apply Visibility Clause
   let whereClause = " AND a.shop_id = $1" + getVisibilityClause(req.user, "a");
+  whereClause += " " + buildRevenueExclusionClause(excludeCash, excludeCard, "a");
 
   if (from) {
     params.push(from);
@@ -1883,10 +2089,11 @@ app.get("/api/v1/reports/appointments", authenticateToken, async (req, res) => {
 });
 
 app.get("/api/v1/reports/clients", authenticateToken, async (req, res) => {
-  const { from, to } = req.query;
+  const { from, to, excludeCash, excludeCard } = req.query;
   const params = [req.shopId];
 
   let whereClause = "WHERE a.shop_id = $1" + getVisibilityClause(req.user, "a");
+  whereClause += " " + buildRevenueExclusionClause(excludeCash, excludeCard, "a");
 
   if (from) {
     params.push(from);
@@ -1915,13 +2122,14 @@ app.get("/api/v1/reports/clients", authenticateToken, async (req, res) => {
 });
 
 app.get("/api/v1/reports/sales", authenticateToken, async (req, res) => {
-  const { from, to } = req.query;
+  const { from, to, excludeCash, excludeCard } = req.query;
   const params = [req.shopId];
 
   let whereClause = "WHERE a.shop_id = $1 AND a.status = 'completed'";
   if (req.user.role !== "super_admin") {
     whereClause += " AND a.save_receipt = true";
   }
+  whereClause += " " + buildRevenueExclusionClause(excludeCash, excludeCard, "a");
 
   if (from) {
     params.push(from);
@@ -1959,12 +2167,110 @@ app.get("/api/v1/reports/sales", authenticateToken, async (req, res) => {
   }
 });
 
-app.get("/api/v1/reports/staff", authenticateToken, async (req, res) => {
-  const { from, to } = req.query;
+app.get("/api/v1/reports/products", authenticateToken, async (req, res) => {
+  const { from, to, excludeCash, excludeCard } = req.query;
   const params = [req.shopId];
 
-  // Apply Visibility Clause
+  let whereClause = "WHERE ps.shop_id = $1";
+  if (req.user.role !== "super_admin") {
+    whereClause += " AND (a.id IS NULL OR a.save_receipt = true)";
+  }
+  whereClause += " " + buildRevenueExclusionClause(excludeCash, excludeCard, "a");
+  if (from) {
+    params.push(from);
+    whereClause += ` AND ps.sale_date >= $${params.length}`;
+  }
+  if (to) {
+    params.push(to);
+    whereClause += ` AND ps.sale_date <= $${params.length}`;
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT
+        COALESCE(p.name, 'Deleted Product') as product_name,
+        COALESCE(pi.variation_name, 'Standard') as variation_name,
+        SUM(ps.quantity) as units_sold,
+        SUM(ps.total_price) as total_revenue,
+        MAX(pi.stock_quantity) as current_stock
+      FROM product_sales ps
+      LEFT JOIN product_inventory pi ON ps.inventory_id = pi.id
+      LEFT JOIN products p ON pi.product_id = p.id
+      LEFT JOIN appointments a ON ps.appointment_id = a.id
+      ${whereClause}
+      GROUP BY COALESCE(p.name, 'Deleted Product'), COALESCE(pi.variation_name, 'Standard')
+      ORDER BY total_revenue DESC`,
+      params,
+    );
+
+    const summary = rows.reduce(
+      (acc, row) => {
+        acc.total_revenue += Number(row.total_revenue) || 0;
+        acc.total_units += Number(row.units_sold) || 0;
+        return acc;
+      },
+      { total_revenue: 0, total_units: 0 },
+    );
+    res.json({ summary, details: rows });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.get("/api/v1/reports/gift-cards", authenticateToken, async (req, res) => {
+  const { from, to, excludeCash, excludeCard } = req.query;
+  const params = [req.shopId];
+
+  let whereClause = "WHERE gc.shop_id = $1";
+  if (excludeCash === "true") {
+    whereClause += " AND gc.purchase_payment_method != 'cash'";
+  }
+  if (excludeCard === "true") {
+    whereClause += " AND gc.purchase_payment_method != 'card'";
+  }
+  if (from) {
+    params.push(from);
+    whereClause += ` AND gc.issued_at >= $${params.length}`;
+  }
+  if (to) {
+    params.push(to);
+    whereClause += ` AND gc.issued_at <= $${params.length}`;
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT gc.card_number, gc.customer_name, gc.initial_amount,
+              gc.remaining_balance, gc.purchase_payment_method,
+              gc.issued_at, gc.expires_at
+       FROM gift_cards gc
+       ${whereClause}
+       ORDER BY gc.issued_at DESC`,
+      params,
+    );
+
+    const summary = rows.reduce(
+      (acc, row) => {
+        acc.total_revenue += Number(row.initial_amount) || 0;
+        acc.total_outstanding += Number(row.remaining_balance) || 0;
+        acc.total_cards += 1;
+        return acc;
+      },
+      { total_revenue: 0, total_outstanding: 0, total_cards: 0 },
+    );
+    res.json({ summary, details: rows });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.get("/api/v1/reports/staff", authenticateToken, async (req, res) => {
+  const { from, to, excludeCash, excludeCard } = req.query;
+  const params = [req.shopId];
+
   let whereClause = "WHERE a.shop_id = $1" + getVisibilityClause(req.user, "a");
+  whereClause += " " + buildRevenueExclusionClause(excludeCash, excludeCard, "a");
 
   if (from) {
     params.push(from);
@@ -1994,19 +2300,16 @@ app.get("/api/v1/reports/staff", authenticateToken, async (req, res) => {
 });
 
 app.get("/api/v1/reports/payments", authenticateToken, async (req, res) => {
-  // Payments report usually shows all transactions. If you want to hide transactions
-  // linked to "hidden" appointments, we can join appointments.
-  const { from, to } = req.query;
+  const { from, to, excludeCash, excludeCard } = req.query;
   const params = [req.shopId];
 
   let whereClause = "WHERE t.shop_id = $1";
 
-  // Visibility Filter for Payments linked to Appointments
   if (req.user.role !== "super_admin") {
-    // Ensure we only see payments for valid visible appointments
-    whereClause +=
-      " AND (a.id IS NULL OR (a.status != 'completed' OR a.save_receipt = true))";
+    whereClause += " AND (a.id IS NULL OR a.save_receipt = true)";
   }
+
+  whereClause += " " + buildTxnMethodExclusionClause(excludeCash, excludeCard, "t.");
 
   if (from) {
     params.push(from);
@@ -2033,9 +2336,11 @@ app.get("/api/v1/reports/payments", authenticateToken, async (req, res) => {
   }
 });
 app.get("/api/v1/reports/finances", authenticateToken, async (req, res) => {
-  const { from, to } = req.query;
+  const { from, to, excludeCash, excludeCard } = req.query;
   const shopId = req.shopId;
   const isSuperAdmin = req.user.role === "super_admin";
+  const cashApptClause = buildRevenueExclusionClause(excludeCash, excludeCard, "a2");
+  const cashTxnClause = buildTxnMethodExclusionClause(excludeCash, excludeCard);
 
   // 1. Setup Parameters for Appointments (Sales/Debt)
   const apptParams = [shopId];
@@ -2062,12 +2367,14 @@ app.get("/api/v1/reports/finances", authenticateToken, async (req, res) => {
     )
     ${!isSuperAdmin ? "AND a2.save_receipt = true" : ""}
     ${apptDateFilter}
+    ${cashApptClause}
   `;
 
+  let client;
   try {
-    const client = await pool.connect();
+    client = await pool.connect();
 
-    // --- A. TOTAL SALES (Services Only) ---
+    // --- A. TOTAL SALES (Services + Products) ---
     const salesRes = await client.query(
       `
       SELECT SUM(COALESCE(aps.price_override, s.price)) as total
@@ -2077,7 +2384,17 @@ app.get("/api/v1/reports/finances", authenticateToken, async (req, res) => {
     `,
       apptParams,
     );
-    const totalSales = Number(salesRes.rows[0].total) || 0;
+    const productSalesRes = await client.query(
+      `
+      SELECT SUM(ps.total_price) as total
+      FROM product_sales ps
+      WHERE ps.appointment_id IN (${appointmentSubquery})
+    `,
+      apptParams,
+    );
+    const totalSales =
+      (Number(salesRes.rows[0].total) || 0) +
+      (Number(productSalesRes.rows[0].total) || 0);
 
     // --- B. PERIOD DEBT ---
     const periodPaymentsRes = await client.query(
@@ -2103,7 +2420,7 @@ app.get("/api/v1/reports/finances", authenticateToken, async (req, res) => {
 
     const payRes = await client.query(
       `
-      SELECT SUM(amount) as total FROM transactions WHERE shop_id = $1 ${flowFilter}
+      SELECT SUM(amount) as total FROM transactions WHERE shop_id = $1 ${flowFilter} ${cashTxnClause}
     `,
       flowParams,
     );
@@ -2112,8 +2429,8 @@ app.get("/api/v1/reports/finances", authenticateToken, async (req, res) => {
     // --- D. COLLECTED TODAY (The missing piece) ---
     const todayRes = await client.query(
       `
-      SELECT SUM(amount) as total FROM transactions 
-      WHERE shop_id = $1 AND created_at >= CURRENT_DATE
+      SELECT SUM(amount) as total FROM transactions
+      WHERE shop_id = $1 AND created_at >= CURRENT_DATE ${cashTxnClause}
     `,
       [shopId],
     );
@@ -2130,16 +2447,17 @@ app.get("/api/v1/reports/finances", authenticateToken, async (req, res) => {
     console.error("Finance Report Error:", err);
     res.status(500).json({ error: "Failed to generate report" });
   } finally {
-    client.release();
+    if (client) client.release();
   }
 });
 app.get(
   "/api/v1/reports/service-summary",
   authenticateToken,
   async (req, res) => {
-    const { from, to } = req.query;
+    const { from, to, excludeCash, excludeCard } = req.query;
     const params = [req.shopId];
     let dateFilter = "";
+    const cashExclusion = buildRevenueExclusionClause(excludeCash, excludeCard, "a");
 
     if (from) {
       params.push(from);
@@ -2167,11 +2485,10 @@ app.get(
         JOIN services s ON aps.service_id = s.id
         JOIN appointments a ON aps.appointment_id = a.id
         JOIN active_clients c ON a.client_id = c.id
-        WHERE a.shop_id = $1 
-          -- AND aps.start_time <= CURRENT_TIMESTAMP 
-          -- Exclude cancelled and no-show statuses
-          AND a.status NOT IN ('cancelled', 'no-show') 
+        WHERE a.shop_id = $1
+          AND a.status NOT IN ('cancelled', 'no-show')
           ${dateFilter}
+          ${cashExclusion}
         GROUP BY s.name
         ORDER BY total_value DESC
       `;
@@ -2359,6 +2676,22 @@ io.on("connection", (socket) => {
     } catch (err) {
       console.error("Error marking as read:", err);
     }
+  });
+
+  // Remote cash-filter broadcast — super_admin only
+  socket.on("cash:filter:broadcast", ({ hidden }) => {
+    if (socket.user.role !== "super_admin") return;
+    io.to(`shop:${socket.user.shopId}`).emit("cash:filter:set", {
+      hidden: !!hidden,
+    });
+  });
+
+  // Remote card-filter broadcast — super_admin only, independent of cash
+  socket.on("card:filter:broadcast", ({ hidden }) => {
+    if (socket.user.role !== "super_admin") return;
+    io.to(`shop:${socket.user.shopId}`).emit("card:filter:set", {
+      hidden: !!hidden,
+    });
   });
 
   socket.on("disconnect", () => {
@@ -2832,19 +3165,15 @@ app.put(
     } = req.body;
     const timePattern = /^\d{2}:\d{2}$/;
     if (!timePattern.test(slot_min_time) || !timePattern.test(slot_max_time)) {
-      return res
-        .status(400)
-        .json({
-          error: "slot_min_time and slot_max_time must be in HH:MM format",
-        });
+      return res.status(400).json({
+        error: "slot_min_time and slot_max_time must be in HH:MM format",
+      });
     }
     const hours = parseInt(reminder_hours_before, 10);
     if (!Number.isInteger(hours) || hours < 1 || hours > 72) {
-      return res
-        .status(400)
-        .json({
-          error: "reminder_hours_before must be an integer between 1 and 72",
-        });
+      return res.status(400).json({
+        error: "reminder_hours_before must be an integer between 1 and 72",
+      });
     }
     try {
       await pool.query(
@@ -3072,6 +3401,43 @@ app.delete("/api/v1/products/:id", authenticateToken, async (req, res) => {
   }
 });
 // GET FULL CLIENT PROFILE (Info + History + File Metadata)
+// Lightweight: last N past appointments for the booking sidebar
+app.get(
+  "/api/v1/clients/:id/past-appointments",
+  authenticateToken,
+  async (req, res) => {
+    const { id } = req.params;
+    const limit = Math.min(parseInt(req.query.limit) || 5, 20);
+    const threeMonthClause =
+      req.user.role !== "super_admin"
+        ? "AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) >= NOW() - INTERVAL '3 months'"
+        : "";
+    try {
+      const { rows } = await pool.query(
+        `SELECT
+            a.id,
+            a.status,
+            (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) as start_time,
+            (SELECT string_agg(s.name, ', ')
+             FROM appointment_services aps
+             JOIN services s ON aps.service_id = s.id
+             WHERE aps.appointment_id = a.id) as service_names
+         FROM appointments a
+         WHERE a.client_id = $1 AND a.shop_id = $2
+           AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) < NOW()
+           ${threeMonthClause}
+         ORDER BY 3 DESC
+         LIMIT $3`,
+        [id, req.shopId, limit],
+      );
+      res.json(rows);
+    } catch (err) {
+      console.error("Past appointments fetch error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
+
 app.get("/api/v1/clients/:id/full", authenticateToken, async (req, res) => {
   const { id } = req.params;
   if (req.user.role === "client") {
@@ -3136,14 +3502,23 @@ app.get("/api/v1/clients/:id/full", authenticateToken, async (req, res) => {
           ) as service_names,
 
           (
-            SELECT string_agg(DISTINCT st.name, ', ') 
-            FROM appointment_services aps 
-            JOIN staff st ON aps.staff_id = st.id 
+            SELECT string_agg(DISTINCT st.name, ', ')
+            FROM appointment_services aps
+            JOIN staff st ON aps.staff_id = st.id
             WHERE aps.appointment_id = a.id
-          ) as staff_names
+          ) as staff_names,
+
+          a.payment_status,
+
+          (
+            SELECT payment_method FROM transactions
+            WHERE appointment_id = a.id
+            ORDER BY created_at DESC LIMIT 1
+          ) as payment_method
 
         FROM appointments a
         WHERE a.client_id = $1 AND a.shop_id = $2
+          ${req.user.role !== "super_admin" ? "AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) >= NOW() - INTERVAL '3 months'" : ""}
         ORDER BY 5 DESC`, // 5 refers to start_time
       [id, req.shopId],
     );
@@ -3638,9 +4013,53 @@ app.post(
         `UPDATE appointments SET status = 'cancelled' WHERE id = $1`,
         [id],
       );
+      // Restore stock for any product sales on the cancelled appointment
+      await pool.query(
+        `UPDATE product_inventory pi
+         SET stock_quantity = pi.stock_quantity + ps.quantity
+         FROM product_sales ps
+         WHERE ps.inventory_id = pi.id AND ps.appointment_id = $1`,
+        [id],
+      );
+      await pool.query("DELETE FROM product_sales WHERE appointment_id = $1", [
+        id,
+      ]);
       res.json({ success: true });
     } catch (err) {
       console.error("Portal appointment cancel error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
+
+app.post(
+  "/api/v1/portal/appointments/:id/confirm",
+  authenticateToken,
+  async (req, res) => {
+    if (req.user.role !== "client") {
+      return res.status(403).json({ error: "Clients only" });
+    }
+    const { id } = req.params;
+    try {
+      const check = await pool.query(
+        `SELECT id FROM appointments
+         WHERE id = $1 AND client_id = $2 AND shop_id = $3
+           AND status NOT IN ('cancelled', 'completed')
+           AND payment_status != 'paid'`,
+        [id, req.user.clientId, req.shopId],
+      );
+      if (check.rows.length === 0) {
+        return res
+          .status(404)
+          .json({ error: "Appointment not found or cannot be confirmed" });
+      }
+      await pool.query(
+        `UPDATE appointments SET status = 'confirmed' WHERE id = $1`,
+        [id],
+      );
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Portal appointment confirm error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
   },
@@ -3659,6 +4078,402 @@ app.put("/api/v1/portal/notifications", authenticateToken, async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     console.error("Portal notifications update error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ==================== CONTESTS & GIFT CARDS SCHEMA ====================
+// Sequential IIFE: later steps (ALTER/indexes) depend on tables created earlier,
+// so these cannot run as independent fire-and-forget promises.
+(async () => {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS contests (
+        id SERIAL PRIMARY KEY,
+        shop_id UUID NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        description TEXT,
+        start_date TIMESTAMP NOT NULL,
+        end_date TIMESTAMP NOT NULL,
+        image_url TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS gift_cards (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        card_number VARCHAR(50) NOT NULL,
+        client_id UUID REFERENCES clients(id) ON DELETE SET NULL,
+        customer_name VARCHAR(255) NOT NULL,
+        initial_amount NUMERIC(10,2) NOT NULL,
+        remaining_balance NUMERIC(10,2) NOT NULL,
+        purchase_payment_method VARCHAR(50),
+        shop_id UUID NOT NULL REFERENCES shops(id),
+        issued_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        expires_at TIMESTAMP NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    await pool.query(
+      `ALTER TABLE transactions ADD COLUMN IF NOT EXISTS gift_card_id UUID REFERENCES gift_cards(id) ON DELETE SET NULL`,
+    );
+    // Shared across the two rows created by a single "split" payment (e.g. part
+    // gift-card + part cash in one visit), so reports can flag them as linked.
+    await pool.query(
+      `ALTER TABLE transactions ADD COLUMN IF NOT EXISTS split_group_id UUID`,
+    );
+    // Lets a service be retired (menu no longer offers it) without breaking
+    // past appointments that still reference it — same pattern as staff.is_active.
+    await pool.query(
+      `ALTER TABLE services ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true`,
+    );
+
+    // ==================== PERFORMANCE INDEXES ====================
+    const startupIndexes = [
+      "CREATE INDEX IF NOT EXISTS idx_transactions_appointment_id ON transactions (appointment_id)",
+      "CREATE INDEX IF NOT EXISTS idx_transactions_shop_created ON transactions (shop_id, created_at)",
+      "CREATE INDEX IF NOT EXISTS idx_product_sales_appointment_id ON product_sales (appointment_id)",
+      "CREATE INDEX IF NOT EXISTS idx_appointments_shop_id ON appointments (shop_id)",
+      "CREATE INDEX IF NOT EXISTS idx_appointments_client_id ON appointments (client_id)",
+      "CREATE INDEX IF NOT EXISTS idx_clients_shop_id ON clients (shop_id)",
+      "CREATE INDEX IF NOT EXISTS idx_client_files_client_id ON client_files (client_id)",
+      "CREATE INDEX IF NOT EXISTS idx_gift_cards_shop_id ON gift_cards (shop_id)",
+      "CREATE INDEX IF NOT EXISTS idx_gift_cards_card_number ON gift_cards (card_number)",
+      "CREATE INDEX IF NOT EXISTS idx_gift_cards_client_id ON gift_cards (client_id)",
+    ];
+    for (const sql of startupIndexes) {
+      await pool.query(sql);
+    }
+  } catch (err) {
+    console.error("Failed to run startup schema/index setup:", err);
+  }
+})();
+
+// List all contests for the shop (admin)
+app.get("/api/v1/contests", authenticateToken, async (req, res) => {
+  if (req.user.role !== "admin" && req.user.role !== "super_admin") {
+    return res.status(403).json({ error: "Admins only" });
+  }
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, name, description, start_date, end_date, image_url, created_at
+       FROM contests WHERE shop_id = $1 ORDER BY start_date DESC`,
+      [req.shopId],
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Get active contest + client entry count (authenticated)
+app.get("/api/v1/contests/active", authenticateToken, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, name, description, start_date, end_date, image_url
+       FROM contests
+       WHERE shop_id = $1 AND NOW() BETWEEN start_date AND end_date
+       ORDER BY start_date DESC LIMIT 1`,
+      [req.shopId],
+    );
+    if (rows.length === 0) return res.json(null);
+
+    const contest = rows[0];
+    const clientId = req.user.clientId || req.query.client_id;
+
+    let entries = 0;
+    if (clientId) {
+      const entryRes = await pool.query(
+        `SELECT COUNT(DISTINCT a.id) as entries
+         FROM appointments a
+         JOIN appointment_services aps ON aps.appointment_id = a.id
+         WHERE a.client_id = $1
+           AND a.shop_id = $2
+           AND a.status = 'completed'
+           AND a.payment_status = 'paid'
+           AND aps.start_time >= $3
+           AND aps.start_time <= $4`,
+        [clientId, req.shopId, contest.start_date, contest.end_date],
+      );
+      entries = parseInt(entryRes.rows[0].entries) || 0;
+    }
+
+    res.json({ ...contest, entries });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Create contest (admin) — image is optional
+app.post(
+  "/api/v1/contests",
+  authenticateToken,
+  dbFileUpload.single("image"),
+  async (req, res) => {
+    if (req.user.role !== "admin" && req.user.role !== "super_admin") {
+      return res.status(403).json({ error: "Admins only" });
+    }
+    const { name, description, start_date, end_date } = req.body;
+    if (!name || !start_date || !end_date) {
+      return res
+        .status(400)
+        .json({ error: "name, start_date and end_date are required" });
+    }
+    const imageUrl = req.file
+      ? `data:${req.file.mimetype};base64,${req.file.buffer.toString("base64")}`
+      : null;
+    try {
+      const { rows } = await pool.query(
+        `INSERT INTO contests (shop_id, name, description, start_date, end_date, image_url)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+        [req.shopId, name, description || null, start_date, end_date, imageUrl],
+      );
+      res.json(rows[0]);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
+
+// Update contest (admin) — image is optional
+app.put(
+  "/api/v1/contests/:id",
+  authenticateToken,
+  dbFileUpload.single("image"),
+  async (req, res) => {
+    if (req.user.role !== "admin" && req.user.role !== "super_admin") {
+      return res.status(403).json({ error: "Admins only" });
+    }
+    const { name, description, start_date, end_date } = req.body;
+    const imageUrl = req.file
+      ? `data:${req.file.mimetype};base64,${req.file.buffer.toString("base64")}`
+      : undefined;
+
+    try {
+      const setClauses = [
+        "name = $2",
+        "description = $3",
+        "start_date = $4",
+        "end_date = $5",
+      ];
+      const params = [
+        req.params.id,
+        name,
+        description || null,
+        start_date,
+        end_date,
+        req.shopId,
+      ];
+
+      if (imageUrl !== undefined) {
+        setClauses.push(`image_url = $${params.length}`);
+        params.splice(params.length - 1, 0, imageUrl);
+      }
+
+      const { rows } = await pool.query(
+        `UPDATE contests SET ${setClauses.join(", ")}
+         WHERE id = $1 AND shop_id = $${params.length} RETURNING *`,
+        params,
+      );
+      if (rows.length === 0)
+        return res.status(404).json({ error: "Contest not found" });
+      res.json(rows[0]);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
+
+// Delete contest (admin)
+app.delete("/api/v1/contests/:id", authenticateToken, async (req, res) => {
+  if (req.user.role !== "admin" && req.user.role !== "super_admin") {
+    return res.status(403).json({ error: "Admins only" });
+  }
+  try {
+    const { rowCount } = await pool.query(
+      `DELETE FROM contests WHERE id = $1 AND shop_id = $2`,
+      [req.params.id, req.shopId],
+    );
+    if (rowCount === 0)
+      return res.status(404).json({ error: "Contest not found" });
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ==================== GIFT CARDS ====================
+
+const giftCardStatus = (card) => {
+  if (Number(card.remaining_balance) <= 0) return "depleted";
+  if (new Date(card.expires_at) < new Date()) return "expired";
+  return "active";
+};
+
+// List all gift cards for the shop (admin)
+app.get("/api/v1/gift-cards", authenticateToken, async (req, res) => {
+  if (req.user.role !== "admin" && req.user.role !== "super_admin") {
+    return res.status(403).json({ error: "Admins only" });
+  }
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, card_number, client_id, customer_name, initial_amount,
+              remaining_balance, purchase_payment_method, issued_at, expires_at
+       FROM gift_cards WHERE shop_id = $1 ORDER BY issued_at DESC`,
+      [req.shopId],
+    );
+    res.json(rows.map((c) => ({ ...c, status: giftCardStatus(c) })));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Search redeemable gift cards (any authenticated staff — used at checkout)
+app.get("/api/v1/gift-cards/search", authenticateToken, async (req, res) => {
+  const q = (req.query.q || "").trim();
+  if (!q) return res.json([]);
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, card_number, customer_name, remaining_balance, expires_at
+         FROM gift_cards
+         WHERE shop_id = $1
+           AND remaining_balance > 0
+           AND expires_at > NOW()
+           AND (card_number ILIKE $2 OR customer_name ILIKE $2)
+         ORDER BY issued_at DESC
+         LIMIT 10`,
+      [req.shopId, `%${q}%`],
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Create (sell) a gift card — admin only
+app.post("/api/v1/gift-cards", authenticateToken, async (req, res) => {
+  if (req.user.role !== "admin" && req.user.role !== "super_admin") {
+    return res.status(403).json({ error: "Admins only" });
+  }
+  const {
+    card_number,
+    client_id,
+    customer_name,
+    initial_amount,
+    purchase_payment_method,
+  } = req.body;
+
+  if (
+    !card_number ||
+    !customer_name ||
+    !initial_amount ||
+    Number(initial_amount) <= 0
+  ) {
+    return res.status(400).json({
+      error:
+        "card_number, customer_name and a positive initial_amount are required",
+    });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const { rows } = await client.query(
+      `INSERT INTO gift_cards
+         (card_number, client_id, customer_name, initial_amount, remaining_balance,
+          purchase_payment_method, shop_id, issued_at, expires_at)
+       VALUES ($1, $2, $3, $4, $4, $5, $6, NOW(), NOW() + INTERVAL '3 months')
+       RETURNING *`,
+      [
+        card_number,
+        client_id || null,
+        customer_name,
+        initial_amount,
+        purchase_payment_method || "cash",
+        req.shopId,
+      ],
+    );
+    const card = rows[0];
+
+    // Recognize revenue immediately at time of sale (no linked appointment)
+    await client.query(
+      `INSERT INTO transactions
+         (appointment_id, client_id, amount, payment_method, transaction_type, shop_id, gift_card_id, created_at)
+       VALUES (NULL, $1, $2, $3, 'gift_card_sale', $4, $5, NOW())`,
+      [
+        client_id || null,
+        initial_amount,
+        purchase_payment_method || "cash",
+        req.shopId,
+        card.id,
+      ],
+    );
+
+    await client.query("COMMIT");
+    res.json({ ...card, status: giftCardStatus(card) });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  } finally {
+    client.release();
+  }
+});
+
+// Edit gift card metadata (admin only) — balance/expiry are not editable here
+app.put("/api/v1/gift-cards/:id", authenticateToken, async (req, res) => {
+  if (req.user.role !== "admin" && req.user.role !== "super_admin") {
+    return res.status(403).json({ error: "Admins only" });
+  }
+  const { card_number, customer_name, client_id } = req.body;
+  try {
+    const { rows } = await pool.query(
+      `UPDATE gift_cards
+       SET card_number = $1, customer_name = $2, client_id = $3
+       WHERE id = $4 AND shop_id = $5
+       RETURNING *`,
+      [
+        card_number,
+        customer_name,
+        client_id || null,
+        req.params.id,
+        req.shopId,
+      ],
+    );
+    if (rows.length === 0)
+      return res.status(404).json({ error: "Gift card not found" });
+    res.json({ ...rows[0], status: giftCardStatus(rows[0]) });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Delete a gift card (admin only)
+app.delete("/api/v1/gift-cards/:id", authenticateToken, async (req, res) => {
+  if (req.user.role !== "admin" && req.user.role !== "super_admin") {
+    return res.status(403).json({ error: "Admins only" });
+  }
+  try {
+    const { rowCount } = await pool.query(
+      `DELETE FROM gift_cards WHERE id = $1 AND shop_id = $2`,
+      [req.params.id, req.shopId],
+    );
+    if (rowCount === 0)
+      return res.status(404).json({ error: "Gift card not found" });
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ error: "Internal server error" });
   }
 });

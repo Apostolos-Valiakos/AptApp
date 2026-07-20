@@ -20,12 +20,12 @@ export const useCalendarStore = defineStore("calendar", () => {
       };
 
       // Removed appointments from this Promise.all
-      const [staffRes, clientsRes, servicesRes] = //productsRes
+      const [staffRes, clientsRes, servicesRes, productsRes] =
         await Promise.all([
           fetch("/api/v1/staff", { headers }),
-          fetch("/api/v1/clients", { headers }),
+          fetch("/api/v1/clients?slim=true", { headers }),
           fetch("/api/v1/services", { headers }),
-          // fetch("/api/v1/products", { headers }),
+          fetch("/api/v1/products", { headers }),
         ]);
 
       const staffData = await staffRes.json();
@@ -35,7 +35,7 @@ export const useCalendarStore = defineStore("calendar", () => {
 
       clients.value = await clientsRes.json();
       services.value = await servicesRes.json();
-      // products.value = await productsRes.json();
+      products.value = await productsRes.json();
 
     } catch (err) {
       console.error("fetchBaseResources failed", err);
