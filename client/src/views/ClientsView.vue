@@ -4,32 +4,52 @@
     <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
       <div class="flex justify-between items-center">
         <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-xl bg-[var(--p-primary-50)] flex items-center justify-center">
+          <div
+            class="w-10 h-10 rounded-xl bg-[var(--p-primary-50)] flex items-center justify-center"
+          >
             <i class="pi pi-users text-[var(--p-primary-600)]"></i>
           </div>
           <div>
-            <h1 class="text-2xl font-bold text-gray-900">{{ t('clients.title') }}</h1>
-            <p class="text-sm text-gray-500">{{ t('clients.subtitle', { count: clients.length }) }}</p>
+            <h1 class="text-2xl font-bold text-gray-900">
+              {{ t("clients.title") }}
+            </h1>
+            <p class="text-sm text-gray-500">
+              {{ t("clients.subtitle", { count: totalClients }) }}
+            </p>
           </div>
         </div>
-        <Button :label="t('clients.addNew')" icon="pi pi-plus" @click="openNew" />
+        <div class="flex gap-2">
+          <Button
+            icon="pi pi-file-excel"
+            severity="secondary"
+            outlined
+            v-tooltip.top="'Εξαγωγή Excel'"
+            @click="exportExcel"
+          />
+          <Button
+            :label="t('clients.addNew')"
+            icon="pi pi-plus"
+            @click="openNew"
+          />
+        </div>
       </div>
     </div>
 
     <!-- Data Table Card -->
     <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
       <DataTable
-        :value="filteredClients"
+        :value="clients"
+        :lazy="true"
         :paginator="true"
-        :rows="15"
+        :rows="pageRows"
+        :totalRecords="totalClients"
         :rowsPerPageOptions="[15, 30, 50, 100]"
         responsiveLayout="scroll"
         class="p-datatable-sm cursor-pointer hover:bg-gray-50"
         :loading="loading"
-        sortField="last_name"
-        :sortOrder="1"
         selectionMode="single"
         @row-click="(e) => openProfile(e.data)"
+        @page="onPage"
       >
         <template #header>
           <div class="flex justify-between items-center">
@@ -42,16 +62,22 @@
               />
             </span>
             <div class="text-sm text-gray-500">
-              {{ t('clients.subtitle', { count: filteredClients.length }) }}
+              {{ t("clients.subtitle", { count: totalClients }) }}
             </div>
           </div>
         </template>
 
         <template #empty>
-          <div class="flex flex-col items-center justify-center py-16 text-center">
+          <div
+            class="flex flex-col items-center justify-center py-16 text-center"
+          >
             <i class="pi pi-users text-5xl text-gray-200 mb-4"></i>
-            <p class="text-gray-500 font-semibold text-lg">{{ t('clients.empty.title') }}</p>
-            <p class="text-gray-400 text-sm mt-1">{{ t('clients.empty.subtitle') }}</p>
+            <p class="text-gray-500 font-semibold text-lg">
+              {{ t("clients.empty.title") }}
+            </p>
+            <p class="text-gray-400 text-sm mt-1">
+              {{ t("clients.empty.subtitle") }}
+            </p>
           </div>
         </template>
 
@@ -59,22 +85,34 @@
         <Column field="first_name" :header="t('clients.table.client')" sortable>
           <template #body="slotProps">
             <div class="flex items-center gap-3">
-              <div class="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm bg-[var(--p-primary-100)] text-[var(--p-primary-600)] flex-shrink-0">
+              <div
+                class="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm bg-[var(--p-primary-100)] text-[var(--p-primary-600)] flex-shrink-0"
+              >
                 {{ slotProps.data.first_name?.charAt(0)?.toUpperCase() }}
               </div>
               <div class="min-w-0">
                 <div class="flex items-center gap-1.5 flex-wrap">
                   <span class="font-semibold text-gray-900">
-                    {{ slotProps.data.first_name }} {{ slotProps.data.last_name }}
+                    {{ slotProps.data.first_name }}
+                    {{ slotProps.data.last_name }}
                   </span>
                   <span
-                    v-if="slotProps.data.custom_fields && slotProps.data.custom_fields.length > 0"
+                    v-if="
+                      slotProps.data.custom_fields &&
+                      slotProps.data.custom_fields.length > 0
+                    "
                     class="ml-1 text-[10px] font-bold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full"
                   >
-                    {{ t('clients.table.notes', { count: slotProps.data.custom_fields.length }) }}
+                    {{
+                      t("clients.table.notes", {
+                        count: slotProps.data.custom_fields.length,
+                      })
+                    }}
                   </span>
                 </div>
-                <div class="text-xs text-gray-400 truncate">{{ slotProps.data.email || '—' }}</div>
+                <div class="text-xs text-gray-400 truncate">
+                  {{ slotProps.data.email || "—" }}
+                </div>
               </div>
             </div>
           </template>
@@ -134,26 +172,38 @@
       <div class="space-y-5 mt-4">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('clients.dialog.firstName') }}</label>
+            <label class="block text-sm font-medium text-gray-700 mb-1">{{
+              t("clients.dialog.firstName")
+            }}</label>
             <InputText v-model="editingClient.first_name" class="w-full" />
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('clients.dialog.lastName') }}</label>
+            <label class="block text-sm font-medium text-gray-700 mb-1">{{
+              t("clients.dialog.lastName")
+            }}</label>
             <InputText v-model="editingClient.last_name" class="w-full" />
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('common.email') }}</label>
-            <InputText v-model="editingClient.email" type="email" class="w-full" />
+            <label class="block text-sm font-medium text-gray-700 mb-1">{{
+              t("common.email")
+            }}</label>
+            <InputText
+              v-model="editingClient.email"
+              type="email"
+              class="w-full"
+            />
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('common.phone') }}</label>
+            <label class="block text-sm font-medium text-gray-700 mb-1">{{
+              t("common.phone")
+            }}</label>
             <InputText v-model="editingClient.phone" class="w-full" />
           </div>
         </div>
 
         <div v-if="shopSettings">
           <span class="block text-xs font-bold text-gray-500 uppercase mb-3">
-            {{ t('clients.dialog.activeServices') }}
+            {{ t("clients.dialog.activeServices") }}
           </span>
           <div class="grid grid-cols-3 gap-3">
             <div
@@ -163,8 +213,12 @@
               :aria-label="t('common.services.ergotherapia')"
               tabindex="0"
               @click="editingClient.ergotherapia = !editingClient.ergotherapia"
-              @keydown.enter.prevent="editingClient.ergotherapia = !editingClient.ergotherapia"
-              @keydown.space.prevent="editingClient.ergotherapia = !editingClient.ergotherapia"
+              @keydown.enter.prevent="
+                editingClient.ergotherapia = !editingClient.ergotherapia
+              "
+              @keydown.space.prevent="
+                editingClient.ergotherapia = !editingClient.ergotherapia
+              "
               :class="[
                 'flex flex-col items-center p-3 rounded-xl border-2 cursor-pointer transition-all text-center',
                 editingClient.ergotherapia
@@ -173,7 +227,10 @@
               ]"
             >
               <i class="pi pi-briefcase mb-1"></i>
-              <span class="text-[10px] font-bold uppercase tracking-tight leading-none">{{ t('common.services.ergotherapia') }}</span>
+              <span
+                class="text-[10px] font-bold uppercase tracking-tight leading-none"
+                >{{ t("common.services.ergotherapia") }}</span
+              >
             </div>
 
             <div
@@ -182,9 +239,15 @@
               :aria-checked="editingClient.physiotherapia"
               :aria-label="t('common.services.physiotherapia')"
               tabindex="0"
-              @click="editingClient.physiotherapia = !editingClient.physiotherapia"
-              @keydown.enter.prevent="editingClient.physiotherapia = !editingClient.physiotherapia"
-              @keydown.space.prevent="editingClient.physiotherapia = !editingClient.physiotherapia"
+              @click="
+                editingClient.physiotherapia = !editingClient.physiotherapia
+              "
+              @keydown.enter.prevent="
+                editingClient.physiotherapia = !editingClient.physiotherapia
+              "
+              @keydown.space.prevent="
+                editingClient.physiotherapia = !editingClient.physiotherapia
+              "
               :class="[
                 'flex flex-col items-center p-3 rounded-xl border-2 cursor-pointer transition-all text-center',
                 editingClient.physiotherapia
@@ -193,7 +256,10 @@
               ]"
             >
               <i class="pi pi-heart mb-1"></i>
-              <span class="text-[10px] font-bold uppercase tracking-tight leading-none">{{ t('common.services.physiotherapia') }}</span>
+              <span
+                class="text-[10px] font-bold uppercase tracking-tight leading-none"
+                >{{ t("common.services.physiotherapia") }}</span
+              >
             </div>
 
             <div
@@ -203,8 +269,12 @@
               :aria-label="t('common.services.logotherapia')"
               tabindex="0"
               @click="editingClient.logotherapia = !editingClient.logotherapia"
-              @keydown.enter.prevent="editingClient.logotherapia = !editingClient.logotherapia"
-              @keydown.space.prevent="editingClient.logotherapia = !editingClient.logotherapia"
+              @keydown.enter.prevent="
+                editingClient.logotherapia = !editingClient.logotherapia
+              "
+              @keydown.space.prevent="
+                editingClient.logotherapia = !editingClient.logotherapia
+              "
               :class="[
                 'flex flex-col items-center p-3 rounded-xl border-2 cursor-pointer transition-all text-center',
                 editingClient.logotherapia
@@ -213,14 +283,19 @@
               ]"
             >
               <i class="pi pi-comments mb-1"></i>
-              <span class="text-[10px] font-bold uppercase tracking-tight leading-none">{{ t('common.services.logotherapia') }}</span>
+              <span
+                class="text-[10px] font-bold uppercase tracking-tight leading-none"
+                >{{ t("common.services.logotherapia") }}</span
+              >
             </div>
           </div>
         </div>
 
         <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
           <div class="flex justify-between items-center mb-3">
-            <label class="block text-sm font-medium text-gray-700">{{ t('clients.dialog.customDetails') }}</label>
+            <label class="block text-sm font-medium text-gray-700">{{
+              t("clients.dialog.customDetails")
+            }}</label>
             <Button
               :label="t('clients.dialog.addField')"
               icon="pi pi-plus"
@@ -257,7 +332,9 @@
         </div>
 
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('common.notes') }}</label>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{
+            t("common.notes")
+          }}</label>
           <Textarea v-model="editingClient.notes" rows="3" class="w-full" />
         </div>
       </div>
@@ -289,7 +366,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from "vue";
+import { ref, onMounted, computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
@@ -335,20 +412,37 @@ onMounted(() => {
   settingsStore.fetchShopSettings();
 });
 
+// Server-side pagination + search
+const totalClients = ref(0);
+const pageRows = ref(15);
+const pageOffset = ref(0);
+
 const fetchClients = async () => {
   loading.value = true;
+  loading.value = true;
   try {
-    const res = await fetch("/api/v1/clients", {
+    const params = new URLSearchParams({
+      limit: String(pageRows.value),
+      offset: String(pageOffset.value),
+    });
+    if (search.value.trim()) params.append("search", search.value.trim());
+
+    const res = await fetch(`/api/v1/clients?${params}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
+    if (res.ok) {
+      const data = await res.json();
+      clients.value = data.clients || [];
+      totalClients.value = data.total || 0;
+    }
     if (!res.ok) throw new Error("Request failed");
     clients.value = await res.json();
   } catch (err) {
     console.error(err);
     toast.add({
       severity: "error",
-      summary: t('common.error'),
-      detail: t('clients.toast.loadFailed'),
+      summary: t("common.error"),
+      detail: t("clients.toast.loadFailed"),
       life: 4000,
     });
   } finally {
@@ -356,16 +450,47 @@ const fetchClients = async () => {
   }
 };
 
-const filteredClients = computed(() => {
-  if (!search.value) return clients.value;
-  const term = search.value.toLowerCase();
-  return clients.value.filter(
-    (c) =>
-      `${c.first_name} ${c.last_name}`.toLowerCase().includes(term) ||
-      c.email?.toLowerCase().includes(term) ||
-      c.phone?.includes(term.replace(/\s/g, "")),
-  );
+const onPage = (event: any) => {
+  pageOffset.value = event.first;
+  pageRows.value = event.rows;
+  fetchClients();
+};
+
+// Debounced server-side search
+let searchTimeout: ReturnType<typeof setTimeout> | null = null;
+watch(search, () => {
+  if (searchTimeout) clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(() => {
+    pageOffset.value = 0;
+    fetchClients();
+  }, 300);
 });
+
+const exportExcel = async () => {
+  // Export ALL matching clients (not just the current page)
+  const params = new URLSearchParams();
+  if (search.value.trim()) params.append("search", search.value.trim());
+  const res = await fetch(`/api/v1/clients?${params}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) return;
+  const allClients = await res.json();
+
+  const data = allClients.map((c: any) => ({
+    Όνομα: c.first_name || "",
+    Επώνυμο: c.last_name || "",
+    Email: c.email || "",
+    Τηλέφωνο: c.phone || "",
+    Υπόλοιπο: c.outstanding_balance ?? 0,
+    "Σύνολο πωλήσεων": c.total_sales ?? 0,
+    "No-shows": c.no_show_count ?? 0,
+  }));
+  const XLSX = await import("xlsx");
+  const ws = XLSX.utils.json_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Πελάτες");
+  XLSX.writeFile(wb, `clients_${new Date().toISOString().slice(0, 10)}.xlsx`);
+};
 
 // NEW: Open the full profile dialog
 const openProfile = (client: any) => {
@@ -376,8 +501,8 @@ const inviteClient = async (client: any) => {
   if (!client.email) {
     toast.add({
       severity: "warn",
-      summary: t('clients.toast.missingEmail'),
-      detail: t('clients.toast.missingEmailDetail'),
+      summary: t("clients.toast.missingEmail"),
+      detail: t("clients.toast.missingEmailDetail"),
       life: 3000,
     });
     return;
@@ -394,14 +519,14 @@ const inviteClient = async (client: any) => {
 
     toast.add({
       severity: "success",
-      summary: t('clients.toast.invited'),
-      detail: t('clients.toast.invitedDetail', { email: client.email }),
+      summary: t("clients.toast.invited"),
+      detail: t("clients.toast.invitedDetail", { email: client.email }),
       life: 3000,
     });
   } catch (err: any) {
     toast.add({
       severity: "error",
-      summary: t('common.error'),
+      summary: t("common.error"),
       detail: err.message,
       life: 3000,
     });
@@ -438,8 +563,8 @@ const saveClient = async () => {
   if (!editingClient.value.first_name || !editingClient.value.last_name) {
     toast.add({
       severity: "warn",
-      summary: t('common.required'),
-      detail: t('clients.toast.requiredFields'),
+      summary: t("common.required"),
+      detail: t("clients.toast.requiredFields"),
       life: 3000,
     });
     return;
@@ -460,8 +585,8 @@ const saveClient = async () => {
 
     toast.add({
       severity: "success",
-      summary: t('common.success'),
-      detail: t('clients.toast.created'),
+      summary: t("common.success"),
+      detail: t("clients.toast.created"),
       life: 3000,
     });
     dialogVisible.value = false;
@@ -469,8 +594,8 @@ const saveClient = async () => {
   } catch (err) {
     toast.add({
       severity: "error",
-      summary: t('common.error'),
-      detail: t('clients.toast.saveFailed'),
+      summary: t("common.error"),
+      detail: t("clients.toast.saveFailed"),
       life: 4000,
     });
   }
@@ -478,8 +603,10 @@ const saveClient = async () => {
 
 const confirmDelete = (client: any) => {
   confirm.require({
-    message: t('clients.confirmDelete', { name: `${client.first_name} ${client.last_name}` }),
-    header: t('common.confirmDelete'),
+    message: t("clients.confirmDelete", {
+      name: `${client.first_name} ${client.last_name}`,
+    }),
+    header: t("common.confirmDelete"),
     icon: "pi pi-exclamation-triangle",
     acceptClass: "p-button-danger",
     accept: () => deleteClient(client),
@@ -501,8 +628,8 @@ const deleteClient = async (client: any) => {
 
     toast.add({
       severity: "success",
-      summary: t('common.success'),
-      detail: t('clients.toast.deleted'),
+      summary: t("common.success"),
+      detail: t("clients.toast.deleted"),
       life: 3000,
     });
 
@@ -510,8 +637,8 @@ const deleteClient = async (client: any) => {
   } catch (err: any) {
     toast.add({
       severity: "error",
-      summary: t('clients.toast.deleteDenied'),
-      detail: err.message || t('clients.toast.saveFailed'),
+      summary: t("clients.toast.deleteDenied"),
+      detail: err.message || t("clients.toast.saveFailed"),
       life: 5000,
     });
   }
@@ -521,7 +648,6 @@ const formatPhone = (phone: string) => {
   if (!phone) return "—";
   return phone.replace(/(\d{3})(\d{3})(\d{4})/, "$1 $2 $3");
 };
-
 </script>
 
 <style scoped>
