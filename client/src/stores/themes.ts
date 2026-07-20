@@ -3,7 +3,7 @@ import { palette } from "@primeuix/themes";
 
 export const useThemeStore = defineStore("theme", {
   state: () => ({
-    primaryColor: "#ff93d4", // Default
+    primaryColor: "#8B6F4E", // Default — Pure Massage & Spa warm brown
   }),
   actions: {
     // 1. This updates the DOM immediately

@@ -1,1000 +1,397 @@
 <template>
-  <div class="landing-container">
+  <div class="spa-landing">
     <!-- ═══════════════════════════════════════════════════════
-         HERO SECTION
+         NAV
     ═══════════════════════════════════════════════════════ -->
-    <section class="relative overflow-hidden bg-white pt-16 pb-24">
-      <!-- background blobs -->
+    <nav
+      class="fixed top-0 left-0 right-0 z-50 bg-[#F9F5F0]/95 backdrop-blur border-b border-[#D4A97A]/20 shadow-sm"
+    >
       <div
-        class="absolute -top-32 -right-32 w-[300px] h-[300px] sm:w-[600px] sm:h-[600px] bg-pink-100 rounded-full blur-3xl opacity-40 pointer-events-none hidden sm:block"
-      ></div>
-      <div
-        class="absolute -bottom-20 -left-20 w-80 h-80 bg-pink-50 rounded-full blur-3xl opacity-60 pointer-events-none"
-      ></div>
-
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-        <div class="grid lg:grid-cols-2 gap-16 items-center">
-          <!-- LEFT: copy -->
-          <div class="text-left">
-            <span
-              class="inline-flex items-center gap-2 bg-pink-50 text-[#ff93d4] text-xs font-bold uppercase tracking-widest px-4 py-2 rounded-full border border-pink-200 mb-6"
-            >
-              <i class="pi pi-verified"></i> Σχεδιασμένο για Θεραπευτήρια
-            </span>
-
-            <h1
-              class="text-5xl lg:text-6xl font-extrabold text-gray-900 leading-tight mb-6"
-            >
-              Διαχειριστείτε το Θεραπευτήριό σας
-              <span class="text-[#ff93d4]"> χωρίς χαοτικά χαρτιά.</span>
-            </h1>
-
-            <p class="text-lg text-gray-600 mb-4 leading-relaxed">
-              Το <strong>Interventio</strong> είναι η all-in-one πλατφόρμα για
-              Εργοθεραπεία, Φυσιοθεραπεία & Λογοθεραπεία. Ραντεβού, πελάτες,
-              ΕΟΠΠΥ, πληρωμές και αναλύσεις <br />
-              Όλα σε ένα ασφαλές σύστημα.
-            </p>
-
-            <ul class="space-y-2 mb-8 text-sm text-gray-600">
-              <li class="flex items-center gap-2">
-                <i class="pi pi-check-circle text-green-500"></i> Ημερολόγιο
-                πολλαπλών θεραπευτών με drag &amp; drop
-              </li>
-              <li class="flex items-center gap-2">
-                <i class="pi pi-check-circle text-green-500"></i> Αυτόματη
-                παρακολούθηση χρεών &amp; πληρωμών ΕΟΠΠΥ
-              </li>
-              <li class="flex items-center gap-2">
-                <i class="pi pi-check-circle text-green-500"></i> Πύλη πελατών
-                για ψηφιακά αρχεία &amp; ιστορικό
-              </li>
-            </ul>
-
-            <div class="flex flex-wrap gap-4">
-              <Button
-                label="Ζητήστε Demo"
-                icon="pi pi-calendar"
-                class="!bg-[#ff93d4] border-none hover:!bg-pink-500 !py-3 !px-7 !text-base shadow-lg shadow-pink-200"
-                @click="openDemo"
-              />
-              <Button
-                label="Είσοδος"
-                icon="pi pi-sign-in"
-                severity="secondary"
-                outlined
-                class="!py-3 !px-7 !text-base"
-                @click="router.push('/login')"
-              />
-            </div>
-
-            <!-- trust badges -->
-            <div class="flex items-center gap-6 mt-8 text-xs text-gray-400">
-              <span class="flex items-center gap-1"
-                ><i class="pi pi-lock"></i> Ασφαλή Δεδομένα</span
-              >
-              <span class="flex items-center gap-1"
-                ><i class="pi pi-globe"></i> Ελληνική Υποστήριξη</span
-              >
-              <span class="flex items-center gap-1"
-                ><i class="pi pi-cloud"></i> Cloud SaaS</span
-              >
-            </div>
-          </div>
-
-          <!-- RIGHT: hero image -->
-          <div class="relative flex items-center justify-center">
-            <div
-              class="absolute inset-0 bg-gradient-to-br from-pink-100 to-white rounded-3xl transform rotate-2 scale-105"
-            ></div>
-            <img
-              src="https://petaloudakids.gr/wp-content/uploads/2025/04/11.webp"
-              alt="Παιδιά σε θεραπεία"
-              class="relative rounded-3xl shadow-2xl border-4 border-white object-cover w-full max-h-[480px]"
-              style="object-position: top"
-            />
-            <!-- floating stat card -->
-            <div
-              class="absolute -bottom-6 -left-6 bg-white rounded-2xl shadow-xl border border-gray-100 p-4 flex items-center gap-3"
-            >
-              <div
-                class="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center"
-              >
-                <i class="pi pi-check text-green-600"></i>
-              </div>
-              <div>
-                <div class="text-xs text-gray-500">Ραντεβού Σήμερα</div>
-                <div class="text-lg font-extrabold text-gray-900">24 / 24</div>
-              </div>
-            </div>
-            <!-- floating stat card 2 -->
-            <div
-              class="absolute -top-6 -right-4 bg-white rounded-2xl shadow-xl border border-gray-100 p-4 flex items-center gap-3"
-            >
-              <div
-                class="w-10 h-10 bg-pink-100 rounded-xl flex items-center justify-center"
-              >
-                <i class="pi pi-users text-[#ff93d4]"></i>
-              </div>
-              <div>
-                <div class="text-xs text-gray-500">Ενεργοί Πελάτες</div>
-                <div class="text-lg font-extrabold text-gray-900">+180</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ═══════════════════════════════════════════════════════
-         STATS BAR
-    ═══════════════════════════════════════════════════════ -->
-    <section class="bg-gray-900 py-10">
-      <div
-        class="max-w-5xl mx-auto px-4 grid grid-cols-2 md:grid-cols-4 gap-8 text-center"
+        class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16"
       >
-        <div>
-          <div class="text-3xl font-extrabold text-white">500+</div>
-          <div class="text-sm text-gray-400 mt-1">Πελάτες Διαχείρισης</div>
+        <div
+          class="text-xl font-semibold tracking-wide text-[#2C2C2C]"
+          style="font-family: &quot;Georgia&quot;, serif"
+        >
+          <span class="text-[#8B6F4E]">Pure</span> Spa &amp; Massage Experience
         </div>
-        <div>
-          <div class="text-3xl font-extrabold text-[#ff93d4]">15k+</div>
-          <div class="text-sm text-gray-400 mt-1">Ραντεβού / Μήνα</div>
-        </div>
-        <div>
-          <div class="text-3xl font-extrabold text-white">99.9%</div>
-          <div class="text-sm text-gray-400 mt-1">Uptime SLA</div>
-        </div>
-        <div>
-          <div class="text-3xl font-extrabold text-[#ff93d4]">< 2 ώρες</div>
-          <div class="text-sm text-gray-400 mt-1">Χρόνος Απόκρισης</div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ═══════════════════════════════════════════════════════
-         PROBLEM / SOLUTION
-    ═══════════════════════════════════════════════════════ -->
-    <section class="py-20 bg-[#fff5f9]">
-      <div class="max-w-7xl mx-auto px-4">
-        <div class="text-center mb-14">
-          <h2 class="text-3xl font-extrabold text-gray-900 mb-3">
-            Αναγνωρίζετε αυτά τα προβλήματα;
-          </h2>
-          <p class="text-gray-500 max-w-xl mx-auto">
-            Τα περισσότερα θεραπευτήρια χάνουν χρόνο και χρήμα λόγω
-            αναποτελεσματικών διαδικασιών.
-          </p>
-        </div>
-        <div class="grid md:grid-cols-3 gap-6">
-          <div class="bg-white rounded-2xl p-6 border border-red-100 shadow-sm">
-            <i class="pi pi-times-circle text-red-400 text-2xl mb-3"></i>
-            <h4 class="font-bold text-gray-800 mb-2">
-              Χαμένα Ραντεβού & Συγκρούσεις
-            </h4>
-            <p class="text-sm text-gray-500">
-              Διπλές κρατήσεις, παρεξηγήσεις ωραρίου και ξεχασμένα ραντεβού
-              χαλάνε την εμπιστοσύνη των πελατών.
-            </p>
-          </div>
-          <div class="bg-white rounded-2xl p-6 border border-red-100 shadow-sm">
-            <i class="pi pi-times-circle text-red-400 text-2xl mb-3"></i>
-            <h4 class="font-bold text-gray-800 mb-2">
-              Χειρόγραφο Ιστορικό Πελατών
-            </h4>
-            <p class="text-sm text-gray-500">
-              Χαρτιά, φακέλοι, Excel — η αναζήτηση πληροφοριών για έναν πελάτη
-              παίρνει πολύτιμα λεπτά.
-            </p>
-          </div>
-          <div class="bg-white rounded-2xl p-6 border border-red-100 shadow-sm">
-            <i class="pi pi-times-circle text-red-400 text-2xl mb-3"></i>
-            <h4 class="font-bold text-gray-800 mb-2">Αδιαφανή Οικονομικά</h4>
-            <p class="text-sm text-gray-500">
-              Δεν ξέρετε ποιος πελάτης χρωστά, πόσα ΕΟΠΠΥ συνεδρίες απομένουν ή
-              ποιες υπηρεσίες αποδίδουν.
-            </p>
-          </div>
-        </div>
-        <div class="mt-8 text-center">
-          <div
-            class="inline-flex items-center gap-2 bg-pink-50 text-[#ff93d4] font-bold px-6 py-3 rounded-full border border-pink-200 text-sm"
+        <div
+          class="hidden md:flex items-center gap-8 text-sm font-medium text-[#5C4A3A]"
+        >
+          <a href="#about" class="hover:text-[#8B6F4E] transition-colors"
+            >Σχετικά</a
           >
-            <i class="pi pi-arrow-down"></i>
-            Το Interventio λύνει όλα τα παραπάνω
+          <a href="#services" class="hover:text-[#8B6F4E] transition-colors"
+            >Υπηρεσίες</a
+          >
+          <a href="#contact" class="hover:text-[#8B6F4E] transition-colors"
+            >Επικοινωνία</a
+          >
+          <!-- <Button
+            label="Είσοδος"
+            icon="pi pi-sign-in"
+            size="small"
+            class="!bg-[#8B6F4E] border-none !text-white hover:!bg-[#7A5F3E]"
+            @click="router.push('/login')"
+          /> -->
+        </div>
+        <Button
+          label="Είσοδος"
+          icon="pi pi-sign-in"
+          size="small"
+          class="md:hidden !bg-[#8B6F4E] border-none !text-white"
+          @click="router.push('/login')"
+        />
+      </div>
+    </nav>
+
+    <!-- ═══════════════════════════════════════════════════════
+         HERO
+    ═══════════════════════════════════════════════════════ -->
+    <section
+      class="relative min-h-screen flex items-center justify-center overflow-hidden pt-16"
+    >
+      <div
+        class="absolute inset-0 bg-gradient-to-br from-[#3A2E28] via-[#2C2420] to-[#1A1510]"
+      ></div>
+      <!-- subtle grain overlay -->
+      <div
+        class="absolute inset-0 opacity-[0.04]"
+        style="
+          background-image: url(&quot;data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADIAAAAyCAMAAAAp4XiDAAAAUVBMVEWFhYWDg4N3d3dtbW17e3t1dXWBgYGHh4t5eXlzc3OLi4ubm5uVlZWPj4+NjY19fX2JiYl/f39ra2uRkZGZmZlpaWmXl5dvb29xcXGTk5NnZ2c8TV1mAAAAG3RSTlNAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEAvEOwtAAAFVklEQVR4XpWWB67c2BUFb3g557T/hRo9/WUMZHlgr4Bg8Z4qQgQJlHI4A8SzFVrapvmTF9O7dmYRFZ60YiBhJRCgh1FYhiLAmdvX0CzTOpNE77ME0Zty/nWWzchDtiqrmQDeuv3powQ5ta2eN0FY0InkqDD73lT9c9lEzwUNqgFHs9VQce3TVClFCQrSTfOiYkVJQBmpbq2L6iZavPnAPcoU0dSw0SUTqz/GtrGuXfbyyBniKykOWQWGqwwMA7QiYAxi+IlPdqo+hYHnUt5ZPfnsHJyNiDtnpJyayNBkF6cWoYGAMY92ZBRzp3ghcQ==&quot;);
+          background-size: 200px;
+          background-repeat: repeat;
+        "
+      ></div>
+
+      <div class="relative z-10 text-center px-4 max-w-4xl mx-auto">
+        <p
+          class="text-[#D4A97A] text-xs tracking-[0.4em] uppercase mb-6 font-light"
+        >
+          Λάρισα, Ελλάδα
+        </p>
+        <h1
+          class="text-5xl md:text-7xl font-light text-white mb-6 leading-tight"
+          style="font-family: &quot;Georgia&quot;, serif"
+        >
+          Καλώς ήρθατε στο<br />
+          <span class="text-[#D4A97A] italic"
+            >Pure Spa &amp; Massage Experience</span
+          >
+        </h1>
+        <p
+          class="text-gray-300 text-lg mb-10 max-w-2xl mx-auto leading-relaxed font-light"
+        >
+          Ανακαλύψτε μια μοναδική εμπειρία χαλάρωσης και αναζωογόνησης με
+          εξειδικευμένες θεραπείες και φυσικά προϊόντα.
+        </p>
+        <div class="flex flex-wrap justify-center gap-4">
+          <Button
+            label="Δείτε τις Υπηρεσίες"
+            icon="pi pi-arrow-down"
+            class="!bg-[#8B6F4E] border-none !py-3 !px-8 hover:!bg-[#7A5F3E] shadow-xl"
+            @click="scrollToServices"
+          />
+          <Button
+            label="Είσοδος Συστήματος"
+            icon="pi pi-sign-in"
+            outlined
+            class="!border-[#D4A97A] !text-[#D4A97A] !py-3 !px-8 hover:!bg-[#D4A97A]/10"
+            @click="router.push('/login')"
+          />
+        </div>
+      </div>
+
+      <div
+        class="absolute bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 text-[#D4A97A]/50"
+      >
+        <div class="w-px h-12 bg-[#D4A97A]/30"></div>
+        <i class="pi pi-angle-down text-xs scroll-bounce"></i>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════
+         ABOUT
+    ═══════════════════════════════════════════════════════ -->
+    <section id="about" class="py-24 bg-[#F9F5F0]">
+      <div class="max-w-5xl mx-auto px-4 text-center">
+        <p
+          class="text-[#8B6F4E] text-xs tracking-[0.3em] uppercase mb-4 font-semibold"
+        >
+          Σχετικά μας
+        </p>
+        <h2
+          class="text-4xl font-light text-[#2C2C2C] mb-6"
+          style="font-family: &quot;Georgia&quot;, serif"
+        >
+          Η Τέχνη της Χαλάρωσης
+        </h2>
+        <div class="w-16 h-0.5 bg-[#D4A97A] mx-auto mb-8"></div>
+        <p class="text-[#5C4A3A] text-lg leading-relaxed max-w-3xl mx-auto">
+          Στο <strong>Pure Spa &amp; Massage Experience</strong> στη Λάρισα,
+          πιστεύουμε ότι η ευεξία είναι τέχνη. Χρησιμοποιούμε αποκλειστικά
+          φυσικά προϊόντα και εξειδικευμένες τεχνικές για να σας προσφέρουμε μια
+          εμπειρία που αναζωογονεί σώμα και πνεύμα.
+        </p>
+
+        <div class="grid md:grid-cols-3 gap-8 mt-16">
+          <div class="text-center">
+            <div
+              class="w-14 h-14 bg-[#8B6F4E]/10 rounded-full flex items-center justify-center mx-auto mb-4"
+            >
+              <i class="pi pi-heart text-[#8B6F4E] text-xl"></i>
+            </div>
+            <h4 class="font-semibold text-[#2C2C2C] mb-2">Φυσικά Προϊόντα</h4>
+            <p class="text-sm text-[#7A6A5A] leading-relaxed">
+              100% φυσικά συστατικά για κάθε θεραπεία
+            </p>
+          </div>
+          <div class="text-center">
+            <div
+              class="w-14 h-14 bg-[#8B6F4E]/10 rounded-full flex items-center justify-center mx-auto mb-4"
+            >
+              <i class="pi pi-star text-[#8B6F4E] text-xl"></i>
+            </div>
+            <h4 class="font-semibold text-[#2C2C2C] mb-2">
+              Εξειδικευμένες Τεχνικές
+            </h4>
+            <p class="text-sm text-[#7A6A5A] leading-relaxed">
+              Εκπαιδευμένοι θεραπευτές με πολυετή εμπειρία
+            </p>
+          </div>
+          <div class="text-center">
+            <div
+              class="w-14 h-14 bg-[#8B6F4E]/10 rounded-full flex items-center justify-center mx-auto mb-4"
+            >
+              <i class="pi pi-shield text-[#8B6F4E] text-xl"></i>
+            </div>
+            <h4 class="font-semibold text-[#2C2C2C] mb-2">Πλήρης Χαλάρωση</h4>
+            <p class="text-sm text-[#7A6A5A] leading-relaxed">
+              Περιβάλλον σχεδιασμένο για βαθιά ηρεμία
+            </p>
           </div>
         </div>
       </div>
     </section>
 
     <!-- ═══════════════════════════════════════════════════════
-         FEATURES GRID
+         SERVICES
     ═══════════════════════════════════════════════════════ -->
-    <section class="py-20 bg-white">
+    <section id="services" class="py-24 bg-[#EDE8E1]">
       <div class="max-w-7xl mx-auto px-4">
-        <div class="text-center mb-14">
-          <h2 class="text-3xl font-extrabold text-gray-900 mb-3">
-            Όλα όσα χρειάζεται το Θεραπευτήριό σας
-          </h2>
-          <p class="text-gray-500">
-            Ένα σύστημα. Μηδέν χαρτιά. Πλήρης έλεγχος.
+        <div class="text-center mb-16">
+          <p
+            class="text-[#8B6F4E] text-xs tracking-[0.3em] uppercase mb-4 font-semibold"
+          >
+            Υπηρεσίες
           </p>
+          <h2
+            class="text-4xl font-light text-[#2C2C2C] mb-4"
+            style="font-family: &quot;Georgia&quot;, serif"
+          >
+            Οι Θεραπείες μας
+          </h2>
+          <div class="w-16 h-0.5 bg-[#D4A97A] mx-auto"></div>
         </div>
 
         <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
           <div
-            class="group p-6 rounded-2xl border border-gray-100 hover:border-[#ff93d4] hover:shadow-lg transition-all duration-300"
+            v-for="service in services"
+            :key="service.title"
+            class="group bg-[#F9F5F0] rounded-2xl overflow-hidden border border-[#D4A97A]/20 hover:border-[#8B6F4E]/40 hover:shadow-xl transition-all duration-300"
           >
             <div
-              class="w-12 h-12 bg-pink-50 rounded-xl flex items-center justify-center mb-4 group-hover:bg-[#ff93d4] transition-colors"
-            >
-              <i
-                class="pi pi-calendar text-[#ff93d4] text-xl group-hover:text-white transition-colors"
-              ></i>
+              class="h-1 w-full"
+              :style="{ background: service.color }"
+            ></div>
+            <div class="p-7">
+              <div
+                class="w-12 h-12 rounded-full flex items-center justify-center mb-4"
+                :style="{ background: service.iconBg }"
+              >
+                <i :class="[service.icon, 'text-xl text-[#8B6F4E]']"></i>
+              </div>
+              <h3 class="font-semibold text-[#2C2C2C] mb-2 text-lg">
+                {{ service.title }}
+              </h3>
+              <p class="text-sm text-[#7A6A5A] leading-relaxed">
+                {{ service.description }}
+              </p>
             </div>
-            <h3 class="font-bold text-gray-900 mb-2">Έξυπνο Ημερολόγιο</h3>
-            <p class="text-sm text-gray-500">
-              Ημερολόγιο βασισμένο σε θεραπευτή, με drag & drop,
-              επαναλαμβανόμενα ραντεβού και προβολή ανά ημέρα ή εβδομάδα.
-            </p>
-          </div>
-
-          <div
-            class="group p-6 rounded-2xl border border-gray-100 hover:border-[#ff93d4] hover:shadow-lg transition-all duration-300"
-          >
-            <div
-              class="w-12 h-12 bg-pink-50 rounded-xl flex items-center justify-center mb-4 group-hover:bg-[#ff93d4] transition-colors"
-            >
-              <i
-                class="pi pi-file-edit text-[#ff93d4] text-xl group-hover:text-white transition-colors"
-              ></i>
-            </div>
-            <h3 class="font-bold text-gray-900 mb-2">Καρτέλα Πελάτη 360°</h3>
-            <p class="text-sm text-gray-500">
-              Πλήρες ιστορικό ραντεβού, παρακολούθηση ασκήσεων, ψηφιακά αρχεία,
-              σημειώσεις και ισορροπία λογαριασμού.
-            </p>
-          </div>
-
-          <div
-            class="group p-6 rounded-2xl border border-gray-100 hover:border-[#ff93d4] hover:shadow-lg transition-all duration-300"
-          >
-            <div
-              class="w-12 h-12 bg-pink-50 rounded-xl flex items-center justify-center mb-4 group-hover:bg-[#ff93d4] transition-colors"
-            >
-              <i
-                class="pi pi-verified text-[#ff93d4] text-xl group-hover:text-white transition-colors"
-              ></i>
-            </div>
-            <h3 class="font-bold text-gray-900 mb-2">
-              Πλήρης ΕΟΠΠΥ Υποστήριξη
-            </h3>
-            <p class="text-sm text-gray-500">
-              Παρακολούθηση ΕΟΠΠΥ vs Ιδιωτικών συνεδριών ανά πελάτη και
-              υπηρεσία. Αυτόματος υπολογισμός υπολοίπου.
-            </p>
-          </div>
-
-          <div
-            class="group p-6 rounded-2xl border border-gray-100 hover:border-[#ff93d4] hover:shadow-lg transition-all duration-300"
-          >
-            <div
-              class="w-12 h-12 bg-pink-50 rounded-xl flex items-center justify-center mb-4 group-hover:bg-[#ff93d4] transition-colors"
-            >
-              <i
-                class="pi pi-chart-bar text-[#ff93d4] text-xl group-hover:text-white transition-colors"
-              ></i>
-            </div>
-            <h3 class="font-bold text-gray-900 mb-2">Αναλυτικές Αναφορές</h3>
-            <p class="text-sm text-gray-500">
-              Έσοδα, χρέη πελατών, απόδοση υπηρεσιών και προσωπικού σε
-              γραφήματα. Εξαγωγή CSV μεγάλων αρχείων πληρωμών.
-            </p>
-          </div>
-
-          <div
-            class="group p-6 rounded-2xl border border-gray-100 hover:border-[#ff93d4] hover:shadow-lg transition-all duration-300"
-          >
-            <div
-              class="w-12 h-12 bg-pink-50 rounded-xl flex items-center justify-center mb-4 group-hover:bg-[#ff93d4] transition-colors"
-            >
-              <i
-                class="pi pi-user text-[#ff93d4] text-xl group-hover:text-white transition-colors"
-              ></i>
-            </div>
-            <h3 class="font-bold text-gray-900 mb-2">Πύλη Πελάτη</h3>
-            <p class="text-sm text-gray-500">
-              Οι πελάτες συνδέονται με δικό τους λογαριασμό, βλέπουν τα ραντεβού
-              τους και κατεβάζουν έγγραφα — χωρίς τηλεφωνήματα.
-            </p>
-          </div>
-
-          <div
-            class="group p-6 rounded-2xl border border-gray-100 hover:border-[#ff93d4] hover:shadow-lg transition-all duration-300"
-          >
-            <div
-              class="w-12 h-12 bg-pink-50 rounded-xl flex items-center justify-center mb-4 group-hover:bg-[#ff93d4] transition-colors"
-            >
-              <i
-                class="pi pi-comments text-[#ff93d4] text-xl group-hover:text-white transition-colors"
-              ></i>
-            </div>
-            <h3 class="font-bold text-gray-900 mb-2">Real-time Chat Ομάδας</h3>
-            <p class="text-sm text-gray-500">
-              Άμεση επικοινωνία μεταξύ θεραπευτών. Ενημερωθείτε για αλλαγές
-              ραντεβού χωρίς WhatsApp ή email.
-            </p>
           </div>
         </div>
       </div>
     </section>
 
     <!-- ═══════════════════════════════════════════════════════
-         EOPPY SPOTLIGHT
+         CONTACT
     ═══════════════════════════════════════════════════════ -->
-    <section class="py-20 bg-gradient-to-br from-gray-900 to-gray-800">
+    <section id="contact" class="py-24 bg-[#2C2C2C]">
       <div class="max-w-5xl mx-auto px-4">
-        <div class="grid md:grid-cols-2 gap-12 items-center">
-          <div>
-            <span
-              class="inline-flex items-center gap-2 bg-pink-900/30 text-[#ff93d4] text-xs font-bold uppercase tracking-widest px-4 py-2 rounded-full mb-6"
-            >
-              <i class="pi pi-verified"></i> Μόνο στο Interventio
-            </span>
-            <h2 class="text-3xl font-extrabold text-white mb-4">
-              Πλήρης Ενσωμάτωση ΕΟΠΠΥ
-            </h2>
-            <p class="text-gray-400 mb-6 leading-relaxed">
-              Κάθε ραντεβού σημαίνεται αυτόματα ως ΕΟΠΠΥ ή ιδιωτικό. Το σύστημα
-              παρακολουθεί ξεχωριστά τα χρέη για κάθε κατηγορία, ώστε να ξέρετε
-              πάντα πού βρίσκεστε.
-            </p>
-            <ul class="space-y-3 text-sm text-gray-300">
-              <li class="flex items-center gap-3">
-                <div
-                  class="w-6 h-6 rounded-full bg-pink-500/20 flex items-center justify-center flex-shrink-0"
-                >
-                  <i class="pi pi-check text-[#ff93d4] text-xs"></i>
-                </div>
-                Διαχωρισμός ΕΟΠΠΥ / Ιδιωτικών ανά πελάτη
-              </li>
-              <li class="flex items-center gap-3">
-                <div
-                  class="w-6 h-6 rounded-full bg-pink-500/20 flex items-center justify-center flex-shrink-0"
-                >
-                  <i class="pi pi-check text-[#ff93d4] text-xs"></i>
-                </div>
-                Αυτόματος υπολογισμός υπολοίπου FIFO
-              </li>
-              <li class="flex items-center gap-3">
-                <div
-                  class="w-6 h-6 rounded-full bg-pink-500/20 flex items-center justify-center flex-shrink-0"
-                >
-                  <i class="pi pi-check text-[#ff93d4] text-xs"></i>
-                </div>
-                Αναφορά breakdown ανά υπηρεσία στην καρτέλα ραντεβού
-              </li>
-              <li class="flex items-center gap-3">
-                <div
-                  class="w-6 h-6 rounded-full bg-pink-500/20 flex items-center justify-center flex-shrink-0"
-                >
-                  <i class="pi pi-check text-[#ff93d4] text-xs"></i>
-                </div>
-                Υποστήριξη Εργοθεραπείας, Φυσιοθεραπείας, Λογοθεραπείας
-              </li>
-            </ul>
-          </div>
-          <div class="bg-gray-800 rounded-2xl p-6 border border-gray-700">
-            <div class="text-xs text-gray-500 uppercase tracking-wider mb-4">
-              Καρτέλα Πελάτη — Σύνοψη ΕΟΠΠΥ
-            </div>
-            <div class="space-y-3">
-              <div
-                class="flex justify-between items-center p-3 bg-gray-700/50 rounded-xl"
-              >
-                <span class="text-sm text-gray-300">Εργοθεραπεία ΕΟΠΠΥ</span>
-                <span class="text-sm font-bold text-[#ff93d4]"
-                  >12 συνεδρίες</span
-                >
-              </div>
-              <div
-                class="flex justify-between items-center p-3 bg-gray-700/50 rounded-xl"
-              >
-                <span class="text-sm text-gray-300">Φυσιοθεραπεία ΕΟΠΠΥ</span>
-                <span class="text-sm font-bold text-[#ff93d4]"
-                  >8 συνεδρίες</span
-                >
-              </div>
-              <div
-                class="flex justify-between items-center p-3 bg-gray-700/50 rounded-xl"
-              >
-                <span class="text-sm text-gray-300">Ιδιωτικές Συνεδρίες</span>
-                <span class="text-sm font-bold text-white">5 συνεδρίες</span>
-              </div>
-              <div
-                class="border-t border-gray-700 pt-3 flex justify-between items-center"
-              >
-                <span class="text-sm text-gray-400">Υπόλοιπο Λογαριασμού</span>
-                <span class="text-base font-extrabold text-red-400"
-                  >€ 120.00</span
-                >
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ═══════════════════════════════════════════════════════
-         TESTIMONIALS
-    ═══════════════════════════════════════════════════════ -->
-    <section class="py-20 bg-[#fff5f9]">
-      <div class="max-w-5xl mx-auto px-4">
-        <div class="text-center mb-12">
-          <h2 class="text-3xl font-extrabold text-gray-900">
-            Τι λένε τα Θεραπευτήρια
-          </h2>
-        </div>
-        <div class="grid md:grid-cols-3 gap-6">
-          <div
-            class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100"
+        <div class="text-center mb-16">
+          <p
+            class="text-[#D4A97A] text-xs tracking-[0.3em] uppercase mb-4 font-semibold"
           >
-            <div class="flex gap-1 mb-4">
-              <i
-                class="pi pi-star-fill text-yellow-400"
-                v-for="n in 5"
-                :key="n"
-              ></i>
-            </div>
-            <p class="text-sm text-gray-600 italic mb-4">
-              "Εξαλείψαμε εντελώς τα χαρτιά. Κάθε θεραπευτής έχει το δικό του
-              ημερολόγιο και η διαχείριση ΕΟΠΠΥ έχει γίνει παιχνιδάκι."
-            </p>
-            <div class="flex items-center gap-3">
-              <div
-                class="w-10 h-10 rounded-full bg-pink-100 flex items-center justify-center font-bold text-[#ff93d4]"
-              >
-                Μ
-              </div>
-              <div>
-                <div class="text-sm font-bold text-gray-900">
-                  Μαρία Παπαδοπούλου
-                </div>
-                <div class="text-xs text-gray-400">
-                  Κέντρο Εργοθεραπείας, Αθήνα
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div
-            class="bg-white rounded-2xl p-6 shadow-sm border border-pink-100 border-2 relative"
-          >
-            <div
-              class="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#ff93d4] text-white text-xs font-bold px-4 py-1 rounded-full"
-            >
-              Αγαπημένο
-            </div>
-            <div class="flex gap-1 mb-4">
-              <i
-                class="pi pi-star-fill text-yellow-400"
-                v-for="n in 5"
-                :key="n"
-              ></i>
-            </div>
-            <p class="text-sm text-gray-600 italic mb-4">
-              "Τελικά ξέρω κάθε μέρα πόσα χρωστάει ο κάθε πελάτης. Το σύστημα
-              πληρωμών εξοικονομεί ώρες κάθε μήνα."
-            </p>
-            <div class="flex items-center gap-3">
-              <div
-                class="w-10 h-10 rounded-full bg-pink-100 flex items-center justify-center font-bold text-[#ff93d4]"
-              >
-                Γ
-              </div>
-              <div>
-                <div class="text-sm font-bold text-gray-900">
-                  Γιώργος Νικολάου
-                </div>
-                <div class="text-xs text-gray-400">
-                  Φυσικοθεραπευτήριο, Θεσσαλονίκη
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div
-            class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100"
-          >
-            <div class="flex gap-1 mb-4">
-              <i
-                class="pi pi-star-fill text-yellow-400"
-                v-for="n in 5"
-                :key="n"
-              ></i>
-            </div>
-            <p class="text-sm text-gray-600 italic mb-4">
-              "Οι γονείς λατρεύουν την πύλη πελάτη. Βλέπουν μόνοι τους τα
-              ραντεβού και κατεβάζουν αξιολογήσεις. Μηδέν τηλεφωνήματα."
-            </p>
-            <div class="flex items-center gap-3">
-              <div
-                class="w-10 h-10 rounded-full bg-pink-100 flex items-center justify-center font-bold text-[#ff93d4]"
-              >
-                Ε
-              </div>
-              <div>
-                <div class="text-sm font-bold text-gray-900">
-                  Ελένη Κωνσταντίνου
-                </div>
-                <div class="text-xs text-gray-400">
-                  Κέντρο Λογοθεραπείας, Πάτρα
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-    <!-- ═══════════════════════════════════════════════════════
-         CTA BANNER
-    ═══════════════════════════════════════════════════════ -->
-    <section class="py-20 bg-gradient-to-br from-[#ff93d4] to-pink-600">
-      <div class="max-w-3xl mx-auto px-4 text-center">
-        <h2 class="text-3xl font-extrabold text-white mb-4">
-          Έτοιμοι να οργανώσετε το Θεραπευτήριό σας;
-        </h2>
-        <p class="text-pink-100 mb-8 text-lg">
-          Ξεκινήστε σήμερα με 14 ημέρες δωρεάν. Χωρίς κάρτα, χωρίς δεσμεύσεις.
-        </p>
-        <div class="flex flex-wrap justify-center gap-4">
-          <Button
-            label="Ζητήστε Demo"
-            icon="pi pi-calendar"
-            class="!bg-white !text-[#ff93d4] border-none !py-3 !px-8 !text-base font-bold hover:!bg-pink-50 shadow-xl"
-            @click="openDemo"
-          />
-          <Button
-            label="Δείτε τα Πλάνα"
-            icon="pi pi-arrow-down"
-            outlined
-            class="!border-white !text-white !py-3 !px-8 !text-base hover:!bg-white/10"
-            @click="scrollToPricing"
-          />
-        </div>
-      </div>
-    </section>
-
-    <!-- ═══════════════════════════════════════════════════════
-         PRICING
-    ═══════════════════════════════════════════════════════ -->
-    <section class="py-20 bg-white" id="pricing">
-      <div class="max-w-5xl mx-auto px-4">
-        <div class="text-center mb-4">
-          <h2 class="text-3xl font-extrabold text-gray-900">
-            Απλά, Διαφανή Πλάνα
-          </h2>
-          <p class="text-gray-500 mt-2">
-            Χωρίς κρυφές χρεώσεις. Ακύρωση ανά πάσα στιγμή.
+            Επικοινωνία
           </p>
+          <h2
+            class="text-4xl font-light text-white mb-4"
+            style="font-family: &quot;Georgia&quot;, serif"
+          >
+            Βρείτε μας
+          </h2>
+          <div class="w-16 h-0.5 bg-[#D4A97A] mx-auto"></div>
         </div>
 
-        <!-- billing toggle placeholder -->
-        <div class="flex justify-center mb-10">
-          <span
-            class="inline-flex items-center gap-2 bg-green-50 text-green-700 text-sm font-semibold px-4 py-2 rounded-full border border-green-200"
-          >
-            <i class="pi pi-tag"></i> Ετήσια πληρωμή: 2 μήνες δωρεάν
-          </span>
-        </div>
-
-        <div class="grid md:grid-cols-3 gap-6">
-          <!-- SOLO -->
-          <div
-            class="p-8 border-2 border-gray-100 rounded-3xl hover:border-[#ff93d4] transition-all duration-300"
-          >
+        <div class="grid md:grid-cols-3 gap-8 text-center">
+          <div>
             <div
-              class="text-xs font-bold uppercase tracking-widest text-gray-400 mb-2"
+              class="w-14 h-14 bg-[#D4A97A]/10 rounded-full flex items-center justify-center mx-auto mb-4"
             >
-              Solo
+              <i class="pi pi-map-marker text-[#D4A97A] text-xl"></i>
             </div>
-            <h3 class="text-xl font-extrabold text-gray-900 mb-1">
-              Μεμονωμένος Θεραπευτής
-            </h3>
-            <p class="text-xs text-gray-400 mb-5">
-              Ιδανικό για ατομικές πρακτικές με 1 θεραπευτή.
+            <h4 class="text-white font-semibold mb-2">Διεύθυνση</h4>
+            <p class="text-gray-400 text-sm leading-relaxed">
+              Ρούσβελτ 63, Λάρισα<br />412 22
             </p>
-            <div class="text-4xl font-extrabold text-gray-900 mb-1">
-              €39<span class="text-lg text-gray-400 font-medium">/μήνα</span>
-            </div>
-            <div class="text-xs text-gray-400 mb-6">
-              ή €390/χρόνο (εξοικονομείτε €78)
-            </div>
-            <ul class="space-y-3 mb-8 text-sm text-gray-600">
-              <li class="flex items-center gap-2">
-                <i class="pi pi-check-circle text-green-500"></i> 1 Θεραπευτής
-              </li>
-              <li class="flex items-center gap-2">
-                <i class="pi pi-check-circle text-green-500"></i> Απεριόριστοι
-                Πελάτες
-              </li>
-              <li class="flex items-center gap-2">
-                <i class="pi pi-check-circle text-green-500"></i> Ημερολόγιο &
-                Ραντεβού
-              </li>
-              <li class="flex items-center gap-2">
-                <i class="pi pi-check-circle text-green-500"></i> Καρτέλες
-                Πελατών
-              </li>
-              <li class="flex items-center gap-2">
-                <i class="pi pi-check-circle text-green-500"></i> Πληρωμές &
-                ΕΟΠΠΥ
-              </li>
-              <li class="flex items-center gap-2 text-gray-300">
-                <i class="pi pi-times-circle"></i> Πύλη Πελάτη
-              </li>
-              <li class="flex items-center gap-2 text-gray-300">
-                <i class="pi pi-times-circle"></i> Αναλυτικές Αναφορές
-              </li>
-              <li class="flex items-center gap-2 text-gray-300">
-                <i class="pi pi-times-circle"></i> Chat Ομάδας
-              </li>
-            </ul>
-            <Button
-              label="Ξεκινήστε Δωρεάν"
-              severity="secondary"
-              outlined
-              class="w-full !py-3"
-              @click="openDemo"
-            />
           </div>
-
-          <!-- CLINIC (POPULAR) -->
-          <div
-            class="p-8 border-2 border-[#ff93d4] bg-pink-50/30 rounded-3xl relative shadow-xl shadow-pink-100"
-          >
+          <div>
             <div
-              class="absolute top-0 right-8 transform -translate-y-1/2 bg-[#ff93d4] text-white px-5 py-1.5 rounded-full text-xs font-extrabold tracking-wide"
+              class="w-14 h-14 bg-[#D4A97A]/10 rounded-full flex items-center justify-center mx-auto mb-4"
             >
-              ΠΙΟ ΔΗΜΟΦΙΛΕΣ
+              <i class="pi pi-phone text-[#D4A97A] text-xl"></i>
             </div>
-            <div
-              class="text-xs font-bold uppercase tracking-widest text-[#ff93d4] mb-2"
-            >
-              Clinic
-            </div>
-            <h3 class="text-xl font-extrabold text-gray-900 mb-1">
-              Κέντρο Θεραπειών
-            </h3>
-            <p class="text-xs text-gray-400 mb-5">
-              Για κέντρα με ομάδα έως 6 θεραπευτών.
+            <h4 class="text-white font-semibold mb-2">Ραντεβού</h4>
+            <p class="text-gray-400 text-sm leading-relaxed">
+              Επικοινωνήστε μαζί μας<br />για ραντεβού
             </p>
-            <div class="text-4xl font-extrabold text-gray-900 mb-1">
-              €89<span class="text-lg text-gray-400 font-medium">/μήνα</span>
-            </div>
-            <div class="text-xs text-gray-400 mb-6">
-              ή €890/χρόνο (εξοικονομείτε €178)
-            </div>
-            <ul class="space-y-3 mb-8 text-sm text-gray-600">
-              <li class="flex items-center gap-2">
-                <i class="pi pi-check-circle text-green-500"></i> Έως 6
-                Θεραπευτές
-              </li>
-              <li class="flex items-center gap-2">
-                <i class="pi pi-check-circle text-green-500"></i> Απεριόριστοι
-                Πελάτες
-              </li>
-              <li class="flex items-center gap-2">
-                <i class="pi pi-check-circle text-green-500"></i> Ημερολόγιο &
-                Επαναλαμβανόμενα
-              </li>
-              <li class="flex items-center gap-2">
-                <i class="pi pi-check-circle text-green-500"></i> Πλήρης ΕΟΠΠΥ
-                Υποστήριξη
-              </li>
-              <li class="flex items-center gap-2">
-                <i class="pi pi-check-circle text-green-500"></i> Πύλη Πελάτη
-              </li>
-              <li class="flex items-center gap-2">
-                <i class="pi pi-check-circle text-green-500"></i> Αναλυτικές
-                Αναφορές & Γραφήματα
-              </li>
-              <li class="flex items-center gap-2">
-                <i class="pi pi-check-circle text-green-500"></i> Chat Ομάδας &
-                Ψηφιακό Αρχείο
-              </li>
-              <li class="flex items-center gap-2">
-                <i class="pi pi-check-circle text-green-500"></i> Διαχείριση
-                Προϊόντων & Αποθέματος
-              </li>
-            </ul>
-            <Button
-              label="Ξεκινήστε Δωρεάν"
-              class="w-full !py-3 !bg-[#ff93d4] border-none shadow-lg shadow-pink-200"
-              @click="openDemo"
-            />
           </div>
-
-          <!-- ENTERPRISE -->
-          <div
-            class="p-8 border-2 border-gray-100 rounded-3xl hover:border-gray-400 transition-all duration-300"
-          >
+          <div>
             <div
-              class="text-xs font-bold uppercase tracking-widest text-gray-400 mb-2"
+              class="w-14 h-14 bg-[#D4A97A]/10 rounded-full flex items-center justify-center mx-auto mb-4"
             >
-              Enterprise
+              <i class="pi pi-globe text-[#D4A97A] text-xl"></i>
             </div>
-            <h3 class="text-xl font-extrabold text-gray-900 mb-1">
-              Μεγάλο Κέντρο
-            </h3>
-            <p class="text-xs text-gray-400 mb-5">
-              Για κλινικές και κέντρα με πολλαπλές ειδικότητες.
+            <h4 class="text-white font-semibold mb-2">Online</h4>
+            <p class="text-gray-400 text-sm leading-relaxed">
+              puremassagespa.gr
             </p>
-            <div class="text-4xl font-extrabold text-gray-900 mb-1">
-              €149<span class="text-lg text-gray-400 font-medium">/μήνα</span>
-            </div>
-            <div class="text-xs text-gray-400 mb-6">
-              ή €1.490/χρόνο (εξοικονομείτε €298)
-            </div>
-            <ul class="space-y-3 mb-8 text-sm text-gray-600">
-              <li class="flex items-center gap-2">
-                <i class="pi pi-check-circle text-green-500"></i> Απεριόριστοι
-                Θεραπευτές
-              </li>
-              <li class="flex items-center gap-2">
-                <i class="pi pi-check-circle text-green-500"></i> Όλα από το
-                Clinic
-              </li>
-              <li class="flex items-center gap-2">
-                <i class="pi pi-check-circle text-green-500"></i> Προτεραιότητα
-                Υποστήριξης (< 2ω)
-              </li>
-              <li class="flex items-center gap-2">
-                <i class="pi pi-check-circle text-green-500"></i> Custom
-                Εγκατάσταση & Εκπαίδευση
-              </li>
-              <li class="flex items-center gap-2">
-                <i class="pi pi-check-circle text-green-500"></i> Custom
-                Branding (λογότυπο)
-              </li>
-              <li class="flex items-center gap-2">
-                <i class="pi pi-check-circle text-green-500"></i> Export
-                Δεδομένων (CSV / Excel)
-              </li>
-              <li class="flex items-center gap-2">
-                <i class="pi pi-check-circle text-green-500"></i> Dedicated
-                Account Manager
-              </li>
-              <li class="flex items-center gap-2">
-                <i class="pi pi-check-circle text-green-500"></i> SLA Uptime
-                99.9%
-              </li>
-            </ul>
-            <Button
-              label="Επικοινωνήστε μαζί μας"
-              severity="secondary"
-              outlined
-              class="w-full !py-3"
-              @click="openDemo"
-            />
           </div>
         </div>
-
-        <p class="text-center text-xs text-gray-400 mt-8">
-          Όλα τα πλάνα περιλαμβάνουν 14 ημέρες δωρεάν δοκιμή. Δεν απαιτείται
-          κάρτα.
-        </p>
       </div>
     </section>
+
     <!-- ═══════════════════════════════════════════════════════
          FOOTER
     ═══════════════════════════════════════════════════════ -->
-    <footer class="py-14 bg-gray-900 text-white">
+    <footer class="py-10 bg-[#1A1510] text-center">
       <div class="max-w-7xl mx-auto px-4">
-        <div class="grid md:grid-cols-4 gap-8 mb-10">
-          <div class="md:col-span-2">
-            <div class="text-2xl font-extrabold mb-3">
-              Interventio<span class="text-[#ff93d4]">Booking</span>
-            </div>
-            <p class="text-gray-400 text-sm leading-relaxed max-w-xs">
-              Η πλατφόρμα διαχείρισης που φτιάχτηκε αποκλειστικά για
-              Θεραπευτήρια στην Ελλάδα.
-            </p>
-            <div class="flex gap-4 mt-4">
-              <a
-                href="#"
-                class="text-gray-500 hover:text-[#ff93d4] transition-colors"
-                ><i class="pi pi-instagram text-xl"></i
-              ></a>
-              <a
-                href="#"
-                class="text-gray-500 hover:text-[#ff93d4] transition-colors"
-                ><i class="pi pi-facebook text-xl"></i
-              ></a>
-            </div>
-          </div>
-          <div>
-            <div
-              class="text-xs font-bold uppercase tracking-wider text-gray-500 mb-4"
-            >
-              Πλατφόρμα
-            </div>
-            <ul class="space-y-2 text-sm text-gray-400">
-              <li>
-                <a href="#pricing" class="hover:text-white transition-colors"
-                  >Τιμολόγηση</a
-                >
-              </li>
-              <li>
-                <a
-                  href="#"
-                  class="hover:text-white transition-colors"
-                  @click.prevent="openDemo"
-                  >Request Demo</a
-                >
-              </li>
-              <li>
-                <a
-                  href="#"
-                  class="hover:text-white transition-colors"
-                  @click.prevent="router.push('/login')"
-                  >Είσοδος</a
-                >
-              </li>
-            </ul>
-          </div>
-          <div>
-            <div
-              class="text-xs font-bold uppercase tracking-wider text-gray-500 mb-4"
-            >
-              Επικοινωνία
-            </div>
-            <ul class="space-y-2 text-sm text-gray-400">
-              <li class="flex items-center gap-2">
-                <i class="pi pi-envelope text-xs"></i>
-                interventiobooking@gmail.com
-              </li>
-              <li class="flex items-center gap-2">
-                <i class="pi pi-globe text-xs"></i> interventio.gr
-              </li>
-            </ul>
-          </div>
-        </div>
         <div
-          class="border-t border-gray-800 pt-6 text-center text-xs text-gray-500"
+          class="text-xl font-light text-white mb-2"
+          style="font-family: &quot;Georgia&quot;, serif"
         >
-          © 2026 Interventio Booking System. All rights reserved.
+          <span class="text-[#D4A97A]">Pure</span> Spa &amp; Massage Experience
+        </div>
+        <p class="text-gray-500 text-xs mb-4">Ρούσβελτ 63, Λάρισα 412 22</p>
+        <div class="flex justify-center gap-4 mb-6">
+          <a
+            href="#"
+            class="text-gray-500 hover:text-[#D4A97A] transition-colors"
+          >
+            <i class="pi pi-instagram text-xl"></i>
+          </a>
+          <a
+            href="#"
+            class="text-gray-500 hover:text-[#D4A97A] transition-colors"
+          >
+            <i class="pi pi-facebook text-xl"></i>
+          </a>
+        </div>
+        <div class="border-t border-gray-800 pt-6 text-xs text-gray-600">
+          © 2026 Pure Spa &amp; Massage Experience. All rights reserved.
         </div>
       </div>
     </footer>
-
-    <!-- ═══════════════════════════════════════════════════════
-         DEMO MODAL
-    ═══════════════════════════════════════════════════════ -->
-    <Dialog
-      v-model:visible="showDemoModal"
-      header="Ζητήστε Demo"
-      :style="{ width: '420px', maxWidth: '90vw' }"
-      modal
-    >
-      <div class="space-y-4 pt-2">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1"
-            >Ονοματεπώνυμο</label
-          >
-          <InputText
-            id="name"
-            v-model="demoForm.name"
-            class="w-full"
-            placeholder="π.χ. Μαρία Παπαδοπούλου"
-          />
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1"
-            >Email</label
-          >
-          <InputText
-            id="email"
-            v-model="demoForm.email"
-            class="w-full"
-            placeholder="info@therapycentre.gr"
-          />
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1"
-            >Τύπος Θεραπευτηρίου</label
-          >
-          <Dropdown
-            v-model="demoForm.type"
-            :options="[
-              'Εργοθεραπεία',
-              'Φυσιοθεραπεία',
-              'Λογοθεραπεία',
-              'Πολλαπλές Ειδικότητες',
-            ]"
-            placeholder="Επιλέξτε..."
-            class="w-full"
-          />
-        </div>
-      </div>
-      <template #footer>
-        <Button label="Ακύρωση" text @click="showDemoModal = false" />
-        <Button
-          label="Αποστολή Αιτήματος"
-          icon="pi pi-send"
-          class="!bg-[#ff93d4] border-none"
-          @click="submitDemo"
-        />
-      </template>
-    </Dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from "vue";
 import { useRouter } from "vue-router";
 import Button from "primevue/button";
-import Card from "primevue/card";
-import Tag from "primevue/tag";
-import Dialog from "primevue/dialog";
-import InputText from "primevue/inputtext";
-import { useToast } from "primevue/usetoast";
 
 const router = useRouter();
-const toast = useToast();
 
-const showDemoModal = ref(false);
+const services = [
+  {
+    title: "Περιποίηση Προσώπου",
+    description:
+      "Εξατομικευμένες θεραπείες προσώπου με φυσικά προϊόντα για λαμπερό και αναζωογονημένο δέρμα.",
+    icon: "pi pi-sparkles",
+    color: "linear-gradient(90deg, #D4A97A, #E8C99A)",
+    iconBg: "#D4A97A22",
+  },
+  {
+    title: "Pure Premium Treatments",
+    description:
+      "Πολυτελείς θεραπείες ολιστικής προσέγγισης για βαθιά χαλάρωση και αναγέννηση.",
+    icon: "pi pi-star",
+    color: "linear-gradient(90deg, #8B6F4E, #A68563)",
+    iconBg: "#8B6F4E22",
+  },
+  {
+    title: "Ειδικές Θεραπείες",
+    description:
+      "Στοχευμένες θεραπείες για ειδικές ανάγκες του δέρματος και του σώματος.",
+    icon: "pi pi-heart",
+    color: "linear-gradient(90deg, #B8956A, #D4A97A)",
+    iconBg: "#B8956A22",
+  },
+  {
+    title: "Pure Massage Experience",
+    description:
+      "Μοναδικές τεχνικές μασάζ που συνδυάζουν αρώματα και αφές για πλήρη αποκατάσταση.",
+    icon: "pi pi-sun",
+    color: "linear-gradient(90deg, #7A5F3E, #8B6F4E)",
+    iconBg: "#7A5F3E22",
+  },
+  {
+    title: "Express Massage",
+    description:
+      "Γρήγορες θεραπείες για άμεση ανακούφιση από την καθημερινή κούραση.",
+    icon: "pi pi-bolt",
+    color: "linear-gradient(90deg, #C8A882, #D4A97A)",
+    iconBg: "#C8A88222",
+  },
+  {
+    title: "Laser AI Alexandrite 755nm",
+    description:
+      "Τεχνολογία αιχμής για αποτρίχωση και δερματολογικές θεραπείες.",
+    icon: "pi pi-verified",
+    color: "linear-gradient(90deg, #6B5344, #8B6F4E)",
+    iconBg: "#6B534422",
+  },
+];
 
-const demoForm = reactive({
-  name: "",
-  email: "",
-  type: "",
-});
-
-const openDemo = () => {
-  showDemoModal.value = true;
-};
-
-const scrollToPricing = () => {
-  document.getElementById("pricing")?.scrollIntoView({ behavior: "smooth" });
-};
-
-const submitDemo = async () => {
-  if (!demoForm.name || !demoForm.email) {
-    toast.add({
-      severity: "warn",
-      summary: "Συμπληρώστε τα πεδία",
-      detail: "Παρακαλώ εισάγετε όνομα και email.",
-      life: 3000,
-    });
-    return;
-  }
-
-  try {
-    showDemoModal.value = false;
-    demoForm.name = "";
-    demoForm.email = "";
-    demoForm.type = "";
-
-    toast.add({
-      severity: "success",
-      summary: "Το αίτημά σας στάλθηκε!",
-      detail: "Θα επικοινωνήσουμε μαζί σας εντός 24 ωρών.",
-      life: 4000,
-    });
-  } catch (error) {
-    toast.add({
-      severity: "error",
-      summary: "Σφάλμα",
-      detail: "Δοκιμάστε ξανά αργότερα.",
-      life: 3000,
-    });
-  }
+const scrollToServices = () => {
+  document.getElementById("services")?.scrollIntoView({ behavior: "smooth" });
 };
 </script>
 
 <style scoped>
-.landing-container {
-  font-family: "Inter", sans-serif;
+.spa-landing {
+  font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+}
+
+@keyframes scroll-bounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(6px);
+  }
+}
+.scroll-bounce {
+  animation: scroll-bounce 1.5s ease-in-out infinite;
 }
 </style>

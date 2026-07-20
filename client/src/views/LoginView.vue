@@ -32,7 +32,7 @@
             <path d="M12 8C12 8 13.5 3 16 4" />
           </svg>
         </div>
-        <h1 class="text-2xl font-bold text-gray-900">Petalouda Booking</h1>
+        <h1 class="text-2xl font-bold text-gray-900">Pure Spa &amp; Massage Experience</h1>
         <p class="text-gray-500 mt-1 text-sm">{{ t('login.subtitle') }}</p>
       </div>
 
