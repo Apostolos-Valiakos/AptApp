@@ -1,17 +1,16 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { useAuthStore } from "../stores/auth";
 
-// Views — Layout loads eagerly (it's the app shell), everything else is
-// lazy-loaded per-route so the initial bundle doesn't ship FullCalendar,
-// Chart.js, etc. for views the user may never visit.
+// Views — landing/login stay eager (first paint), the rest are lazy-loaded chunks
 import Layout from "../components/Layout.vue";
-const IndexView = () => import("../views/IndexView.vue");
-const LoginView = () => import("../views/LoginView.vue");
+import IndexView from "../views/IndexView.vue";
+import LoginView from "../views/LoginView.vue";
 const SchedulerView = () => import("../views/SchedulerView.vue");
 const StaffView = () => import("../views/StaffView.vue");
 const ClientsView = () => import("../views/ClientsView.vue");
 const ServicesView = () => import("../views/ServicesView.vue");
 const ProductsView = () => import("../views/ProductsView.vue");
+const GiftCardsView = () => import("../views/GiftCardsView.vue");
 const FinancialsView = () => import("../components/FinancialsView.vue");
 const profileView = () => import("../views/profileView.vue");
 const ClientPortalView = () => import("../views/ClientPortalView.vue");
@@ -52,6 +51,7 @@ const routes = [
           { path: "clients", component: ClientsView },
           { path: "services", component: ServicesView },
           { path: "products", component: ProductsView },
+          { path: "gift-cards", component: GiftCardsView },
           { path: "financials", component: FinancialsView },
           { path: "profile", component: profileView },
         ],

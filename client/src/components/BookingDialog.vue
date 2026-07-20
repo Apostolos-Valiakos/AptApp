@@ -155,73 +155,6 @@
               :default-staff-id="currentStaffId"
             />
 
-            <!-- Recurring appointment -->
-            <div class="p-4 bg-gray-50 rounded-xl border border-gray-200">
-              <div class="flex items-center gap-2 mb-3">
-                <Checkbox v-model="isRecurring" binary inputId="isRecurring" />
-                <label
-                  for="isRecurring"
-                  class="font-bold text-gray-700 cursor-pointer text-sm"
-                >
-                  {{ t("booking.repeatAppointment") }}
-                </label>
-              </div>
-
-              <div v-if="isRecurring" class="grid grid-cols-2 gap-4">
-                <div>
-                  <label
-                    class="text-xs font-bold text-gray-500 uppercase block mb-1"
-                    >{{ t("booking.frequency") }}</label
-                  >
-                  <Dropdown
-                    v-model="recurrenceForm.freq"
-                    :options="['Daily', 'Weekly', 'Bi-Weekly', 'Monthly']"
-                    class="w-full p-inputtext-sm"
-                  />
-                </div>
-                <div>
-                  <label
-                    class="text-xs font-bold text-gray-500 uppercase block mb-1"
-                    >{{ t("booking.endsOn") }}</label
-                  >
-                  <Calendar
-                    v-model="recurrenceForm.end_date"
-                    :minDate="form.start_time"
-                    class="w-full p-inputtext-sm"
-                    dateFormat="dd/mm/yy"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <!-- ΕΟΠΠΥ toggle -->
-            <div
-              class="p-3 bg-[var(--p-primary-50)] rounded-lg border border-[var(--p-primary-100)] flex items-center justify-between"
-            >
-              <div class="flex items-center gap-3">
-                <div
-                  class="w-8 h-8 rounded-full bg-[var(--p-primary-100)] flex items-center justify-center text-[var(--p-primary-600)]"
-                >
-                  <i class="pi pi-file text-sm"></i>
-                </div>
-                <div class="flex flex-col">
-                  <label
-                    for="eoppySwitch"
-                    class="font-bold text-[var(--p-primary-700)] cursor-pointer text-sm"
-                  >
-                    {{ t("booking.eoppy") }}
-                  </label>
-                  <span
-                    class="text-xs text-[var(--p-primary-500)]"
-                    v-if="isRecurring"
-                  >
-                    {{ t("booking.eoppyRecurringNote") }}
-                  </span>
-                </div>
-              </div>
-              <ToggleSwitch v-model="form.is_eoppy" inputId="eoppySwitch" />
-            </div>
-
             <!-- Status + Block time -->
             <div
               class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-gray-100"
@@ -291,6 +224,7 @@
           <!-- PAYMENT TAB -->
           <div v-if="currentTab === 'Payment'">
             <BookingPayments
+              ref="bookingPaymentsRef"
               :totalDueNow="totalDueNow"
               :currentApptTotal="currentApptTotal"
               :previousDebt="previousDebt"
@@ -298,6 +232,7 @@
               :loading="paymentLoading"
               v-model:paymentMethod="selectedPaymentMethod"
               v-model:amountToPay="amountToPayNow"
+              v-model:giftCardId="selectedGiftCardId"
               @pay="recordPayment"
             />
           </div>
@@ -352,9 +287,20 @@
             <div
               class="flex items-center gap-2 justify-center sm:justify-start sm:mr-4 mb-2 sm:mb-0"
             >
-              <Checkbox v-model="notifyClient" binary inputId="notify" />
+              <!-- <Checkbox v-model="notifyClient" binary inputId="notify" />
               <label for="notify" class="text-sm text-gray-600">
                 {{ t("booking.emailClient") }}
+              </label> -->
+              <Checkbox
+                v-model="form.save_receipt"
+                binary
+                inputId="saveReceipt"
+              />
+              <label
+                for="saveReceipt"
+                class="text-sm font-medium text-gray-700 cursor-pointer"
+              >
+                Save Receipt
               </label>
             </div>
             <Button
@@ -363,6 +309,16 @@
               :loading="loading"
               class="w-full sm:w-auto px-8"
             />
+            <!-- <div class="flex flex-col justify-end gap-3 pb-2">
+              <div class="flex items-center gap-2">
+                <i
+                  class="pi pi-info-circle text-gray-400 text-xs"
+                  v-tooltip="
+                    'If unchecked, this will be hidden from reports when completed'
+                  "
+                ></i>
+              </div>
+            </div> -->
           </div>
         </div>
       </div>
@@ -510,6 +466,7 @@ const productsList = ref<Array<any>>([]);
 const currentTab = ref("Booking");
 const tabs = [
   { key: "Booking", label: computed(() => t("booking.tabs.booking")) },
+  { key: "Products", label: computed(() => t("booking.tabs.products")) },
   { key: "Notes", label: computed(() => t("booking.tabs.notes")) },
   { key: "Payment", label: computed(() => t("booking.tabs.payment")) },
 ] as const;
@@ -523,6 +480,8 @@ const notifyClient = ref(true);
 const newClient = ref({ first_name: "", last_name: "", phone: "" });
 const amountToPayNow = ref(0);
 const selectedPaymentMethod = ref<"card" | "cash" | "gift-card">("card");
+const selectedGiftCardId = ref<string | null>(null);
+const bookingPaymentsRef = ref<any>(null);
 
 const statusOptions = computed(() => [
   { label: t("common.status.new"), value: "new" },
@@ -897,7 +856,9 @@ const executeSave = async (close = true, scope = "single") => {
   }
 };
 
-const recordPayment = async () => {
+const recordPayment = async (
+  split: { amount2: number; payment_method2: string; gift_card_id2: string | null } | null,
+) => {
   if (amountToPayNow.value <= 0) return;
   paymentLoading.value = true;
   const token = localStorage.getItem("token");
@@ -919,19 +880,48 @@ const recordPayment = async () => {
         client_id: form.value.client_id,
         amount: amountToPayNow.value,
         payment_method: selectedPaymentMethod.value,
+        gift_card_id: selectedGiftCardId.value,
+        ...(split ? {
+          amount2: split.amount2,
+          payment_method2: split.payment_method2,
+          gift_card_id2: split.gift_card_id2,
+        } : {}),
       }),
     });
 
     if (res.ok) {
       const data = await res.json();
+      const totalPaidThisVisit = amountToPayNow.value + (split?.amount2 || 0);
 
       // Update local deposit_amount for immediate UI feedback
-      form.value.deposit_amount += amountToPayNow.value;
+      form.value.deposit_amount += totalPaidThisVisit;
 
       // Use the authoritative balance returned by the server instead of guessing by subtraction
       if (data.new_balance !== undefined && selectedClient.value) {
         selectedClient.value.outstanding_balance = Number(data.new_balance);
       }
+
+      if (split) {
+        toast.add({
+          severity: "success",
+          summary: t("payment.split.paidToast"),
+          detail: t("payment.split.paidToastDetail", {
+            method1: selectedPaymentMethod.value,
+            amount1: amountToPayNow.value.toFixed(2),
+            method2: split.payment_method2,
+            amount2: split.amount2.toFixed(2),
+          }),
+          life: 5000,
+        });
+      }
+
+      // Reset gift-card selection — its cached remaining_balance is now stale,
+      // and any further payment (e.g. covering a shortfall) needs a fresh pick.
+      selectedGiftCardId.value = null;
+      if (selectedPaymentMethod.value === "gift-card") {
+        selectedPaymentMethod.value = "card";
+      }
+      bookingPaymentsRef.value?.disableSplit();
 
       emit("save"); // Refresh the background calendar
     } else {

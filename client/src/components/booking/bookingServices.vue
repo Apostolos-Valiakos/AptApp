@@ -5,13 +5,17 @@
         class="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2"
       >
         <i class="pi pi-list text-[var(--p-primary-400)]"></i>
-        {{ t('bookingServices.label') }}
+        {{ t("bookingServices.label") }}
       </label>
       <span
         class="text-[11px] rounded-full px-2.5 py-0.5 font-bold"
         style="background-color: var(--p-primary-color); color: white"
       >
-        {{ modelValue.length === 1 ? t('bookingServices.countSingle', { n: modelValue.length }) : t('bookingServices.countPlural', { n: modelValue.length }) }}
+        {{
+          modelValue.length === 1
+            ? t("bookingServices.countSingle", { n: modelValue.length })
+            : t("bookingServices.countPlural", { n: modelValue.length })
+        }}
       </span>
     </div>
 
@@ -33,7 +37,9 @@
 
       <div class="flex flex-col sm:flex-row gap-4 mb-5">
         <div class="flex-grow">
-          <label class="text-xs text-gray-500 block mb-1">{{ t('bookingServices.service') }}</label>
+          <label class="text-xs text-gray-500 block mb-1">{{
+            t("bookingServices.service")
+          }}</label>
           <Dropdown
             v-model="service.service_id"
             :options="services"
@@ -46,7 +52,9 @@
         </div>
 
         <div class="w-full sm:w-1/3">
-          <label class="text-xs text-gray-500 block mb-1">{{ t('bookingServices.staff') }}</label>
+          <label class="text-xs text-gray-500 block mb-1">{{
+            t("bookingServices.staff")
+          }}</label>
           <Dropdown
             v-model="service.staff_id"
             :options="getFilteredStaff(service.service_id)"
@@ -60,7 +68,9 @@
 
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div class="col-span-2 min-w-0">
-          <label class="text-xs text-gray-500 block mb-1">{{ t('bookingServices.time') }}</label>
+          <label class="text-xs text-gray-500 block mb-1">{{
+            t("bookingServices.time")
+          }}</label>
           <Calendar
             v-model="service.start_time"
             showTime
@@ -71,7 +81,9 @@
         </div>
 
         <div class="col-span-1 min-w-0">
-          <label class="text-xs text-gray-500 block mb-1">{{ t('bookingServices.duration') }}</label>
+          <label class="text-xs text-gray-500 block mb-1">{{
+            t("bookingServices.duration")
+          }}</label>
           <InputNumber
             v-model="service.duration_override"
             suffix=" min"
@@ -81,7 +93,9 @@
           />
         </div>
         <div class="col-span-1 min-w-0" v-if="isOwner">
-          <label class="text-xs text-gray-500 block mb-1">{{ t('bookingServices.price') }}</label>
+          <label class="text-xs text-gray-500 block mb-1">{{
+            t("bookingServices.price")
+          }}</label>
           <InputNumber
             v-model="service.price_override"
             mode="currency"
@@ -97,8 +111,10 @@
       @click="addService"
       class="group w-full py-3.5 border-2 border-dashed border-gray-200 rounded-2xl flex items-center justify-center gap-2 text-gray-400 font-semibold hover:border-[var(--p-primary-300)] hover:text-[var(--p-primary-600)] hover:bg-[var(--p-primary-50)] transition-all duration-200"
     >
-      <i class="pi pi-plus-circle text-lg transition-transform group-hover:rotate-90 duration-200"></i>
-      <span>{{ t('bookingServices.addService') }}</span>
+      <i
+        class="pi pi-plus-circle text-lg transition-transform group-hover:rotate-90 duration-200"
+      ></i>
+      <span>{{ t("bookingServices.addService") }}</span>
     </button>
   </div>
 </template>

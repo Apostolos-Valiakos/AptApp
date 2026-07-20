@@ -46,7 +46,7 @@
         </div>
       </div>
 
-      <!-- Payment method -->
+      <!-- Payment method (leg 1) -->
       <div class="mb-6">
         <label
           class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2"
@@ -54,8 +54,8 @@
         >
         <Dropdown
           :modelValue="paymentMethod"
-          @update:modelValue="$emit('update:paymentMethod', $event)"
-          :options="['cash', 'card', 'bank-transfer']"
+          @update:modelValue="onPaymentMethodChange"
+          :options="['cash', 'card', 'bank-transfer', 'gift-card']"
           class="w-full"
         >
           <template #value="slotProps">
@@ -67,8 +67,34 @@
         </Dropdown>
       </div>
 
-      <!-- Amount to pay -->
-      <div class="mb-6">
+      <!-- Gift card picker (leg 1) -->
+      <div v-if="paymentMethod === 'gift-card'" class="mb-6">
+        <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
+          {{ t('payment.giftCard.label') }}
+        </label>
+        <GiftCardPicker
+          :modelValue="giftCardId"
+          @update:modelValue="(v) => $emit('update:giftCardId', v)"
+          @update:card="(c) => (selectedGiftCard = c)"
+        />
+
+        <!-- Shortfall warning -->
+        <div
+          v-if="selectedGiftCard && Number(selectedGiftCard.remaining_balance) < totalDueNow"
+          class="mt-2 flex items-start gap-2 p-3 bg-orange-50 border border-orange-200 rounded-lg"
+        >
+          <i class="pi pi-exclamation-triangle text-orange-500 mt-0.5"></i>
+          <p class="text-xs text-orange-700">
+            {{ t('payment.giftCard.shortfall', {
+              covered: Number(selectedGiftCard.remaining_balance).toFixed(2),
+              remaining: (totalDueNow - Number(selectedGiftCard.remaining_balance)).toFixed(2),
+            }) }}
+          </p>
+        </div>
+      </div>
+
+      <!-- Amount to pay (leg 1) -->
+      <div class="mb-3">
         <label
           class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2"
         >
@@ -85,8 +111,62 @@
           currency="EUR"
           class="w-full fresha-input-large"
           inputClass="!text-lg !font-bold"
-          :max="totalDueNow"
+          :max="maxAmount"
         />
+      </div>
+
+      <!-- Split payment toggle -->
+      <div class="mb-6">
+        <button
+          v-if="!splitEnabled"
+          type="button"
+          class="text-xs font-bold text-[var(--p-primary-600)] hover:underline flex items-center gap-1"
+          @click="enableSplit"
+        >
+          <i class="pi pi-plus text-[10px]"></i>
+          {{ t('payment.split.add') }}
+        </button>
+
+        <div v-else class="border border-gray-200 rounded-xl p-4 bg-gray-50/60 space-y-4">
+          <div class="flex justify-between items-center">
+            <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">
+              {{ t('payment.split.secondMethod') }}
+            </span>
+            <button type="button" class="text-gray-400 hover:text-red-500" @click="disableSplit">
+              <i class="pi pi-times"></i>
+            </button>
+          </div>
+
+          <Dropdown
+            :modelValue="paymentMethod2"
+            @update:modelValue="onPaymentMethod2Change"
+            :options="method2Options"
+            class="w-full"
+          />
+
+          <GiftCardPicker
+            v-if="paymentMethod2 === 'gift-card'"
+            :modelValue="giftCardId2"
+            @update:modelValue="(v) => (giftCardId2 = v)"
+            @update:card="(c) => (selectedGiftCard2 = c)"
+          />
+
+          <div>
+            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
+              {{ t('payment.split.secondAmount') }}
+            </label>
+            <InputNumber
+              v-model="amountToPay2"
+              mode="currency"
+              currency="EUR"
+              class="w-full"
+              :max="maxAmount2"
+            />
+            <p class="text-xs text-gray-400 mt-1">
+              {{ t('payment.split.remainingNote', { remaining: remainderAfterBoth.toFixed(2) }) }}
+            </p>
+          </div>
+        </div>
       </div>
 
       <!-- Pay button -->
@@ -99,7 +179,8 @@
         icon="pi pi-check"
         class="w-full !py-4 !text-lg !bg-green-600 hover:!bg-green-700 !border-none"
         :loading="loading"
-        @click="$emit('pay')"
+        :disabled="!canSubmit"
+        @click="submitPayment"
       />
     </div>
 
@@ -120,10 +201,12 @@
 </template>
 
 <script setup lang="ts">
+import { ref, computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import GiftCardPicker from "./GiftCardPicker.vue";
 const { t } = useI18n();
 
-defineProps({
+const props = defineProps({
   totalDueNow: { type: Number, default: 0 },
   currentApptTotal: { type: Number, default: 0 },
   previousDebt: { type: Number, default: 0 },
@@ -131,7 +214,123 @@ defineProps({
   amountToPay: { type: Number, default: 0 },
   loading: { type: Boolean, default: false },
   paymentMethod: { type: String, default: "cash" },
+  giftCardId: { type: String, default: null },
 });
 
-defineEmits(["update:amountToPay", "update:paymentMethod", "pay"]);
+const emit = defineEmits([
+  "update:amountToPay",
+  "update:paymentMethod",
+  "update:giftCardId",
+  "pay",
+]);
+
+const selectedGiftCard = ref<any>(null);
+
+const maxAmount = computed(() => {
+  if (props.paymentMethod === "gift-card" && selectedGiftCard.value) {
+    return Math.min(props.totalDueNow, Number(selectedGiftCard.value.remaining_balance));
+  }
+  return props.totalDueNow;
+});
+
+const onPaymentMethodChange = (value: string) => {
+  emit("update:paymentMethod", value);
+};
+
+// Clears the (potentially stale) selected card whenever leg 1's method moves
+// away from "gift-card" — whether the user changed the dropdown or the
+// parent reset it programmatically after a successful payment.
+watch(
+  () => props.paymentMethod,
+  (val) => {
+    if (val !== "gift-card") selectedGiftCard.value = null;
+  },
+);
+
+// --- Split payment (second leg) ---
+const splitEnabled = ref(false);
+const paymentMethod2 = ref("cash");
+const giftCardId2 = ref<string | null>(null);
+const selectedGiftCard2 = ref<any>(null);
+const amountToPay2 = ref(0);
+
+// Leg 2's method options exclude whichever method leg 1 is currently using —
+// splitting into the SAME method twice is meaningless.
+const method2Options = computed(() =>
+  ["cash", "card", "bank-transfer", "gift-card"].filter((m) => m !== props.paymentMethod),
+);
+
+const maxAmount2 = computed(() => {
+  const remainderAfterLeg1 = Math.max(0, props.totalDueNow - (props.amountToPay || 0));
+  if (paymentMethod2.value === "gift-card" && selectedGiftCard2.value) {
+    return Math.min(remainderAfterLeg1, Number(selectedGiftCard2.value.remaining_balance));
+  }
+  return remainderAfterLeg1;
+});
+
+const remainderAfterBoth = computed(() =>
+  Math.max(0, props.totalDueNow - (props.amountToPay || 0) - (amountToPay2.value || 0)),
+);
+
+const enableSplit = () => {
+  splitEnabled.value = true;
+  paymentMethod2.value = method2Options.value[0] || "cash";
+  amountToPay2.value = Math.max(0, props.totalDueNow - (props.amountToPay || 0));
+};
+
+const disableSplit = () => {
+  splitEnabled.value = false;
+  paymentMethod2.value = "cash";
+  giftCardId2.value = null;
+  selectedGiftCard2.value = null;
+  amountToPay2.value = 0;
+};
+
+const onPaymentMethod2Change = (value: string) => {
+  paymentMethod2.value = value;
+  if (value !== "gift-card") {
+    giftCardId2.value = null;
+    selectedGiftCard2.value = null;
+  }
+};
+
+// Auto-open the split panel the moment a selected gift card falls short —
+// covers the motivating case without requiring the manual "+ add" click.
+watch(
+  () => [props.paymentMethod, selectedGiftCard.value, props.totalDueNow, props.amountToPay],
+  () => {
+    if (
+      props.paymentMethod === "gift-card" &&
+      selectedGiftCard.value &&
+      Number(selectedGiftCard.value.remaining_balance) < props.totalDueNow &&
+      !splitEnabled.value
+    ) {
+      enableSplit();
+    }
+  },
+);
+
+const canSubmit = computed(() => {
+  if (props.paymentMethod === "gift-card" && !props.giftCardId) return false;
+  if (splitEnabled.value) {
+    if (!amountToPay2.value || amountToPay2.value <= 0) return false;
+    if (paymentMethod2.value === "gift-card" && !giftCardId2.value) return false;
+  }
+  return true;
+});
+
+const submitPayment = () => {
+  emit(
+    "pay",
+    splitEnabled.value
+      ? {
+          amount2: amountToPay2.value,
+          payment_method2: paymentMethod2.value,
+          gift_card_id2: giftCardId2.value,
+        }
+      : null,
+  );
+};
+
+defineExpose({ disableSplit });
 </script>
