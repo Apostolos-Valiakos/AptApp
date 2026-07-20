@@ -17,7 +17,7 @@ COPY package*.json .
 RUN npm install --production --no-audit --no-fund   # optional flags speed it up a bit
 
 # NOW copy built stuff
-COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/client/dist ./dist
 COPY --from=builder /app/server ./server
 
 # Create non-root user and switch (AFTER npm install!)

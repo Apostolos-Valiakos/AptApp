@@ -1,309 +1,397 @@
 <template>
-  <div class="landing-container">
-    <section class="relative py-20 overflow-hidden bg-white">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-        <div class="grid lg:grid-cols-2 gap-12 items-center">
-          <div class="text-left">
-            <Tag
-              value="Νέα Εποχή στη Διαχείριση"
-              severity="info"
-              class="mb-4 !bg-[#ff93d4] !text-white border-none"
-            />
-            <h1
-              class="text-5xl lg:text-7xl font-extrabold text-gray-900 mb-6 leading-tight"
-            >
-              Οργανώστε την επιχείρησή σας με τo
-              <span class="text-[#ff7ec7]">Interventio</span>
-            </h1>
-            <p class="text-lg text-gray-600 mb-8 leading-relaxed">
-              Η απόλυτη πλατφόρμα για Θεραπευτήρια και ειδικά κέντρα θεραπειών.
-              Διαχειριστείτε ραντεβού, προσωπικό και την πρόοδο των πελατών σας,
-              όλα σε ένα μέρος.
-            </p>
-            <div class="flex flex-wrap gap-4">
-              <Button
-                label="Request a Demo"
-                icon="pi pi-calendar"
-                class="p-button-lg !bg-[#ff93d4] border-none hover:!bg-pink-500 transition-all shadow-lg"
-                @click="openDemo"
-              />
-              <Button
-                label="Είσοδος"
-                icon="pi pi-sign-in"
-                outline
-                class="p-button-lg !text-white !border-[#ff93d4] hover:!bg-pink-500"
-                @click="router.push('/login')"
-              />
-            </div>
-          </div>
-          <div class="relative">
-            <div
-              class="absolute -top-20 -right-20 w-64 h-64 bg-pink-100 rounded-full blur-3xl opacity-50"
-            ></div>
-            <img
-              src="https://petaloudakids.gr/wp-content/uploads/2025/04/11.webp"
-              alt="Salon Management"
-              class="rounded-3xl shadow-2xl border-8 border-white transform hover:-rotate-2 transition-transform duration-500"
-            />
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="py-20 bg-[#fff5f9]">
-      <div class="max-w-7xl mx-auto px-4 text-center mb-16">
-        <h2 class="text-3xl font-bold text-gray-800">
-          Εργαλεία Σχεδιασμένα για Εσάς
-        </h2>
-        <p class="text-gray-500 mt-2">
-          Όλα όσα χρειάζεται ένας ιδιοκτήτης και το προσωπικό του
-        </p>
-      </div>
-
-      <div class="max-w-7xl mx-auto px-4 grid md:grid-cols-3 gap-8">
-        <Card class="border-none shadow-sm hover:shadow-md transition-shadow">
-          <template #title>
-            <div
-              class="w-12 h-12 bg-pink-100 rounded-lg flex items-center justify-center mb-4"
-            >
-              <i class="pi pi-comments text-[#ff93d4] text-xl"></i>
-            </div>
-            Real-time Chat
-          </template>
-          <template #content>
-            <p class="text-gray-600">
-              Άμεση επικοινωνία μεταξύ των μελών του προσωπικού για τον καλύτερο
-              συντονισμό των ραντεβού.
-            </p>
-          </template>
-        </Card>
-
-        <Card class="border-none shadow-sm hover:shadow-md transition-shadow">
-          <template #title>
-            <div
-              class="w-12 h-12 bg-pink-100 rounded-lg flex items-center justify-center mb-4"
-            >
-              <i class="pi pi-chart-line text-[#ff93d4] text-xl"></i>
-            </div>
-            Tracking Πελατών
-          </template>
-          <template #content>
-            <p class="text-gray-600">
-              Παρακολουθήστε την πρόοδο των πελατών με εξειδικευμένο exercise
-              tracking (ιδανικό για Physio & Wellness).
-            </p>
-          </template>
-        </Card>
-
-        <Card class="border-none shadow-sm hover:shadow-md transition-shadow">
-          <template #title>
-            <div
-              class="w-12 h-12 bg-pink-100 rounded-lg flex items-center justify-center mb-4"
-            >
-              <i class="pi pi-file-pdf text-[#ff93d4] text-xl"></i>
-            </div>
-            Ψηφιακό Αρχείο
-          </template>
-          <template #content>
-            <p class="text-gray-600">
-              Ανεβάστε ιατρικά αρχεία, ιστορικό ή φωτογραφίες απευθείας στην
-              καρτέλα του κάθε πελάτη.
-            </p>
-          </template>
-        </Card>
-      </div>
-    </section>
-
-    <section class="py-20 bg-white">
-      <div class="max-w-5xl mx-auto px-4">
-        <div class="text-center mb-12">
-          <h2 class="text-3xl font-bold">Επιλέξτε το Πλάνο σας</h2>
-        </div>
-        <div class="grid md:grid-cols-2 gap-8">
-          <div
-            class="p-8 border-2 border-gray-100 rounded-3xl hover:border-[#ff93d4] transition-colors"
-          >
-            <h3 class="text-xl font-bold mb-2">Starter</h3>
-            <div class="text-4xl font-extrabold mb-6">
-              €30<span class="text-lg text-gray-400 font-medium">/μήνα</span>
-            </div>
-            <ul class="space-y-4 mb-8">
-              <li class="flex items-center gap-2">
-                <i class="pi pi-check-circle text-green-500"></i> Βασικές
-                Λειτουργίες
-              </li>
-              <li class="flex items-center gap-2">
-                <i class="pi pi-check-circle text-green-500"></i> Διαχείριση
-                απεριόριστων Ραντεβού
-              </li>
-              <li class="flex items-center gap-2">
-                <i class="pi pi-check-circle text-green-500"></i> Απεριόριστοι
-                Πελάτες
-              </li>
-              <li class="flex items-center gap-2">
-                <i class="pi pi-check-circle text-green-500"></i> Exercise
-                Tracking
-              </li>
-            </ul>
-            <Button
-              label="Ξεκινήστε Τώρα"
-              class="w-full !bg-gray-800 border-none py-3"
-            />
-          </div>
-
-          <div
-            class="p-8 border-2 border-[#ff93d4] bg-pink-50/30 rounded-3xl relative"
-          >
-            <div
-              class="absolute top-0 right-8 transform -translate-y-1/2 bg-[#ff93d4] text-white px-4 py-1 rounded-full text-sm font-bold"
-            >
-              POPULAR
-            </div>
-            <h3 class="text-xl font-bold mb-2">Business Plus</h3>
-            <div class="text-4xl font-extrabold mb-6">
-              €50<span class="text-lg text-gray-400 font-medium">/μήνα</span>
-            </div>
-            <ul class="space-y-4 mb-8">
-              <li class="flex items-center gap-2">
-                <i class="pi pi-check-circle text-green-500"></i> Διαχείριση
-                απεριόριστων Ραντεβού
-              </li>
-              <li class="flex items-center gap-2">
-                <i class="pi pi-check-circle text-green-500"></i> Απεριόριστοι
-                Πελάτες
-              </li>
-              <li class="flex items-center gap-2">
-                <i class="pi pi-check-circle text-green-500"></i> Πλήρης
-                διαμόρφωση με βάση την επιχείρησή σας
-              </li>
-              <li class="flex items-center gap-2">
-                <i class="pi pi-check-circle text-green-500"></i> Αναλυτικές
-                αναφορές απόδοσης
-              </li>
-            </ul>
-            <Button
-              label="Ξεκινήστε Τώρα"
-              class="w-full !bg-[#ff93d4] border-none py-3 shadow-lg shadow-pink-200"
-            />
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <Dialog
-      v-model:visible="showDemoModal"
-      header="Request a Demo"
-      :style="{ width: '400px' }"
-      modal
+  <div class="spa-landing">
+    <!-- ═══════════════════════════════════════════════════════
+         NAV
+    ═══════════════════════════════════════════════════════ -->
+    <nav
+      class="fixed top-0 left-0 right-0 z-50 bg-[#F9F5F0]/95 backdrop-blur border-b border-[#D4A97A]/20 shadow-sm"
     >
-      <div class="flex flex-col gap-4">
-        <div class="flex flex-col gap-2">
-          <label for="name">Ονοματεπώνυμο</label>
-          <InputText id="name" v-model="demoForm.name" class="w-full" />
+      <div
+        class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16"
+      >
+        <div
+          class="text-xl font-semibold tracking-wide text-[#2C2C2C]"
+          style="font-family: &quot;Georgia&quot;, serif"
+        >
+          <span class="text-[#8B6F4E]">Pure</span> Spa &amp; Massage Experience
         </div>
-        <div class="flex flex-col gap-2">
-          <label for="email">Email</label>
-          <InputText id="email" v-model="demoForm.email" class="w-full" />
+        <div
+          class="hidden md:flex items-center gap-8 text-sm font-medium text-[#5C4A3A]"
+        >
+          <a href="#about" class="hover:text-[#8B6F4E] transition-colors"
+            >Σχετικά</a
+          >
+          <a href="#services" class="hover:text-[#8B6F4E] transition-colors"
+            >Υπηρεσίες</a
+          >
+          <a href="#contact" class="hover:text-[#8B6F4E] transition-colors"
+            >Επικοινωνία</a
+          >
+          <!-- <Button
+            label="Είσοδος"
+            icon="pi pi-sign-in"
+            size="small"
+            class="!bg-[#8B6F4E] border-none !text-white hover:!bg-[#7A5F3E]"
+            @click="router.push('/login')"
+          /> -->
         </div>
         <Button
-          label="Αποστολή"
-          @click="submitDemo"
-          class="!bg-[#ff93d4] border-none mt-2"
+          label="Είσοδος"
+          icon="pi pi-sign-in"
+          size="small"
+          class="md:hidden !bg-[#8B6F4E] border-none !text-white"
+          @click="router.push('/login')"
         />
       </div>
-    </Dialog>
+    </nav>
 
-    <footer class="py-12 bg-gray-900 text-white text-center">
-      <div class="flex items-center justify-center mb-6">
-        <span class="text-2xl font-bold tracking-tight"
-          >Petalouda<span class="text-[#ff93d4]">Booking</span></span
+    <!-- ═══════════════════════════════════════════════════════
+         HERO
+    ═══════════════════════════════════════════════════════ -->
+    <section
+      class="relative min-h-screen flex items-center justify-center overflow-hidden pt-16"
+    >
+      <div
+        class="absolute inset-0 bg-gradient-to-br from-[#3A2E28] via-[#2C2420] to-[#1A1510]"
+      ></div>
+      <!-- subtle grain overlay -->
+      <div
+        class="absolute inset-0 opacity-[0.04]"
+        style="
+          background-image: url(&quot;data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADIAAAAyCAMAAAAp4XiDAAAAUVBMVEWFhYWDg4N3d3dtbW17e3t1dXWBgYGHh4t5eXlzc3OLi4ubm5uVlZWPj4+NjY19fX2JiYl/f39ra2uRkZGZmZlpaWmXl5dvb29xcXGTk5NnZ2c8TV1mAAAAG3RSTlNAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEAvEOwtAAAFVklEQVR4XpWWB67c2BUFb3g557T/hRo9/WUMZHlgr4Bg8Z4qQgQJlHI4A8SzFVrapvmTF9O7dmYRFZ60YiBhJRCgh1FYhiLAmdvX0CzTOpNE77ME0Zty/nWWzchDtiqrmQDeuv3powQ5ta2eN0FY0InkqDD73lT9c9lEzwUNqgFHs9VQce3TVClFCQrSTfOiYkVJQBmpbq2L6iZavPnAPcoU0dSw0SUTqz/GtrGuXfbyyBniKykOWQWGqwwMA7QiYAxi+IlPdqo+hYHnUt5ZPfnsHJyNiDtnpJyayNBkF6cWoYGAMY92ZBRzp3ghcQ==&quot;);
+          background-size: 200px;
+          background-repeat: repeat;
+        "
+      ></div>
+
+      <div class="relative z-10 text-center px-4 max-w-4xl mx-auto">
+        <p
+          class="text-[#D4A97A] text-xs tracking-[0.4em] uppercase mb-6 font-light"
         >
+          Λάρισα, Ελλάδα
+        </p>
+        <h1
+          class="text-5xl md:text-7xl font-light text-white mb-6 leading-tight"
+          style="font-family: &quot;Georgia&quot;, serif"
+        >
+          Καλώς ήρθατε στο<br />
+          <span class="text-[#D4A97A] italic"
+            >Pure Spa &amp; Massage Experience</span
+          >
+        </h1>
+        <p
+          class="text-gray-300 text-lg mb-10 max-w-2xl mx-auto leading-relaxed font-light"
+        >
+          Ανακαλύψτε μια μοναδική εμπειρία χαλάρωσης και αναζωογόνησης με
+          εξειδικευμένες θεραπείες και φυσικά προϊόντα.
+        </p>
+        <div class="flex flex-wrap justify-center gap-4">
+          <Button
+            label="Δείτε τις Υπηρεσίες"
+            icon="pi pi-arrow-down"
+            class="!bg-[#8B6F4E] border-none !py-3 !px-8 hover:!bg-[#7A5F3E] shadow-xl"
+            @click="scrollToServices"
+          />
+          <Button
+            label="Είσοδος Συστήματος"
+            icon="pi pi-sign-in"
+            outlined
+            class="!border-[#D4A97A] !text-[#D4A97A] !py-3 !px-8 hover:!bg-[#D4A97A]/10"
+            @click="router.push('/login')"
+          />
+        </div>
       </div>
-      <div class="flex justify-center gap-6 mb-8">
-        <a href="#" class="text-gray-400 hover:text-[#ff93d4] text-2xl"
-          ><i class="pi pi-instagram"></i
-        ></a>
-        <a href="#" class="text-gray-400 hover:text-[#ff93d4] text-2xl"
-          ><i class="pi pi-facebook"></i
-        ></a>
-        <a href="#" class="text-gray-400 hover:text-[#ff93d4] text-2xl"
-          ><i class="pi pi-twitter"></i
-        ></a>
+
+      <div
+        class="absolute bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 text-[#D4A97A]/50"
+      >
+        <div class="w-px h-12 bg-[#D4A97A]/30"></div>
+        <i class="pi pi-angle-down text-xs scroll-bounce"></i>
       </div>
-      <p class="text-gray-400 text-sm">
-        © 2026 Interventio Booking System. All rights reserved.
-      </p>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════
+         ABOUT
+    ═══════════════════════════════════════════════════════ -->
+    <section id="about" class="py-24 bg-[#F9F5F0]">
+      <div class="max-w-5xl mx-auto px-4 text-center">
+        <p
+          class="text-[#8B6F4E] text-xs tracking-[0.3em] uppercase mb-4 font-semibold"
+        >
+          Σχετικά μας
+        </p>
+        <h2
+          class="text-4xl font-light text-[#2C2C2C] mb-6"
+          style="font-family: &quot;Georgia&quot;, serif"
+        >
+          Η Τέχνη της Χαλάρωσης
+        </h2>
+        <div class="w-16 h-0.5 bg-[#D4A97A] mx-auto mb-8"></div>
+        <p class="text-[#5C4A3A] text-lg leading-relaxed max-w-3xl mx-auto">
+          Στο <strong>Pure Spa &amp; Massage Experience</strong> στη Λάρισα,
+          πιστεύουμε ότι η ευεξία είναι τέχνη. Χρησιμοποιούμε αποκλειστικά
+          φυσικά προϊόντα και εξειδικευμένες τεχνικές για να σας προσφέρουμε μια
+          εμπειρία που αναζωογονεί σώμα και πνεύμα.
+        </p>
+
+        <div class="grid md:grid-cols-3 gap-8 mt-16">
+          <div class="text-center">
+            <div
+              class="w-14 h-14 bg-[#8B6F4E]/10 rounded-full flex items-center justify-center mx-auto mb-4"
+            >
+              <i class="pi pi-heart text-[#8B6F4E] text-xl"></i>
+            </div>
+            <h4 class="font-semibold text-[#2C2C2C] mb-2">Φυσικά Προϊόντα</h4>
+            <p class="text-sm text-[#7A6A5A] leading-relaxed">
+              100% φυσικά συστατικά για κάθε θεραπεία
+            </p>
+          </div>
+          <div class="text-center">
+            <div
+              class="w-14 h-14 bg-[#8B6F4E]/10 rounded-full flex items-center justify-center mx-auto mb-4"
+            >
+              <i class="pi pi-star text-[#8B6F4E] text-xl"></i>
+            </div>
+            <h4 class="font-semibold text-[#2C2C2C] mb-2">
+              Εξειδικευμένες Τεχνικές
+            </h4>
+            <p class="text-sm text-[#7A6A5A] leading-relaxed">
+              Εκπαιδευμένοι θεραπευτές με πολυετή εμπειρία
+            </p>
+          </div>
+          <div class="text-center">
+            <div
+              class="w-14 h-14 bg-[#8B6F4E]/10 rounded-full flex items-center justify-center mx-auto mb-4"
+            >
+              <i class="pi pi-shield text-[#8B6F4E] text-xl"></i>
+            </div>
+            <h4 class="font-semibold text-[#2C2C2C] mb-2">Πλήρης Χαλάρωση</h4>
+            <p class="text-sm text-[#7A6A5A] leading-relaxed">
+              Περιβάλλον σχεδιασμένο για βαθιά ηρεμία
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════
+         SERVICES
+    ═══════════════════════════════════════════════════════ -->
+    <section id="services" class="py-24 bg-[#EDE8E1]">
+      <div class="max-w-7xl mx-auto px-4">
+        <div class="text-center mb-16">
+          <p
+            class="text-[#8B6F4E] text-xs tracking-[0.3em] uppercase mb-4 font-semibold"
+          >
+            Υπηρεσίες
+          </p>
+          <h2
+            class="text-4xl font-light text-[#2C2C2C] mb-4"
+            style="font-family: &quot;Georgia&quot;, serif"
+          >
+            Οι Θεραπείες μας
+          </h2>
+          <div class="w-16 h-0.5 bg-[#D4A97A] mx-auto"></div>
+        </div>
+
+        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div
+            v-for="service in services"
+            :key="service.title"
+            class="group bg-[#F9F5F0] rounded-2xl overflow-hidden border border-[#D4A97A]/20 hover:border-[#8B6F4E]/40 hover:shadow-xl transition-all duration-300"
+          >
+            <div
+              class="h-1 w-full"
+              :style="{ background: service.color }"
+            ></div>
+            <div class="p-7">
+              <div
+                class="w-12 h-12 rounded-full flex items-center justify-center mb-4"
+                :style="{ background: service.iconBg }"
+              >
+                <i :class="[service.icon, 'text-xl text-[#8B6F4E]']"></i>
+              </div>
+              <h3 class="font-semibold text-[#2C2C2C] mb-2 text-lg">
+                {{ service.title }}
+              </h3>
+              <p class="text-sm text-[#7A6A5A] leading-relaxed">
+                {{ service.description }}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════
+         CONTACT
+    ═══════════════════════════════════════════════════════ -->
+    <section id="contact" class="py-24 bg-[#2C2C2C]">
+      <div class="max-w-5xl mx-auto px-4">
+        <div class="text-center mb-16">
+          <p
+            class="text-[#D4A97A] text-xs tracking-[0.3em] uppercase mb-4 font-semibold"
+          >
+            Επικοινωνία
+          </p>
+          <h2
+            class="text-4xl font-light text-white mb-4"
+            style="font-family: &quot;Georgia&quot;, serif"
+          >
+            Βρείτε μας
+          </h2>
+          <div class="w-16 h-0.5 bg-[#D4A97A] mx-auto"></div>
+        </div>
+
+        <div class="grid md:grid-cols-3 gap-8 text-center">
+          <div>
+            <div
+              class="w-14 h-14 bg-[#D4A97A]/10 rounded-full flex items-center justify-center mx-auto mb-4"
+            >
+              <i class="pi pi-map-marker text-[#D4A97A] text-xl"></i>
+            </div>
+            <h4 class="text-white font-semibold mb-2">Διεύθυνση</h4>
+            <p class="text-gray-400 text-sm leading-relaxed">
+              Ρούσβελτ 63, Λάρισα<br />412 22
+            </p>
+          </div>
+          <div>
+            <div
+              class="w-14 h-14 bg-[#D4A97A]/10 rounded-full flex items-center justify-center mx-auto mb-4"
+            >
+              <i class="pi pi-phone text-[#D4A97A] text-xl"></i>
+            </div>
+            <h4 class="text-white font-semibold mb-2">Ραντεβού</h4>
+            <p class="text-gray-400 text-sm leading-relaxed">
+              Επικοινωνήστε μαζί μας<br />για ραντεβού
+            </p>
+          </div>
+          <div>
+            <div
+              class="w-14 h-14 bg-[#D4A97A]/10 rounded-full flex items-center justify-center mx-auto mb-4"
+            >
+              <i class="pi pi-globe text-[#D4A97A] text-xl"></i>
+            </div>
+            <h4 class="text-white font-semibold mb-2">Online</h4>
+            <p class="text-gray-400 text-sm leading-relaxed">
+              puremassagespa.gr
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════
+         FOOTER
+    ═══════════════════════════════════════════════════════ -->
+    <footer class="py-10 bg-[#1A1510] text-center">
+      <div class="max-w-7xl mx-auto px-4">
+        <div
+          class="text-xl font-light text-white mb-2"
+          style="font-family: &quot;Georgia&quot;, serif"
+        >
+          <span class="text-[#D4A97A]">Pure</span> Spa &amp; Massage Experience
+        </div>
+        <p class="text-gray-500 text-xs mb-4">Ρούσβελτ 63, Λάρισα 412 22</p>
+        <div class="flex justify-center gap-4 mb-6">
+          <a
+            href="#"
+            class="text-gray-500 hover:text-[#D4A97A] transition-colors"
+          >
+            <i class="pi pi-instagram text-xl"></i>
+          </a>
+          <a
+            href="#"
+            class="text-gray-500 hover:text-[#D4A97A] transition-colors"
+          >
+            <i class="pi pi-facebook text-xl"></i>
+          </a>
+        </div>
+        <div class="border-t border-gray-800 pt-6 text-xs text-gray-600">
+          © 2026 Pure Spa &amp; Massage Experience. All rights reserved.
+        </div>
+      </div>
     </footer>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from "vue";
 import { useRouter } from "vue-router";
 import Button from "primevue/button";
-import Card from "primevue/card";
-import Tag from "primevue/tag";
-import Dialog from "primevue/dialog";
-import InputText from "primevue/inputtext";
-import { useToast } from "primevue/usetoast";
 
 const router = useRouter();
-const toast = useToast();
 
-// State για το Modal του Demo
-const showDemoModal = ref(false);
+const services = [
+  {
+    title: "Περιποίηση Προσώπου",
+    description:
+      "Εξατομικευμένες θεραπείες προσώπου με φυσικά προϊόντα για λαμπερό και αναζωογονημένο δέρμα.",
+    icon: "pi pi-sparkles",
+    color: "linear-gradient(90deg, #D4A97A, #E8C99A)",
+    iconBg: "#D4A97A22",
+  },
+  {
+    title: "Pure Premium Treatments",
+    description:
+      "Πολυτελείς θεραπείες ολιστικής προσέγγισης για βαθιά χαλάρωση και αναγέννηση.",
+    icon: "pi pi-star",
+    color: "linear-gradient(90deg, #8B6F4E, #A68563)",
+    iconBg: "#8B6F4E22",
+  },
+  {
+    title: "Ειδικές Θεραπείες",
+    description:
+      "Στοχευμένες θεραπείες για ειδικές ανάγκες του δέρματος και του σώματος.",
+    icon: "pi pi-heart",
+    color: "linear-gradient(90deg, #B8956A, #D4A97A)",
+    iconBg: "#B8956A22",
+  },
+  {
+    title: "Pure Massage Experience",
+    description:
+      "Μοναδικές τεχνικές μασάζ που συνδυάζουν αρώματα και αφές για πλήρη αποκατάσταση.",
+    icon: "pi pi-sun",
+    color: "linear-gradient(90deg, #7A5F3E, #8B6F4E)",
+    iconBg: "#7A5F3E22",
+  },
+  {
+    title: "Express Massage",
+    description:
+      "Γρήγορες θεραπείες για άμεση ανακούφιση από την καθημερινή κούραση.",
+    icon: "pi pi-bolt",
+    color: "linear-gradient(90deg, #C8A882, #D4A97A)",
+    iconBg: "#C8A88222",
+  },
+  {
+    title: "Laser AI Alexandrite 755nm",
+    description:
+      "Τεχνολογία αιχμής για αποτρίχωση και δερματολογικές θεραπείες.",
+    icon: "pi pi-verified",
+    color: "linear-gradient(90deg, #6B5344, #8B6F4E)",
+    iconBg: "#6B534422",
+  },
+];
 
-// Δεδομένα της φόρμας
-const demoForm = reactive({
-  name: "",
-  email: "",
-});
-
-// Συνάρτηση ανοίγματος του Modal (αντικαθιστά το router.push('/demo') αν προτιμάς Modal)
-const openDemo = () => {
-  showDemoModal.value = true;
-};
-
-// Logic για την υποβολή της φόρμας
-const submitDemo = async () => {
-  if (!demoForm.name || !demoForm.email) {
-    // Εδώ μπορείς να προσθέσεις ένα toast error αν θέλεις
-    return;
-  }
-
-  // Προσομοίωση αποστολής στο Backend
-  try {
-    console.log("Sending demo request:", demoForm);
-
-    // Εδώ θα έμπαινε το axios.post('/api/demo', demoForm)
-
-    // Κλείσιμο modal και καθαρισμός φόρμας
-    showDemoModal.value = false;
-    demoForm.name = "";
-    demoForm.email = "";
-
-    // Προαιρετικά: Ειδοποίηση επιτυχίας (απαιτεί ToastService στο main.ts)
-    /*
-    toast.add({ 
-      severity: 'success', 
-      summary: 'Επιτυχία', 
-      detail: 'Το αίτημά σας στάλθηκε! Θα επικοινωνήσουμε σύντομα.', 
-      life: 3000 
-    });
-    */
-  } catch (error) {
-    console.error("Error submitting demo:", error);
-  }
+const scrollToServices = () => {
+  document.getElementById("services")?.scrollIntoView({ behavior: "smooth" });
 };
 </script>
 
 <style scoped>
-.landing-container {
-  font-family: "Inter", sans-serif;
+.spa-landing {
+  font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
 }
 
-/* Custom shadow for pink aesthetics */
-.shadow-pink-200 {
-  shadow-color: rgba(255, 147, 212, 0.4);
+@keyframes scroll-bounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(6px);
+  }
+}
+.scroll-bounce {
+  animation: scroll-bounce 1.5s ease-in-out infinite;
 }
 </style>

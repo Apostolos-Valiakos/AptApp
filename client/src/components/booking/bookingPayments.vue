@@ -1,29 +1,36 @@
 <template>
   <div class="space-y-6 pt-4">
+    <!-- Balance summary card -->
     <div
-      class="bg-gray-900 text-white rounded-xl p-8 shadow-xl relative overflow-hidden"
+      class="bg-gradient-to-br from-gray-900 to-gray-800 text-white rounded-xl p-8 shadow-xl relative overflow-hidden"
     >
       <div class="flex justify-between items-center mb-1 opacity-70">
-        <span class="text-xs uppercase tracking-wider font-bold"
-          >Συνολικο Υπολοιπο</span
-        >
+        <span class="text-xs uppercase tracking-wider font-bold">{{ t('payment.totalBalance') }}</span>
       </div>
-      <div class="text-5xl font-extrabold mb-6 tracking-tight">
-        €{{ previousDebt.toFixed(2) }}
+      <div
+        class="text-5xl font-extrabold mb-6 tracking-tight"
+        :class="{ 'animate-pulse': totalDueNow > 0 }"
+      >
+        €{{ totalDueNow.toFixed(2) }}
       </div>
-      <div class="space-y-2 border-t border-gray-700 pt-4 text-sm opacity-90">
-        <div class="flex justify-between">
-          <span>Κόστος ραντεβού</span>
+      <div class="space-y-0 border-t border-gray-700 pt-4 text-sm opacity-90">
+        <div class="flex justify-between py-2 border-b border-gray-700/50">
+          <span>{{ t('payment.appointmentCost') }}</span>
           <span class="font-medium">€{{ currentApptTotal.toFixed(2) }}</span>
         </div>
-        <div class="border-t border-gray-700 pt-2 flex justify-between">
-          <span>Πληρώθηκαν</span>
+        <div v-if="previousDebt > 0" class="flex justify-between py-2 border-b border-gray-700/50">
+          <span>{{ t('payment.previousDebt') }}</span>
+          <span class="font-medium text-red-300">+ €{{ previousDebt.toFixed(2) }}</span>
+        </div>
+        <div class="flex justify-between pt-2">
+          <span>{{ t('payment.paid') }}</span>
           <span>- €{{ depositAmount.toFixed(2) }}</span>
         </div>
       </div>
     </div>
 
     <div v-if="totalDueNow > 0" class="animate-fade-in">
+      <!-- Appointment settled info box -->
       <div
         v-if="depositAmount >= currentApptTotal && previousDebt > 0"
         class="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl flex items-center gap-3"
@@ -34,35 +41,67 @@
           <i class="pi pi-info-circle"></i>
         </div>
         <div>
-          <h4 class="text-sm font-bold text-blue-900">Appointment Settled</h4>
-          <p class="text-xs text-blue-700">
-            This appointment is paid. The remaining balance belongs to previous
-            unpaid visits.
+          <h4 class="text-sm font-bold text-blue-900">{{ t('payment.settled') }}</h4>
+          <p class="text-xs text-blue-700">{{ t('payment.settledNote') }}</p>
+        </div>
+      </div>
+
+      <!-- Payment method (leg 1) -->
+      <div class="mb-6">
+        <label
+          class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2"
+          >{{ t('payment.paymentMethod') }}</label
+        >
+        <Dropdown
+          :modelValue="paymentMethod"
+          @update:modelValue="onPaymentMethodChange"
+          :options="['cash', 'card', 'bank-transfer', 'gift-card']"
+          class="w-full"
+        >
+          <template #value="slotProps">
+            <div class="flex items-center gap-2">
+              <i class="pi pi-credit-card text-gray-400"></i>
+              <span>{{ slotProps.value }}</span>
+            </div>
+          </template>
+        </Dropdown>
+      </div>
+
+      <!-- Gift card picker (leg 1) -->
+      <div v-if="paymentMethod === 'gift-card'" class="mb-6">
+        <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
+          {{ t('payment.giftCard.label') }}
+        </label>
+        <GiftCardPicker
+          :modelValue="giftCardId"
+          @update:modelValue="(v) => $emit('update:giftCardId', v)"
+          @update:card="(c) => (selectedGiftCard = c)"
+        />
+
+        <!-- Shortfall warning -->
+        <div
+          v-if="selectedGiftCard && Number(selectedGiftCard.remaining_balance) < totalDueNow"
+          class="mt-2 flex items-start gap-2 p-3 bg-orange-50 border border-orange-200 rounded-lg"
+        >
+          <i class="pi pi-exclamation-triangle text-orange-500 mt-0.5"></i>
+          <p class="text-xs text-orange-700">
+            {{ t('payment.giftCard.shortfall', {
+              covered: Number(selectedGiftCard.remaining_balance).toFixed(2),
+              remaining: (totalDueNow - Number(selectedGiftCard.remaining_balance)).toFixed(2),
+            }) }}
           </p>
         </div>
       </div>
 
-      <div class="mb-6">
-        <label
-          class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2"
-          >Payment Method</label
-        >
-        <Dropdown
-          :modelValue="paymentMethod"
-          @update:modelValue="$emit('update:paymentMethod', $event)"
-          :options="['cash', 'card', 'bank-transfer']"
-          class="w-full"
-        />
-      </div>
-
-      <div class="mb-6">
+      <!-- Amount to pay (leg 1) -->
+      <div class="mb-3">
         <label
           class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2"
         >
           {{
             depositAmount >= currentApptTotal
-              ? "Pay Toward Pending Balance"
-              : "Amount to Pay Now"
+              ? t('payment.amountTowardBalance')
+              : t('payment.amountNow')
           }}
         </label>
         <InputNumber
@@ -72,42 +111,102 @@
           currency="EUR"
           class="w-full fresha-input-large"
           inputClass="!text-lg !font-bold"
-          :max="totalDueNow"
+          :max="maxAmount"
         />
       </div>
 
+      <!-- Split payment toggle -->
+      <div class="mb-6">
+        <button
+          v-if="!splitEnabled"
+          type="button"
+          class="text-xs font-bold text-[var(--p-primary-600)] hover:underline flex items-center gap-1"
+          @click="enableSplit"
+        >
+          <i class="pi pi-plus text-[10px]"></i>
+          {{ t('payment.split.add') }}
+        </button>
+
+        <div v-else class="border border-gray-200 rounded-xl p-4 bg-gray-50/60 space-y-4">
+          <div class="flex justify-between items-center">
+            <span class="text-xs font-bold text-gray-500 uppercase tracking-wider">
+              {{ t('payment.split.secondMethod') }}
+            </span>
+            <button type="button" class="text-gray-400 hover:text-red-500" @click="disableSplit">
+              <i class="pi pi-times"></i>
+            </button>
+          </div>
+
+          <Dropdown
+            :modelValue="paymentMethod2"
+            @update:modelValue="onPaymentMethod2Change"
+            :options="method2Options"
+            class="w-full"
+          />
+
+          <GiftCardPicker
+            v-if="paymentMethod2 === 'gift-card'"
+            :modelValue="giftCardId2"
+            @update:modelValue="(v) => (giftCardId2 = v)"
+            @update:card="(c) => (selectedGiftCard2 = c)"
+          />
+
+          <div>
+            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
+              {{ t('payment.split.secondAmount') }}
+            </label>
+            <InputNumber
+              v-model="amountToPay2"
+              mode="currency"
+              currency="EUR"
+              class="w-full"
+              :max="maxAmount2"
+            />
+            <p class="text-xs text-gray-400 mt-1">
+              {{ t('payment.split.remainingNote', { remaining: remainderAfterBoth.toFixed(2) }) }}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pay button -->
       <Button
         :label="
           depositAmount >= currentApptTotal
-            ? 'Clear Remaining Debt'
-            : 'Charge & Complete'
+            ? t('payment.clearDebt')
+            : t('payment.chargeComplete')
         "
         icon="pi pi-check"
         class="w-full !py-4 !text-lg !bg-green-600 hover:!bg-green-700 !border-none"
         :loading="loading"
-        @click="$emit('pay')"
+        :disabled="!canSubmit"
+        @click="submitPayment"
       />
     </div>
 
+    <!-- Payment complete state -->
     <div
       v-else
-      class="text-center p-8 bg-green-50 rounded-xl border border-green-100"
+      class="text-center p-8 bg-green-50 rounded-xl border border-green-100 animate-fade-in"
     >
       <div
         class="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4"
       >
-        <i class="pi pi-check text-2xl"></i>
+        <i class="pi pi-check text-3xl"></i>
       </div>
-      <h3 class="text-xl font-bold text-green-900">Payment Complete</h3>
-      <p class="text-green-700 text-sm">
-        This client has no outstanding balance.
-      </p>
+      <h3 class="text-xl font-bold text-green-900">{{ t('payment.paymentComplete') }}</h3>
+      <p class="text-green-700 text-sm">{{ t('payment.noOutstandingBalance') }}</p>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-defineProps({
+import { ref, computed, watch } from "vue";
+import { useI18n } from "vue-i18n";
+import GiftCardPicker from "./GiftCardPicker.vue";
+const { t } = useI18n();
+
+const props = defineProps({
   totalDueNow: { type: Number, default: 0 },
   currentApptTotal: { type: Number, default: 0 },
   previousDebt: { type: Number, default: 0 },
@@ -115,7 +214,123 @@ defineProps({
   amountToPay: { type: Number, default: 0 },
   loading: { type: Boolean, default: false },
   paymentMethod: { type: String, default: "cash" },
+  giftCardId: { type: String, default: null },
 });
 
-defineEmits(["update:amountToPay", "update:paymentMethod", "pay"]);
+const emit = defineEmits([
+  "update:amountToPay",
+  "update:paymentMethod",
+  "update:giftCardId",
+  "pay",
+]);
+
+const selectedGiftCard = ref<any>(null);
+
+const maxAmount = computed(() => {
+  if (props.paymentMethod === "gift-card" && selectedGiftCard.value) {
+    return Math.min(props.totalDueNow, Number(selectedGiftCard.value.remaining_balance));
+  }
+  return props.totalDueNow;
+});
+
+const onPaymentMethodChange = (value: string) => {
+  emit("update:paymentMethod", value);
+};
+
+// Clears the (potentially stale) selected card whenever leg 1's method moves
+// away from "gift-card" — whether the user changed the dropdown or the
+// parent reset it programmatically after a successful payment.
+watch(
+  () => props.paymentMethod,
+  (val) => {
+    if (val !== "gift-card") selectedGiftCard.value = null;
+  },
+);
+
+// --- Split payment (second leg) ---
+const splitEnabled = ref(false);
+const paymentMethod2 = ref("cash");
+const giftCardId2 = ref<string | null>(null);
+const selectedGiftCard2 = ref<any>(null);
+const amountToPay2 = ref(0);
+
+// Leg 2's method options exclude whichever method leg 1 is currently using —
+// splitting into the SAME method twice is meaningless.
+const method2Options = computed(() =>
+  ["cash", "card", "bank-transfer", "gift-card"].filter((m) => m !== props.paymentMethod),
+);
+
+const maxAmount2 = computed(() => {
+  const remainderAfterLeg1 = Math.max(0, props.totalDueNow - (props.amountToPay || 0));
+  if (paymentMethod2.value === "gift-card" && selectedGiftCard2.value) {
+    return Math.min(remainderAfterLeg1, Number(selectedGiftCard2.value.remaining_balance));
+  }
+  return remainderAfterLeg1;
+});
+
+const remainderAfterBoth = computed(() =>
+  Math.max(0, props.totalDueNow - (props.amountToPay || 0) - (amountToPay2.value || 0)),
+);
+
+const enableSplit = () => {
+  splitEnabled.value = true;
+  paymentMethod2.value = method2Options.value[0] || "cash";
+  amountToPay2.value = Math.max(0, props.totalDueNow - (props.amountToPay || 0));
+};
+
+const disableSplit = () => {
+  splitEnabled.value = false;
+  paymentMethod2.value = "cash";
+  giftCardId2.value = null;
+  selectedGiftCard2.value = null;
+  amountToPay2.value = 0;
+};
+
+const onPaymentMethod2Change = (value: string) => {
+  paymentMethod2.value = value;
+  if (value !== "gift-card") {
+    giftCardId2.value = null;
+    selectedGiftCard2.value = null;
+  }
+};
+
+// Auto-open the split panel the moment a selected gift card falls short —
+// covers the motivating case without requiring the manual "+ add" click.
+watch(
+  () => [props.paymentMethod, selectedGiftCard.value, props.totalDueNow, props.amountToPay],
+  () => {
+    if (
+      props.paymentMethod === "gift-card" &&
+      selectedGiftCard.value &&
+      Number(selectedGiftCard.value.remaining_balance) < props.totalDueNow &&
+      !splitEnabled.value
+    ) {
+      enableSplit();
+    }
+  },
+);
+
+const canSubmit = computed(() => {
+  if (props.paymentMethod === "gift-card" && !props.giftCardId) return false;
+  if (splitEnabled.value) {
+    if (!amountToPay2.value || amountToPay2.value <= 0) return false;
+    if (paymentMethod2.value === "gift-card" && !giftCardId2.value) return false;
+  }
+  return true;
+});
+
+const submitPayment = () => {
+  emit(
+    "pay",
+    splitEnabled.value
+      ? {
+          amount2: amountToPay2.value,
+          payment_method2: paymentMethod2.value,
+          gift_card_id2: giftCardId2.value,
+        }
+      : null,
+  );
+};
+
+defineExpose({ disableSplit });
 </script>

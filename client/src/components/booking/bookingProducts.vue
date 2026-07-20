@@ -1,13 +1,16 @@
 <template>
   <div class="space-y-3 pt-4 border-t border-gray-100">
-    <label class="text-xs font-bold text-gray-500 uppercase tracking-wider">
-      Products
-    </label>
+    <!-- Section header -->
+    <div class="flex items-center gap-2 mb-3">
+      <i class="pi pi-shopping-bag text-gray-400"></i>
+      <label class="text-xs font-bold text-gray-500 uppercase tracking-wider">{{ t('bookingProducts.label') }}</label>
+    </div>
 
+    <!-- Product rows -->
     <div
       v-for="(product, index) in modelValue"
       :key="'prod-' + index"
-      class="relative p-4 border border-gray-200 rounded-lg bg-white group hover:border-emerald-300 transition-colors"
+      class="relative p-4 border border-gray-100 rounded-xl bg-white shadow-sm group hover:border-emerald-300 transition-colors"
     >
       <button
         @click="removeProduct(index)"
@@ -18,13 +21,13 @@
 
       <div class="flex flex-col sm:flex-row gap-3">
         <div class="w-full sm:flex-grow">
-          <label class="text-xs text-gray-500 block mb-1">Product</label>
+          <label class="text-xs text-gray-500 block mb-1">{{ t('bookingProducts.product') }}</label>
           <Dropdown
             v-model="product.product_id"
             :options="flatProducts"
             optionLabel="name"
             optionValue="id"
-            placeholder="Select Product"
+            :placeholder="t('bookingProducts.selectProduct')"
             class="w-full p-inputtext-sm"
             filter
             @change="() => updateProductDetails(index)"
@@ -40,7 +43,7 @@
                       : 'text-gray-400'
                   "
                 >
-                  Stock: {{ slotProps.option.stock }}
+                  {{ t('bookingProducts.stock') }}: {{ slotProps.option.stock }}
                 </span>
               </div>
             </template>
@@ -49,7 +52,7 @@
 
         <div class="flex gap-3 w-full sm:w-auto">
           <div class="w-1/2 sm:w-24">
-            <label class="text-xs text-gray-500 block mb-1">Qty</label>
+            <label class="text-xs text-gray-500 block mb-1">{{ t('bookingProducts.qty') }}</label>
             <InputNumber
               v-model="product.quantity"
               class="w-full p-inputtext-sm"
@@ -59,7 +62,7 @@
           </div>
 
           <div class="w-1/2 sm:w-32">
-            <label class="text-xs text-gray-500 block mb-1">Price</label>
+            <label class="text-xs text-gray-500 block mb-1">{{ t('bookingProducts.price') }}</label>
             <InputNumber
               v-model="product.price"
               mode="currency"
@@ -72,17 +75,21 @@
       </div>
     </div>
 
+    <!-- Add product button -->
     <button
       @click="addProduct"
-      class="text-emerald-600 text-sm font-semibold hover:underline flex items-center gap-1 mt-2 w-full sm:w-auto justify-center sm:justify-start p-2 sm:p-0"
+      class="w-full py-3 border-2 border-dashed border-gray-200 rounded-xl flex items-center justify-center gap-2 text-gray-400 font-medium hover:border-emerald-300 hover:text-emerald-600 hover:bg-emerald-50 transition-all duration-200 mt-2"
     >
-      <i class="pi pi-plus-circle"></i> Add a product
+      <i class="pi pi-plus-circle"></i>
+      <span>{{ t('bookingProducts.addProduct') }}</span>
     </button>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from "vue";
+import { useI18n } from "vue-i18n";
+const { t } = useI18n();
 
 const props = defineProps({
   modelValue: {

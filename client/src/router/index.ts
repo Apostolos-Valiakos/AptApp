@@ -1,19 +1,20 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { useAuthStore } from "../stores/auth";
 
-// Views
+// Views — landing/login stay eager (first paint), the rest are lazy-loaded chunks
 import Layout from "../components/Layout.vue";
 import IndexView from "../views/IndexView.vue";
 import LoginView from "../views/LoginView.vue";
-import SchedulerView from "../views/SchedulerView.vue";
-import StaffView from "../views/StaffView.vue";
-import ClientsView from "../views/ClientsView.vue";
-import ServicesView from "../views/ServicesView.vue";
-import ProductsView from "../views/ProductsView.vue";
-import FinancialsView from "../components/FinancialsView.vue";
-import profileView from "../views/profileView.vue";
-import ClientPortalView from "../views/ClientPortalView.vue";
-import SignupView from "../views/SignupView.vue";
+const SchedulerView = () => import("../views/SchedulerView.vue");
+const StaffView = () => import("../views/StaffView.vue");
+const ClientsView = () => import("../views/ClientsView.vue");
+const ServicesView = () => import("../views/ServicesView.vue");
+const ProductsView = () => import("../views/ProductsView.vue");
+const GiftCardsView = () => import("../views/GiftCardsView.vue");
+const FinancialsView = () => import("../components/FinancialsView.vue");
+const profileView = () => import("../views/profileView.vue");
+const ClientPortalView = () => import("../views/ClientPortalView.vue");
+const SignupView = () => import("../views/SignupView.vue");
 
 const routes = [
   {
@@ -50,6 +51,7 @@ const routes = [
           { path: "clients", component: ClientsView },
           { path: "services", component: ServicesView },
           { path: "products", component: ProductsView },
+          { path: "gift-cards", component: GiftCardsView },
           { path: "financials", component: FinancialsView },
           { path: "profile", component: profileView },
         ],

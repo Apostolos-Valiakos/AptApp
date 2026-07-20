@@ -1,4 +1,21 @@
 import { createApp } from "vue";
+
+// In the Capacitor native build there is no Vite proxy, so relative /api
+// URLs would resolve to capacitor://localhost/api and fail. Patch fetch to
+// prepend the real server origin when VITE_API_BASE_URL is set at build time.
+const _apiBase = (import.meta.env.VITE_API_BASE_URL as string) ?? "";
+if (_apiBase) {
+  const _orig = window.fetch.bind(window);
+  window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+    if (
+      typeof input === "string" &&
+      (input.startsWith("/api") || input.startsWith("/socket.io"))
+    ) {
+      return _orig(_apiBase + input, init);
+    }
+    return _orig(input, init);
+  };
+}
 import { createPinia } from "pinia";
 import PrimeVue from "primevue/config";
 import App from "./App.vue";
@@ -21,6 +38,7 @@ import Tooltip from "primevue/tooltip";
 import Button from "primevue/button";
 import Dialog from "primevue/dialog";
 import Select from "primevue/select";
+import AutoComplete from "primevue/autocomplete";
 import InputText from "primevue/inputtext";
 import InputNumber from "primevue/inputnumber";
 import DatePicker from "primevue/datepicker";
@@ -44,10 +62,11 @@ import DataTable from "primevue/datatable";
 import Column from "primevue/column";
 import Chart from "primevue/chart";
 import { useThemeStore } from "./stores/themes";
+import { i18n } from "./i18n";
 
 const MyPreset = definePreset(Aura, {
   semantic: {
-    primary: palette("#ff93d4"),
+    primary: palette("#8B6F4E"),
   },
 });
 
@@ -63,6 +82,7 @@ const initApp = async () => {
   await themeStore.fetchAndApplyTheme();
 
   app.use(router);
+  app.use(i18n);
   app.use(ToastService);
   app.use(ConfirmationService);
 
@@ -84,6 +104,7 @@ const initApp = async () => {
   app.component("Button", Button);
   app.component("Dialog", Dialog);
   app.component("Dropdown", Select);
+  app.component("AutoComplete", AutoComplete);
   app.component("InputText", InputText);
   app.component("InputNumber", InputNumber);
   app.component("Chart", Chart);

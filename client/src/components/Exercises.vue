@@ -157,9 +157,11 @@ import Dialog from "primevue/dialog";
 import InputText from "primevue/inputtext";
 import Dropdown from "primevue/dropdown";
 import { useAuthStore } from "../stores/auth";
+import { useToast } from "primevue/usetoast";
 
 const props = defineProps(["clientId"]);
 const authStore = useAuthStore();
+const toast = useToast();
 
 const exercises = ref<any[]>([]);
 const completedIds = ref<Set<string>>(new Set());
@@ -299,7 +301,7 @@ const deleteExercise = async (id: string) => {
       exercises.value = exercises.value.filter((ex) => ex.id !== id);
       completedIds.value.delete(id);
     } else {
-      alert("Failed to delete exercise");
+      toast.add({ severity: "error", summary: "Delete Failed", detail: "Failed to delete exercise", life: 3000 });
     }
   } catch (e) {
     console.error("Delete failed", e);

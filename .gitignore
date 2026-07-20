@@ -1,4 +1,10 @@
 /node_modules/
 .env
 /dist/
+/client/dist/
 package-lock.json
+Installation Steps.pdf
+.vscode/settings.json
+.claude/
+*.sql
+server/tests/

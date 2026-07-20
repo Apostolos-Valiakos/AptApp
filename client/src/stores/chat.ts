@@ -52,6 +52,10 @@ export const useChatStore = defineStore("chat", () => {
   const onlineUsers = ref<Set<string>>(new Set());
   const typingUsers = ref<Map<string, Set<string>>>(new Map());
   const isMinimized = ref(true);
+  const remoteHideCash = ref(false);
+  const cashLocked = ref(false);
+  const remoteHideCard = ref(false);
+  const cardLocked = ref(false);
   // const notificationSound = ref<HTMLAudioElement | null>(null);
 
   const totalUnreadCount = computed(() => {
@@ -92,18 +96,18 @@ export const useChatStore = defineStore("chat", () => {
     //   auth: { token },
     //   transports: ["websocket", "polling"],
     // });
-    socket.value = io({
+    const socketUrl =
+      (import.meta.env.VITE_API_BASE_URL as string) || window.location.origin;
+    socket.value = io(socketUrl, {
       auth: { token },
       transports: ["websocket", "polling"],
     });
 
     socket.value.on("connect", () => {
-      console.log("Socket connected");
       isConnected.value = true;
     });
 
     socket.value.on("disconnect", () => {
-      console.log("Socket disconnected");
       isConnected.value = false;
     });
 
@@ -218,6 +222,18 @@ export const useChatStore = defineStore("chat", () => {
         }
       }
     );
+
+    socket.value.on("cash:filter:set", ({ hidden }: { hidden: boolean }) => {
+      remoteHideCash.value = hidden;
+      cashLocked.value = hidden; // locked when super_admin hides, free when super_admin unhides
+      localStorage.setItem("hideCashPaid", String(hidden));
+    });
+
+    socket.value.on("card:filter:set", ({ hidden }: { hidden: boolean }) => {
+      remoteHideCard.value = hidden;
+      cardLocked.value = hidden;
+      localStorage.setItem("hideCardPaid", String(hidden));
+    });
 
     // Initialize notification sound
     // notificationSound.value = new Audio("/notification.mp3");
@@ -472,6 +488,10 @@ export const useChatStore = defineStore("chat", () => {
 
   return {
     socket,
+    remoteHideCash,
+    cashLocked,
+    remoteHideCard,
+    cardLocked,
     channels,
     messages,
     activeChannelId,
