@@ -6,7 +6,7 @@
         v-model="resourceFilter"
         class="text-sm border rounded-md px-3 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-500"
       >
-        <option value="all">All Staff</option>
+        <!-- <option value="all">All Staff</option> -->
         <option value="me" :disabled="!hasStaffProfile">My Schedule</option>
       </select>
     </div>
