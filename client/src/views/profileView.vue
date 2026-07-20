@@ -2,12 +2,16 @@
   <div class="p-6 max-w-7xl mx-auto space-y-6">
     <!-- Page Title -->
     <div class="flex items-center gap-3 mb-2">
-      <div class="w-10 h-10 rounded-xl bg-[var(--p-primary-50)] flex items-center justify-center">
+      <div
+        class="w-10 h-10 rounded-xl bg-[var(--p-primary-50)] flex items-center justify-center"
+      >
         <i class="pi pi-user text-[var(--p-primary-600)]"></i>
       </div>
       <div>
-        <h1 class="text-2xl font-bold text-gray-900">{{ t('profile.title') }}</h1>
-        <p class="text-sm text-gray-500">{{ t('profile.subtitle') }}</p>
+        <h1 class="text-2xl font-bold text-gray-900">
+          {{ t("profile.title") }}
+        </h1>
+        <p class="text-sm text-gray-500">{{ t("profile.subtitle") }}</p>
       </div>
     </div>
 
@@ -15,7 +19,9 @@
       <!-- Left Column -->
       <div class="lg:col-span-4 space-y-6">
         <!-- Profile Card -->
-        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden relative">
+        <div
+          class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden relative"
+        >
           <div v-if="isLoadingProfile" class="p-6 space-y-4">
             <div class="flex justify-center">
               <Skeleton shape="circle" size="6rem" />
@@ -25,19 +31,36 @@
           </div>
 
           <div v-else>
-            <div class="h-32 bg-gradient-to-br from-[var(--p-primary-400)] to-[var(--p-primary-700)]"></div>
+            <div
+              class="h-32 bg-gradient-to-br from-[var(--p-primary-400)] to-[var(--p-primary-700)]"
+            ></div>
             <div class="px-6 relative text-center">
               <div class="relative inline-block -mt-12">
                 <div
                   class="w-24 h-24 bg-white rounded-full border-4 border-white shadow-lg flex items-center justify-center text-4xl font-bold select-none overflow-hidden"
                   :style="{ color: 'var(--p-primary-600)' }"
                 >
-                  <img v-if="staffPhotoUrl" :src="staffPhotoUrl" class="w-full h-full object-cover" />
-                  <span v-else>{{ profile.username?.charAt(0).toUpperCase() }}</span>
+                  <img
+                    v-if="staffPhotoUrl"
+                    :src="staffPhotoUrl"
+                    class="w-full h-full object-cover"
+                  />
+                  <span v-else>{{
+                    profile.username?.charAt(0).toUpperCase()
+                  }}</span>
                 </div>
-                <label v-if="profile.staff_id" class="absolute bottom-0 right-0 w-7 h-7 bg-[var(--p-primary-color)] rounded-full flex items-center justify-center cursor-pointer shadow-md hover:brightness-110 transition-all" title="Upload photo">
+                <label
+                  v-if="profile.staff_id"
+                  class="absolute bottom-0 right-0 w-7 h-7 bg-[var(--p-primary-color)] rounded-full flex items-center justify-center cursor-pointer shadow-md hover:brightness-110 transition-all"
+                  title="Upload photo"
+                >
                   <i class="pi pi-camera text-white text-xs"></i>
-                  <input type="file" accept="image/*" class="hidden" @change="uploadPhoto" />
+                  <input
+                    type="file"
+                    accept="image/*"
+                    class="hidden"
+                    @change="uploadPhoto"
+                  />
                 </label>
               </div>
 
@@ -57,12 +80,15 @@
                   <div class="flex items-center text-gray-600 text-sm">
                     <i class="pi pi-building mr-3 text-gray-400"></i>
                     <span class="truncate max-w-[200px]">{{
-                      profile.shop_name || t('profile.noShopAssigned')
+                      profile.shop_name || t("profile.noShopAssigned")
                     }}</span>
                   </div>
                 </div>
 
-                <div v-if="profile.specialty" class="flex items-center text-gray-600 text-sm">
+                <div
+                  v-if="profile.specialty"
+                  class="flex items-center text-gray-600 text-sm"
+                >
                   <i class="pi pi-briefcase mr-3 text-gray-400"></i>
                   <span>{{ profile.specialty }}</span>
                 </div>
@@ -74,7 +100,8 @@
                   <div class="flex items-center text-gray-600 text-sm">
                     <i class="pi pi-id-card mr-3 text-gray-400"></i>
                     <span class="font-mono text-xs text-gray-500">
-                      {{ t('profile.idLabel') }}: {{ profile.user_id?.substring(0, 8) }}...
+                      {{ t("profile.idLabel") }}:
+                      {{ profile.user_id?.substring(0, 8) }}...
                     </span>
                   </div>
                   <i
@@ -100,49 +127,88 @@
 
         <!-- Preferences Card -->
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-          <h3 class="font-bold text-gray-900 mb-4">{{ t('profile.preferences.title') }}</h3>
+          <h3 class="font-bold text-gray-900 mb-4">
+            {{ t("profile.preferences.title") }}
+          </h3>
 
           <div class="flex items-center justify-between">
-            <span class="text-sm text-gray-600">{{ t('profile.preferences.notifications') }}</span>
+            <span class="text-sm text-gray-600">{{
+              t("profile.preferences.notifications")
+            }}</span>
             <InputSwitch v-model="preferences.notifications" />
           </div>
-          <p class="text-xs text-gray-400 mt-1">{{ t('profile.preferences.notificationsSoon') }}</p>
+          <p class="text-xs text-gray-400 mt-1">
+            {{ t("profile.preferences.notificationsSoon") }}
+          </p>
         </div>
 
         <!-- Clinic Contact Info Card (admin only) -->
-        <div v-if="isOwner" class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <div
+          v-if="isOwner"
+          class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6"
+        >
           <div class="flex items-center justify-between mb-4">
             <div class="flex items-center gap-2">
               <i class="pi pi-building text-[var(--p-primary-color)]"></i>
               <h3 class="font-bold text-gray-900 text-sm">Clinic Info</h3>
             </div>
-            <Button size="small" label="Save" :loading="isSavingContact" @click="saveContact" />
+            <Button
+              size="small"
+              label="Save"
+              :loading="isSavingContact"
+              @click="saveContact"
+            />
           </div>
           <div class="space-y-3">
             <div>
-              <label class="text-xs font-medium text-gray-500 block mb-1">Phone</label>
-              <InputText v-model="contactForm.phone" class="w-full" placeholder="+30 210 000 0000" />
+              <label class="text-xs font-medium text-gray-500 block mb-1"
+                >Phone</label
+              >
+              <InputText
+                v-model="contactForm.phone"
+                class="w-full"
+                placeholder="+30 210 000 0000"
+              />
             </div>
             <div>
-              <label class="text-xs font-medium text-gray-500 block mb-1">Address</label>
-              <InputText v-model="contactForm.address" class="w-full" placeholder="Street, City" />
+              <label class="text-xs font-medium text-gray-500 block mb-1"
+                >Address</label
+              >
+              <InputText
+                v-model="contactForm.address"
+                class="w-full"
+                placeholder="Street, City"
+              />
             </div>
             <div>
-              <label class="text-xs font-medium text-gray-500 block mb-1">Website</label>
-              <InputText v-model="contactForm.website" class="w-full" placeholder="https://..." />
+              <label class="text-xs font-medium text-gray-500 block mb-1"
+                >Website</label
+              >
+              <InputText
+                v-model="contactForm.website"
+                class="w-full"
+                placeholder="https://..."
+              />
             </div>
           </div>
         </div>
 
         <!-- App Branding Card (owners only) -->
-        <div v-if="isOwner" class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <div
+          v-if="isOwner"
+          class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6"
+        >
           <div class="flex items-center gap-2 mb-4">
             <i class="pi pi-palette text-[var(--p-primary-color)]"></i>
-            <h3 class="font-bold text-gray-900 text-sm">{{ t('profile.branding.title') }}</h3>
+            <h3 class="font-bold text-gray-900 text-sm">
+              {{ t("profile.branding.title") }}
+            </h3>
           </div>
 
           <div class="mb-4">
-            <label class="text-xs font-semibold text-gray-500 block mb-2">{{ t('profile.branding.quickPresets') }}</label>
+            <label class="text-xs font-semibold text-gray-500 block mb-2">{{
+              t("profile.branding.quickPresets")
+            }}</label>
             <div class="flex flex-wrap gap-2">
               <button
                 v-for="color in presets"
@@ -165,7 +231,9 @@
           </div>
 
           <div>
-            <label class="text-xs font-semibold text-gray-500 block mb-2">{{ t('profile.branding.customColor') }}</label>
+            <label class="text-xs font-semibold text-gray-500 block mb-2">{{
+              t("profile.branding.customColor")
+            }}</label>
             <div class="flex items-center gap-3">
               <div class="border rounded-lg p-1">
                 <ColorPicker v-model="pickerColor" format="hex" />
@@ -193,11 +261,17 @@
       <!-- Right Column -->
       <div class="lg:col-span-8 space-y-6">
         <!-- Personal Information -->
-        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8">
+        <div
+          class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8"
+        >
           <div class="flex justify-between items-center mb-6">
             <div>
-              <h3 class="text-lg font-bold text-gray-900">{{ t('profile.personalInfo.title') }}</h3>
-              <p class="text-sm text-gray-500">{{ t('profile.personalInfo.subtitle') }}</p>
+              <h3 class="text-lg font-bold text-gray-900">
+                {{ t("profile.personalInfo.title") }}
+              </h3>
+              <p class="text-sm text-gray-500">
+                {{ t("profile.personalInfo.subtitle") }}
+              </p>
             </div>
             <Button
               :label="t('profile.personalInfo.saveChanges')"
@@ -215,21 +289,29 @@
 
           <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('profile.personalInfo.firstName') }}</label>
+              <label class="block text-sm font-medium text-gray-700 mb-1">{{
+                t("profile.personalInfo.firstName")
+              }}</label>
               <InputText v-model="profileForm.firstName" class="w-full" />
             </div>
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('profile.personalInfo.lastName') }}</label>
+              <label class="block text-sm font-medium text-gray-700 mb-1">{{
+                t("profile.personalInfo.lastName")
+              }}</label>
               <InputText v-model="profileForm.lastName" class="w-full" />
             </div>
             <div class="md:col-span-2">
-              <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('profile.personalInfo.emailAddress') }}</label>
+              <label class="block text-sm font-medium text-gray-700 mb-1">{{
+                t("profile.personalInfo.emailAddress")
+              }}</label>
               <div class="p-input-icon-left w-full">
                 <InputText v-model="profileForm.email" class="w-full" />
               </div>
             </div>
             <div class="md:col-span-2">
-              <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('profile.personalInfo.phone') }}</label>
+              <label class="block text-sm font-medium text-gray-700 mb-1">{{
+                t("profile.personalInfo.phone")
+              }}</label>
               <div class="p-input-icon-left w-full">
                 <InputText v-model="profileForm.phone" class="w-full" />
               </div>
@@ -238,11 +320,17 @@
         </div>
 
         <!-- Shop Services -->
-        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8">
+        <!-- <div
+          class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8"
+        >
           <div class="flex justify-between items-center mb-8">
             <div>
-              <h3 class="text-lg font-bold text-gray-900">{{ t('profile.shopServices.title') }}</h3>
-              <p class="text-sm text-gray-500">{{ t('profile.shopServices.subtitle') }}</p>
+              <h3 class="text-lg font-bold text-gray-900">
+                {{ t("profile.shopServices.title") }}
+              </h3>
+              <p class="text-sm text-gray-500">
+                {{ t("profile.shopServices.subtitle") }}
+              </p>
             </div>
             <Button
               :label="t('profile.shopServices.saveChanges')"
@@ -251,7 +339,10 @@
             />
           </div>
 
-          <div v-if="isLoadingProfile" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div
+            v-if="isLoadingProfile"
+            class="grid grid-cols-1 md:grid-cols-3 gap-4"
+          >
             <Skeleton height="100px" v-for="i in 3" :key="i" />
           </div>
 
@@ -352,14 +443,19 @@
               <ToggleSwitch v-model="shopForm.logotherapia" @click.stop />
             </div>
           </div>
-        </div>
+        </div> -->
 
         <!-- Clinic Settings (owner only) -->
-        <div v-if="isOwner" class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8">
+        <div
+          v-if="isOwner"
+          class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8"
+        >
           <div class="flex justify-between items-center mb-6">
             <div>
               <h3 class="text-lg font-bold text-gray-900">Clinic Settings</h3>
-              <p class="text-sm text-gray-500">Email address clients see when they reply to booking emails.</p>
+              <p class="text-sm text-gray-500">
+                Email address clients see when they reply to booking emails.
+              </p>
             </div>
             <Button
               label="Save"
@@ -379,39 +475,77 @@
               type="email"
             />
             <p class="text-xs text-gray-400 mt-1.5">
-              When clients reply to appointment reminders or portal invitations, their email will go to this address. Leave blank to use the system default.
+              When clients reply to appointment reminders or portal invitations,
+              their email will go to this address. Leave blank to use the system
+              default.
             </p>
           </div>
         </div>
 
         <!-- Calendar Settings (admin only) -->
-        <div v-if="isOwner" class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8">
+        <div
+          v-if="isOwner"
+          class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8"
+        >
           <div class="flex justify-between items-center mb-6">
             <div>
               <h3 class="text-lg font-bold text-gray-900">Calendar Settings</h3>
-              <p class="text-sm text-gray-500">Control the scheduler and reminder behaviour.</p>
+              <p class="text-sm text-gray-500">
+                Control the scheduler and reminder behaviour.
+              </p>
             </div>
-            <Button label="Save" class="p-button-sm p-button-rounded" :loading="isSavingCalSettings" @click="saveCalendarSettings" />
+            <Button
+              label="Save"
+              class="p-button-sm p-button-rounded"
+              :loading="isSavingCalSettings"
+              @click="saveCalendarSettings"
+            />
           </div>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Opening Time</label>
-              <InputText v-model="calSettings.slotMinTime" class="w-full" placeholder="07:00" />
-              <p class="text-xs text-gray-400 mt-1">Format: HH:MM (e.g. 08:00)</p>
+              <label class="block text-sm font-medium text-gray-700 mb-1"
+                >Opening Time</label
+              >
+              <InputText
+                v-model="calSettings.slotMinTime"
+                class="w-full"
+                placeholder="07:00"
+              />
+              <p class="text-xs text-gray-400 mt-1">
+                Format: HH:MM (e.g. 08:00)
+              </p>
             </div>
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Closing Time</label>
-              <InputText v-model="calSettings.slotMaxTime" class="w-full" placeholder="21:00" />
+              <label class="block text-sm font-medium text-gray-700 mb-1"
+                >Closing Time</label
+              >
+              <InputText
+                v-model="calSettings.slotMaxTime"
+                class="w-full"
+                placeholder="21:00"
+              />
             </div>
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Reminder (hours before)</label>
-              <InputNumber v-model="calSettings.reminderHoursBefore" class="w-full" :min="1" :max="72" />
-              <p class="text-xs text-gray-400 mt-1">How many hours before the appointment to send the email reminder.</p>
+              <label class="block text-sm font-medium text-gray-700 mb-1"
+                >Reminder (hours before)</label
+              >
+              <InputNumber
+                v-model="calSettings.reminderHoursBefore"
+                class="w-full"
+                :min="1"
+                :max="72"
+              />
+              <p class="text-xs text-gray-400 mt-1">
+                How many hours before the appointment to send the email
+                reminder.
+              </p>
             </div>
             <div class="flex items-center justify-between pt-2">
               <div>
                 <p class="text-sm font-medium text-gray-700">Show Weekends</p>
-                <p class="text-xs text-gray-400">Display Saturday and Sunday in the calendar.</p>
+                <p class="text-xs text-gray-400">
+                  Display Saturday and Sunday in the calendar.
+                </p>
               </div>
               <ToggleSwitch v-model="calSettings.showWeekends" />
             </div>
@@ -419,12 +553,16 @@
         </div>
 
         <!-- Change Password -->
-        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8">
-          <h3 class="text-lg font-bold text-gray-900 mb-1 flex items-center gap-2">
-            {{ t('profile.password.title') }}
+        <div
+          class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8"
+        >
+          <h3
+            class="text-lg font-bold text-gray-900 mb-1 flex items-center gap-2"
+          >
+            {{ t("profile.password.title") }}
           </h3>
           <p class="text-sm text-gray-500 mb-6">
-            {{ t('profile.password.subtitle') }}
+            {{ t("profile.password.subtitle") }}
           </p>
 
           <form
@@ -432,7 +570,9 @@
             class="grid grid-cols-1 md:grid-cols-2 gap-6 items-start"
           >
             <div class="md:col-span-2">
-              <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('profile.password.current') }}</label>
+              <label class="block text-sm font-medium text-gray-700 mb-1">{{
+                t("profile.password.current")
+              }}</label>
               <Password
                 v-model="security.currentPassword"
                 :feedback="false"
@@ -443,7 +583,9 @@
             </div>
 
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('profile.password.new') }}</label>
+              <label class="block text-sm font-medium text-gray-700 mb-1">{{
+                t("profile.password.new")
+              }}</label>
               <Password
                 v-model="security.newPassword"
                 toggleMask
@@ -452,12 +594,14 @@
               >
                 <template #footer>
                   <div class="divider mt-2"></div>
-                  <ul class="pl-2 ml-2 mt-0 text-xs text-gray-500 leading-normal">
+                  <ul
+                    class="pl-2 ml-2 mt-0 text-xs text-gray-500 leading-normal"
+                  >
                     <li :class="{ 'text-green-600': hasMinLength }">
-                      {{ t('profile.password.minLength') }}
+                      {{ t("profile.password.minLength") }}
                     </li>
                     <li :class="{ 'text-green-600': hasNumber }">
-                      {{ t('profile.password.requireNumber') }}
+                      {{ t("profile.password.requireNumber") }}
                     </li>
                   </ul>
                 </template>
@@ -465,7 +609,9 @@
             </div>
 
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('profile.password.confirm') }}</label>
+              <label class="block text-sm font-medium text-gray-700 mb-1">{{
+                t("profile.password.confirm")
+              }}</label>
               <Password
                 v-model="security.confirmPassword"
                 :feedback="false"
@@ -480,7 +626,7 @@
                 v-if="!passwordsMatch && security.confirmPassword"
                 class="text-red-500 block mt-1"
               >
-                {{ t('profile.password.noMatch') }}
+                {{ t("profile.password.noMatch") }}
               </small>
             </div>
 
@@ -494,9 +640,216 @@
             </div>
           </form>
         </div>
+
+        <!-- ── Contests (admin only) ── -->
+        <div
+          v-if="isOwner"
+          class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8"
+        >
+          <div class="flex items-center justify-between mb-6">
+            <div>
+              <h3 class="text-lg font-bold text-gray-900">Διαγωνισμοί</h3>
+              <p class="text-sm text-gray-500">
+                Διαχείριση διαγωνισμών για πελάτες.
+              </p>
+            </div>
+            <Button
+              label="Νέος"
+              icon="pi pi-plus"
+              size="small"
+              class="!bg-[var(--p-primary-color)] border-none !text-white"
+              @click="openContestDialog()"
+            />
+          </div>
+
+          <!-- Loading -->
+          <div v-if="isLoadingContests" class="space-y-3">
+            <Skeleton
+              v-for="n in 2"
+              :key="n"
+              height="60px"
+              class="rounded-xl"
+            />
+          </div>
+
+          <!-- Empty state -->
+          <div
+            v-else-if="contests.length === 0"
+            class="text-center py-10 text-gray-400"
+          >
+            <i class="pi pi-trophy text-4xl mb-3 block"></i>
+            <p class="text-sm">Δεν υπάρχουν διαγωνισμοί ακόμα.</p>
+          </div>
+
+          <!-- Contest list -->
+          <div v-else class="space-y-3">
+            <div
+              v-for="c in contests"
+              :key="c.id"
+              class="flex items-center gap-4 p-4 rounded-xl border border-gray-100 hover:border-[var(--p-primary-200)] transition-colors"
+            >
+              <img
+                v-if="c.image_url"
+                :src="c.image_url"
+                class="w-14 h-14 rounded-lg object-cover flex-shrink-0"
+              />
+              <div
+                v-else
+                class="w-14 h-14 rounded-lg bg-[var(--p-primary-50)] flex items-center justify-center flex-shrink-0"
+              >
+                <i
+                  class="pi pi-trophy text-[var(--p-primary-color)] text-xl"
+                ></i>
+              </div>
+
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="font-semibold text-gray-900 text-sm">{{
+                    c.name
+                  }}</span>
+                  <span
+                    :class="[
+                      'text-xs font-bold px-2 py-0.5 rounded-full',
+                      contestStatus(c) === 'active'
+                        ? 'bg-green-100 text-green-700'
+                        : contestStatus(c) === 'upcoming'
+                          ? 'bg-blue-100 text-blue-700'
+                          : 'bg-gray-100 text-gray-500',
+                    ]"
+                  >
+                    {{
+                      contestStatus(c) === "active"
+                        ? "Ενεργός"
+                        : contestStatus(c) === "upcoming"
+                          ? "Προσεχώς"
+                          : "Έληξε"
+                    }}
+                  </span>
+                </div>
+                <p class="text-xs text-gray-400 mt-0.5 truncate">
+                  {{ formatDate(c.start_date) }} – {{ formatDate(c.end_date) }}
+                </p>
+              </div>
+
+              <div class="flex items-center gap-2 flex-shrink-0">
+                <Button
+                  icon="pi pi-pencil"
+                  text
+                  rounded
+                  size="small"
+                  class="!text-gray-400 hover:!text-[var(--p-primary-color)]"
+                  @click="openContestDialog(c)"
+                />
+                <Button
+                  icon="pi pi-trash"
+                  text
+                  rounded
+                  size="small"
+                  class="!text-gray-400 hover:!text-red-500"
+                  @click="deleteContest(c.id)"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
+
+  <!-- Contest create / edit dialog -->
+  <Dialog
+    v-model:visible="contestDialogVisible"
+    :header="editingContest ? 'Επεξεργασία Διαγωνισμού' : 'Νέος Διαγωνισμός'"
+    :style="{ width: '580px', maxWidth: '105vw' }"
+    modal
+  >
+    <div class="space-y-4 pt-2">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1"
+          >Όνομα *</label
+        >
+        <InputText
+          v-model="contestForm.name"
+          class="w-full"
+          placeholder="π.χ. Καλοκαιρινός Διαγωνισμός"
+        />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1"
+          >Περιγραφή</label
+        >
+        <Textarea
+          v-model="contestForm.description"
+          class="w-full"
+          rows="3"
+          placeholder="Περιγραφή του διαγωνισμού..."
+        />
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1"
+            >Έναρξη *</label
+          >
+          <DatePicker
+            v-model="contestForm.start_date"
+            class="w-full"
+            dateFormat="dd/mm/yy"
+            showIcon
+          />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1"
+            >Λήξη *</label
+          >
+          <DatePicker
+            v-model="contestForm.end_date"
+            class="w-full"
+            dateFormat="dd/mm/yy"
+            showIcon
+          />
+        </div>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1"
+          >Εικόνα</label
+        >
+        <div
+          class="border-2 border-dashed border-gray-200 rounded-xl p-4 text-center cursor-pointer hover:border-[var(--p-primary-color)] transition-colors"
+          @click="contestImageInput?.click()"
+        >
+          <img
+            v-if="contestImagePreview"
+            :src="contestImagePreview"
+            class="mx-auto max-h-32 rounded-lg object-cover mb-2"
+          />
+          <div v-else class="text-gray-400 py-4">
+            <i class="pi pi-image text-3xl block mb-2"></i>
+            <span class="text-sm">Κλικ για επιλογή εικόνας</span>
+          </div>
+          <p v-if="contestImagePreview" class="text-xs text-gray-400">
+            Κλικ για αλλαγή
+          </p>
+        </div>
+        <input
+          ref="contestImageInput"
+          type="file"
+          accept="image/*"
+          class="hidden"
+          @change="onContestImageChange"
+        />
+      </div>
+    </div>
+    <template #footer>
+      <Button label="Ακύρωση" text @click="contestDialogVisible = false" />
+      <Button
+        :label="editingContest ? 'Αποθήκευση' : 'Δημιουργία'"
+        icon="pi pi-check"
+        class="!bg-[var(--p-primary-color)] border-none"
+        :loading="isSavingContest"
+        @click="saveContest"
+      />
+    </template>
+  </Dialog>
 </template>
 
 <script setup lang="ts">
@@ -510,9 +863,12 @@ import { useThemeStore } from "../stores/themes"; // Import Theme Store
 import Password from "primevue/password";
 import Button from "primevue/button";
 import InputText from "primevue/inputtext";
+import Textarea from "primevue/textarea";
 import Skeleton from "primevue/skeleton";
 import InputSwitch from "primevue/inputswitch";
-import ColorPicker from "primevue/colorpicker"; // Import ColorPicker
+import ColorPicker from "primevue/colorpicker";
+import Dialog from "primevue/dialog";
+import DatePicker from "primevue/datepicker";
 
 const { t } = useI18n();
 const toast = useToast();
@@ -529,7 +885,12 @@ const staffPhotoUrl = ref("");
 const isSavingContact = ref(false);
 const isSavingCalSettings = ref(false);
 const contactForm = reactive({ phone: "", address: "", website: "" });
-const calSettings = reactive({ slotMinTime: "07:00", slotMaxTime: "23:00", showWeekends: true, reminderHoursBefore: 24 });
+const calSettings = reactive({
+  slotMinTime: "07:00",
+  slotMaxTime: "23:00",
+  showWeekends: true,
+  reminderHoursBefore: 24,
+});
 
 // Data Models
 const profile = ref<any>({});
@@ -557,7 +918,7 @@ const security = reactive({
 });
 
 // --- Theme / Branding Logic ---
-const pickerColor = ref("ff93d4");
+const pickerColor = ref("8B6F4E");
 const selectedColor = computed(() => themeStore.primaryColor);
 
 const isOwner = computed(() => {
@@ -566,12 +927,12 @@ const isOwner = computed(() => {
 });
 
 const presets = [
-  "#ff93d4", // Default Pink
+  "#8B6F4E", // Warm Brown (default)
+  "#D4A97A", // Gold Sand
   "#3b82f6", // Blue
   "#10b981", // Emerald
   "#8b5cf6", // Violet
   "#f59e0b", // Amber
-  "#ef4444", // Red
 ];
 
 const saveColor = (color: string) => {
@@ -637,8 +998,8 @@ const fetchProfile = async () => {
     console.error(e);
     toast.add({
       severity: "error",
-      summary: t('common.error'),
-      detail: t('profile.toast.loadFailed'),
+      summary: t("common.error"),
+      detail: t("profile.toast.loadFailed"),
       life: 3000,
     });
   } finally {
@@ -651,8 +1012,8 @@ const copyToClipboard = (text: string) => {
   navigator.clipboard.writeText(text);
   toast.add({
     severity: "info",
-    summary: t('common.success'),
-    detail: t('profile.toast.idCopied'),
+    summary: t("common.success"),
+    detail: t("profile.toast.idCopied"),
     life: 2000,
   });
 };
@@ -679,8 +1040,8 @@ const updateProfile = async () => {
     if (res.ok) {
       toast.add({
         severity: "success",
-        summary: t('common.success'),
-        detail: t('profile.toast.profileUpdated'),
+        summary: t("common.success"),
+        detail: t("profile.toast.profileUpdated"),
         life: 3000,
       });
       // Refresh local data display
@@ -693,8 +1054,8 @@ const updateProfile = async () => {
   } catch (e: any) {
     toast.add({
       severity: "error",
-      summary: t('common.error'),
-      detail: t('profile.toast.saveFailed'),
+      summary: t("common.error"),
+      detail: t("profile.toast.saveFailed"),
       life: 3000,
     });
   } finally {
@@ -725,15 +1086,15 @@ const updateShopServices = async () => {
 
     toast.add({
       severity: "success",
-      summary: t('common.success'),
-      detail: t('profile.toast.servicesUpdated'),
+      summary: t("common.success"),
+      detail: t("profile.toast.servicesUpdated"),
       life: 3000,
     });
   } catch (e: any) {
     toast.add({
       severity: "error",
-      summary: t('common.error'),
-      detail: t('profile.toast.saveFailed'),
+      summary: t("common.error"),
+      detail: t("profile.toast.saveFailed"),
       life: 4000,
     });
   } finally {
@@ -746,15 +1107,28 @@ const saveReplyEmail = async () => {
   try {
     const res = await fetch("/api/v1/shop/reply-email", {
       method: "PUT",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
       body: JSON.stringify({ reply_email: replyEmailForm.value || null }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Failed to save");
-    toast.add({ severity: "success", summary: t('common.success'), detail: "Reply-to email saved", life: 3000 });
+    toast.add({
+      severity: "success",
+      summary: t("common.success"),
+      detail: "Reply-to email saved",
+      life: 3000,
+    });
     profile.value.shop_reply_email = replyEmailForm.value || null;
   } catch (e: any) {
-    toast.add({ severity: "error", summary: t('common.error'), detail: e.message || t('profile.toast.saveFailed'), life: 3000 });
+    toast.add({
+      severity: "error",
+      summary: t("common.error"),
+      detail: e.message || t("profile.toast.saveFailed"),
+      life: 3000,
+    });
   } finally {
     isSavingReplyEmail.value = false;
   }
@@ -784,8 +1158,8 @@ const updatePassword = async () => {
 
     toast.add({
       severity: "success",
-      summary: t('common.success'),
-      detail: t('profile.toast.passwordUpdated'),
+      summary: t("common.success"),
+      detail: t("profile.toast.passwordUpdated"),
       life: 3000,
     });
 
@@ -796,8 +1170,8 @@ const updatePassword = async () => {
   } catch (e: any) {
     toast.add({
       severity: "error",
-      summary: t('common.error'),
-      detail: t('profile.toast.saveFailed'),
+      summary: t("common.error"),
+      detail: t("profile.toast.saveFailed"),
       life: 4000,
     });
   } finally {
@@ -811,13 +1185,30 @@ const saveContact = async () => {
   try {
     const res = await fetch("/api/v1/shop/contact", {
       method: "PUT",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ phone: contactForm.phone, address: contactForm.address, website: contactForm.website }),
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        phone: contactForm.phone,
+        address: contactForm.address,
+        website: contactForm.website,
+      }),
     });
     if (!res.ok) throw new Error((await res.json()).error || "Failed");
-    toast.add({ severity: "success", summary: "Saved", detail: "Clinic info updated", life: 3000 });
+    toast.add({
+      severity: "success",
+      summary: "Saved",
+      detail: "Clinic info updated",
+      life: 3000,
+    });
   } catch (e: any) {
-    toast.add({ severity: "error", summary: "Error", detail: e.message, life: 3000 });
+    toast.add({
+      severity: "error",
+      summary: "Error",
+      detail: e.message,
+      life: 3000,
+    });
   } finally {
     isSavingContact.value = false;
   }
@@ -829,7 +1220,10 @@ const saveCalendarSettings = async () => {
   try {
     const res = await fetch("/api/v1/shop/calendar-settings", {
       method: "PUT",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
       body: JSON.stringify({
         slot_min_time: calSettings.slotMinTime,
         slot_max_time: calSettings.slotMaxTime,
@@ -838,9 +1232,19 @@ const saveCalendarSettings = async () => {
       }),
     });
     if (!res.ok) throw new Error((await res.json()).error || "Failed");
-    toast.add({ severity: "success", summary: "Saved", detail: "Calendar settings updated", life: 3000 });
+    toast.add({
+      severity: "success",
+      summary: "Saved",
+      detail: "Calendar settings updated",
+      life: 3000,
+    });
   } catch (e: any) {
-    toast.add({ severity: "error", summary: "Error", detail: e.message, life: 3000 });
+    toast.add({
+      severity: "error",
+      summary: "Error",
+      detail: e.message,
+      life: 3000,
+    });
   } finally {
     isSavingCalSettings.value = false;
   }
@@ -865,7 +1269,12 @@ const uploadPhoto = async (e: Event) => {
     staffPhotoUrl.value = data.photo_url;
     toast.add({ severity: "success", summary: "Photo updated", life: 2000 });
   } catch (e: any) {
-    toast.add({ severity: "error", summary: "Upload failed", detail: e.message, life: 3000 });
+    toast.add({
+      severity: "error",
+      summary: "Upload failed",
+      detail: e.message,
+      life: 3000,
+    });
   }
 };
 
@@ -884,9 +1293,144 @@ const toggleDarkMode = () => {
 
 onMounted(() => {
   fetchProfile();
-  // Sync picker with current store color
   if (themeStore.primaryColor) {
     pickerColor.value = themeStore.primaryColor.replace("#", "");
   }
+  if (isOwner.value) fetchContests();
 });
+
+// ── Contests ──────────────────────────────────────────────
+const contests = ref<any[]>([]);
+const isLoadingContests = ref(false);
+const contestDialogVisible = ref(false);
+const editingContest = ref<any>(null);
+const isSavingContest = ref(false);
+const contestImageInput = ref<HTMLInputElement | null>(null);
+const contestImagePreview = ref<string | null>(null);
+const contestImageFile = ref<File | null>(null);
+
+const contestForm = reactive({
+  name: "",
+  description: "",
+  start_date: null as Date | null,
+  end_date: null as Date | null,
+});
+
+const contestStatus = (c: any): "active" | "upcoming" | "ended" => {
+  const now = Date.now();
+  const start = new Date(c.start_date).getTime();
+  const end = new Date(c.end_date).getTime();
+  if (now < start) return "upcoming";
+  if (now > end) return "ended";
+  return "active";
+};
+
+const formatDate = (d: string) =>
+  new Date(d).toLocaleDateString("el-GR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+
+const fetchContests = async () => {
+  isLoadingContests.value = true;
+  const token = localStorage.getItem("token");
+  try {
+    const res = await fetch("/api/v1/contests", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.ok) contests.value = await res.json();
+  } finally {
+    isLoadingContests.value = false;
+  }
+};
+
+const openContestDialog = (c?: any) => {
+  editingContest.value = c || null;
+  contestImagePreview.value = c?.image_url || null;
+  contestImageFile.value = null;
+  Object.assign(contestForm, {
+    name: c?.name || "",
+    description: c?.description || "",
+    start_date: c ? new Date(c.start_date) : null,
+    end_date: c ? new Date(c.end_date) : null,
+  });
+  contestDialogVisible.value = true;
+};
+
+const onContestImageChange = (e: Event) => {
+  const file = (e.target as HTMLInputElement).files?.[0];
+  if (!file) return;
+  contestImageFile.value = file;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    contestImagePreview.value = ev.target?.result as string;
+  };
+  reader.readAsDataURL(file);
+};
+
+const saveContest = async () => {
+  if (!contestForm.name || !contestForm.start_date || !contestForm.end_date) {
+    toast.add({
+      severity: "warn",
+      summary: "Απαιτείται",
+      detail: "Συμπληρώστε όνομα και περίοδο.",
+      life: 3000,
+    });
+    return;
+  }
+  isSavingContest.value = true;
+  const token = localStorage.getItem("token");
+  const fd = new FormData();
+  fd.append("name", contestForm.name);
+  fd.append("description", contestForm.description || "");
+  fd.append("start_date", contestForm.start_date.toISOString());
+  fd.append("end_date", contestForm.end_date.toISOString());
+  if (contestImageFile.value) fd.append("image", contestImageFile.value);
+
+  try {
+    const url = editingContest.value
+      ? `/api/v1/contests/${editingContest.value.id}`
+      : "/api/v1/contests";
+    const method = editingContest.value ? "PUT" : "POST";
+    const res = await fetch(url, {
+      method,
+      headers: { Authorization: `Bearer ${token}` },
+      body: fd,
+    });
+    if (!res.ok) throw new Error((await res.json()).error || "Failed");
+    contestDialogVisible.value = false;
+    await fetchContests();
+    toast.add({ severity: "success", summary: "Αποθηκεύτηκε", life: 2000 });
+  } catch (e: any) {
+    toast.add({
+      severity: "error",
+      summary: "Σφάλμα",
+      detail: e.message,
+      life: 3000,
+    });
+  } finally {
+    isSavingContest.value = false;
+  }
+};
+
+const deleteContest = async (id: number) => {
+  const token = localStorage.getItem("token");
+  try {
+    const res = await fetch(`/api/v1/contests/${id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error((await res.json()).error || "Failed");
+    contests.value = contests.value.filter((c) => c.id !== id);
+    toast.add({ severity: "success", summary: "Διαγράφηκε", life: 2000 });
+  } catch (e: any) {
+    toast.add({
+      severity: "error",
+      summary: "Σφάλμα",
+      detail: e.message,
+      life: 3000,
+    });
+  }
+};
 </script>
