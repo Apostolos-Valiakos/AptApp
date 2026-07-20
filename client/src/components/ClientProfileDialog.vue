@@ -61,7 +61,7 @@
 
       <div class="flex gap-6 border-b border-gray-200 mb-6 overflow-x-auto">
         <button
-          v-for="tab in ['Info', 'Ασκησιολόγιο', 'Αξιολογητικά', 'History']"
+          v-for="tab in ['Info', 'Αρχεία', 'History']"
           :key="tab"
           @click="activeTab = tab"
           class="pb-2 px-1 text-sm font-medium transition-colors border-b-2 whitespace-nowrap"
@@ -132,96 +132,6 @@
             </label>
             <Textarea v-model="editForm.notes" rows="3" class="w-full" />
           </div>
-          <div v-if="shopSettings" class="mb-4">
-            <span class="block text-xs font-bold text-gray-500 uppercase mb-3">
-              Ενεργές Υπηρεσίες
-            </span>
-            <div class="grid grid-cols-3 gap-3">
-              <div
-                v-if="shopSettings.ergotherapia"
-                role="checkbox"
-                :aria-checked="editForm.ergotherapia"
-                aria-label="Εργοθεραπεία"
-                tabindex="0"
-                @click="editForm.ergotherapia = !editForm.ergotherapia"
-                @keydown.enter.prevent="editForm.ergotherapia = !editForm.ergotherapia"
-                @keydown.space.prevent="editForm.ergotherapia = !editForm.ergotherapia"
-                :class="[
-                  'flex flex-col items-center p-3 rounded-xl border-2 cursor-pointer transition-all text-center',
-                  editForm.ergotherapia
-                    ? 'border-[var(--p-primary-500)] bg-[var(--p-primary-50)] text-[var(--p-primary-700)]'
-                    : 'border-gray-300 bg-white text-gray-500 opacity-60',
-                ]"
-              >
-                <i class="pi pi-briefcase mb-1"></i>
-                <span
-                  class="text-[10px] font-bold uppercase tracking-tight leading-none"
-                >
-                  Εργο
-                </span>
-              </div>
-
-              <div
-                v-if="shopSettings.physiotherapia"
-                role="checkbox"
-                :aria-checked="editForm.physiotherapia"
-                aria-label="Φυσιοθεραπεία"
-                tabindex="0"
-                @click="editForm.physiotherapia = !editForm.physiotherapia"
-                @keydown.enter.prevent="editForm.physiotherapia = !editForm.physiotherapia"
-                @keydown.space.prevent="editForm.physiotherapia = !editForm.physiotherapia"
-                :class="[
-                  'flex flex-col items-center p-3 rounded-xl border-2 cursor-pointer transition-all text-center',
-                  editForm.physiotherapia
-                    ? 'border-[var(--p-primary-500)] bg-[var(--p-primary-50)] text-[var(--p-primary-700)]'
-                    : 'border-gray-300 bg-white text-gray-500 opacity-60',
-                ]"
-              >
-                <i class="pi pi-heart mb-1"></i>
-                <span
-                  class="text-[10px] font-bold uppercase tracking-tight leading-none"
-                >
-                  Φυσιο
-                </span>
-              </div>
-
-              <div
-                v-if="shopSettings.logotherapia"
-                role="checkbox"
-                :aria-checked="editForm.logotherapia"
-                aria-label="Λογοθεραπεία"
-                tabindex="0"
-                @click="editForm.logotherapia = !editForm.logotherapia"
-                @keydown.enter.prevent="editForm.logotherapia = !editForm.logotherapia"
-                @keydown.space.prevent="editForm.logotherapia = !editForm.logotherapia"
-                :class="[
-                  'flex flex-col items-center p-3 rounded-xl border-2 cursor-pointer transition-all text-center',
-                  editForm.logotherapia
-                    ? 'border-[var(--p-primary-500)] bg-[var(--p-primary-50)] text-[var(--p-primary-700)]'
-                    : 'border-gray-300 bg-white text-gray-500 opacity-60',
-                ]"
-              >
-                <i class="pi pi-comments mb-1"></i>
-                <span
-                  class="text-[10px] font-bold uppercase tracking-tight leading-none"
-                >
-                  Λογο
-                </span>
-              </div>
-            </div>
-
-            <div
-              v-if="
-                !shopSettings.ergotherapia &&
-                !shopSettings.physiotherapia &&
-                !shopSettings.logotherapia
-              "
-              class="text-xs italic text-gray-400"
-            >
-              Δεν έχουν οριστεί διαθέσιμες υπηρεσίες στις ρυθμίσεις του
-              καταστήματος.
-            </div>
-          </div>
           <div class="bg-gray-50 p-4 rounded-lg border border-gray-100">
             <div class="flex justify-between items-center mb-2">
               <span class="text-xs font-bold text-gray-500 uppercase"
@@ -282,38 +192,13 @@
 
         <div v-if="activeTab === 'History'" class="space-y-4">
           <div
-            class="bg-white p-4 rounded-lg border border-gray-100 shadow-sm mb-2"
-          >
-            <div class="flex justify-between items-end mb-2">
-              <div>
-                <div
-                  class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1"
-                >
-                  Attendance Rate
-                </div>
-                <div class="text-xs text-gray-400">
-                  Past & current day appointments
-                </div>
-              </div>
-              <div class="text-xl font-bold text-indigo-600">
-                {{ attendanceRate }}%
-              </div>
-            </div>
-            <ProgressBar
-              :value="attendanceRate"
-              :showValue="false"
-              style="height: 8px"
-            />
-          </div>
-
-          <div
-            v-if="history.length === 0"
+            v-if="visibleHistory.length === 0"
             class="text-center text-gray-400 py-8"
           >
             No appointment history found.
           </div>
           <div
-            v-for="appt in history"
+            v-for="appt in visibleHistory"
             :key="appt.id"
             class="flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 border border-gray-100 rounded-lg bg-gray-50 gap-2"
           >
@@ -340,7 +225,7 @@
               >
                 {{ appt.status }}
               </span>
-              <span class="font-bold" v-if="isOwner">
+              <span class="font-bold">
                 €{{
                   (
                     Number(appt.total_service_price || 0) +
@@ -351,10 +236,7 @@
             </div>
           </div>
         </div>
-        <div v-if="activeTab === 'Ασκησιολόγιο'" class="space-y-4">
-          <Exercises :clientId="clientId" />
-        </div>
-        <div v-if="activeTab === 'Αξιολογητικά'" class="space-y-4">
+        <div v-if="activeTab === 'Αρχεία'" class="space-y-4">
           <div
             class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:bg-gray-50 transition-colors cursor-pointer"
             @click="$refs.fileInput.click()"
@@ -476,6 +358,14 @@ const initials = computed(() => {
   return `${f}${l}`.toUpperCase();
 });
 
+const visibleHistory = computed(() => {
+  return history.value.filter((a) => {
+    if (settingsStore.hideCashPaid && a.payment_status === "paid" && a.payment_method === "cash") return false;
+    if (settingsStore.hideCardPaid && a.payment_status === "paid" && a.payment_method === "card") return false;
+    return true;
+  });
+});
+
 const attendanceRate = computed(() => {
   if (!history.value || history.value.length === 0) return 0;
 
@@ -594,7 +484,12 @@ const handleFileUpload = async (event: any) => {
     if (res.ok) {
       await fetchClientData();
     } else {
-      toast.add({ severity: "error", summary: "Upload Failed", detail: "File upload failed. Ensure it is under 5MB.", life: 4000 });
+      toast.add({
+        severity: "error",
+        summary: "Upload Failed",
+        detail: "File upload failed. Ensure it is under 5MB.",
+        life: 4000,
+      });
     }
   } finally {
     uploading.value = false;
@@ -673,7 +568,12 @@ const viewFile = async (file: any) => {
       window.URL.revokeObjectURL(blobUrl);
     }, 100);
   } catch (err) {
-    toast.add({ severity: "error", summary: "Preview Failed", detail: "Could not open file preview.", life: 3000 });
+    toast.add({
+      severity: "error",
+      summary: "Preview Failed",
+      detail: "Could not open file preview.",
+      life: 3000,
+    });
   } finally {
     viewingFileId.value = null;
   }

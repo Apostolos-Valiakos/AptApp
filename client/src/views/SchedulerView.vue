@@ -111,6 +111,16 @@
           >
             <i class="pi pi-sort-alt text-sm"></i>
           </button>
+          <button
+            @click="toggleFitStaff"
+            :class="fitStaff
+              ? 'bg-[var(--p-primary-50)] border-[var(--p-primary-200)] text-[var(--p-primary-600)]'
+              : 'border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-800'"
+            class="p-2 rounded-lg border transition-colors flex-shrink-0"
+            :title="fitStaff ? 'Scroll mode' : 'Fit all staff in view'"
+          >
+            <i :class="fitStaff ? 'pi pi-arrows-h' : 'pi pi-expand'" class="text-sm"></i>
+          </button>
         </div>
       </div>
     </div>
@@ -220,6 +230,20 @@ const currentView = ref("resourceTimeGridDay");
 const currentStart = ref("");
 const currentEnd = ref("");
 const isFetching = ref(false);
+
+// --- Fit staff toggle ---
+const fitStaff = ref(localStorage.getItem("fitStaff") === "true");
+
+const toggleFitStaff = () => {
+  fitStaff.value = !fitStaff.value;
+  localStorage.setItem("fitStaff", String(fitStaff.value));
+  const api = fullCalendar.value?.getApi();
+  if (api) {
+    api.setOption("dayMinWidth", fitStaff.value ? 0 : getDayMinWidth());
+  }
+};
+// Ctrl+1 "hide cash/gift-card revenue" is handled globally in Layout.vue;
+// this view just reads the shared state.
 
 // --- Status filter ---
 const statusFilter = ref<"all" | "active" | "cancelled">("all");
@@ -343,6 +367,8 @@ const calendarEvents = computed(() => {
     const status = appt.status || "new";
     if (statusFilter.value === "active" && (status === "cancelled" || status === "no_show")) return;
     if (statusFilter.value === "cancelled" && status !== "cancelled" && status !== "no_show") return;
+    if (settings.hideCashPaid && appt.payment_status === "paid" && appt.payment_method === "cash") return;
+    if (settings.hideCardPaid && appt.payment_status === "paid" && appt.payment_method === "card") return;
 
     appt.services.forEach((svc: any, index: number) => {
       const bgColor = getCategoryColor(svc.service_name || "General");
@@ -433,7 +459,7 @@ const calendarOptions = ref({
   slotMaxTime: "23:00:00",
   height: "100%",
   expandRows: true,
-  dayMinWidth: getDayMinWidth(),
+  dayMinWidth: localStorage.getItem("fitStaff") === "true" ? 0 : getDayMinWidth(),
   stickyHeaderDates: true,
   nowIndicator: true,
   weekends: true,
@@ -485,6 +511,7 @@ const calendarOptions = ref({
     const status = props.fullAppointment?.status;
 
     const isCancelled = status === "cancelled" || status === "no_show";
+    const isCashPaid = props.fullAppointment?.payment_status === "paid" && props.fullAppointment?.payment_method === "cash";
     const isConfirmed = status === "confirmed";
     const isCompleted = status === "completed";
     const isMonthView = arg.view.type === "dayGridMonth";
@@ -496,8 +523,17 @@ const calendarOptions = ref({
     const paddingClass = isShort && !isMonthView ? "p-0.5 pl-1" : "p-2";
     const titleClass = isShort && !isMonthView ? "text-[9px] md:text-[10px] leading-tight" : "text-[10px] md:text-xs leading-tight";
 
-    const textClass = isCancelled ? "line-through opacity-60 text-gray-500" : "text-gray-900";
-    const serviceClass = isCancelled ? "opacity-40 text-gray-500" : "opacity-80";
+    const textClass = isCancelled
+      ? "line-through opacity-60 text-gray-500"
+      : isCashPaid
+      ? "line-through text-orange-700"
+      : "text-gray-900";
+    const serviceClass = isCancelled
+      ? "opacity-40 text-gray-500"
+      : isCashPaid
+      ? "opacity-70 text-orange-600"
+      : "opacity-80";
+    const timeClass = isCancelled ? "text-red-400" : isCashPaid ? "text-orange-500" : "";
 
     const statusBadge = isConfirmed
       ? `<span class="absolute top-1 right-1 text-violet-700"><i class="pi pi-check text-[9px]"></i></span>`
@@ -509,7 +545,7 @@ const calendarOptions = ref({
       html: `
       <div class="relative w-full ${paddingClass} flex flex-col leading-tight overflow-hidden rounded-md hover:brightness-95 transition-all ${isMonthView ? "" : "h-full"}">
         ${statusBadge}
-        ${!isShort && !isMonthView ? `<div class="text-[9px] md:text-[11px] font-bold opacity-60 mb-0.5 ${isCancelled ? "text-red-400" : ""}">${timeText}</div>` : ""}
+        ${!isShort && !isMonthView ? `<div class="text-[9px] md:text-[11px] font-bold opacity-60 mb-0.5 ${timeClass}">${timeText}</div>` : ""}
         <div class="font-bold ${titleClass} pr-4 break-words whitespace-normal ${textClass}">${props.client_name}</div>
         ${!isShort || isMonthView ? `<div class="text-[9px] md:text-[11px] font-medium mt-0.5 break-words whitespace-normal ${serviceClass}">${props.service_name}</div>` : ""}
       </div>

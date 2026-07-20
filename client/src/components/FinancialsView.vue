@@ -2,13 +2,17 @@
   <div class="p-6 max-w-7xl mx-auto">
     <!-- Page Header -->
     <div class="mb-8">
-      <h1 class="text-2xl font-bold text-gray-900">{{ t('analytics.title') }}</h1>
-      <p class="text-gray-500 mt-1 text-sm">{{ t('analytics.subtitle') }}</p>
+      <h1 class="text-2xl font-bold text-gray-900">
+        {{ t("analytics.title") }}
+      </h1>
+      <p class="text-gray-500 mt-1 text-sm">{{ t("analytics.subtitle") }}</p>
     </div>
 
     <!-- Filter Bar -->
     <div class="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm mb-6">
-      <h2 class="text-sm font-bold text-gray-700 mb-3">{{ t('analytics.filter.title') }}</h2>
+      <h2 class="text-sm font-bold text-gray-700 mb-3">
+        {{ t("analytics.filter.title") }}
+      </h2>
       <div class="flex flex-col lg:flex-row gap-4 lg:items-end">
         <div class="flex-grow w-full">
           <div class="flex flex-col sm:flex-row gap-3">
@@ -60,64 +64,108 @@
     <!-- KPI Cards Row 1 — 4 uniform cards -->
     <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
       <!-- Total Sales -->
-      <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 border-l-4 border-l-indigo-500">
+      <div
+        class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 border-l-4 border-l-indigo-500"
+      >
         <div class="flex items-center justify-between mb-3">
-          <span class="text-sm font-medium text-gray-500">{{ t('analytics.kpi.totalSales') }}</span>
-          <div class="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center">
+          <span class="text-sm font-medium text-gray-500">{{
+            t("analytics.kpi.totalSales")
+          }}</span>
+          <div
+            class="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center"
+          >
             <i class="pi pi-chart-line text-indigo-600"></i>
           </div>
         </div>
         <Skeleton v-if="loading" height="2.25rem" width="60%" />
-        <div v-else class="text-3xl font-bold text-gray-900">€{{ formatCurrency(finances.total_sales) }}</div>
+        <div v-else class="text-3xl font-bold text-gray-900">
+          €{{ formatCurrency(finances.total_sales) }}
+        </div>
         <p class="text-xs text-gray-400 mt-2">
-          {{ t('analytics.kpi.totalSalesNote') }} ({{ formatDate(filters.from) }} – {{ formatDate(filters.to) }})
+          {{ t("analytics.kpi.totalSalesNote") }} ({{
+            formatDate(filters.from)
+          }}
+          – {{ formatDate(filters.to) }})
         </p>
         <p class="text-[10px] text-gray-400 mt-1 leading-tight">
-          * {{ t('analytics.serviceNote') }}
+          * {{ t("analytics.serviceNote") }}
         </p>
       </div>
 
       <!-- Collected Today -->
-      <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 border-l-4 border-l-green-500">
+      <div
+        class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 border-l-4 border-l-green-500"
+      >
         <div class="flex items-center justify-between mb-3">
-          <span class="text-sm font-medium text-gray-500">{{ t('analytics.kpi.collectedToday') }}</span>
-          <div class="w-10 h-10 rounded-xl bg-green-50 flex items-center justify-center">
+          <span class="text-sm font-medium text-gray-500">{{
+            t("analytics.kpi.collectedToday")
+          }}</span>
+          <div
+            class="w-10 h-10 rounded-xl bg-green-50 flex items-center justify-center"
+          >
             <i class="pi pi-wallet text-green-600"></i>
           </div>
         </div>
         <Skeleton v-if="loading" height="2.25rem" width="60%" />
-        <div v-else class="text-3xl font-bold text-gray-900">€{{ formatCurrency(finances.collected_today) }}</div>
-        <p class="text-xs text-gray-400 mt-2">{{ t('analytics.kpi.collectedTodayNote') }}</p>
+        <div v-else class="text-3xl font-bold text-gray-900">
+          €{{ formatCurrency(finances.collected_today) }}
+        </div>
+        <p class="text-xs text-gray-400 mt-2">
+          {{ t("analytics.kpi.collectedTodayNote") }}
+        </p>
         <p class="text-[10px] text-gray-400 mt-1 leading-tight">
-          * {{ t('analytics.kpi.collectedTodayNote') }}
+          * {{ t("analytics.kpi.collectedTodayNote") }}
         </p>
       </div>
 
       <!-- Total Business Debt -->
-      <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 border-l-4 border-l-red-400">
+      <div
+        class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 border-l-4 border-l-red-400"
+      >
         <div class="flex items-center justify-between mb-3">
-          <span class="text-sm font-medium text-gray-500">{{ t('analytics.kpi.totalDebt') }}</span>
-          <div class="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center">
+          <span class="text-sm font-medium text-gray-500">{{
+            t("analytics.kpi.totalDebt")
+          }}</span>
+          <div
+            class="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center"
+          >
             <i class="pi pi-exclamation-circle text-red-500"></i>
           </div>
         </div>
         <Skeleton v-if="loading" height="2.25rem" width="60%" />
-        <div v-else class="text-3xl font-bold text-gray-900">€{{ formatCurrency(finances.total_debt) }}</div>
-        <p class="text-xs text-gray-400 mt-2">{{ t('analytics.kpi.totalDebtNote') }}</p>
+        <div v-else class="text-3xl font-bold text-gray-900">
+          €{{ formatCurrency(finances.total_debt) }}
+        </div>
+        <p class="text-xs text-gray-400 mt-2">
+          {{ t("analytics.kpi.totalDebtNote") }}
+        </p>
       </div>
 
       <!-- Client Retention -->
-      <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 border-l-4 border-l-blue-500">
+      <div
+        class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 border-l-4 border-l-blue-500"
+      >
         <div class="flex items-center justify-between mb-3">
-          <span class="text-sm font-medium text-gray-500">{{ t('analytics.kpi.retention') }}</span>
-          <div class="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
+          <span class="text-sm font-medium text-gray-500">{{
+            t("analytics.kpi.retention")
+          }}</span>
+          <div
+            class="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center"
+          >
             <i class="pi pi-users text-blue-600"></i>
           </div>
         </div>
         <Skeleton v-if="loading" height="2.25rem" width="40%" />
-        <div v-else class="text-3xl font-bold text-gray-900">{{ analytics.retention_rate }}%</div>
+        <div v-else class="text-3xl font-bold text-gray-900">
+          {{ analytics.retention_rate }}%
+        </div>
         <p class="text-xs text-gray-400 mt-2">
-          {{ t('analytics.kpi.retentionReturning', { returning: analytics.returning_clients, new: analytics.new_clients }) }}
+          {{
+            t("analytics.kpi.retentionReturning", {
+              returning: analytics.returning_clients,
+              new: analytics.new_clients,
+            })
+          }}
         </p>
       </div>
     </div>
@@ -128,12 +176,22 @@
       <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
         <div class="flex items-center justify-between">
           <div>
-            <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide mb-1">{{ t('analytics.kpi.cancellationRate') }}</h4>
+            <h4
+              class="text-xs font-bold text-gray-400 uppercase tracking-wide mb-1"
+            >
+              {{ t("analytics.kpi.cancellationRate") }}
+            </h4>
             <Skeleton v-if="loading" height="1.75rem" width="4rem" />
-            <div v-else class="text-2xl font-bold text-gray-800">{{ analytics.cancellation_rate }}%</div>
-            <div class="text-xs text-gray-400 mt-1">{{ t('analytics.kpi.cancellationNote') }}</div>
+            <div v-else class="text-2xl font-bold text-gray-800">
+              {{ analytics.cancellation_rate }}%
+            </div>
+            <div class="text-xs text-gray-400 mt-1">
+              {{ t("analytics.kpi.cancellationNote") }}
+            </div>
           </div>
-          <div class="w-12 h-12 rounded-full flex items-center justify-center bg-gray-100 text-gray-500">
+          <div
+            class="w-12 h-12 rounded-full flex items-center justify-center bg-gray-100 text-gray-500"
+          >
             <i class="pi pi-ban text-xl"></i>
           </div>
         </div>
@@ -143,12 +201,22 @@
       <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
         <div class="flex items-center justify-between">
           <div>
-            <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide mb-1">{{ t('analytics.kpi.periodPayments') }}</h4>
+            <h4
+              class="text-xs font-bold text-gray-400 uppercase tracking-wide mb-1"
+            >
+              {{ t("analytics.kpi.periodPayments") }}
+            </h4>
             <Skeleton v-if="loading" height="1.75rem" width="6rem" />
-            <div v-else class="text-2xl font-bold text-gray-800">€{{ formatCurrency(finances.total_payments) }}</div>
-            <div class="text-xs text-gray-400 mt-1">{{ t('analytics.kpi.periodPaymentsNote') }}</div>
+            <div v-else class="text-2xl font-bold text-gray-800">
+              €{{ formatCurrency(finances.total_payments) }}
+            </div>
+            <div class="text-xs text-gray-400 mt-1">
+              {{ t("analytics.kpi.periodPaymentsNote") }}
+            </div>
           </div>
-          <div class="w-12 h-12 rounded-full flex items-center justify-center bg-green-50 text-green-600">
+          <div
+            class="w-12 h-12 rounded-full flex items-center justify-center bg-green-50 text-green-600"
+          >
             <i class="pi pi-wallet text-xl"></i>
           </div>
         </div>
@@ -161,8 +229,12 @@
       <TabPanel :header="t('analytics.tabs.demographics')">
         <div class="p-6 max-w-7xl mx-auto">
           <div class="grid grid-cols-1 gap-6 mb-8">
-            <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-              <h2 class="text-xl font-bold mb-6 text-gray-800">{{ t('analytics.demographics.title') }}</h2>
+            <div
+              class="bg-white p-6 rounded-xl shadow-sm border border-gray-100"
+            >
+              <h2 class="text-xl font-bold mb-6 text-gray-800">
+                {{ t("analytics.demographics.title") }}
+              </h2>
               <ClientDemographics
                 :clients="clientsReport"
                 @view-group="openAgeGroupDialog"
@@ -172,7 +244,11 @@
 
           <Dialog
             v-model:visible="displayGroupDialog"
-            :header="t('analytics.demographics.clientsLabel', { name: selectedGroupName })"
+            :header="
+              t('analytics.demographics.clientsLabel', {
+                name: selectedGroupName,
+              })
+            "
             modal
             :style="{ width: '50vw' }"
             :breakpoints="{ '960px': '90vw' }"
@@ -188,17 +264,35 @@
               <Column :header="t('analytics.demographics.clientCol')">
                 <template #body="slotProps">
                   <div class="flex flex-col">
-                    <span class="font-bold">{{ slotProps.data.first_name }} {{ slotProps.data.last_name }}</span>
-                    <span class="text-xs text-gray-500">{{ slotProps.data.email }}</span>
+                    <span class="font-bold"
+                      >{{ slotProps.data.first_name }}
+                      {{ slotProps.data.last_name }}</span
+                    >
+                    <span class="text-xs text-gray-500">{{
+                      slotProps.data.email
+                    }}</span>
                   </div>
                 </template>
               </Column>
               <Column field="phone" header="Τηλέφωνο"></Column>
-              <Column field="appointment_count" :header="t('analytics.demographics.apptsCol')" sortable class="text-center"></Column>
+              <Column
+                field="appointment_count"
+                :header="t('analytics.demographics.apptsCol')"
+                sortable
+                class="text-center"
+              ></Column>
               <Column :header="t('analytics.demographics.balanceCol')">
                 <template #body="slotProps">
-                  <span :class="Number(slotProps.data.outstanding_balance || 0) > 0 ? 'text-red-600 font-bold' : ''">
-                    €{{ formatCurrency(slotProps.data.outstanding_balance || 0) }}
+                  <span
+                    :class="
+                      Number(slotProps.data.outstanding_balance || 0) > 0
+                        ? 'text-red-600 font-bold'
+                        : ''
+                    "
+                  >
+                    €{{
+                      formatCurrency(slotProps.data.outstanding_balance || 0)
+                    }}
                   </span>
                 </template>
               </Column>
@@ -208,11 +302,13 @@
                     <span
                       v-if="slotProps.data.ergotherapia"
                       class="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold"
-                    >ΕΡΓΟ</span>
+                      >ΕΡΓΟ</span
+                    >
                     <span
                       v-if="slotProps.data.physiotherapia"
                       class="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-[10px] font-bold"
-                    >ΦΥΣΙΟ</span>
+                      >ΦΥΣΙΟ</span
+                    >
                   </div>
                 </template>
               </Column>
@@ -231,32 +327,65 @@
           class="p-datatable-sm"
           stripedRows
         >
-          <Column field="service_name" :header="t('analytics.tables.serviceName')"></Column>
-          <Column field="service_count" :header="t('analytics.tables.quantity')" sortable class="text-center">
+          <Column
+            field="service_name"
+            :header="t('analytics.tables.serviceName')"
+          ></Column>
+          <Column
+            field="service_count"
+            :header="t('analytics.tables.quantity')"
+            sortable
+            class="text-center"
+          >
             <template #body="slotProps">
-              <span class="font-medium">{{ slotProps.data.service_count }} {{ t('analytics.demographics.apptsCol') }}</span>
+              <span class="font-medium"
+                >{{ slotProps.data.service_count }}
+                {{ t("analytics.demographics.apptsCol") }}</span
+              >
             </template>
           </Column>
-          <Column field="total_paid" :header="t('analytics.tables.moneyPaid')" sortable>
+          <Column
+            field="total_paid"
+            :header="t('analytics.tables.moneyPaid')"
+            sortable
+          >
             <template #body="slotProps">
-              <span class="text-green-700 font-bold">€{{ formatCurrency(slotProps.data.total_paid) }}</span>
+              <span class="text-green-700 font-bold"
+                >€{{ formatCurrency(slotProps.data.total_paid) }}</span
+              >
             </template>
           </Column>
-          <Column field="total_owed" :header="t('analytics.tables.moneyOwed')" sortable>
+          <Column
+            field="total_owed"
+            :header="t('analytics.tables.moneyOwed')"
+            sortable
+          >
             <template #body="slotProps">
-              <span :class="Number(slotProps.data.total_owed) > 0 ? 'text-red-600 font-bold' : 'text-gray-400'">
+              <span
+                :class="
+                  Number(slotProps.data.total_owed) > 0
+                    ? 'text-red-600 font-bold'
+                    : 'text-gray-400'
+                "
+              >
                 €{{ formatCurrency(slotProps.data.total_owed) }}
               </span>
             </template>
           </Column>
-          <Column field="total_value" :header="t('analytics.tables.totalValue')" sortable>
+          <Column
+            field="total_value"
+            :header="t('analytics.tables.totalValue')"
+            sortable
+          >
             <template #body="slotProps">
-              <span class="text-gray-600 italic">€{{ formatCurrency(slotProps.data.total_value) }}</span>
+              <span class="text-gray-600 italic"
+                >€{{ formatCurrency(slotProps.data.total_value) }}</span
+              >
             </template>
           </Column>
         </DataTable>
         <p class="text-[10px] text-gray-500 mt-2 italic">
-          * {{ t('analytics.serviceNote') }}
+          * {{ t("analytics.serviceNote") }}
         </p>
       </TabPanel>
 
@@ -281,11 +410,165 @@
           :rows="10"
           class="p-datatable-sm"
         >
-          <Column field="service_name" :header="t('analytics.tables.service')"></Column>
-          <Column field="count" :header="t('analytics.tables.qty')" sortable></Column>
-          <Column field="total_revenue" :header="t('analytics.tables.revenue')" sortable>
+          <Column
+            field="service_name"
+            :header="t('analytics.tables.service')"
+          ></Column>
+          <Column
+            field="count"
+            :header="t('analytics.tables.qty')"
+            sortable
+          ></Column>
+          <Column
+            field="total_revenue"
+            :header="t('analytics.tables.revenue')"
+            sortable
+          >
             <template #body="slotProps">
               €{{ formatCurrency(slotProps.data.total_revenue) }}
+            </template>
+          </Column>
+        </DataTable>
+      </TabPanel>
+
+      <!-- Tab: Products -->
+      <TabPanel :header="t('analytics.tabs.products')">
+        <!-- Summary cards -->
+        <div class="grid grid-cols-2 gap-4 mb-6">
+          <div class="bg-white rounded-xl border border-gray-100 p-5">
+            <div
+              class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1"
+            >
+              {{ t("analytics.products.totalRevenue") }}
+            </div>
+            <div class="text-2xl font-black text-gray-900">
+              €{{ formatCurrency(productsSummary.total_revenue) }}
+            </div>
+          </div>
+          <div class="bg-white rounded-xl border border-gray-100 p-5">
+            <div
+              class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1"
+            >
+              {{ t("analytics.products.unitsSold") }}
+            </div>
+            <div class="text-2xl font-black text-gray-900">
+              {{ productsSummary.total_units }}
+            </div>
+          </div>
+        </div>
+
+        <DataTable
+          :value="productsReport"
+          responsiveLayout="scroll"
+          :paginator="true"
+          :rows="10"
+          class="p-datatable-sm"
+        >
+          <template #empty>
+            <div class="text-center text-gray-400 py-8">
+              {{ t("analytics.products.empty") }}
+            </div>
+          </template>
+          <Column
+            field="product_name"
+            :header="t('analytics.products.product')"
+            sortable
+          ></Column>
+          <Column
+            field="variation_name"
+            :header="t('analytics.products.variation')"
+          ></Column>
+          <Column
+            field="units_sold"
+            :header="t('analytics.products.unitsSold')"
+            sortable
+          ></Column>
+          <Column
+            field="total_revenue"
+            :header="t('analytics.tables.revenue')"
+            sortable
+          >
+            <template #body="slotProps">
+              €{{ formatCurrency(slotProps.data.total_revenue) }}
+            </template>
+          </Column>
+          <Column
+            field="current_stock"
+            :header="t('analytics.products.currentStock')"
+            sortable
+          >
+            <template #body="slotProps">
+              <Tag
+                :value="slotProps.data.current_stock ?? '—'"
+                :severity="
+                  slotProps.data.current_stock === 0
+                    ? 'danger'
+                    : slotProps.data.current_stock < 5
+                      ? 'warn'
+                      : 'success'
+                "
+              />
+            </template>
+          </Column>
+        </DataTable>
+      </TabPanel>
+
+      <!-- Tab: Gift Cards -->
+      <TabPanel :header="t('analytics.tabs.giftCards')">
+        <div class="grid grid-cols-3 gap-4 mb-6">
+          <div class="bg-white rounded-xl border border-gray-100 p-5">
+            <div class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">
+              {{ t("analytics.giftCards.totalRevenue") }}
+            </div>
+            <div class="text-2xl font-black text-gray-900">
+              €{{ formatCurrency(giftCardsSummary.total_revenue) }}
+            </div>
+          </div>
+          <div class="bg-white rounded-xl border border-gray-100 p-5">
+            <div class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">
+              {{ t("analytics.giftCards.totalOutstanding") }}
+            </div>
+            <div class="text-2xl font-black text-gray-900">
+              €{{ formatCurrency(giftCardsSummary.total_outstanding) }}
+            </div>
+          </div>
+          <div class="bg-white rounded-xl border border-gray-100 p-5">
+            <div class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">
+              {{ t("analytics.giftCards.cardsSold") }}
+            </div>
+            <div class="text-2xl font-black text-gray-900">
+              {{ giftCardsSummary.total_cards }}
+            </div>
+          </div>
+        </div>
+
+        <DataTable
+          :value="giftCardsReport"
+          responsiveLayout="scroll"
+          :paginator="true"
+          :rows="10"
+          class="p-datatable-sm"
+        >
+          <template #empty>
+            <div class="text-center text-gray-400 py-8">
+              {{ t("analytics.giftCards.empty") }}
+            </div>
+          </template>
+          <Column field="card_number" :header="t('giftCards.table.cardNumber')" sortable></Column>
+          <Column field="customer_name" :header="t('giftCards.table.customer')" sortable></Column>
+          <Column field="initial_amount" :header="t('giftCards.table.initialAmount')" sortable>
+            <template #body="slotProps">
+              €{{ formatCurrency(slotProps.data.initial_amount) }}
+            </template>
+          </Column>
+          <Column field="remaining_balance" :header="t('giftCards.table.remainingBalance')" sortable>
+            <template #body="slotProps">
+              €{{ formatCurrency(slotProps.data.remaining_balance) }}
+            </template>
+          </Column>
+          <Column field="issued_at" :header="t('giftCards.table.issued')" sortable>
+            <template #body="slotProps">
+              {{ new Date(slotProps.data.issued_at).toLocaleDateString() }}
             </template>
           </Column>
         </DataTable>
@@ -294,8 +577,16 @@
       <!-- Tab: Staff Performance -->
       <TabPanel :header="t('analytics.tabs.staffPerformance')">
         <!-- Bar Chart -->
-        <div class="mb-6 bg-white rounded-xl border border-gray-100 p-4" style="height: 280px">
-          <Chart type="bar" :data="staffChartData" :options="chartOptions" style="height: 230px" />
+        <div
+          class="mb-6 bg-white rounded-xl border border-gray-100 p-4"
+          style="height: 280px"
+        >
+          <Chart
+            type="bar"
+            :data="staffChartData"
+            :options="chartOptions"
+            style="height: 230px"
+          />
         </div>
         <DataTable
           :value="analytics.staff_utilization"
@@ -304,14 +595,29 @@
           :rows="10"
           class="p-datatable-sm"
         >
-          <Column field="name" :header="t('analytics.tables.staffMember')"></Column>
-          <Column field="appt_count" :header="t('analytics.tables.appointments')" sortable></Column>
-          <Column field="hours_booked" :header="t('analytics.tables.hoursBooked')" sortable>
+          <Column
+            field="name"
+            :header="t('analytics.tables.staffMember')"
+          ></Column>
+          <Column
+            field="appt_count"
+            :header="t('analytics.tables.appointments')"
+            sortable
+          ></Column>
+          <Column
+            field="hours_booked"
+            :header="t('analytics.tables.hoursBooked')"
+            sortable
+          >
             <template #body="slotProps">
               {{ Number(slotProps.data.hours_booked).toFixed(1) }}h
             </template>
           </Column>
-          <Column field="total_revenue" :header="t('analytics.tables.revenueGenerated')" sortable>
+          <Column
+            field="total_revenue"
+            :header="t('analytics.tables.revenueGenerated')"
+            sortable
+          >
             <template #body="slotProps">
               €{{ formatCurrency(slotProps.data.total_revenue || 0) }}
             </template>
@@ -322,9 +628,19 @@
       <!-- Tab: Payments Log -->
       <TabPanel :header="t('analytics.tabs.paymentsLog')">
         <!-- Revenue Over Time Chart -->
-        <div class="mb-6 bg-white rounded-xl border border-gray-100 p-4" style="height: 280px">
-          <h4 class="text-sm font-bold text-gray-600 mb-3">{{ t('analytics.charts.revenueOverTime') }}</h4>
-          <Chart type="line" :data="revenueChartData" :options="chartOptions" style="height: 220px" />
+        <div
+          class="mb-6 bg-white rounded-xl border border-gray-100 p-4"
+          style="height: 280px"
+        >
+          <h4 class="text-sm font-bold text-gray-600 mb-3">
+            {{ t("analytics.charts.revenueOverTime") }}
+          </h4>
+          <Chart
+            type="line"
+            :data="revenueChartData"
+            :options="chartOptions"
+            style="height: 220px"
+          />
         </div>
 
         <!-- CSV Export -->
@@ -347,29 +663,66 @@
           sortField="created_at"
           :sortOrder="-1"
         >
-          <Column field="created_at" :header="t('analytics.tables.date')" sortable>
+          <Column
+            field="created_at"
+            :header="t('analytics.tables.date')"
+            sortable
+          >
             <template #body="slotProps">
-              {{ new Date(slotProps.data.created_at).toLocaleDateString('el-GR') }}
+              {{
+                new Date(slotProps.data.created_at).toLocaleDateString("el-GR")
+              }}
               <span class="text-gray-400 text-xs">
-                {{ new Date(slotProps.data.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
+                {{
+                  new Date(slotProps.data.created_at).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })
+                }}
               </span>
             </template>
           </Column>
           <Column :header="t('analytics.tables.client')">
             <template #body="slotProps">
-              <span class="font-medium">{{ slotProps.data.first_name }} {{ slotProps.data.last_name }}</span>
+              <span class="font-medium"
+                >{{ slotProps.data.first_name }}
+                {{ slotProps.data.last_name }}</span
+              >
             </template>
           </Column>
           <Column field="payment_method" :header="t('analytics.tables.method')">
             <template #body="slotProps">
-              <span :class="['px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase', getMethodBadge(slotProps.data.payment_method)]">
-                {{ t(`common.paymentMethod.${slotProps.data.payment_method}`, slotProps.data.payment_method) }}
+              <span
+                :class="[
+                  'px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase',
+                  getMethodBadge(slotProps.data.payment_method),
+                ]"
+              >
+                {{
+                  t(
+                    `common.paymentMethod.${slotProps.data.payment_method}`,
+                    slotProps.data.payment_method,
+                  )
+                }}
+              </span>
+              <span
+                v-if="slotProps.data.split_group_id"
+                class="ml-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-purple-100 text-purple-700"
+                v-tooltip.top="t('analytics.tables.splitPaymentTooltip')"
+              >
+                {{ t('analytics.tables.splitPayment') }}
               </span>
             </template>
           </Column>
-          <Column field="amount" :header="t('analytics.tables.amount')" sortable>
+          <Column
+            field="amount"
+            :header="t('analytics.tables.amount')"
+            sortable
+          >
             <template #body="slotProps">
-              <span class="font-bold text-green-700">+€{{ formatCurrency(slotProps.data.amount) }}</span>
+              <span class="font-bold text-green-700"
+                >+€{{ formatCurrency(slotProps.data.amount) }}</span
+              >
             </template>
           </Column>
         </DataTable>
@@ -379,16 +732,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from "vue";
+import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
 import TabView from "primevue/tabview";
 import TabPanel from "primevue/tabpanel";
 import Skeleton from "primevue/skeleton";
 import ClientDemographics from "./ClientDemographics.vue";
+import { useSettingsStore } from "../stores/settings";
 
 const { t } = useI18n();
 const toast = useToast();
+const settingsStore = useSettingsStore();
 const loading = ref(true);
 const serviceSummaryReport = ref([]);
 
@@ -419,6 +774,10 @@ const analytics = ref<any>({
 });
 
 const salesReport = ref<any[]>([]);
+const productsReport = ref<any[]>([]);
+const productsSummary = ref<any>({ total_revenue: 0, total_units: 0 });
+const giftCardsReport = ref<any[]>([]);
+const giftCardsSummary = ref<any>({ total_revenue: 0, total_outstanding: 0, total_cards: 0 });
 const staffReport = ref([]);
 const paymentsReport = ref<any[]>([]);
 const appointmentsReport = ref([]);
@@ -480,6 +839,13 @@ const fetchAllReports = async () => {
     params.append("to", toDate.toISOString());
   }
 
+  if (settingsStore.hideCashPaid) {
+    params.append("excludeCash", "true");
+  }
+  if (settingsStore.hideCardPaid) {
+    params.append("excludeCard", "true");
+  }
+
   const qs = params.toString() ? `?${params.toString()}` : "";
 
   try {
@@ -492,6 +858,8 @@ const fetchAllReports = async () => {
       anaRes,
       clientsRes,
       serviceSumRes,
+      productsRes,
+      giftCardsRes,
     ] = await Promise.all([
       fetch(`/api/v1/reports/finances${qs}`, { headers }),
       fetch(`/api/v1/reports/sales${qs}`, { headers }),
@@ -501,11 +869,19 @@ const fetchAllReports = async () => {
       fetch(`/api/v1/reports/analytics${qs}`, { headers }),
       fetch(`/api/v1/reports/clients`, { headers }),
       fetch(`/api/v1/reports/service-summary${qs}`, { headers }),
+      fetch(`/api/v1/reports/products${qs}`, { headers }),
+      fetch(`/api/v1/reports/gift-cards${qs}`, { headers }),
     ]);
 
     if (finRes.status === 401) throw new Error("unauthorized");
 
-    if (!finRes.ok || !salesRes.ok || !anaRes.ok || !payRes.ok || !clientsRes.ok) {
+    if (
+      !finRes.ok ||
+      !salesRes.ok ||
+      !anaRes.ok ||
+      !payRes.ok ||
+      !clientsRes.ok
+    ) {
       throw new Error("loadFailed");
     }
     if (!serviceSumRes.ok) throw new Error("loadFailed");
@@ -522,11 +898,29 @@ const fetchAllReports = async () => {
     appointmentsReport.value = await apptRes.json();
     clientsReport.value = await clientsRes.json();
     serviceSummaryReport.value = await serviceSumRes.json();
+    if (productsRes.ok) {
+      const productsData = await productsRes.json();
+      productsReport.value = productsData.details || [];
+      productsSummary.value = productsData.summary || {
+        total_revenue: 0,
+        total_units: 0,
+      };
+    }
+    if (giftCardsRes.ok) {
+      const giftCardsData = await giftCardsRes.json();
+      giftCardsReport.value = giftCardsData.details || [];
+      giftCardsSummary.value = giftCardsData.summary || {
+        total_revenue: 0,
+        total_outstanding: 0,
+        total_cards: 0,
+      };
+    }
   } catch (err: any) {
     console.error(err);
-    const toastKey = err.message === "unauthorized"
-      ? "analytics.toast.unauthorized"
-      : "analytics.toast.loadFailed";
+    const toastKey =
+      err.message === "unauthorized"
+        ? "analytics.toast.unauthorized"
+        : "analytics.toast.loadFailed";
     toast.add({
       severity: "error",
       summary: t(toastKey),
@@ -544,34 +938,48 @@ const fetchAllReports = async () => {
 const revenueChartData = computed(() => {
   const map: Record<string, number> = {};
   paymentsReport.value.forEach((p: any) => {
-    const dateKey = new Date(p.created_at).toLocaleDateString('el-GR', { day: '2-digit', month: '2-digit' });
+    const dateKey = new Date(p.created_at).toLocaleDateString("el-GR", {
+      day: "2-digit",
+      month: "2-digit",
+    });
     map[dateKey] = (map[dateKey] || 0) + Number(p.amount);
   });
   const sorted = Object.entries(map).sort();
   return {
     labels: sorted.map(([d]) => d),
-    datasets: [{
-      label: t('analytics.charts.revenueDataset'),
-      data: sorted.map(([, v]) => v),
-      fill: true,
-      tension: 0.4,
-      backgroundColor: 'rgba(99, 102, 241, 0.1)',
-      borderColor: 'var(--p-primary-color)',
-      pointBackgroundColor: 'var(--p-primary-color)',
-      pointRadius: 4,
-    }],
+    datasets: [
+      {
+        label: t("analytics.charts.revenueDataset"),
+        data: sorted.map(([, v]) => v),
+        fill: true,
+        tension: 0.4,
+        backgroundColor: "rgba(99, 102, 241, 0.1)",
+        borderColor: "var(--p-primary-color)",
+        pointBackgroundColor: "var(--p-primary-color)",
+        pointRadius: 4,
+      },
+    ],
   };
 });
 
 // Service breakdown pie: from salesReport
 const serviceChartData = computed(() => ({
   labels: salesReport.value.map((s: any) => s.service_name),
-  datasets: [{
-    data: salesReport.value.map((s: any) => Number(s.total_revenue)),
-    backgroundColor: [
-      '#ff93d4', '#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ef4444', '#14b8a6', '#f97316',
-    ],
-  }],
+  datasets: [
+    {
+      data: salesReport.value.map((s: any) => Number(s.total_revenue)),
+      backgroundColor: [
+        "#8B6F4E",
+        "#3b82f6",
+        "#10b981",
+        "#8b5cf6",
+        "#f59e0b",
+        "#ef4444",
+        "#14b8a6",
+        "#f97316",
+      ],
+    },
+  ],
 }));
 
 // Staff performance bar chart
@@ -579,15 +987,21 @@ const staffChartData = computed(() => ({
   labels: analytics.value.staff_utilization?.map((s: any) => s.name) || [],
   datasets: [
     {
-      label: t('analytics.tables.appointments'),
-      data: analytics.value.staff_utilization?.map((s: any) => Number(s.appt_count)) || [],
-      backgroundColor: 'var(--p-primary-color)',
+      label: t("analytics.tables.appointments"),
+      data:
+        analytics.value.staff_utilization?.map((s: any) =>
+          Number(s.appt_count),
+        ) || [],
+      backgroundColor: "var(--p-primary-color)",
       borderRadius: 6,
     },
     {
-      label: t('analytics.tables.revenueGenerated'),
-      data: analytics.value.staff_utilization?.map((s: any) => Number(s.total_revenue || 0)) || [],
-      backgroundColor: '#10b981',
+      label: t("analytics.tables.revenueGenerated"),
+      data:
+        analytics.value.staff_utilization?.map((s: any) =>
+          Number(s.total_revenue || 0),
+        ) || [],
+      backgroundColor: "#10b981",
       borderRadius: 6,
     },
   ],
@@ -597,10 +1011,10 @@ const chartOptions = computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
   plugins: {
-    legend: { display: true, position: 'bottom' as const },
+    legend: { display: true, position: "bottom" as const },
   },
   scales: {
-    y: { beginAtZero: true, grid: { color: '#f3f4f6' } },
+    y: { beginAtZero: true, grid: { color: "#f3f4f6" } },
     x: { grid: { display: false } },
   },
 }));
@@ -609,37 +1023,41 @@ const isNarrowViewport = ref(window.innerWidth < 640);
 const updateViewportWidth = () => {
   isNarrowViewport.value = window.innerWidth < 640;
 };
-onMounted(() => window.addEventListener('resize', updateViewportWidth));
-onUnmounted(() => window.removeEventListener('resize', updateViewportWidth));
+onMounted(() => window.addEventListener("resize", updateViewportWidth));
+onUnmounted(() => window.removeEventListener("resize", updateViewportWidth));
 
 const pieChartOptions = computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
   plugins: {
-    legend: { position: isNarrowViewport.value ? 'bottom' as const : 'right' as const },
+    legend: {
+      position: isNarrowViewport.value
+        ? ("bottom" as const)
+        : ("right" as const),
+    },
   },
 }));
 
 // CSV export for payments log
 const exportPaymentsCSV = () => {
   if (!paymentsReport.value.length) return;
-  const headers = ['Date', 'Time', 'Client', 'Method', 'Amount (EUR)'];
+  const headers = ["Date", "Time", "Client", "Method", "Amount (EUR)"];
   const rows = paymentsReport.value.map((p: any) => {
     const d = new Date(p.created_at);
     return [
-      d.toLocaleDateString('el-GR'),
-      d.toLocaleTimeString('el-GR', { hour: '2-digit', minute: '2-digit' }),
+      d.toLocaleDateString("el-GR"),
+      d.toLocaleTimeString("el-GR", { hour: "2-digit", minute: "2-digit" }),
       `${p.first_name} ${p.last_name}`,
       p.payment_method,
       Number(p.amount).toFixed(2),
     ];
   });
-  const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const csv = [headers, ...rows].map((r) => r.join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
+  const a = document.createElement("a");
   a.href = url;
-  a.download = `payments-export-${new Date().toISOString().split('T')[0]}.csv`;
+  a.download = `payments-export-${new Date().toISOString().split("T")[0]}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 };
@@ -647,13 +1065,15 @@ const exportPaymentsCSV = () => {
 // Payment method badge helper
 const getMethodBadge = (method: string) => {
   const map: Record<string, string> = {
-    cash: 'bg-green-100 text-green-700',
-    card: 'bg-blue-100 text-blue-700',
-    'bank-transfer': 'bg-purple-100 text-purple-700',
-    migration: 'bg-gray-100 text-gray-600',
+    cash: "bg-green-100 text-green-700",
+    card: "bg-blue-100 text-blue-700",
+    "bank-transfer": "bg-purple-100 text-purple-700",
+    migration: "bg-gray-100 text-gray-600",
   };
-  return map[method] || 'bg-gray-100 text-gray-600';
+  return map[method] || "bg-gray-100 text-gray-600";
 };
 
 onMounted(fetchAllReports);
+watch(() => settingsStore.hideCashPaid, fetchAllReports);
+watch(() => settingsStore.hideCardPaid, fetchAllReports);
 </script>
