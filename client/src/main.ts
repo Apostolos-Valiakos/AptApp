@@ -38,6 +38,7 @@ import Tooltip from "primevue/tooltip";
 import Button from "primevue/button";
 import Dialog from "primevue/dialog";
 import Select from "primevue/select";
+import AutoComplete from "primevue/autocomplete";
 import InputText from "primevue/inputtext";
 import InputNumber from "primevue/inputnumber";
 import DatePicker from "primevue/datepicker";
@@ -65,7 +66,7 @@ import { i18n } from "./i18n";
 
 const MyPreset = definePreset(Aura, {
   semantic: {
-    primary: palette("#ff93d4"),
+    primary: palette("#8B6F4E"),
   },
 });
 
@@ -103,6 +104,7 @@ const initApp = async () => {
   app.component("Button", Button);
   app.component("Dialog", Dialog);
   app.component("Dropdown", Select);
+  app.component("AutoComplete", AutoComplete);
   app.component("InputText", InputText);
   app.component("InputNumber", InputNumber);
   app.component("Chart", Chart);
