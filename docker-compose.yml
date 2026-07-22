@@ -43,7 +43,7 @@ services:
       PORT: 3000
       NODE_ENV: production
       MESSAGE_ENCRYPTION_KEY: ${MESSAGE_ENCRYPTION_KEY}
-      ALLOWED_ORIGIN: ${ALLOWED_ORIGIN} # Update to your domain in prod
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS} # Update to your domain in prod
       # Add any other env vars from your .env (e.g., API_URL if needed)
       EMAIL_HOST: ${EMAIL_HOST}
       EMAIL_PORT: ${EMAIL_PORT}

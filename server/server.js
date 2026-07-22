@@ -34,7 +34,8 @@ const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
   : [
       "http://localhost:5173", // Web dev
       "capacitor://localhost", // iOS Capacitor
-      "http://localhost", // Android Capacitor
+      "https://localhost", // Android Capacitor (default androidScheme is "https" in Capacitor 7)
+      "http://localhost", // Older/custom androidScheme builds
       "ionic://localhost", // Legacy iOS
     ];
 
