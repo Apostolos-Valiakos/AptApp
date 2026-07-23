@@ -148,7 +148,7 @@
                 @click.stop="openProfile(slotProps.data)"
               />
               <Button
-                v-if="isOwner"
+                v-if="isShopAdmin"
                 icon="pi pi-trash"
                 class="p-button-rounded p-button-text p-button-sm"
                 severity="danger"
@@ -377,7 +377,7 @@ import ClientProfileDialog from "../components/ClientProfileDialog.vue"; // Ensu
 
 const { t } = useI18n();
 const authStore = useAuthStore();
-const isOwner = authStore.isOwner;
+const isShopAdmin = authStore.isShopAdmin;
 const settingsStore = useSettingsStore();
 const { shopSettings } = storeToRefs(settingsStore);
 

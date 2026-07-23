@@ -74,7 +74,7 @@
                 />
 
                 <Button
-                  v-if="authStore.isOwner"
+                  v-if="authStore.isShopAdmin"
                   icon="pi pi-trash"
                   class="p-button-rounded p-button-danger p-button-text p-button-sm w-7 h-7 opacity-0 group-hover:opacity-100 transition-opacity"
                   @click.stop="deleteExercise(ex.id)"

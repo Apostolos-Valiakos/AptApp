@@ -16,7 +16,7 @@
 
       <!-- Balance badge -->
       <div
-        v-if="calculatedBalance > 0 && authStore.isOwner"
+        v-if="calculatedBalance > 0 && authStore.isShopAdmin"
         class="inline-flex items-center bg-red-100 text-red-800 text-xs font-bold px-3 py-1 rounded-full mb-6"
       >
         <i class="pi pi-exclamation-circle mr-1"></i>

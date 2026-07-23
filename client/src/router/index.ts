@@ -15,6 +15,8 @@ const FinancialsView = () => import("../components/FinancialsView.vue");
 const profileView = () => import("../views/profileView.vue");
 const ClientPortalView = () => import("../views/ClientPortalView.vue");
 const SignupView = () => import("../views/SignupView.vue");
+const ShopsView = () => import("../views/ShopsView.vue");
+const DemoRequestsView = () => import("../views/DemoRequestsView.vue");
 
 const routes = [
   {
@@ -52,7 +54,21 @@ const routes = [
           { path: "services", component: ServicesView },
           { path: "products", component: ProductsView },
           { path: "gift-cards", component: GiftCardsView },
-          { path: "financials", component: FinancialsView },
+          {
+            path: "financials",
+            component: FinancialsView,
+            meta: { requiresAnalytics: true },
+          },
+          {
+            path: "platform/shops",
+            component: ShopsView,
+            meta: { requiresOwner: true },
+          },
+          {
+            path: "platform/demo-requests",
+            component: DemoRequestsView,
+            meta: { requiresOwner: true },
+          },
           { path: "profile", component: profileView },
         ],
       },
@@ -86,6 +102,14 @@ router.beforeEach((to, from, next) => {
 
   if (to.path.startsWith("/app") && authStore.isClient) {
     return next("/portal");
+  }
+
+  if (to.meta.requiresAnalytics && !authStore.isAnalyticsAllowed) {
+    return next("/app/scheduler");
+  }
+
+  if (to.meta.requiresOwner && !authStore.isOwner) {
+    return next("/app/scheduler");
   }
 
   if (

@@ -41,7 +41,7 @@
         </div>
         <div
           class="text-center sm:text-right mt-2 sm:mt-0 w-full sm:w-auto bg-gray-50 sm:bg-transparent p-2 sm:p-0 rounded-lg"
-          v-if="isOwner"
+          v-if="isShopAdmin"
         >
           <div class="text-xs text-gray-500 uppercase tracking-wider font-bold">
             Balance
@@ -285,7 +285,7 @@
               </div>
               <div class="flex gap-1">
                 <a
-                  v-if="isOwner"
+                  v-if="isShopAdmin"
                   :href="`/api/v1/clients/files/${file.id}?token=${token}`"
                   target="_blank"
                   class="p-button p-component p-button-icon-only p-button-text p-button-rounded p-button-secondary"
@@ -300,7 +300,7 @@
                   :loading="viewingFileId === file.id"
                 />
                 <Button
-                  v-if="isOwner"
+                  v-if="isShopAdmin"
                   icon="pi pi-trash"
                   class="p-button-text p-button-danger p-button-rounded"
                   @click="deleteFile(file.id)"
@@ -326,7 +326,7 @@ import { useConfirm } from "primevue/useconfirm";
 const authStore = useAuthStore();
 const toast = useToast();
 const confirm = useConfirm();
-const isOwner = authStore.isOwner;
+const isShopAdmin = authStore.isShopAdmin;
 const settingsStore = useSettingsStore();
 const { shopSettings } = storeToRefs(settingsStore);
 

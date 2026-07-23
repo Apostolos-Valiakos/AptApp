@@ -537,6 +537,31 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
+// Analytics/financials/reports are admin-only — frontdesk has admin access everywhere else.
+const requireAnalyticsAccess = (req, res, next) => {
+  if (req.user.role !== "admin" && req.user.role !== "super_admin") {
+    return res.status(403).json({ error: "Admins only" });
+  }
+  next();
+};
+
+// Platform console (cross-shop) is "owner"-only — a separate, shop-less role from super_admin.
+const requireOwner = (req, res, next) => {
+  if (req.user.role !== "owner") {
+    return res.status(403).json({ error: "Owner only" });
+  }
+  next();
+};
+
+// Accepts either `pool` or an in-flight transaction `client` so callers can log
+// atomically inside BEGIN/COMMIT blocks.
+const logPlatformActivity = async (db, actorUserId, action, targetShopId, detail) => {
+  await db.query(
+    `INSERT INTO platform_activity_log (actor_user_id, action, target_shop_id, detail) VALUES ($1, $2, $3, $4)`,
+    [actorUserId, action, targetShopId, detail || null],
+  );
+};
+
 // --- AUTH ROUTE ---
 
 app.post("/api/v1/login", loginLimiter, async (req, res) => {
@@ -544,7 +569,7 @@ app.post("/api/v1/login", loginLimiter, async (req, res) => {
   try {
     // 1. Find user by username only (don't check password in SQL)
     const result = await pool.query(
-      `SELECT u.*, s.name as shop_name 
+      `SELECT u.*, s.name as shop_name, s.status as shop_status
        FROM users u
        LEFT JOIN shops s ON u.shop_id = s.id
        WHERE u.username = $1`,
@@ -562,6 +587,17 @@ app.post("/api/v1/login", loginLimiter, async (req, res) => {
 
     if (!match) {
       return res.status(401).json({ error: "Invalid credentials" });
+    }
+
+    // 2b. Block login for suspended/cancelled shops and deactivated accounts.
+    // user.shop_id is null for a platform "owner", who is never shop-scoped.
+    if (user.shop_id && user.shop_status && user.shop_status !== "active") {
+      return res.status(403).json({
+        error: `This shop is currently ${user.shop_status}. Please contact support.`,
+      });
+    }
+    if (user.is_active === false) {
+      return res.status(403).json({ error: "This account has been deactivated." });
     }
 
     // 3. Generate Token
@@ -710,6 +746,7 @@ app.get("/api/v1/staff", authenticateToken, async (req, res) => {
       SELECT
         st.id, st.name, st.color_code, st.hourly_rate, st.is_active,
         st.email, st.phone, st.specialty, st.shop_id, st.sort_order,
+        st.visible_in_calendar,
         COALESCE(
           json_agg(ss.service_id) FILTER (WHERE ss.service_id IS NOT NULL),
           '[]'
@@ -740,6 +777,7 @@ app.post("/api/v1/staff", authenticateToken, async (req, res) => {
     color,
     username,
     password,
+    visible_in_calendar,
   } = req.body;
   const name = first_name + " " + last_name;
   const client = await pool.connect();
@@ -748,8 +786,8 @@ app.post("/api/v1/staff", authenticateToken, async (req, res) => {
 
     // 1. Create Staff Entry
     const staffRes = await client.query(
-      "INSERT INTO staff (name, email, phone, shop_id) VALUES ($1, $2, $3, $4) RETURNING id",
-      [name, email, phone, req.shopId],
+      "INSERT INTO staff (name, email, phone, shop_id, visible_in_calendar) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+      [name, email, phone, req.shopId, visible_in_calendar ?? true],
     );
     const staffId = staffRes.rows[0].id;
 
@@ -806,6 +844,7 @@ app.put("/api/v1/staff/:id", authenticateToken, async (req, res) => {
     hourly_rate,
     specialty,
     service_ids = [],
+    visible_in_calendar,
   } = req.body;
   const client = await pool.connect();
 
@@ -814,10 +853,10 @@ app.put("/api/v1/staff/:id", authenticateToken, async (req, res) => {
     const fullName = `${first_name} ${last_name}`.trim();
 
     await client.query(
-      `UPDATE staff 
-       SET name = $1, email = $2, phone = $3, hourly_rate = $4, specialty = $5
-       WHERE id = $6 AND shop_id = $7`,
-      [fullName, email, phone, hourly_rate, specialty, id, req.shopId],
+      `UPDATE staff
+       SET name = $1, email = $2, phone = $3, hourly_rate = $4, specialty = $5, visible_in_calendar = $6
+       WHERE id = $7 AND shop_id = $8`,
+      [fullName, email, phone, hourly_rate, specialty, visible_in_calendar ?? true, id, req.shopId],
     );
 
     await client.query(`DELETE FROM staff_services WHERE staff_id = $1`, [id]);
@@ -856,12 +895,18 @@ app.delete("/api/v1/staff/:id", authenticateToken, async (req, res) => {
 });
 
 // Create Staff Login
+const STAFF_LOGIN_ROLES = ["staff", "frontdesk"];
+
 app.post("/api/v1/staff/:id/login", authenticateToken, async (req, res) => {
   const { id } = req.params;
-  const { username, password } = req.body;
+  const { username, password, role } = req.body;
 
   if (!username || !password)
     return res.status(400).json({ error: "Username and password required" });
+
+  if (role && !STAFF_LOGIN_ROLES.includes(role)) {
+    return res.status(400).json({ error: "Invalid role" });
+  }
 
   const client = await pool.connect();
   try {
@@ -880,8 +925,8 @@ app.post("/api/v1/staff/:id/login", authenticateToken, async (req, res) => {
 
     await client.query(
       `INSERT INTO users (username, password, shop_id, staff_id, role)
-       VALUES ($1, $2, $3, $4, 'staff')`,
-      [username, hashedPassword, req.shopId, id],
+       VALUES ($1, $2, $3, $4, $5)`,
+      [username, hashedPassword, req.shopId, id, role || "staff"],
     );
 
     await client.query("COMMIT");
@@ -894,6 +939,477 @@ app.post("/api/v1/staff/:id/login", authenticateToken, async (req, res) => {
     client.release();
   }
 });
+
+// --- PLATFORM / OWNER ROUTES (cross-shop, no req.shopId scoping) ---
+
+app.get(
+  "/api/v1/platform/shops",
+  authenticateToken,
+  requireOwner,
+  async (req, res) => {
+    const { search, status, plan } = req.query;
+    const conditions = [];
+    const params = [];
+
+    if (search) {
+      params.push(`%${search}%`);
+      conditions.push(`s.name ILIKE $${params.length}`);
+    }
+    if (status) {
+      params.push(status);
+      conditions.push(`s.status = $${params.length}`);
+    }
+    if (plan) {
+      params.push(plan);
+      conditions.push(`s.plan = $${params.length}`);
+    }
+    const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+
+    try {
+      const { rows } = await pool.query(
+        `
+        SELECT
+          s.id, s.name, s.plan, s.status, s.owner_name, s.owner_email,
+          s.trial_ends_at, s.notes, s.primary_color, s.secondary_color, s.created_at,
+          COALESCE(ac.admin_count, 0) AS admin_count
+        FROM shops s
+        LEFT JOIN (
+          SELECT shop_id, COUNT(*) AS admin_count
+          FROM users
+          WHERE role = 'admin' AND is_active = true
+          GROUP BY shop_id
+        ) ac ON ac.shop_id = s.id
+        ${whereClause}
+        ORDER BY s.created_at DESC
+      `,
+        params,
+      );
+      res.json(rows);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
+
+app.post(
+  "/api/v1/platform/shops",
+  authenticateToken,
+  requireOwner,
+  async (req, res) => {
+    const {
+      name,
+      plan,
+      status,
+      owner_name,
+      owner_email,
+      trial_ends_at,
+      notes,
+      primary_color,
+      secondary_color,
+      admin_username,
+      admin_password,
+    } = req.body;
+
+    if (!name) return res.status(400).json({ error: "Shop name is required" });
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      const shopRes = await client.query(
+        `INSERT INTO shops
+          (name, plan, status, owner_name, owner_email, trial_ends_at, notes, primary_color, secondary_color)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         RETURNING id`,
+        [
+          name,
+          plan || "trial",
+          status || "active",
+          owner_name || null,
+          owner_email || null,
+          trial_ends_at || null,
+          notes || null,
+          primary_color || null,
+          secondary_color || null,
+        ],
+      );
+      const shopId = shopRes.rows[0].id;
+
+      let adminCreated = false;
+      if (admin_username && admin_password) {
+        const hashedPassword = await bcrypt.hash(admin_password, 12);
+        await client.query(
+          `INSERT INTO users (username, password, role, shop_id, is_active) VALUES ($1, $2, 'admin', $3, true)`,
+          [admin_username, hashedPassword, shopId],
+        );
+        adminCreated = true;
+      }
+
+      await logPlatformActivity(
+        client,
+        req.user.userId,
+        "shop_created",
+        shopId,
+        `Created shop "${name}"${adminCreated ? ` with admin login "${admin_username}"` : ""}`,
+      );
+
+      await client.query("COMMIT");
+      res.json({ success: true, id: shopId, adminCreated });
+    } catch (err) {
+      await client.query("ROLLBACK");
+      console.error(err);
+      if (err.code === "23505") {
+        return res.status(400).json({ error: "Username already taken" });
+      }
+      res.status(500).json({ error: "Internal server error" });
+    } finally {
+      client.release();
+    }
+  },
+);
+
+app.put(
+  "/api/v1/platform/shops/:id",
+  authenticateToken,
+  requireOwner,
+  async (req, res) => {
+    const { id } = req.params;
+    const {
+      name,
+      plan,
+      status,
+      owner_name,
+      owner_email,
+      trial_ends_at,
+      notes,
+      primary_color,
+      secondary_color,
+    } = req.body;
+
+    const fields = {
+      name,
+      plan,
+      status,
+      owner_name,
+      owner_email,
+      trial_ends_at,
+      notes,
+      primary_color,
+      secondary_color,
+    };
+
+    const setClauses = [];
+    const params = [];
+    for (const [key, value] of Object.entries(fields)) {
+      if (value !== undefined) {
+        params.push(value);
+        setClauses.push(`${key} = $${params.length}`);
+      }
+    }
+    if (setClauses.length === 0) {
+      return res.status(400).json({ error: "No fields to update" });
+    }
+
+    try {
+      const before = await pool.query(
+        `SELECT plan, status FROM shops WHERE id = $1`,
+        [id],
+      );
+      if (before.rows.length === 0) {
+        return res.status(404).json({ error: "Shop not found" });
+      }
+
+      params.push(id);
+      const { rows } = await pool.query(
+        `UPDATE shops SET ${setClauses.join(", ")} WHERE id = $${params.length} RETURNING name`,
+        params,
+      );
+
+      const changes = [];
+      if (plan !== undefined && plan !== before.rows[0].plan) {
+        changes.push(`plan: ${before.rows[0].plan} -> ${plan}`);
+        await logPlatformActivity(pool, req.user.userId, "shop_plan_changed", id, changes[changes.length - 1]);
+      }
+      if (status !== undefined && status !== before.rows[0].status) {
+        changes.push(`status: ${before.rows[0].status} -> ${status}`);
+        await logPlatformActivity(pool, req.user.userId, "shop_status_changed", id, changes[changes.length - 1]);
+      }
+      if (changes.length === 0) {
+        await logPlatformActivity(pool, req.user.userId, "shop_updated", id, `Updated shop "${rows[0].name}"`);
+      }
+
+      res.json({ success: true });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
+
+app.get(
+  "/api/v1/platform/shops/:id/admins",
+  authenticateToken,
+  requireOwner,
+  async (req, res) => {
+    try {
+      const { rows } = await pool.query(
+        `SELECT id, username, is_active, staff_id, created_at
+         FROM users WHERE shop_id = $1 AND role = 'admin' ORDER BY created_at`,
+        [req.params.id],
+      );
+      res.json(rows);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
+
+app.post(
+  "/api/v1/platform/shops/:id/admins",
+  authenticateToken,
+  requireOwner,
+  async (req, res) => {
+    const { id } = req.params;
+    const { username, password } = req.body;
+
+    if (!username || !password) {
+      return res.status(400).json({ error: "Username and password required" });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      const checkUser = await client.query(
+        "SELECT id FROM users WHERE username = $1",
+        [username],
+      );
+      if (checkUser.rows.length > 0) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: "Username already taken" });
+      }
+
+      const hashedPassword = await bcrypt.hash(password, 12);
+      const insertRes = await client.query(
+        `INSERT INTO users (username, password, shop_id, role, is_active)
+         VALUES ($1, $2, $3, 'admin', true) RETURNING id`,
+        [username, hashedPassword, id],
+      );
+
+      await logPlatformActivity(
+        client,
+        req.user.userId,
+        "admin_created",
+        id,
+        `Created admin login "${username}"`,
+      );
+
+      await client.query("COMMIT");
+      res.json({ success: true, id: insertRes.rows[0].id });
+    } catch (err) {
+      await client.query("ROLLBACK");
+      console.error(err);
+      res.status(500).json({ error: "Internal server error" });
+    } finally {
+      client.release();
+    }
+  },
+);
+
+app.put(
+  "/api/v1/platform/admins/:userId",
+  authenticateToken,
+  requireOwner,
+  async (req, res) => {
+    const { is_active } = req.body;
+    if (typeof is_active !== "boolean") {
+      return res.status(400).json({ error: "is_active (boolean) is required" });
+    }
+
+    try {
+      const { rows } = await pool.query(
+        `UPDATE users SET is_active = $1 WHERE id = $2 AND role = 'admin' RETURNING shop_id, username`,
+        [is_active, req.params.userId],
+      );
+      if (rows.length === 0) {
+        return res.status(404).json({ error: "Admin not found" });
+      }
+
+      await logPlatformActivity(
+        pool,
+        req.user.userId,
+        "admin_status_changed",
+        rows[0].shop_id,
+        `${is_active ? "Reactivated" : "Deactivated"} admin login "${rows[0].username}"`,
+      );
+
+      res.json({ success: true });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
+
+app.post(
+  "/api/v1/platform/admins/:userId/reset-password",
+  authenticateToken,
+  requireOwner,
+  async (req, res) => {
+    const { newPassword } = req.body;
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ error: "Password must be at least 6 characters" });
+    }
+
+    try {
+      const hashedPassword = await bcrypt.hash(newPassword, 12);
+      const { rows } = await pool.query(
+        `UPDATE users SET password = $1 WHERE id = $2 AND role = 'admin' RETURNING shop_id, username`,
+        [hashedPassword, req.params.userId],
+      );
+      if (rows.length === 0) {
+        return res.status(404).json({ error: "Admin not found" });
+      }
+
+      await logPlatformActivity(
+        pool,
+        req.user.userId,
+        "admin_password_reset",
+        rows[0].shop_id,
+        `Reset password for admin "${rows[0].username}"`,
+      );
+
+      res.json({ success: true });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
+
+// Mints a short-lived JWT scoped to the target shop so the owner can "view as"
+// that shop's admin. Allowed even for suspended shops, so the owner can go fix them.
+app.post(
+  "/api/v1/platform/impersonate/:shopId",
+  authenticateToken,
+  requireOwner,
+  async (req, res) => {
+    try {
+      const { rows } = await pool.query(
+        `SELECT id, name FROM shops WHERE id = $1`,
+        [req.params.shopId],
+      );
+      if (rows.length === 0) {
+        return res.status(404).json({ error: "Shop not found" });
+      }
+      const shop = rows[0];
+
+      const impersonationToken = jwt.sign(
+        {
+          userId: req.user.userId,
+          username: req.user.username,
+          role: "admin",
+          shopId: shop.id,
+          staffId: null,
+          clientId: null,
+          impersonating: true,
+          impersonatedBy: req.user.userId,
+        },
+        process.env.JWT_SECRET,
+        { expiresIn: "2h" },
+      );
+
+      await logPlatformActivity(
+        pool,
+        req.user.userId,
+        "impersonation_started",
+        shop.id,
+        `Started impersonation session as shop "${shop.name}"`,
+      );
+
+      res.json({
+        token: impersonationToken,
+        user: {
+          role: "admin",
+          shopId: shop.id,
+          shopName: shop.name,
+          username: req.user.username,
+          impersonating: true,
+        },
+        expiresIn: 7200,
+      });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
+
+app.get(
+  "/api/v1/platform/demo-requests",
+  authenticateToken,
+  requireOwner,
+  async (req, res) => {
+    try {
+      const { rows } = await pool.query(
+        `SELECT id, name, email, shop_name, phone, message, status, created_at
+         FROM demo_requests ORDER BY created_at DESC`,
+      );
+      res.json(rows);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
+
+app.put(
+  "/api/v1/platform/demo-requests/:id",
+  authenticateToken,
+  requireOwner,
+  async (req, res) => {
+    const { status } = req.body;
+    if (!["new", "contacted"].includes(status)) {
+      return res.status(400).json({ error: "Invalid status" });
+    }
+    try {
+      const { rowCount } = await pool.query(
+        `UPDATE demo_requests SET status = $1 WHERE id = $2`,
+        [status, req.params.id],
+      );
+      if (rowCount === 0) {
+        return res.status(404).json({ error: "Demo request not found" });
+      }
+      res.json({ success: true });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
+
+app.delete(
+  "/api/v1/platform/demo-requests/:id",
+  authenticateToken,
+  requireOwner,
+  async (req, res) => {
+    try {
+      const { rowCount } = await pool.query(
+        `DELETE FROM demo_requests WHERE id = $1`,
+        [req.params.id],
+      );
+      if (rowCount === 0) {
+        return res.status(404).json({ error: "Demo request not found" });
+      }
+      res.json({ success: true });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
 
 // --- CLIENT ROUTES ---
 // app.get("/api/v1/clients", authenticateToken, async (req, res) => {
@@ -1426,6 +1942,63 @@ app.get("/api/v1/unsubscribe", publicActionLimiter, async (req, res) => {
     res.status(500).send("Παρουσιάστηκε σφάλμα κατά τη διαγραφή.");
   }
 });
+
+app.post("/api/v1/demo-requests", publicActionLimiter, async (req, res) => {
+  const { name, email, shop_name, phone, message } = req.body;
+
+  if (!name || !email || !shop_name) {
+    return res.status(400).json({ error: "Name, email and business name are required" });
+  }
+
+  try {
+    await pool.query(
+      `INSERT INTO demo_requests (name, email, shop_name, phone, message) VALUES ($1, $2, $3, $4, $5)`,
+      [name, email, shop_name, phone || null, message || null],
+    );
+
+    // Best-effort notification — the lead is already saved above regardless of email outcome.
+    try {
+      const nodemailer = require("nodemailer");
+      const transporter = nodemailer.createTransport({
+        host: process.env.EMAIL_HOST,
+        port: process.env.EMAIL_PORT,
+        secure: process.env.EMAIL_PORT == 465,
+        auth: {
+          user: process.env.EMAIL_USER,
+          pass: process.env.EMAIL_PASS,
+        },
+        family: 4,
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+      });
+
+      await transporter.sendMail({
+        from: `"BookFlow" <${process.env.EMAIL_USER}>`,
+        to: process.env.DEMO_REQUEST_EMAIL || process.env.EMAIL_USER,
+        replyTo: email,
+        subject: `New demo request: ${shop_name}`,
+        html: `
+          <div style="font-family: sans-serif; font-size: 14px; color: #111;">
+            <h2>New demo request</h2>
+            <p><strong>Name:</strong> ${name}</p>
+            <p><strong>Email:</strong> ${email}</p>
+            <p><strong>Business:</strong> ${shop_name}</p>
+            <p><strong>Phone:</strong> ${phone || "—"}</p>
+            <p><strong>Message:</strong><br>${(message || "—").replace(/\n/g, "<br>")}</p>
+          </div>
+        `,
+      });
+    } catch (emailErr) {
+      console.error("Demo request notification email failed:", emailErr);
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Demo request error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 app.get(
   "/api/v1/confirm-appointment",
   publicActionLimiter,
@@ -1926,7 +2499,7 @@ app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
   }
 });
 
-app.get("/api/v1/financials", authenticateToken, async (req, res) => {
+app.get("/api/v1/financials", authenticateToken, requireAnalyticsAccess, async (req, res) => {
   try {
     const { from, to } = req.query;
     // Safety net: without a range this scanned every transaction ever recorded.
@@ -1956,7 +2529,7 @@ app.get("/api/v1/financials", authenticateToken, async (req, res) => {
 });
 
 // --- REPORT ENDPOINTS (ALL FILTERED BY SHOP_ID AND VISIBILITY) ---
-app.get("/api/v1/reports/analytics", authenticateToken, async (req, res) => {
+app.get("/api/v1/reports/analytics", authenticateToken, requireAnalyticsAccess, async (req, res) => {
   const { from, to, excludeCash, excludeCard } = req.query;
   // Default to last 30 days if no dates provided
   const startDate =
@@ -2053,7 +2626,7 @@ app.get("/api/v1/reports/analytics", authenticateToken, async (req, res) => {
   }
 });
 
-app.get("/api/v1/reports/appointments", authenticateToken, async (req, res) => {
+app.get("/api/v1/reports/appointments", authenticateToken, requireAnalyticsAccess, async (req, res) => {
   const { from, to, excludeCash, excludeCard } = req.query;
   const params = [req.shopId];
 
@@ -2088,7 +2661,7 @@ app.get("/api/v1/reports/appointments", authenticateToken, async (req, res) => {
   }
 });
 
-app.get("/api/v1/reports/clients", authenticateToken, async (req, res) => {
+app.get("/api/v1/reports/clients", authenticateToken, requireAnalyticsAccess, async (req, res) => {
   const { from, to, excludeCash, excludeCard } = req.query;
   const params = [req.shopId];
 
@@ -2121,7 +2694,7 @@ app.get("/api/v1/reports/clients", authenticateToken, async (req, res) => {
   }
 });
 
-app.get("/api/v1/reports/sales", authenticateToken, async (req, res) => {
+app.get("/api/v1/reports/sales", authenticateToken, requireAnalyticsAccess, async (req, res) => {
   const { from, to, excludeCash, excludeCard } = req.query;
   const params = [req.shopId];
 
@@ -2167,7 +2740,7 @@ app.get("/api/v1/reports/sales", authenticateToken, async (req, res) => {
   }
 });
 
-app.get("/api/v1/reports/products", authenticateToken, async (req, res) => {
+app.get("/api/v1/reports/products", authenticateToken, requireAnalyticsAccess, async (req, res) => {
   const { from, to, excludeCash, excludeCard } = req.query;
   const params = [req.shopId];
 
@@ -2218,7 +2791,7 @@ app.get("/api/v1/reports/products", authenticateToken, async (req, res) => {
   }
 });
 
-app.get("/api/v1/reports/gift-cards", authenticateToken, async (req, res) => {
+app.get("/api/v1/reports/gift-cards", authenticateToken, requireAnalyticsAccess, async (req, res) => {
   const { from, to, excludeCash, excludeCard } = req.query;
   const params = [req.shopId];
 
@@ -2265,7 +2838,7 @@ app.get("/api/v1/reports/gift-cards", authenticateToken, async (req, res) => {
   }
 });
 
-app.get("/api/v1/reports/staff", authenticateToken, async (req, res) => {
+app.get("/api/v1/reports/staff", authenticateToken, requireAnalyticsAccess, async (req, res) => {
   const { from, to, excludeCash, excludeCard } = req.query;
   const params = [req.shopId];
 
@@ -2299,7 +2872,7 @@ app.get("/api/v1/reports/staff", authenticateToken, async (req, res) => {
   }
 });
 
-app.get("/api/v1/reports/payments", authenticateToken, async (req, res) => {
+app.get("/api/v1/reports/payments", authenticateToken, requireAnalyticsAccess, async (req, res) => {
   const { from, to, excludeCash, excludeCard } = req.query;
   const params = [req.shopId];
 
@@ -2335,7 +2908,7 @@ app.get("/api/v1/reports/payments", authenticateToken, async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
-app.get("/api/v1/reports/finances", authenticateToken, async (req, res) => {
+app.get("/api/v1/reports/finances", authenticateToken, requireAnalyticsAccess, async (req, res) => {
   const { from, to, excludeCash, excludeCard } = req.query;
   const shopId = req.shopId;
   const isSuperAdmin = req.user.role === "super_admin";
@@ -2453,6 +3026,7 @@ app.get("/api/v1/reports/finances", authenticateToken, async (req, res) => {
 app.get(
   "/api/v1/reports/service-summary",
   authenticateToken,
+  requireAnalyticsAccess,
   async (req, res) => {
     const { from, to, excludeCash, excludeCard } = req.query;
     const params = [req.shopId];
@@ -3193,7 +3767,7 @@ app.post(
   authenticateToken,
   dbFileUpload.single("photo"),
   async (req, res) => {
-    if (req.user.role !== "admin" && req.user.role !== "super_admin") {
+    if (req.user.role !== "admin" && req.user.role !== "super_admin" && req.user.role !== "frontdesk") {
       return res.status(403).json({ error: "Admins only" });
     }
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
@@ -3215,7 +3789,7 @@ app.post(
 );
 
 app.delete("/api/v1/staff/:id/photo", authenticateToken, async (req, res) => {
-  if (req.user.role !== "admin" && req.user.role !== "super_admin") {
+  if (req.user.role !== "admin" && req.user.role !== "super_admin" && req.user.role !== "frontdesk") {
     return res.status(403).json({ error: "Admins only" });
   }
   try {
@@ -3733,7 +4307,7 @@ app.delete("/api/v1/exercises/:id", authenticateToken, async (req, res) => {
   const { id } = req.params;
 
   // Security Check: Only allow Admins/Super Admins
-  if (req.user.role !== "admin" && req.user.role !== "super_admin") {
+  if (req.user.role !== "admin" && req.user.role !== "super_admin" && req.user.role !== "frontdesk") {
     return res.status(403).json({ error: "Unauthorized: Admins only" });
   }
 
@@ -4129,6 +4703,11 @@ app.put("/api/v1/portal/notifications", authenticateToken, async (req, res) => {
     await pool.query(
       `ALTER TABLE services ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true`,
     );
+    // Lets a staff member keep their login/appointments without cluttering the
+    // scheduler with a resource column (e.g. frontdesk-only accounts).
+    await pool.query(
+      `ALTER TABLE staff ADD COLUMN IF NOT EXISTS visible_in_calendar BOOLEAN NOT NULL DEFAULT true`,
+    );
 
     // ==================== PERFORMANCE INDEXES ====================
     const startupIndexes = [
@@ -4148,6 +4727,67 @@ app.put("/api/v1/portal/notifications", authenticateToken, async (req, res) => {
     }
   } catch (err) {
     console.error("Failed to run startup schema/index setup:", err);
+  }
+})();
+
+// ==================== PLATFORM / MULTI-TENANT ADMIN SCHEMA ====================
+(async () => {
+  try {
+    await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS plan VARCHAR(50) NOT NULL DEFAULT 'trial'`);
+    await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active'`);
+    await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS owner_name VARCHAR(255)`);
+    await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS owner_email VARCHAR(255)`);
+    await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMP`);
+    await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS notes TEXT`);
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true`);
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT NOW()`);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS platform_activity_log (
+        id SERIAL PRIMARY KEY,
+        actor_user_id UUID NOT NULL,
+        action VARCHAR(50) NOT NULL,
+        target_shop_id UUID REFERENCES shops(id) ON DELETE SET NULL,
+        detail TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_platform_activity_log_shop ON platform_activity_log (target_shop_id)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_platform_activity_log_created ON platform_activity_log (created_at DESC)`);
+
+    // Bootstrap the first platform owner account (shop-less) from env vars, once.
+    if (process.env.OWNER_USERNAME && process.env.OWNER_PASSWORD) {
+      const existing = await pool.query(`SELECT id FROM users WHERE role = 'owner' LIMIT 1`);
+      if (existing.rows.length === 0) {
+        const hashed = await bcrypt.hash(process.env.OWNER_PASSWORD, 12);
+        await pool.query(
+          `INSERT INTO users (username, password, role, shop_id) VALUES ($1, $2, 'owner', NULL)`,
+          [process.env.OWNER_USERNAME, hashed],
+        );
+        console.log(`Bootstrapped owner account "${process.env.OWNER_USERNAME}"`);
+      }
+    }
+  } catch (err) {
+    console.error("Failed to run platform-admin schema setup:", err);
+  }
+})();
+
+// ==================== LANDING PAGE / DEMO REQUESTS SCHEMA ====================
+(async () => {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS demo_requests (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        email VARCHAR(255) NOT NULL,
+        shop_name VARCHAR(255) NOT NULL,
+        phone VARCHAR(50),
+        message TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await pool.query(`ALTER TABLE demo_requests ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'new'`);
+  } catch (err) {
+    console.error("Failed to run demo-requests schema setup:", err);
   }
 })();
 
