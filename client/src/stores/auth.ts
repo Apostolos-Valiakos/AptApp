@@ -20,11 +20,22 @@ export const useAuthStore = defineStore("auth", () => {
   const isAnalyticsAllowed = computed(
     () => user.value?.role === "admin" || user.value?.role === "super_admin",
   );
+  // Platform operator — manages shops/plans/admins across the whole app, has no shop of their own.
+  const isOwner = computed(() => user.value?.role === "owner");
+
   const clientId = computed(
     () => user.value?.clientId || user.value?.client_id,
   );
 
   const isClient = computed(() => user.value?.role === "client");
+
+  // While the owner is "viewing as" a shop, the real owner session is stashed here
+  // so it can be restored exactly on exit, without ever losing it mid-impersonation.
+  const originalToken = ref(localStorage.getItem("originalToken") || "");
+  const originalUser = ref(
+    JSON.parse(localStorage.getItem("originalUser") || "null"),
+  );
+  const isImpersonating = computed(() => !!originalToken.value);
 
   const login = async (username: string, password: string) => {
     try {
@@ -58,17 +69,55 @@ export const useAuthStore = defineStore("auth", () => {
     user.value = null;
     localStorage.removeItem("token");
     localStorage.removeItem("user");
+    originalToken.value = "";
+    originalUser.value = null;
+    localStorage.removeItem("originalToken");
+    localStorage.removeItem("originalUser");
+  };
+
+  // Swaps the active session for an impersonation token, stashing the owner's
+  // real session first so exitImpersonation() can restore it exactly.
+  const startImpersonation = (newToken: string, newUser: any) => {
+    if (!originalToken.value) {
+      originalToken.value = token.value;
+      originalUser.value = user.value;
+      localStorage.setItem("originalToken", token.value);
+      localStorage.setItem("originalUser", JSON.stringify(user.value));
+    }
+
+    token.value = newToken;
+    localStorage.setItem("token", newToken);
+    user.value = newUser;
+    localStorage.setItem("user", JSON.stringify(newUser));
+  };
+
+  const exitImpersonation = () => {
+    if (!originalToken.value) return;
+
+    token.value = originalToken.value;
+    localStorage.setItem("token", originalToken.value);
+    user.value = originalUser.value;
+    localStorage.setItem("user", JSON.stringify(originalUser.value));
+
+    originalToken.value = "";
+    originalUser.value = null;
+    localStorage.removeItem("originalToken");
+    localStorage.removeItem("originalUser");
   };
 
   return {
     token,
     user,
     isAuthenticated,
+    isOwner,
     isShopAdmin,
     isAnalyticsAllowed,
     isClient,
+    isImpersonating,
     clientId,
     login,
     logout,
+    startImpersonation,
+    exitImpersonation,
   };
 });

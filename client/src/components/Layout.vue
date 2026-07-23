@@ -152,6 +152,16 @@
       </transition>
     </nav>
 
+    <div
+      v-if="authStore.isImpersonating"
+      class="sticky top-16 z-40 bg-amber-500 text-white text-center py-2 text-sm font-bold flex items-center justify-center gap-3"
+    >
+      <span>{{ t('platform.banner.viewingAs', { shop: authStore.user?.shopName }) }}</span>
+      <button @click="handleExitImpersonation" class="underline">
+        {{ t('platform.banner.exit') }}
+      </button>
+    </div>
+
     <main
       :class="[
         isFullWidthPage
@@ -230,6 +240,20 @@ const navItems = computed(() => [
     icon: "pi pi-chart-bar",
   },
   {
+    label: t("nav.platform"),
+    path: "/app/platform/shops",
+    ownerOnly: false,
+    platformOnly: true,
+    icon: "pi pi-building",
+  },
+  {
+    label: t("nav.demoRequests"),
+    path: "/app/platform/demo-requests",
+    ownerOnly: false,
+    platformOnly: true,
+    icon: "pi pi-inbox",
+  },
+  {
     label: t("nav.myPortal"),
     path: "/portal",
     ownerOnly: false,
@@ -260,6 +284,7 @@ const visibleNavItems = computed(() => {
     if (item.clientOnly) return false;
     if (item.ownerOnly && !isShopAdmin.value) return false;
     if (item.financialsOnly && !isAnalyticsAllowed.value) return false;
+    if (item.platformOnly && !authStore.isOwner) return false;
 
     return true;
   });
@@ -271,6 +296,11 @@ const logout = () => {
   authStore.logout();
   router.push("/");
   mobileMenuOpen.value = false;
+};
+
+const handleExitImpersonation = () => {
+  authStore.exitImpersonation();
+  router.push("/app/platform/shops");
 };
 
 // --- Ctrl+1: hide cash/gift-card revenue (global — works on any authenticated page) ---
