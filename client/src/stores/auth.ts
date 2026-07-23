@@ -7,7 +7,17 @@ export const useAuthStore = defineStore("auth", () => {
 
   const isAuthenticated = computed(() => !!token.value);
 
-  const isOwner = computed(
+  // "Shop admin" means "full admin-equivalent access to one shop" — frontdesk gets
+  // everything admin gets except analytics, so it's included here and excluded via
+  // isAnalyticsAllowed. Not to be confused with isOwner below, which is the
+  // separate, platform-wide "owner" role that isn't tied to any single shop.
+  const isShopAdmin = computed(
+    () =>
+      user.value?.role === "admin" ||
+      user.value?.role === "super_admin" ||
+      user.value?.role === "frontdesk",
+  );
+  const isAnalyticsAllowed = computed(
     () => user.value?.role === "admin" || user.value?.role === "super_admin",
   );
   const clientId = computed(
@@ -54,7 +64,8 @@ export const useAuthStore = defineStore("auth", () => {
     token,
     user,
     isAuthenticated,
-    isOwner,
+    isShopAdmin,
+    isAnalyticsAllowed,
     isClient,
     clientId,
     login,

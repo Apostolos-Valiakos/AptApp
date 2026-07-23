@@ -537,6 +537,14 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
+// Analytics/financials/reports are admin-only — frontdesk has admin access everywhere else.
+const requireAnalyticsAccess = (req, res, next) => {
+  if (req.user.role !== "admin" && req.user.role !== "super_admin") {
+    return res.status(403).json({ error: "Admins only" });
+  }
+  next();
+};
+
 // --- AUTH ROUTE ---
 
 app.post("/api/v1/login", loginLimiter, async (req, res) => {
@@ -710,6 +718,7 @@ app.get("/api/v1/staff", authenticateToken, async (req, res) => {
       SELECT
         st.id, st.name, st.color_code, st.hourly_rate, st.is_active,
         st.email, st.phone, st.specialty, st.shop_id, st.sort_order,
+        st.visible_in_calendar,
         COALESCE(
           json_agg(ss.service_id) FILTER (WHERE ss.service_id IS NOT NULL),
           '[]'
@@ -740,6 +749,7 @@ app.post("/api/v1/staff", authenticateToken, async (req, res) => {
     color,
     username,
     password,
+    visible_in_calendar,
   } = req.body;
   const name = first_name + " " + last_name;
   const client = await pool.connect();
@@ -748,8 +758,8 @@ app.post("/api/v1/staff", authenticateToken, async (req, res) => {
 
     // 1. Create Staff Entry
     const staffRes = await client.query(
-      "INSERT INTO staff (name, email, phone, shop_id) VALUES ($1, $2, $3, $4) RETURNING id",
-      [name, email, phone, req.shopId],
+      "INSERT INTO staff (name, email, phone, shop_id, visible_in_calendar) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+      [name, email, phone, req.shopId, visible_in_calendar ?? true],
     );
     const staffId = staffRes.rows[0].id;
 
@@ -806,6 +816,7 @@ app.put("/api/v1/staff/:id", authenticateToken, async (req, res) => {
     hourly_rate,
     specialty,
     service_ids = [],
+    visible_in_calendar,
   } = req.body;
   const client = await pool.connect();
 
@@ -814,10 +825,10 @@ app.put("/api/v1/staff/:id", authenticateToken, async (req, res) => {
     const fullName = `${first_name} ${last_name}`.trim();
 
     await client.query(
-      `UPDATE staff 
-       SET name = $1, email = $2, phone = $3, hourly_rate = $4, specialty = $5
-       WHERE id = $6 AND shop_id = $7`,
-      [fullName, email, phone, hourly_rate, specialty, id, req.shopId],
+      `UPDATE staff
+       SET name = $1, email = $2, phone = $3, hourly_rate = $4, specialty = $5, visible_in_calendar = $6
+       WHERE id = $7 AND shop_id = $8`,
+      [fullName, email, phone, hourly_rate, specialty, visible_in_calendar ?? true, id, req.shopId],
     );
 
     await client.query(`DELETE FROM staff_services WHERE staff_id = $1`, [id]);
@@ -856,12 +867,18 @@ app.delete("/api/v1/staff/:id", authenticateToken, async (req, res) => {
 });
 
 // Create Staff Login
+const STAFF_LOGIN_ROLES = ["staff", "frontdesk"];
+
 app.post("/api/v1/staff/:id/login", authenticateToken, async (req, res) => {
   const { id } = req.params;
-  const { username, password } = req.body;
+  const { username, password, role } = req.body;
 
   if (!username || !password)
     return res.status(400).json({ error: "Username and password required" });
+
+  if (role && !STAFF_LOGIN_ROLES.includes(role)) {
+    return res.status(400).json({ error: "Invalid role" });
+  }
 
   const client = await pool.connect();
   try {
@@ -880,8 +897,8 @@ app.post("/api/v1/staff/:id/login", authenticateToken, async (req, res) => {
 
     await client.query(
       `INSERT INTO users (username, password, shop_id, staff_id, role)
-       VALUES ($1, $2, $3, $4, 'staff')`,
-      [username, hashedPassword, req.shopId, id],
+       VALUES ($1, $2, $3, $4, $5)`,
+      [username, hashedPassword, req.shopId, id, role || "staff"],
     );
 
     await client.query("COMMIT");
@@ -1926,7 +1943,7 @@ app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
   }
 });
 
-app.get("/api/v1/financials", authenticateToken, async (req, res) => {
+app.get("/api/v1/financials", authenticateToken, requireAnalyticsAccess, async (req, res) => {
   try {
     const { from, to } = req.query;
     // Safety net: without a range this scanned every transaction ever recorded.
@@ -1956,7 +1973,7 @@ app.get("/api/v1/financials", authenticateToken, async (req, res) => {
 });
 
 // --- REPORT ENDPOINTS (ALL FILTERED BY SHOP_ID AND VISIBILITY) ---
-app.get("/api/v1/reports/analytics", authenticateToken, async (req, res) => {
+app.get("/api/v1/reports/analytics", authenticateToken, requireAnalyticsAccess, async (req, res) => {
   const { from, to, excludeCash, excludeCard } = req.query;
   // Default to last 30 days if no dates provided
   const startDate =
@@ -2053,7 +2070,7 @@ app.get("/api/v1/reports/analytics", authenticateToken, async (req, res) => {
   }
 });
 
-app.get("/api/v1/reports/appointments", authenticateToken, async (req, res) => {
+app.get("/api/v1/reports/appointments", authenticateToken, requireAnalyticsAccess, async (req, res) => {
   const { from, to, excludeCash, excludeCard } = req.query;
   const params = [req.shopId];
 
@@ -2088,7 +2105,7 @@ app.get("/api/v1/reports/appointments", authenticateToken, async (req, res) => {
   }
 });
 
-app.get("/api/v1/reports/clients", authenticateToken, async (req, res) => {
+app.get("/api/v1/reports/clients", authenticateToken, requireAnalyticsAccess, async (req, res) => {
   const { from, to, excludeCash, excludeCard } = req.query;
   const params = [req.shopId];
 
@@ -2121,7 +2138,7 @@ app.get("/api/v1/reports/clients", authenticateToken, async (req, res) => {
   }
 });
 
-app.get("/api/v1/reports/sales", authenticateToken, async (req, res) => {
+app.get("/api/v1/reports/sales", authenticateToken, requireAnalyticsAccess, async (req, res) => {
   const { from, to, excludeCash, excludeCard } = req.query;
   const params = [req.shopId];
 
@@ -2167,7 +2184,7 @@ app.get("/api/v1/reports/sales", authenticateToken, async (req, res) => {
   }
 });
 
-app.get("/api/v1/reports/products", authenticateToken, async (req, res) => {
+app.get("/api/v1/reports/products", authenticateToken, requireAnalyticsAccess, async (req, res) => {
   const { from, to, excludeCash, excludeCard } = req.query;
   const params = [req.shopId];
 
@@ -2218,7 +2235,7 @@ app.get("/api/v1/reports/products", authenticateToken, async (req, res) => {
   }
 });
 
-app.get("/api/v1/reports/gift-cards", authenticateToken, async (req, res) => {
+app.get("/api/v1/reports/gift-cards", authenticateToken, requireAnalyticsAccess, async (req, res) => {
   const { from, to, excludeCash, excludeCard } = req.query;
   const params = [req.shopId];
 
@@ -2265,7 +2282,7 @@ app.get("/api/v1/reports/gift-cards", authenticateToken, async (req, res) => {
   }
 });
 
-app.get("/api/v1/reports/staff", authenticateToken, async (req, res) => {
+app.get("/api/v1/reports/staff", authenticateToken, requireAnalyticsAccess, async (req, res) => {
   const { from, to, excludeCash, excludeCard } = req.query;
   const params = [req.shopId];
 
@@ -2299,7 +2316,7 @@ app.get("/api/v1/reports/staff", authenticateToken, async (req, res) => {
   }
 });
 
-app.get("/api/v1/reports/payments", authenticateToken, async (req, res) => {
+app.get("/api/v1/reports/payments", authenticateToken, requireAnalyticsAccess, async (req, res) => {
   const { from, to, excludeCash, excludeCard } = req.query;
   const params = [req.shopId];
 
@@ -2335,7 +2352,7 @@ app.get("/api/v1/reports/payments", authenticateToken, async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
-app.get("/api/v1/reports/finances", authenticateToken, async (req, res) => {
+app.get("/api/v1/reports/finances", authenticateToken, requireAnalyticsAccess, async (req, res) => {
   const { from, to, excludeCash, excludeCard } = req.query;
   const shopId = req.shopId;
   const isSuperAdmin = req.user.role === "super_admin";
@@ -2453,6 +2470,7 @@ app.get("/api/v1/reports/finances", authenticateToken, async (req, res) => {
 app.get(
   "/api/v1/reports/service-summary",
   authenticateToken,
+  requireAnalyticsAccess,
   async (req, res) => {
     const { from, to, excludeCash, excludeCard } = req.query;
     const params = [req.shopId];
@@ -3193,7 +3211,7 @@ app.post(
   authenticateToken,
   dbFileUpload.single("photo"),
   async (req, res) => {
-    if (req.user.role !== "admin" && req.user.role !== "super_admin") {
+    if (req.user.role !== "admin" && req.user.role !== "super_admin" && req.user.role !== "frontdesk") {
       return res.status(403).json({ error: "Admins only" });
     }
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
@@ -3215,7 +3233,7 @@ app.post(
 );
 
 app.delete("/api/v1/staff/:id/photo", authenticateToken, async (req, res) => {
-  if (req.user.role !== "admin" && req.user.role !== "super_admin") {
+  if (req.user.role !== "admin" && req.user.role !== "super_admin" && req.user.role !== "frontdesk") {
     return res.status(403).json({ error: "Admins only" });
   }
   try {
@@ -3733,7 +3751,7 @@ app.delete("/api/v1/exercises/:id", authenticateToken, async (req, res) => {
   const { id } = req.params;
 
   // Security Check: Only allow Admins/Super Admins
-  if (req.user.role !== "admin" && req.user.role !== "super_admin") {
+  if (req.user.role !== "admin" && req.user.role !== "super_admin" && req.user.role !== "frontdesk") {
     return res.status(403).json({ error: "Unauthorized: Admins only" });
   }
 
@@ -4128,6 +4146,11 @@ app.put("/api/v1/portal/notifications", authenticateToken, async (req, res) => {
     // past appointments that still reference it — same pattern as staff.is_active.
     await pool.query(
       `ALTER TABLE services ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true`,
+    );
+    // Lets a staff member keep their login/appointments without cluttering the
+    // scheduler with a resource column (e.g. frontdesk-only accounts).
+    await pool.query(
+      `ALTER TABLE staff ADD COLUMN IF NOT EXISTS visible_in_calendar BOOLEAN NOT NULL DEFAULT true`,
     );
 
     // ==================== PERFORMANCE INDEXES ====================

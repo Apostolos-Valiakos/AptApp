@@ -124,12 +124,17 @@ export default {
       hourlyRate: 'Hourly Rate (€)',
       servicesProvided: 'Services Provided',
       selectServices: 'Select services',
+      visibleInCalendar: 'Visible in calendar',
+      visibleInCalendarNote: 'Show this staff member as a column in the scheduler.',
     },
     loginDialog: {
       title: 'Create Staff Login',
       description: 'Create a username and password for {name}. They will use this to log in to the app.',
       username: 'Username',
       password: 'Password',
+      role: 'Role',
+      roleStaff: 'Staff',
+      roleFrontdesk: 'Frontdesk',
       createAccount: 'Create Account',
     },
     empty: {

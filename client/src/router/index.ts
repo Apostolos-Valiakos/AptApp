@@ -52,7 +52,11 @@ const routes = [
           { path: "services", component: ServicesView },
           { path: "products", component: ProductsView },
           { path: "gift-cards", component: GiftCardsView },
-          { path: "financials", component: FinancialsView },
+          {
+            path: "financials",
+            component: FinancialsView,
+            meta: { requiresAnalytics: true },
+          },
           { path: "profile", component: profileView },
         ],
       },
@@ -86,6 +90,10 @@ router.beforeEach((to, from, next) => {
 
   if (to.path.startsWith("/app") && authStore.isClient) {
     return next("/portal");
+  }
+
+  if (to.meta.requiresAnalytics && !authStore.isAnalyticsAllowed) {
+    return next("/app/scheduler");
   }
 
   if (

@@ -124,12 +124,17 @@ export default {
       hourlyRate: 'Ωριαία Αμοιβή (€)',
       servicesProvided: 'Παρεχόμενες Υπηρεσίες',
       selectServices: 'Επιλέξτε υπηρεσίες',
+      visibleInCalendar: 'Ορατός στο ημερολόγιο',
+      visibleInCalendarNote: 'Εμφάνιση αυτού του μέλους ως στήλη στο πρόγραμμα ραντεβού.',
     },
     loginDialog: {
       title: 'Δημιουργία Λογαριασμού',
       description: 'Δημιουργήστε όνομα χρήστη και κωδικό για τον/την {name}. Θα το χρησιμοποιεί για είσοδο στην εφαρμογή.',
       username: 'Όνομα Χρήστη',
       password: 'Κωδικός',
+      role: 'Ρόλος',
+      roleStaff: 'Προσωπικό',
+      roleFrontdesk: 'Ρεσεψιόν',
       createAccount: 'Δημιουργία Λογαριασμού',
     },
     empty: {

@@ -29,9 +29,9 @@ export const useCalendarStore = defineStore("calendar", () => {
         ]);
 
       const staffData = await staffRes.json();
-      resources.value = staffData.sort(
-        (a: any, b: any) => (a.sort_order || 0) - (b.sort_order || 0),
-      );
+      resources.value = staffData
+        .filter((s: any) => s.visible_in_calendar !== false)
+        .sort((a: any, b: any) => (a.sort_order || 0) - (b.sort_order || 0));
 
       clients.value = await clientsRes.json();
       services.value = await servicesRes.json();

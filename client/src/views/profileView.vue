@@ -144,7 +144,7 @@
 
         <!-- Clinic Contact Info Card (admin only) -->
         <div
-          v-if="isOwner"
+          v-if="isShopAdmin"
           class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6"
         >
           <div class="flex items-center justify-between mb-4">
@@ -195,7 +195,7 @@
 
         <!-- App Branding Card (owners only) -->
         <div
-          v-if="isOwner"
+          v-if="isShopAdmin"
           class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6"
         >
           <div class="flex items-center gap-2 mb-4">
@@ -447,7 +447,7 @@
 
         <!-- Clinic Settings (owner only) -->
         <div
-          v-if="isOwner"
+          v-if="isShopAdmin"
           class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8"
         >
           <div class="flex justify-between items-center mb-6">
@@ -484,7 +484,7 @@
 
         <!-- Calendar Settings (admin only) -->
         <div
-          v-if="isOwner"
+          v-if="isShopAdmin"
           class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8"
         >
           <div class="flex justify-between items-center mb-6">
@@ -643,7 +643,7 @@
 
         <!-- ── Contests (admin only) ── -->
         <div
-          v-if="isOwner"
+          v-if="isShopAdmin"
           class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8"
         >
           <div class="flex items-center justify-between mb-6">
@@ -921,9 +921,9 @@ const security = reactive({
 const pickerColor = ref("8B6F4E");
 const selectedColor = computed(() => themeStore.primaryColor);
 
-const isOwner = computed(() => {
+const isShopAdmin = computed(() => {
   const role = authStore.user?.role || profile.value?.role;
-  return role === "admin" || role === "super_admin";
+  return role === "admin" || role === "super_admin" || role === "frontdesk";
 });
 
 const presets = [
@@ -1296,7 +1296,7 @@ onMounted(() => {
   if (themeStore.primaryColor) {
     pickerColor.value = themeStore.primaryColor.replace("#", "");
   }
-  if (isOwner.value) fetchContests();
+  if (isShopAdmin.value) fetchContests();
 });
 
 // ── Contests ──────────────────────────────────────────────

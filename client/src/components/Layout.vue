@@ -225,7 +225,8 @@ const navItems = computed(() => [
   {
     label: t("nav.analytics"),
     path: "/app/financials",
-    ownerOnly: true,
+    ownerOnly: false,
+    financialsOnly: true,
     icon: "pi pi-chart-bar",
   },
   {
@@ -244,10 +245,11 @@ const toggleLocale = () => {
   localStorage.setItem("locale", next);
 };
 
-const isOwner = computed(() => {
+const isShopAdmin = computed(() => {
   const role = authStore.user?.role;
-  return role === "admin" || role === "super_admin";
+  return role === "admin" || role === "super_admin" || role === "frontdesk";
 });
+const isAnalyticsAllowed = computed(() => authStore.isAnalyticsAllowed);
 const isClient = computed(() => authStore.isClient);
 
 const visibleNavItems = computed(() => {
@@ -256,7 +258,8 @@ const visibleNavItems = computed(() => {
   return navItems.value.filter((item) => {
     if (isClient.value) return item.clientOnly;
     if (item.clientOnly) return false;
-    if (item.ownerOnly && !isOwner.value) return false;
+    if (item.ownerOnly && !isShopAdmin.value) return false;
+    if (item.financialsOnly && !isAnalyticsAllowed.value) return false;
 
     return true;
   });

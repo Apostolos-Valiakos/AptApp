@@ -162,6 +162,13 @@
             filter
           />
         </div>
+        <div class="md:col-span-2 flex items-center gap-3">
+          <ToggleSwitch v-model="editingStaff.visible_in_calendar" />
+          <div>
+            <div class="text-sm font-medium text-gray-700">{{ t('staff.dialog.visibleInCalendar') }}</div>
+            <div class="text-xs text-gray-400">{{ t('staff.dialog.visibleInCalendarNote') }}</div>
+          </div>
+        </div>
       </div>
     </div>
     <template #footer>
@@ -206,6 +213,16 @@
           class="w-full"
           type="password"
           placeholder="••••••••"
+        />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('staff.loginDialog.role') }}</label>
+        <Dropdown
+          v-model="newLogin.role"
+          :options="loginRoleOptions"
+          optionLabel="label"
+          optionValue="value"
+          class="w-full"
         />
       </div>
     </div>
@@ -253,7 +270,11 @@ const editingStaff = ref<any>({});
 // NEW: Login Dialog State
 const showLoginDialog = ref(false);
 const loginStaffTarget = ref<any>(null);
-const newLogin = ref({ username: "", password: "" });
+const newLogin = ref({ username: "", password: "", role: "staff" });
+const loginRoleOptions = computed(() => [
+  { label: t("staff.loginDialog.roleStaff"), value: "staff" },
+  { label: t("staff.loginDialog.roleFrontdesk"), value: "frontdesk" },
+]);
 
 // ... (Existing fetch/save logic remains same) ...
 const fetchData = async () => {
@@ -287,6 +308,7 @@ const openNew = () => {
     first_name: "",
     last_name: "",
     service_ids: [],
+    visible_in_calendar: true,
   };
   showDialog.value = true;
 };
@@ -346,7 +368,7 @@ const openLoginDialog = (staffMember: any) => {
   loginStaffTarget.value = staffMember;
   // Suggest a username automatically (e.g., first.last)
   const suggested = staffMember.name.toLowerCase().replace(/\s/g, ".");
-  newLogin.value = { username: suggested, password: "" };
+  newLogin.value = { username: suggested, password: "", role: "staff" };
   showLoginDialog.value = true;
 };
 

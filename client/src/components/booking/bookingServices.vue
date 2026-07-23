@@ -92,7 +92,7 @@
             @update:modelValue="recalcTimes"
           />
         </div>
-        <div class="col-span-1 min-w-0" v-if="isOwner">
+        <div class="col-span-1 min-w-0" v-if="isShopAdmin">
           <label class="text-xs text-gray-500 block mb-1">{{
             t("bookingServices.price")
           }}</label>
@@ -124,7 +124,7 @@ import { useI18n } from "vue-i18n";
 import { useAuthStore } from "../../stores/auth";
 const { t } = useI18n();
 const authStore = useAuthStore();
-const isOwner = authStore.isOwner;
+const isShopAdmin = authStore.isShopAdmin;
 
 const props = defineProps({
   modelValue: { type: Array as () => any[], required: true },
