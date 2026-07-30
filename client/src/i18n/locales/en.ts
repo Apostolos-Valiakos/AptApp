@@ -679,6 +679,126 @@ export default {
     addProduct: 'Add a Product',
     stock: 'Stock',
   },
+  landing: {
+    nav: {
+      features: 'Features',
+      howItWorks: 'How it Works',
+      pricing: 'Pricing',
+      contact: 'Contact',
+      signIn: 'Sign In',
+    },
+    hero: {
+      eyebrow: 'For Spas, Salons & Therapy Practices',
+      headline1: 'Run your practice,',
+      headline2: 'not your paperwork',
+      subheading: 'BookFlow brings online booking, staff scheduling, client management and reporting into one simple platform built for wellness and therapy businesses.',
+      ctaPrimary: 'Request a Demo',
+      ctaSecondary: 'Sign In',
+    },
+    value: {
+      eyebrow: 'Why BookFlow',
+      title: 'Everything your front desk needs',
+      items: {
+        scheduling: {
+          title: 'Effortless Scheduling',
+          description: 'A drag-and-drop calendar built for multi-staff, multi-service businesses.',
+        },
+        clients: {
+          title: 'Happier Clients',
+          description: 'Automated reminders and a self-service portal keep clients coming back.',
+        },
+        financials: {
+          title: 'Clear Financials',
+          description: 'Real-time reports on revenue, staff performance and payment methods.',
+        },
+      },
+    },
+    features: {
+      eyebrow: 'Features',
+      title: 'Built for how you actually work',
+      items: {
+        scheduling: {
+          title: 'Online Scheduling',
+          description: 'A full calendar for every member of staff, color-coded by service.',
+        },
+        staff: {
+          title: 'Staff Management',
+          description: 'Manage schedules, specialties, hourly rates and logins in one place.',
+        },
+        portal: {
+          title: 'Client Portal & Reminders',
+          description: 'Clients book, rebook and get reminders without a phone call.',
+        },
+        giftcards: {
+          title: 'Gift Cards',
+          description: 'Sell and redeem gift cards directly at the point of sale.',
+        },
+        reports: {
+          title: 'Reports & Analytics',
+          description: 'Track revenue, appointments and staff performance at a glance.',
+        },
+        multilocation: {
+          title: 'Multi-Location Ready',
+          description: 'Run one shop or many, each with its own staff, services and settings.',
+        },
+      },
+    },
+    pricing: {
+      eyebrow: 'Pricing',
+      title: 'A plan for every stage',
+      subtitle: 'Every plan starts with a conversation — request a demo and we\'ll help you find the right fit.',
+      tiers: {
+        trial: {
+          name: 'Trial',
+          description: 'Try BookFlow with your own data, risk-free.',
+          feature1: 'Full scheduling & calendar',
+          feature2: 'Up to 2 staff members',
+          feature3: 'Email support',
+          cta: 'Request a Demo',
+        },
+        basic: {
+          name: 'Basic',
+          description: 'For single-location shops getting started.',
+          feature1: 'Everything in Trial',
+          feature2: 'Unlimited staff',
+          feature3: 'Client portal & reminders',
+          cta: 'Request a Demo',
+        },
+        pro: {
+          name: 'Pro',
+          description: 'For growing businesses that need reporting.',
+          feature1: 'Everything in Basic',
+          feature2: 'Reports & analytics',
+          feature3: 'Gift cards & products',
+          cta: 'Request a Demo',
+        },
+      },
+    },
+    contact: {
+      eyebrow: 'Get in Touch',
+      title: 'Request a Demo',
+      subtitle: 'Tell us about your business and we\'ll be in touch to set up a personalized demo.',
+      form: {
+        name: 'Your Name',
+        email: 'Email',
+        shopName: 'Business Name',
+        phone: 'Phone (optional)',
+        message: 'Message (optional)',
+        submit: 'Request a Demo',
+        submitting: 'Sending...',
+      },
+      success: {
+        title: 'Thank you!',
+        subtitle: 'We\'ve received your request and will be in touch shortly.',
+      },
+      error: 'Something went wrong. Please try again.',
+      validation: 'Name, email and business name are required.',
+    },
+    footer: {
+      tagline: 'Booking software for spas, salons & therapy practices.',
+      rights: '© 2026 BookFlow. All rights reserved.',
+    },
+  },
   demoRequests: {
     title: 'Demo Requests',
     table: {

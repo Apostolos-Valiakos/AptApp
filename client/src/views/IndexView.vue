@@ -1,45 +1,47 @@
 <template>
-  <div class="spa-landing">
+  <div class="saas-landing">
     <!-- ═══════════════════════════════════════════════════════
          NAV
     ═══════════════════════════════════════════════════════ -->
     <nav
-      class="fixed top-0 left-0 right-0 z-50 bg-[#F9F5F0]/95 backdrop-blur border-b border-[#D4A97A]/20 shadow-sm"
+      class="fixed top-0 left-0 right-0 z-50 bg-white border-b border-[var(--p-primary-200)]/40 shadow-sm"
     >
       <div
         class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16"
       >
-        <div
-          class="text-xl font-semibold tracking-wide text-[#2C2C2C]"
-          style="font-family: &quot;Georgia&quot;, serif"
-        >
-          <span class="text-[#8B6F4E]">Pure</span> Spa &amp; Massage Experience
+        <div class="flex items-center gap-2">
+          <div
+            class="w-8 h-8 rounded-full bg-[var(--p-primary-100)] flex items-center justify-center"
+          >
+            <i class="pi pi-calendar text-[var(--p-primary-600)] text-sm"></i>
+          </div>
+          <span
+            class="text-xl font-semibold tracking-wide text-gray-800"
+            style="font-family: &quot;Georgia&quot;, serif"
+          >
+            Book<span class="text-[var(--p-primary-700)] font-bold">Flow</span>
+          </span>
         </div>
         <div
-          class="hidden md:flex items-center gap-8 text-sm font-medium text-[#5C4A3A]"
+          class="hidden md:flex items-center gap-8 text-sm font-medium text-gray-600"
         >
-          <a href="#about" class="hover:text-[#8B6F4E] transition-colors"
-            >Σχετικά</a
-          >
-          <a href="#services" class="hover:text-[#8B6F4E] transition-colors"
-            >Υπηρεσίες</a
-          >
-          <a href="#contact" class="hover:text-[#8B6F4E] transition-colors"
-            >Επικοινωνία</a
-          >
-          <!-- <Button
-            label="Είσοδος"
+          <a href="#features" class="hover:text-[var(--p-primary-color)] transition-colors">{{ t('landing.nav.features') }}</a>
+          <a href="#how-it-works" class="hover:text-[var(--p-primary-color)] transition-colors">{{ t('landing.nav.howItWorks') }}</a>
+          <a href="#pricing" class="hover:text-[var(--p-primary-color)] transition-colors">{{ t('landing.nav.pricing') }}</a>
+          <a href="#contact" class="hover:text-[var(--p-primary-color)] transition-colors">{{ t('landing.nav.contact') }}</a>
+          <Button
+            :label="t('landing.nav.signIn')"
             icon="pi pi-sign-in"
             size="small"
-            class="!bg-[#8B6F4E] border-none !text-white hover:!bg-[#7A5F3E]"
+            class="!bg-[var(--p-primary-color)] border-none !text-white"
             @click="router.push('/login')"
-          /> -->
+          />
         </div>
         <Button
-          label="Είσοδος"
+          :label="t('landing.nav.signIn')"
           icon="pi pi-sign-in"
           size="small"
-          class="md:hidden !bg-[#8B6F4E] border-none !text-white"
+          class="md:hidden !bg-[var(--p-primary-color)] border-none !text-white"
           @click="router.push('/login')"
         />
       </div>
@@ -52,7 +54,7 @@
       class="relative min-h-screen flex items-center justify-center overflow-hidden pt-16"
     >
       <div
-        class="absolute inset-0 bg-gradient-to-br from-[#3A2E28] via-[#2C2420] to-[#1A1510]"
+        class="absolute inset-0 bg-gradient-to-br from-[var(--p-primary-950)] via-[var(--p-primary-900)] to-black"
       ></div>
       <!-- subtle grain overlay -->
       <div
@@ -66,108 +68,75 @@
 
       <div class="relative z-10 text-center px-4 max-w-4xl mx-auto">
         <p
-          class="text-[#D4A97A] text-xs tracking-[0.4em] uppercase mb-6 font-light"
+          class="text-[var(--p-primary-300)] text-xs tracking-[0.4em] uppercase mb-6 font-light"
         >
-          Λάρισα, Ελλάδα
+          {{ t('landing.hero.eyebrow') }}
         </p>
         <h1
           class="text-5xl md:text-7xl font-light text-white mb-6 leading-tight"
           style="font-family: &quot;Georgia&quot;, serif"
         >
-          Καλώς ήρθατε στο<br />
-          <span class="text-[#D4A97A] italic"
-            >Pure Spa &amp; Massage Experience</span
-          >
+          {{ t('landing.hero.headline1') }}<br />
+          <span class="text-[var(--p-primary-300)] italic">{{ t('landing.hero.headline2') }}</span>
         </h1>
         <p
           class="text-gray-300 text-lg mb-10 max-w-2xl mx-auto leading-relaxed font-light"
         >
-          Ανακαλύψτε μια μοναδική εμπειρία χαλάρωσης και αναζωογόνησης με
-          εξειδικευμένες θεραπείες και φυσικά προϊόντα.
+          {{ t('landing.hero.subheading') }}
         </p>
         <div class="flex flex-wrap justify-center gap-4">
           <Button
-            label="Δείτε τις Υπηρεσίες"
+            :label="t('landing.hero.ctaPrimary')"
             icon="pi pi-arrow-down"
-            class="!bg-[#8B6F4E] border-none !py-3 !px-8 hover:!bg-[#7A5F3E] shadow-xl"
-            @click="scrollToServices"
+            class="!bg-[var(--p-primary-color)] border-none !py-3 !px-8 hover:!brightness-110 shadow-xl"
+            @click="scrollToContact"
           />
           <Button
-            label="Είσοδος Συστήματος"
+            :label="t('landing.hero.ctaSecondary')"
             icon="pi pi-sign-in"
             outlined
-            class="!border-[#D4A97A] !text-[#D4A97A] !py-3 !px-8 hover:!bg-[#D4A97A]/10"
+            class="!border-[var(--p-primary-300)] !text-[var(--p-primary-300)] !py-3 !px-8 hover:!bg-[var(--p-primary-300)]/10"
             @click="router.push('/login')"
           />
         </div>
       </div>
 
       <div
-        class="absolute bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 text-[#D4A97A]/50"
+        class="absolute bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 text-[var(--p-primary-300)]/50"
       >
-        <div class="w-px h-12 bg-[#D4A97A]/30"></div>
+        <div class="w-px h-12 bg-[var(--p-primary-300)]/30"></div>
         <i class="pi pi-angle-down text-xs scroll-bounce"></i>
       </div>
     </section>
 
     <!-- ═══════════════════════════════════════════════════════
-         ABOUT
+         HOW IT WORKS / VALUE
     ═══════════════════════════════════════════════════════ -->
-    <section id="about" class="py-24 bg-[#F9F5F0]">
+    <section id="how-it-works" class="py-24 bg-[var(--p-primary-50)]">
       <div class="max-w-5xl mx-auto px-4 text-center">
-        <p
-          class="text-[#8B6F4E] text-xs tracking-[0.3em] uppercase mb-4 font-semibold"
-        >
-          Σχετικά μας
+        <p class="text-[var(--p-primary-color)] text-xs tracking-[0.3em] uppercase mb-4 font-semibold">
+          {{ t('landing.value.eyebrow') }}
         </p>
         <h2
-          class="text-4xl font-light text-[#2C2C2C] mb-6"
+          class="text-4xl font-light text-gray-800 mb-6"
           style="font-family: &quot;Georgia&quot;, serif"
         >
-          Η Τέχνη της Χαλάρωσης
+          {{ t('landing.value.title') }}
         </h2>
-        <div class="w-16 h-0.5 bg-[#D4A97A] mx-auto mb-8"></div>
-        <p class="text-[#5C4A3A] text-lg leading-relaxed max-w-3xl mx-auto">
-          Στο <strong>Pure Spa &amp; Massage Experience</strong> στη Λάρισα,
-          πιστεύουμε ότι η ευεξία είναι τέχνη. Χρησιμοποιούμε αποκλειστικά
-          φυσικά προϊόντα και εξειδικευμένες τεχνικές για να σας προσφέρουμε μια
-          εμπειρία που αναζωογονεί σώμα και πνεύμα.
-        </p>
+        <div class="w-16 h-0.5 bg-[var(--p-primary-300)] mx-auto mb-8"></div>
 
         <div class="grid md:grid-cols-3 gap-8 mt-16">
-          <div class="text-center">
+          <div v-for="item in valueItems" :key="item.key" class="text-center">
             <div
-              class="w-14 h-14 bg-[#8B6F4E]/10 rounded-full flex items-center justify-center mx-auto mb-4"
+              class="w-14 h-14 bg-[var(--p-primary-100)] rounded-full flex items-center justify-center mx-auto mb-4"
             >
-              <i class="pi pi-heart text-[#8B6F4E] text-xl"></i>
+              <i :class="[item.icon, 'text-[var(--p-primary-600)] text-xl']"></i>
             </div>
-            <h4 class="font-semibold text-[#2C2C2C] mb-2">Φυσικά Προϊόντα</h4>
-            <p class="text-sm text-[#7A6A5A] leading-relaxed">
-              100% φυσικά συστατικά για κάθε θεραπεία
-            </p>
-          </div>
-          <div class="text-center">
-            <div
-              class="w-14 h-14 bg-[#8B6F4E]/10 rounded-full flex items-center justify-center mx-auto mb-4"
-            >
-              <i class="pi pi-star text-[#8B6F4E] text-xl"></i>
-            </div>
-            <h4 class="font-semibold text-[#2C2C2C] mb-2">
-              Εξειδικευμένες Τεχνικές
+            <h4 class="font-semibold text-gray-800 mb-2">
+              {{ t(`landing.value.items.${item.key}.title`) }}
             </h4>
-            <p class="text-sm text-[#7A6A5A] leading-relaxed">
-              Εκπαιδευμένοι θεραπευτές με πολυετή εμπειρία
-            </p>
-          </div>
-          <div class="text-center">
-            <div
-              class="w-14 h-14 bg-[#8B6F4E]/10 rounded-full flex items-center justify-center mx-auto mb-4"
-            >
-              <i class="pi pi-shield text-[#8B6F4E] text-xl"></i>
-            </div>
-            <h4 class="font-semibold text-[#2C2C2C] mb-2">Πλήρης Χαλάρωση</h4>
-            <p class="text-sm text-[#7A6A5A] leading-relaxed">
-              Περιβάλλον σχεδιασμένο για βαθιά ηρεμία
+            <p class="text-sm text-gray-500 leading-relaxed">
+              {{ t(`landing.value.items.${item.key}.description`) }}
             </p>
           </div>
         </div>
@@ -175,47 +144,39 @@
     </section>
 
     <!-- ═══════════════════════════════════════════════════════
-         SERVICES
+         FEATURES
     ═══════════════════════════════════════════════════════ -->
-    <section id="services" class="py-24 bg-[#EDE8E1]">
+    <section id="features" class="py-24 bg-[var(--p-primary-100)]">
       <div class="max-w-7xl mx-auto px-4">
         <div class="text-center mb-16">
-          <p
-            class="text-[#8B6F4E] text-xs tracking-[0.3em] uppercase mb-4 font-semibold"
-          >
-            Υπηρεσίες
+          <p class="text-[var(--p-primary-color)] text-xs tracking-[0.3em] uppercase mb-4 font-semibold">
+            {{ t('landing.features.eyebrow') }}
           </p>
           <h2
-            class="text-4xl font-light text-[#2C2C2C] mb-4"
+            class="text-4xl font-light text-gray-800 mb-4"
             style="font-family: &quot;Georgia&quot;, serif"
           >
-            Οι Θεραπείες μας
+            {{ t('landing.features.title') }}
           </h2>
-          <div class="w-16 h-0.5 bg-[#D4A97A] mx-auto"></div>
+          <div class="w-16 h-0.5 bg-[var(--p-primary-300)] mx-auto"></div>
         </div>
 
         <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
           <div
-            v-for="service in services"
-            :key="service.title"
-            class="group bg-[#F9F5F0] rounded-2xl overflow-hidden border border-[#D4A97A]/20 hover:border-[#8B6F4E]/40 hover:shadow-xl transition-all duration-300"
+            v-for="feature in featureItems"
+            :key="feature.key"
+            class="group bg-[var(--p-primary-50)] rounded-2xl overflow-hidden border border-[var(--p-primary-200)]/50 hover:border-[var(--p-primary-color)]/40 hover:shadow-xl transition-all duration-300"
           >
-            <div
-              class="h-1 w-full"
-              :style="{ background: service.color }"
-            ></div>
+            <div class="h-1 w-full bg-gradient-to-r from-[var(--p-primary-300)] to-[var(--p-primary-color)]"></div>
             <div class="p-7">
-              <div
-                class="w-12 h-12 rounded-full flex items-center justify-center mb-4"
-                :style="{ background: service.iconBg }"
-              >
-                <i :class="[service.icon, 'text-xl text-[#8B6F4E]']"></i>
+              <div class="w-12 h-12 rounded-full flex items-center justify-center mb-4 bg-[var(--p-primary-100)]">
+                <i :class="[feature.icon, 'text-xl text-[var(--p-primary-600)]']"></i>
               </div>
-              <h3 class="font-semibold text-[#2C2C2C] mb-2 text-lg">
-                {{ service.title }}
+              <h3 class="font-semibold text-gray-800 mb-2 text-lg">
+                {{ t(`landing.features.items.${feature.key}.title`) }}
               </h3>
-              <p class="text-sm text-[#7A6A5A] leading-relaxed">
-                {{ service.description }}
+              <p class="text-sm text-gray-500 leading-relaxed">
+                {{ t(`landing.features.items.${feature.key}.description`) }}
               </p>
             </div>
           </div>
@@ -224,59 +185,122 @@
     </section>
 
     <!-- ═══════════════════════════════════════════════════════
-         CONTACT
+         PRICING
     ═══════════════════════════════════════════════════════ -->
-    <section id="contact" class="py-24 bg-[#2C2C2C]">
-      <div class="max-w-5xl mx-auto px-4">
+    <section id="pricing" class="py-24 bg-[var(--p-primary-50)]">
+      <div class="max-w-7xl mx-auto px-4">
         <div class="text-center mb-16">
-          <p
-            class="text-[#D4A97A] text-xs tracking-[0.3em] uppercase mb-4 font-semibold"
+          <p class="text-[var(--p-primary-color)] text-xs tracking-[0.3em] uppercase mb-4 font-semibold">
+            {{ t('landing.pricing.eyebrow') }}
+          </p>
+          <h2
+            class="text-4xl font-light text-gray-800 mb-4"
+            style="font-family: &quot;Georgia&quot;, serif"
           >
-            Επικοινωνία
+            {{ t('landing.pricing.title') }}
+          </h2>
+          <div class="w-16 h-0.5 bg-[var(--p-primary-300)] mx-auto mb-4"></div>
+          <p class="text-gray-500 text-sm max-w-xl mx-auto">{{ t('landing.pricing.subtitle') }}</p>
+        </div>
+
+        <div class="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto">
+          <div
+            v-for="tier in pricingTiers"
+            :key="tier.key"
+            class="rounded-2xl p-7 border transition-all duration-300"
+            :class="tier.highlight
+              ? 'bg-[var(--p-primary-color)] border-[var(--p-primary-color)] text-white shadow-xl scale-105'
+              : 'bg-white border-[var(--p-primary-200)]/50 hover:shadow-lg'"
+          >
+            <h3 class="font-semibold text-lg mb-1" :class="tier.highlight ? 'text-white' : 'text-gray-800'">
+              {{ t(`landing.pricing.tiers.${tier.key}.name`) }}
+            </h3>
+            <p class="text-sm mb-6" :class="tier.highlight ? 'text-white/80' : 'text-gray-500'">
+              {{ t(`landing.pricing.tiers.${tier.key}.description`) }}
+            </p>
+            <ul class="space-y-2 mb-8 text-sm">
+              <li v-for="n in 3" :key="n" class="flex items-start gap-2">
+                <i class="pi pi-check text-xs mt-1" :class="tier.highlight ? 'text-white' : 'text-[var(--p-primary-color)]'"></i>
+                <span :class="tier.highlight ? 'text-white/90' : 'text-gray-600'">
+                  {{ t(`landing.pricing.tiers.${tier.key}.feature${n}`) }}
+                </span>
+              </li>
+            </ul>
+            <Button
+              :label="t(`landing.pricing.tiers.${tier.key}.cta`)"
+              class="w-full border-none justify-center"
+              :class="tier.highlight ? '!bg-white !text-[var(--p-primary-color)]' : '!bg-[var(--p-primary-color)] !text-white'"
+              @click="scrollToContact"
+            />
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════
+         CONTACT / DEMO REQUEST
+    ═══════════════════════════════════════════════════════ -->
+    <section id="contact" class="py-24 bg-[var(--p-primary-950)]">
+      <div class="max-w-3xl mx-auto px-4">
+        <div class="text-center mb-12">
+          <p class="text-[var(--p-primary-300)] text-xs tracking-[0.3em] uppercase mb-4 font-semibold">
+            {{ t('landing.contact.eyebrow') }}
           </p>
           <h2
             class="text-4xl font-light text-white mb-4"
             style="font-family: &quot;Georgia&quot;, serif"
           >
-            Βρείτε μας
+            {{ t('landing.contact.title') }}
           </h2>
-          <div class="w-16 h-0.5 bg-[#D4A97A] mx-auto"></div>
+          <div class="w-16 h-0.5 bg-[var(--p-primary-300)] mx-auto mb-4"></div>
+          <p class="text-gray-400 text-sm max-w-xl mx-auto">{{ t('landing.contact.subtitle') }}</p>
         </div>
 
-        <div class="grid md:grid-cols-3 gap-8 text-center">
-          <div>
-            <div
-              class="w-14 h-14 bg-[#D4A97A]/10 rounded-full flex items-center justify-center mx-auto mb-4"
-            >
-              <i class="pi pi-map-marker text-[#D4A97A] text-xl"></i>
+        <div class="bg-white rounded-2xl shadow-xl p-8 sm:p-10">
+          <div v-if="submitted" class="text-center py-8">
+            <div class="w-14 h-14 bg-[var(--p-primary-100)] rounded-full flex items-center justify-center mx-auto mb-4">
+              <i class="pi pi-check text-[var(--p-primary-600)] text-2xl"></i>
             </div>
-            <h4 class="text-white font-semibold mb-2">Διεύθυνση</h4>
-            <p class="text-gray-400 text-sm leading-relaxed">
-              Ρούσβελτ 63, Λάρισα<br />412 22
-            </p>
+            <h3 class="text-xl font-semibold text-gray-800 mb-2">{{ t('landing.contact.success.title') }}</h3>
+            <p class="text-gray-500 text-sm">{{ t('landing.contact.success.subtitle') }}</p>
           </div>
-          <div>
-            <div
-              class="w-14 h-14 bg-[#D4A97A]/10 rounded-full flex items-center justify-center mx-auto mb-4"
-            >
-              <i class="pi pi-phone text-[#D4A97A] text-xl"></i>
+
+          <form v-else @submit.prevent="submitDemoRequest" class="space-y-4">
+            <div class="grid sm:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('landing.contact.form.name') }}</label>
+                <InputText v-model="form.name" class="w-full" />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('landing.contact.form.email') }}</label>
+                <InputText v-model="form.email" type="email" class="w-full" />
+              </div>
             </div>
-            <h4 class="text-white font-semibold mb-2">Ραντεβού</h4>
-            <p class="text-gray-400 text-sm leading-relaxed">
-              Επικοινωνήστε μαζί μας<br />για ραντεβού
-            </p>
-          </div>
-          <div>
-            <div
-              class="w-14 h-14 bg-[#D4A97A]/10 rounded-full flex items-center justify-center mx-auto mb-4"
-            >
-              <i class="pi pi-globe text-[#D4A97A] text-xl"></i>
+            <div class="grid sm:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('landing.contact.form.shopName') }}</label>
+                <InputText v-model="form.shop_name" class="w-full" />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('landing.contact.form.phone') }}</label>
+                <InputText v-model="form.phone" class="w-full" />
+              </div>
             </div>
-            <h4 class="text-white font-semibold mb-2">Online</h4>
-            <p class="text-gray-400 text-sm leading-relaxed">
-              puremassagespa.gr
-            </p>
-          </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('landing.contact.form.message') }}</label>
+              <Textarea v-model="form.message" class="w-full" rows="3" />
+            </div>
+
+            <p v-if="errorMsg" class="text-sm text-red-500">{{ errorMsg }}</p>
+
+            <Button
+              type="submit"
+              :label="submitting ? t('landing.contact.form.submitting') : t('landing.contact.form.submit')"
+              icon="pi pi-send"
+              class="w-full !bg-[var(--p-primary-color)] border-none justify-center !py-3"
+              :loading="submitting"
+            />
+          </form>
         </div>
       </div>
     </section>
@@ -284,31 +308,17 @@
     <!-- ═══════════════════════════════════════════════════════
          FOOTER
     ═══════════════════════════════════════════════════════ -->
-    <footer class="py-10 bg-[#1A1510] text-center">
+    <footer class="py-10 bg-black text-center">
       <div class="max-w-7xl mx-auto px-4">
         <div
           class="text-xl font-light text-white mb-2"
           style="font-family: &quot;Georgia&quot;, serif"
         >
-          <span class="text-[#D4A97A]">Pure</span> Spa &amp; Massage Experience
+          Book<span class="text-[var(--p-primary-300)]">Flow</span>
         </div>
-        <p class="text-gray-500 text-xs mb-4">Ρούσβελτ 63, Λάρισα 412 22</p>
-        <div class="flex justify-center gap-4 mb-6">
-          <a
-            href="#"
-            class="text-gray-500 hover:text-[#D4A97A] transition-colors"
-          >
-            <i class="pi pi-instagram text-xl"></i>
-          </a>
-          <a
-            href="#"
-            class="text-gray-500 hover:text-[#D4A97A] transition-colors"
-          >
-            <i class="pi pi-facebook text-xl"></i>
-          </a>
-        </div>
+        <p class="text-gray-500 text-xs mb-6">{{ t('landing.footer.tagline') }}</p>
         <div class="border-t border-gray-800 pt-6 text-xs text-gray-600">
-          © 2026 Pure Spa &amp; Massage Experience. All rights reserved.
+          {{ t('landing.footer.rights') }}
         </div>
       </div>
     </footer>
@@ -316,69 +326,79 @@
 </template>
 
 <script setup lang="ts">
+import { ref } from "vue";
 import { useRouter } from "vue-router";
+import { useI18n } from "vue-i18n";
 import Button from "primevue/button";
 
 const router = useRouter();
+const { t } = useI18n();
 
-const services = [
-  {
-    title: "Περιποίηση Προσώπου",
-    description:
-      "Εξατομικευμένες θεραπείες προσώπου με φυσικά προϊόντα για λαμπερό και αναζωογονημένο δέρμα.",
-    icon: "pi pi-sparkles",
-    color: "linear-gradient(90deg, #D4A97A, #E8C99A)",
-    iconBg: "#D4A97A22",
-  },
-  {
-    title: "Pure Premium Treatments",
-    description:
-      "Πολυτελείς θεραπείες ολιστικής προσέγγισης για βαθιά χαλάρωση και αναγέννηση.",
-    icon: "pi pi-star",
-    color: "linear-gradient(90deg, #8B6F4E, #A68563)",
-    iconBg: "#8B6F4E22",
-  },
-  {
-    title: "Ειδικές Θεραπείες",
-    description:
-      "Στοχευμένες θεραπείες για ειδικές ανάγκες του δέρματος και του σώματος.",
-    icon: "pi pi-heart",
-    color: "linear-gradient(90deg, #B8956A, #D4A97A)",
-    iconBg: "#B8956A22",
-  },
-  {
-    title: "Pure Massage Experience",
-    description:
-      "Μοναδικές τεχνικές μασάζ που συνδυάζουν αρώματα και αφές για πλήρη αποκατάσταση.",
-    icon: "pi pi-sun",
-    color: "linear-gradient(90deg, #7A5F3E, #8B6F4E)",
-    iconBg: "#7A5F3E22",
-  },
-  {
-    title: "Express Massage",
-    description:
-      "Γρήγορες θεραπείες για άμεση ανακούφιση από την καθημερινή κούραση.",
-    icon: "pi pi-bolt",
-    color: "linear-gradient(90deg, #C8A882, #D4A97A)",
-    iconBg: "#C8A88222",
-  },
-  {
-    title: "Laser AI Alexandrite 755nm",
-    description:
-      "Τεχνολογία αιχμής για αποτρίχωση και δερματολογικές θεραπείες.",
-    icon: "pi pi-verified",
-    color: "linear-gradient(90deg, #6B5344, #8B6F4E)",
-    iconBg: "#6B534422",
-  },
+const valueItems = [
+  { key: "scheduling", icon: "pi pi-calendar" },
+  { key: "clients", icon: "pi pi-heart" },
+  { key: "financials", icon: "pi pi-chart-line" },
 ];
 
-const scrollToServices = () => {
-  document.getElementById("services")?.scrollIntoView({ behavior: "smooth" });
+const featureItems = [
+  { key: "scheduling", icon: "pi pi-calendar" },
+  { key: "staff", icon: "pi pi-users" },
+  { key: "portal", icon: "pi pi-user" },
+  { key: "giftcards", icon: "pi pi-ticket" },
+  { key: "reports", icon: "pi pi-chart-bar" },
+  { key: "multilocation", icon: "pi pi-building" },
+];
+
+const pricingTiers = [
+  { key: "trial", highlight: false },
+  { key: "basic", highlight: false },
+  { key: "pro", highlight: true },
+];
+
+const form = ref({
+  name: "",
+  email: "",
+  shop_name: "",
+  phone: "",
+  message: "",
+});
+const submitting = ref(false);
+const submitted = ref(false);
+const errorMsg = ref("");
+
+const submitDemoRequest = async () => {
+  errorMsg.value = "";
+
+  if (!form.value.name || !form.value.email || !form.value.shop_name) {
+    errorMsg.value = t("landing.contact.validation");
+    return;
+  }
+
+  submitting.value = true;
+  try {
+    const res = await fetch("/api/v1/demo-requests", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(form.value),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed");
+
+    submitted.value = true;
+  } catch (err) {
+    errorMsg.value = t("landing.contact.error");
+  } finally {
+    submitting.value = false;
+  }
+};
+
+const scrollToContact = () => {
+  document.getElementById("contact")?.scrollIntoView({ behavior: "smooth" });
 };
 </script>
 
 <style scoped>
-.spa-landing {
+.saas-landing {
   font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
 }
 

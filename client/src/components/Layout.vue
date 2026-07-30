@@ -3,6 +3,7 @@
     class="min-h-screen bg-[var(--p-primary-100)] dark:bg-[var(--p-primary-100)] transition-colors duration-300"
   >
     <nav
+      v-if="route.path !== '/'"
       class="sticky top-0 z-50 bg-gradient-to-r from-[var(--p-primary-color)] to-[var(--p-primary-600)] shadow-md"
     >
       <div class="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
@@ -21,7 +22,7 @@
                 v-if="!authStore.isAuthenticated"
                 class="ml-3 text-xl font-extrabold tracking-tight text-white whitespace-nowrap"
               >
-                Pure Spa &amp; Massage Experience
+                BookFlow
               </span>
             </div>
 
