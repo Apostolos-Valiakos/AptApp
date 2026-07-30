@@ -38,8 +38,8 @@
       <Column field="card_number" :header="t('giftCards.table.cardNumber')" sortable></Column>
       <Column field="customer_name" :header="t('giftCards.table.customer')" sortable></Column>
 
+      <!-- Cash revenue-hiding macro disabled (was: v-if="!settingsStore.hideCashPaid") -->
       <Column
-        v-if="!settingsStore.hideCashPaid"
         :header="t('giftCards.table.initialAmount')"
         sortable
         field="initial_amount"
@@ -49,8 +49,8 @@
         </template>
       </Column>
 
+      <!-- Cash revenue-hiding macro disabled (was: v-if="!settingsStore.hideCashPaid") -->
       <Column
-        v-if="!settingsStore.hideCashPaid"
         :header="t('giftCards.table.remainingBalance')"
         sortable
         field="remaining_balance"

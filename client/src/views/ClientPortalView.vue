@@ -1,6 +1,6 @@
 <template>
   <div class="p-6 max-w-6xl mx-auto space-y-6">
-    <!-- Active Contest Banner -->
+    <!-- Active Contest Banner — disabled
     <div
       v-if="activeContest"
       class="relative rounded-2xl overflow-hidden shadow-md"
@@ -32,6 +32,7 @@
         </div>
       </div>
     </div>
+    -->
 
     <!-- Welcome Banner -->
     <div
@@ -410,16 +411,16 @@ const pastAppointments = computed(() => {
 });
 
 onMounted(async () => {
-  // Fetch active contest for this client
-  try {
-    const contestRes = await fetch("/api/v1/contests/active", {
-      headers: { Authorization: `Bearer ${authStore.token}` },
-    });
-    if (contestRes.ok) {
-      const contestData = await contestRes.json();
-      activeContest.value = contestData ?? null;
-    }
-  } catch {}
+  // Contests feature disabled.
+  // try {
+  //   const contestRes = await fetch("/api/v1/contests/active", {
+  //     headers: { Authorization: `Bearer ${authStore.token}` },
+  //   });
+  //   if (contestRes.ok) {
+  //     const contestData = await contestRes.json();
+  //     activeContest.value = contestData ?? null;
+  //   }
+  // } catch {}
 
   try {
     const res = await fetch(`/api/v1/clients/${authStore.clientId}/full`, {

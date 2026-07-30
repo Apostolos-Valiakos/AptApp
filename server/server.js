@@ -505,20 +505,23 @@ const getVisibilityClause = (user, tableAlias = "a") => {
 };
 
 // --- REVENUE EXCLUSION HELPERS (Ctrl+1 hides cash+gift-card, Ctrl+8 hides card — independent toggles) ---
+// Cash/card revenue-hiding macros disabled — both helpers now always return no exclusion.
 const buildRevenueExclusionClause = (excludeCash, excludeCard, alias = "a") => {
-  const methods = [];
-  if (excludeCash === "true") methods.push("'cash'", "'gift-card'");
-  if (excludeCard === "true") methods.push("'card'");
-  if (methods.length === 0) return "";
-  return `AND NOT (${alias}.payment_status = 'paid' AND EXISTS (SELECT 1 FROM transactions _t WHERE _t.appointment_id = ${alias}.id AND _t.payment_method IN (${methods.join(", ")})))`;
+  // const methods = [];
+  // if (excludeCash === "true") methods.push("'cash'", "'gift-card'");
+  // if (excludeCard === "true") methods.push("'card'");
+  // if (methods.length === 0) return "";
+  // return `AND NOT (${alias}.payment_status = 'paid' AND EXISTS (SELECT 1 FROM transactions _t WHERE _t.appointment_id = ${alias}.id AND _t.payment_method IN (${methods.join(", ")})))`;
+  return "";
 };
 
 const buildTxnMethodExclusionClause = (excludeCash, excludeCard, columnPrefix = "") => {
-  const methods = [];
-  if (excludeCash === "true") methods.push("'cash'", "'gift-card'");
-  if (excludeCard === "true") methods.push("'card'");
-  if (methods.length === 0) return "";
-  return `AND ${columnPrefix}payment_method NOT IN (${methods.join(", ")})`;
+  // const methods = [];
+  // if (excludeCash === "true") methods.push("'cash'", "'gift-card'");
+  // if (excludeCard === "true") methods.push("'card'");
+  // if (methods.length === 0) return "";
+  // return `AND ${columnPrefix}payment_method NOT IN (${methods.join(", ")})`;
+  return "";
 };
 
 // --- MIDDLEWARE ---
@@ -1943,6 +1946,7 @@ app.get("/api/v1/unsubscribe", publicActionLimiter, async (req, res) => {
   }
 });
 
+// Public landing-page "Request a Demo" form — no auth, no shop context yet.
 app.post("/api/v1/demo-requests", publicActionLimiter, async (req, res) => {
   const { name, email, shop_name, phone, message } = req.body;
 
@@ -2796,12 +2800,13 @@ app.get("/api/v1/reports/gift-cards", authenticateToken, requireAnalyticsAccess,
   const params = [req.shopId];
 
   let whereClause = "WHERE gc.shop_id = $1";
-  if (excludeCash === "true") {
-    whereClause += " AND gc.purchase_payment_method != 'cash'";
-  }
-  if (excludeCard === "true") {
-    whereClause += " AND gc.purchase_payment_method != 'card'";
-  }
+  // Cash/card revenue-hiding macros disabled.
+  // if (excludeCash === "true") {
+  //   whereClause += " AND gc.purchase_payment_method != 'cash'";
+  // }
+  // if (excludeCard === "true") {
+  //   whereClause += " AND gc.purchase_payment_method != 'card'";
+  // }
   if (from) {
     params.push(from);
     whereClause += ` AND gc.issued_at >= $${params.length}`;
@@ -4791,6 +4796,8 @@ app.put("/api/v1/portal/notifications", authenticateToken, async (req, res) => {
   }
 })();
 
+// Contests feature disabled.
+/*
 // List all contests for the shop (admin)
 app.get("/api/v1/contests", authenticateToken, async (req, res) => {
   if (req.user.role !== "admin" && req.user.role !== "super_admin") {
@@ -4948,6 +4955,7 @@ app.delete("/api/v1/contests/:id", authenticateToken, async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
+*/
 
 // ==================== GIFT CARDS ====================
 

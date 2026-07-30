@@ -641,7 +641,7 @@
           </form>
         </div>
 
-        <!-- ── Contests (admin only) ── -->
+        <!-- ── Contests (admin only) — disabled ──
         <div
           v-if="isShopAdmin"
           class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8"
@@ -662,7 +662,6 @@
             />
           </div>
 
-          <!-- Loading -->
           <div v-if="isLoadingContests" class="space-y-3">
             <Skeleton
               v-for="n in 2"
@@ -672,7 +671,6 @@
             />
           </div>
 
-          <!-- Empty state -->
           <div
             v-else-if="contests.length === 0"
             class="text-center py-10 text-gray-400"
@@ -681,7 +679,6 @@
             <p class="text-sm">Δεν υπάρχουν διαγωνισμοί ακόμα.</p>
           </div>
 
-          <!-- Contest list -->
           <div v-else class="space-y-3">
             <div
               v-for="c in contests"
@@ -752,11 +749,12 @@
             </div>
           </div>
         </div>
+        -->
       </div>
     </div>
   </div>
 
-  <!-- Contest create / edit dialog -->
+  <!-- Contest create / edit dialog — disabled
   <Dialog
     v-model:visible="contestDialogVisible"
     :header="editingContest ? 'Επεξεργασία Διαγωνισμού' : 'Νέος Διαγωνισμός'"
@@ -850,6 +848,7 @@
       />
     </template>
   </Dialog>
+  -->
 </template>
 
 <script setup lang="ts">
@@ -1296,10 +1295,12 @@ onMounted(() => {
   if (themeStore.primaryColor) {
     pickerColor.value = themeStore.primaryColor.replace("#", "");
   }
-  if (isShopAdmin.value) fetchContests();
+  // Contests feature disabled.
+  // if (isShopAdmin.value) fetchContests();
 });
 
-// ── Contests ──────────────────────────────────────────────
+// ── Contests (disabled) ──────────────────────────────────────────────
+/*
 const contests = ref<any[]>([]);
 const isLoadingContests = ref(false);
 const contestDialogVisible = ref(false);
@@ -1433,4 +1434,5 @@ const deleteContest = async (id: number) => {
     });
   }
 };
+*/
 </script>

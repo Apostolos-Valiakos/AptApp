@@ -367,8 +367,9 @@ const calendarEvents = computed(() => {
     const status = appt.status || "new";
     if (statusFilter.value === "active" && (status === "cancelled" || status === "no_show")) return;
     if (statusFilter.value === "cancelled" && status !== "cancelled" && status !== "no_show") return;
-    if (settings.hideCashPaid && appt.payment_status === "paid" && appt.payment_method === "cash") return;
-    if (settings.hideCardPaid && appt.payment_status === "paid" && appt.payment_method === "card") return;
+    // Cash/card revenue-hiding macros disabled.
+    // if (settings.hideCashPaid && appt.payment_status === "paid" && appt.payment_method === "cash") return;
+    // if (settings.hideCardPaid && appt.payment_status === "paid" && appt.payment_method === "card") return;
 
     appt.services.forEach((svc: any, index: number) => {
       const bgColor = getCategoryColor(svc.service_name || "General");
@@ -526,7 +527,8 @@ const calendarOptions = ref({
     const textClass = isCancelled
       ? "line-through opacity-60 text-gray-500"
       : isCashPaid
-      ? "line-through text-orange-700"
+      ? // Strikethrough on cash appointments disabled — was: "line-through text-orange-700"
+        "text-orange-700"
       : "text-gray-900";
     const serviceClass = isCancelled
       ? "opacity-40 text-gray-500"

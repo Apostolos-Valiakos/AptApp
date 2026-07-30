@@ -839,12 +839,13 @@ const fetchAllReports = async () => {
     params.append("to", toDate.toISOString());
   }
 
-  if (settingsStore.hideCashPaid) {
-    params.append("excludeCash", "true");
-  }
-  if (settingsStore.hideCardPaid) {
-    params.append("excludeCard", "true");
-  }
+  // Cash/card revenue-hiding macros disabled.
+  // if (settingsStore.hideCashPaid) {
+  //   params.append("excludeCash", "true");
+  // }
+  // if (settingsStore.hideCardPaid) {
+  //   params.append("excludeCard", "true");
+  // }
 
   const qs = params.toString() ? `?${params.toString()}` : "";
 
@@ -1074,6 +1075,7 @@ const getMethodBadge = (method: string) => {
 };
 
 onMounted(fetchAllReports);
-watch(() => settingsStore.hideCashPaid, fetchAllReports);
-watch(() => settingsStore.hideCardPaid, fetchAllReports);
+// Cash/card revenue-hiding macros disabled.
+// watch(() => settingsStore.hideCashPaid, fetchAllReports);
+// watch(() => settingsStore.hideCardPaid, fetchAllReports);
 </script>

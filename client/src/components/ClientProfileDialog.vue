@@ -360,8 +360,9 @@ const initials = computed(() => {
 
 const visibleHistory = computed(() => {
   return history.value.filter((a) => {
-    if (settingsStore.hideCashPaid && a.payment_status === "paid" && a.payment_method === "cash") return false;
-    if (settingsStore.hideCardPaid && a.payment_status === "paid" && a.payment_method === "card") return false;
+    // Cash/card revenue-hiding macros disabled.
+    // if (settingsStore.hideCashPaid && a.payment_status === "paid" && a.payment_method === "cash") return false;
+    // if (settingsStore.hideCardPaid && a.payment_status === "paid" && a.payment_method === "card") return false;
     return true;
   });
 });

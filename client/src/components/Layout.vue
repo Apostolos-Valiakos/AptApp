@@ -307,28 +307,29 @@ const handleExitImpersonation = () => {
 const isSuperAdmin = computed(() => authStore.user?.role === "super_admin");
 
 const handleKeydown = (e: KeyboardEvent) => {
-  if (e.ctrlKey && e.key === "1") {
-    e.preventDefault();
-    // Only super_admin can override a remotely locked filter
-    if (!isSuperAdmin.value && chatStore.cashLocked) return;
-    settingsStore.toggleHideCashPaid();
-    // Only super_admin broadcasts the new state to all connected clients
-    if (isSuperAdmin.value) {
-      chatStore.socket?.emit("cash:filter:broadcast", {
-        hidden: settingsStore.hideCashPaid,
-      });
-    }
-  } else if (e.ctrlKey && e.key === "8") {
-    e.preventDefault();
-    // Independent lock/broadcast for card, mirrors the cash macro exactly
-    if (!isSuperAdmin.value && chatStore.cardLocked) return;
-    settingsStore.toggleHideCardPaid();
-    if (isSuperAdmin.value) {
-      chatStore.socket?.emit("card:filter:broadcast", {
-        hidden: settingsStore.hideCardPaid,
-      });
-    }
-  }
+  // Cash/card revenue-hiding macros disabled.
+  // if (e.ctrlKey && e.key === "1") {
+  //   e.preventDefault();
+  //   // Only super_admin can override a remotely locked filter
+  //   if (!isSuperAdmin.value && chatStore.cashLocked) return;
+  //   settingsStore.toggleHideCashPaid();
+  //   // Only super_admin broadcasts the new state to all connected clients
+  //   if (isSuperAdmin.value) {
+  //     chatStore.socket?.emit("cash:filter:broadcast", {
+  //       hidden: settingsStore.hideCashPaid,
+  //     });
+  //   }
+  // } else if (e.ctrlKey && e.key === "8") {
+  //   e.preventDefault();
+  //   // Independent lock/broadcast for card, mirrors the cash macro exactly
+  //   if (!isSuperAdmin.value && chatStore.cardLocked) return;
+  //   settingsStore.toggleHideCardPaid();
+  //   if (isSuperAdmin.value) {
+  //     chatStore.socket?.emit("card:filter:broadcast", {
+  //       hidden: settingsStore.hideCardPaid,
+  //     });
+  //   }
+  // }
 };
 
 // Sync when a remote push arrives

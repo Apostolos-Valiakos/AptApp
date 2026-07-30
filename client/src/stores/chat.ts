@@ -223,17 +223,18 @@ export const useChatStore = defineStore("chat", () => {
       }
     );
 
-    socket.value.on("cash:filter:set", ({ hidden }: { hidden: boolean }) => {
-      remoteHideCash.value = hidden;
-      cashLocked.value = hidden; // locked when super_admin hides, free when super_admin unhides
-      localStorage.setItem("hideCashPaid", String(hidden));
-    });
+    // Cash/card revenue-hiding macros disabled.
+    // socket.value.on("cash:filter:set", ({ hidden }: { hidden: boolean }) => {
+    //   remoteHideCash.value = hidden;
+    //   cashLocked.value = hidden; // locked when super_admin hides, free when super_admin unhides
+    //   localStorage.setItem("hideCashPaid", String(hidden));
+    // });
 
-    socket.value.on("card:filter:set", ({ hidden }: { hidden: boolean }) => {
-      remoteHideCard.value = hidden;
-      cardLocked.value = hidden;
-      localStorage.setItem("hideCardPaid", String(hidden));
-    });
+    // socket.value.on("card:filter:set", ({ hidden }: { hidden: boolean }) => {
+    //   remoteHideCard.value = hidden;
+    //   cardLocked.value = hidden;
+    //   localStorage.setItem("hideCardPaid", String(hidden));
+    // });
 
     // Initialize notification sound
     // notificationSound.value = new Audio("/notification.mp3");
