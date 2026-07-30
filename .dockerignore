@@ -1,0 +1,14 @@
+node_modules
+client/node_modules
+.env
+.env.*
+.git
+.gitignore
+*.sql
+dist
+client/dist
+android
+.claude
+.vscode
+Installation Steps.pdf
+npm-debug.log*
