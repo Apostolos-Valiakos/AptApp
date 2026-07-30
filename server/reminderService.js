@@ -96,7 +96,8 @@ const processReminders = async () => {
             AND a.email_reminder_sent = false
             AND a.status != 'cancelled'
             AND c.receive_emails = true
-            AND a.is_block = false;
+            AND a.is_block = false
+            AND s.plan != 'trial';
         `;
 
     const { rows } = await pool.query(query);
@@ -500,5 +501,20 @@ const processReminders = async () => {
 
 // Runs every 5 minutes, matching the ±5 minute window used in the query above
 cron.schedule("*/1 * * * *", processReminders);
+
+// Suspends trial shops once their trial period has passed. Hourly is plenty —
+// shop status is only ever checked at login, same tolerance as everywhere else.
+const expireTrials = async () => {
+  try {
+    await pool.query(
+      `UPDATE shops SET status = 'suspended'
+       WHERE plan = 'trial' AND status = 'active'
+         AND trial_ends_at IS NOT NULL AND trial_ends_at < NOW()`,
+    );
+  } catch (err) {
+    console.error("Failed to expire trials:", err);
+  }
+};
+cron.schedule("0 * * * *", expireTrials);
 
 module.exports = { processReminders, PUBLIC_BASE_URL };

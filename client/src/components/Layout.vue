@@ -231,6 +231,7 @@ const navItems = computed(() => [
     label: t("nav.giftCards"),
     path: "/app/gift-cards",
     ownerOnly: true,
+    giftCardsOnly: true,
     icon: "pi pi-ticket",
   },
   {
@@ -284,7 +285,8 @@ const visibleNavItems = computed(() => {
     if (isClient.value) return item.clientOnly;
     if (item.clientOnly) return false;
     if (item.ownerOnly && !isShopAdmin.value) return false;
-    if (item.financialsOnly && !isAnalyticsAllowed.value) return false;
+    if (item.financialsOnly && !(isAnalyticsAllowed.value && authStore.hasReportsAccess)) return false;
+    if (item.giftCardsOnly && !authStore.hasGiftCardsAccess) return false;
     if (item.platformOnly && !authStore.isOwner) return false;
 
     return true;

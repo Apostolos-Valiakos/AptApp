@@ -23,6 +23,12 @@ export const useAuthStore = defineStore("auth", () => {
   // Platform operator — manages shops/plans/admins across the whole app, has no shop of their own.
   const isOwner = computed(() => user.value?.role === "owner");
 
+  // Plan-tier feature flags, sourced from the shop_plan set on login — same up-to-24h
+  // staleness already accepted for shop_status (only refreshed at login, not per-request).
+  const hasPortalAccess = computed(() => user.value?.shop_plan !== "trial");
+  const hasReportsAccess = computed(() => user.value?.shop_plan === "pro");
+  const hasGiftCardsAccess = computed(() => user.value?.shop_plan === "pro");
+
   const clientId = computed(
     () => user.value?.clientId || user.value?.client_id,
   );
@@ -112,6 +118,9 @@ export const useAuthStore = defineStore("auth", () => {
     isOwner,
     isShopAdmin,
     isAnalyticsAllowed,
+    hasPortalAccess,
+    hasReportsAccess,
+    hasGiftCardsAccess,
     isClient,
     isImpersonating,
     clientId,

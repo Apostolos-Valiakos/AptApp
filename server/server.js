@@ -548,6 +548,53 @@ const requireAnalyticsAccess = (req, res, next) => {
   next();
 };
 
+// --- PLAN TIER LIMITS ---
+const PLAN_LIMITS = {
+  trial: { maxStaff: 2, portal: false, reports: false, giftCards: false },
+  basic: { maxStaff: Infinity, portal: true, reports: false, giftCards: false },
+  pro: { maxStaff: Infinity, portal: true, reports: true, giftCards: true },
+};
+const getPlanLimits = (plan) => PLAN_LIMITS[plan] || PLAN_LIMITS.trial;
+
+// Checks the caller's shop's plan on every request (not cached in the JWT) so
+// upgrades/downgrades from the owner console take effect immediately.
+const requirePlanFeature = (feature) => async (req, res, next) => {
+  try {
+    const { rows } = await pool.query("SELECT plan FROM shops WHERE id = $1", [req.shopId]);
+    const plan = rows[0]?.plan || "trial";
+    if (!getPlanLimits(plan)[feature]) {
+      return res.status(403).json({ error: "This feature isn't available on your current plan. Please upgrade." });
+    }
+    next();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+// Trial shops are capped at a fixed staff headcount (bodies, not login accounts).
+const requireStaffCapacity = async (req, res, next) => {
+  try {
+    const { rows: shopRows } = await pool.query("SELECT plan FROM shops WHERE id = $1", [req.shopId]);
+    const limits = getPlanLimits(shopRows[0]?.plan);
+    if (limits.maxStaff !== Infinity) {
+      const { rows: countRows } = await pool.query(
+        "SELECT COUNT(*) FROM staff WHERE shop_id = $1 AND is_active = true",
+        [req.shopId],
+      );
+      if (parseInt(countRows[0].count) >= limits.maxStaff) {
+        return res.status(403).json({
+          error: `Your plan allows up to ${limits.maxStaff} staff members. Please upgrade to add more.`,
+        });
+      }
+    }
+    next();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
 // Platform console (cross-shop) is "owner"-only — a separate, shop-less role from super_admin.
 const requireOwner = (req, res, next) => {
   if (req.user.role !== "owner") {
@@ -572,7 +619,7 @@ app.post("/api/v1/login", loginLimiter, async (req, res) => {
   try {
     // 1. Find user by username only (don't check password in SQL)
     const result = await pool.query(
-      `SELECT u.*, s.name as shop_name, s.status as shop_status
+      `SELECT u.*, s.name as shop_name, s.status as shop_status, s.plan as shop_plan
        FROM users u
        LEFT JOIN shops s ON u.shop_id = s.id
        WHERE u.username = $1`,
@@ -770,7 +817,7 @@ app.get("/api/v1/staff", authenticateToken, async (req, res) => {
   }
 });
 
-app.post("/api/v1/staff", authenticateToken, async (req, res) => {
+app.post("/api/v1/staff", authenticateToken, requireStaffCapacity, async (req, res) => {
   const {
     first_name,
     last_name,
@@ -2503,7 +2550,7 @@ app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
   }
 });
 
-app.get("/api/v1/financials", authenticateToken, requireAnalyticsAccess, async (req, res) => {
+app.get("/api/v1/financials", authenticateToken, requireAnalyticsAccess, requirePlanFeature("reports"), async (req, res) => {
   try {
     const { from, to } = req.query;
     // Safety net: without a range this scanned every transaction ever recorded.
@@ -2533,7 +2580,7 @@ app.get("/api/v1/financials", authenticateToken, requireAnalyticsAccess, async (
 });
 
 // --- REPORT ENDPOINTS (ALL FILTERED BY SHOP_ID AND VISIBILITY) ---
-app.get("/api/v1/reports/analytics", authenticateToken, requireAnalyticsAccess, async (req, res) => {
+app.get("/api/v1/reports/analytics", authenticateToken, requireAnalyticsAccess, requirePlanFeature("reports"), async (req, res) => {
   const { from, to, excludeCash, excludeCard } = req.query;
   // Default to last 30 days if no dates provided
   const startDate =
@@ -2630,7 +2677,7 @@ app.get("/api/v1/reports/analytics", authenticateToken, requireAnalyticsAccess, 
   }
 });
 
-app.get("/api/v1/reports/appointments", authenticateToken, requireAnalyticsAccess, async (req, res) => {
+app.get("/api/v1/reports/appointments", authenticateToken, requireAnalyticsAccess, requirePlanFeature("reports"), async (req, res) => {
   const { from, to, excludeCash, excludeCard } = req.query;
   const params = [req.shopId];
 
@@ -2665,7 +2712,7 @@ app.get("/api/v1/reports/appointments", authenticateToken, requireAnalyticsAcces
   }
 });
 
-app.get("/api/v1/reports/clients", authenticateToken, requireAnalyticsAccess, async (req, res) => {
+app.get("/api/v1/reports/clients", authenticateToken, requireAnalyticsAccess, requirePlanFeature("reports"), async (req, res) => {
   const { from, to, excludeCash, excludeCard } = req.query;
   const params = [req.shopId];
 
@@ -2698,7 +2745,7 @@ app.get("/api/v1/reports/clients", authenticateToken, requireAnalyticsAccess, as
   }
 });
 
-app.get("/api/v1/reports/sales", authenticateToken, requireAnalyticsAccess, async (req, res) => {
+app.get("/api/v1/reports/sales", authenticateToken, requireAnalyticsAccess, requirePlanFeature("reports"), async (req, res) => {
   const { from, to, excludeCash, excludeCard } = req.query;
   const params = [req.shopId];
 
@@ -2744,7 +2791,7 @@ app.get("/api/v1/reports/sales", authenticateToken, requireAnalyticsAccess, asyn
   }
 });
 
-app.get("/api/v1/reports/products", authenticateToken, requireAnalyticsAccess, async (req, res) => {
+app.get("/api/v1/reports/products", authenticateToken, requireAnalyticsAccess, requirePlanFeature("reports"), async (req, res) => {
   const { from, to, excludeCash, excludeCard } = req.query;
   const params = [req.shopId];
 
@@ -2795,7 +2842,7 @@ app.get("/api/v1/reports/products", authenticateToken, requireAnalyticsAccess, a
   }
 });
 
-app.get("/api/v1/reports/gift-cards", authenticateToken, requireAnalyticsAccess, async (req, res) => {
+app.get("/api/v1/reports/gift-cards", authenticateToken, requireAnalyticsAccess, requirePlanFeature("reports"), async (req, res) => {
   const { from, to, excludeCash, excludeCard } = req.query;
   const params = [req.shopId];
 
@@ -2843,7 +2890,7 @@ app.get("/api/v1/reports/gift-cards", authenticateToken, requireAnalyticsAccess,
   }
 });
 
-app.get("/api/v1/reports/staff", authenticateToken, requireAnalyticsAccess, async (req, res) => {
+app.get("/api/v1/reports/staff", authenticateToken, requireAnalyticsAccess, requirePlanFeature("reports"), async (req, res) => {
   const { from, to, excludeCash, excludeCard } = req.query;
   const params = [req.shopId];
 
@@ -2877,7 +2924,7 @@ app.get("/api/v1/reports/staff", authenticateToken, requireAnalyticsAccess, asyn
   }
 });
 
-app.get("/api/v1/reports/payments", authenticateToken, requireAnalyticsAccess, async (req, res) => {
+app.get("/api/v1/reports/payments", authenticateToken, requireAnalyticsAccess, requirePlanFeature("reports"), async (req, res) => {
   const { from, to, excludeCash, excludeCard } = req.query;
   const params = [req.shopId];
 
@@ -2913,7 +2960,7 @@ app.get("/api/v1/reports/payments", authenticateToken, requireAnalyticsAccess, a
     res.status(500).json({ error: "Internal server error" });
   }
 });
-app.get("/api/v1/reports/finances", authenticateToken, requireAnalyticsAccess, async (req, res) => {
+app.get("/api/v1/reports/finances", authenticateToken, requireAnalyticsAccess, requirePlanFeature("reports"), async (req, res) => {
   const { from, to, excludeCash, excludeCard } = req.query;
   const shopId = req.shopId;
   const isSuperAdmin = req.user.role === "super_admin";
@@ -3032,6 +3079,7 @@ app.get(
   "/api/v1/reports/service-summary",
   authenticateToken,
   requireAnalyticsAccess,
+  requirePlanFeature("reports"),
   async (req, res) => {
     const { from, to, excludeCash, excludeCard } = req.query;
     const params = [req.shopId];
@@ -4357,12 +4405,18 @@ app.post("/api/v1/clients/:id/invite", authenticateToken, async (req, res) => {
     if (userCheck.rows.length > 0)
       return res.status(400).json({ error: "Client already has an account" });
 
-    // Fetch shop reply_email
+    // Fetch shop reply_email + plan
     const shopRes = await pool.query(
-      "SELECT reply_email FROM shops WHERE id = $1",
+      "SELECT reply_email, plan FROM shops WHERE id = $1",
       [req.shopId],
     );
     const replyEmail = shopRes.rows[0]?.reply_email || null;
+
+    if (!getPlanLimits(shopRes.rows[0]?.plan).portal) {
+      return res.status(403).json({
+        error: "Client portal invites aren't available on your current plan. Please upgrade.",
+      });
+    }
 
     // Generate temporary token for signup
     const inviteToken = jwt.sign(
@@ -4966,8 +5020,8 @@ const giftCardStatus = (card) => {
 };
 
 // List all gift cards for the shop (admin)
-app.get("/api/v1/gift-cards", authenticateToken, async (req, res) => {
-  if (req.user.role !== "admin" && req.user.role !== "super_admin") {
+app.get("/api/v1/gift-cards", authenticateToken, requirePlanFeature("giftCards"), async (req, res) => {
+  if (req.user.role !== "admin" && req.user.role !== "super_admin" && req.user.role !== "frontdesk") {
     return res.status(403).json({ error: "Admins only" });
   }
   try {
@@ -4985,7 +5039,7 @@ app.get("/api/v1/gift-cards", authenticateToken, async (req, res) => {
 });
 
 // Search redeemable gift cards (any authenticated staff — used at checkout)
-app.get("/api/v1/gift-cards/search", authenticateToken, async (req, res) => {
+app.get("/api/v1/gift-cards/search", authenticateToken, requirePlanFeature("giftCards"), async (req, res) => {
   const q = (req.query.q || "").trim();
   if (!q) return res.json([]);
   try {
@@ -5008,8 +5062,8 @@ app.get("/api/v1/gift-cards/search", authenticateToken, async (req, res) => {
 });
 
 // Create (sell) a gift card — admin only
-app.post("/api/v1/gift-cards", authenticateToken, async (req, res) => {
-  if (req.user.role !== "admin" && req.user.role !== "super_admin") {
+app.post("/api/v1/gift-cards", authenticateToken, requirePlanFeature("giftCards"), async (req, res) => {
+  if (req.user.role !== "admin" && req.user.role !== "super_admin" && req.user.role !== "frontdesk") {
     return res.status(403).json({ error: "Admins only" });
   }
   const {
@@ -5079,8 +5133,8 @@ app.post("/api/v1/gift-cards", authenticateToken, async (req, res) => {
 });
 
 // Edit gift card metadata (admin only) — balance/expiry are not editable here
-app.put("/api/v1/gift-cards/:id", authenticateToken, async (req, res) => {
-  if (req.user.role !== "admin" && req.user.role !== "super_admin") {
+app.put("/api/v1/gift-cards/:id", authenticateToken, requirePlanFeature("giftCards"), async (req, res) => {
+  if (req.user.role !== "admin" && req.user.role !== "super_admin" && req.user.role !== "frontdesk") {
     return res.status(403).json({ error: "Admins only" });
   }
   const { card_number, customer_name, client_id } = req.body;
@@ -5108,8 +5162,8 @@ app.put("/api/v1/gift-cards/:id", authenticateToken, async (req, res) => {
 });
 
 // Delete a gift card (admin only)
-app.delete("/api/v1/gift-cards/:id", authenticateToken, async (req, res) => {
-  if (req.user.role !== "admin" && req.user.role !== "super_admin") {
+app.delete("/api/v1/gift-cards/:id", authenticateToken, requirePlanFeature("giftCards"), async (req, res) => {
+  if (req.user.role !== "admin" && req.user.role !== "super_admin" && req.user.role !== "frontdesk") {
     return res.status(403).json({ error: "Admins only" });
   }
   try {

@@ -342,7 +342,8 @@ const saveStaff = async () => {
       },
       body: JSON.stringify(editingStaff.value),
     });
-    if (!res.ok) throw new Error("Failed");
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed");
     toast.add({
       severity: "success",
       summary: t('common.success'),
@@ -351,12 +352,12 @@ const saveStaff = async () => {
     });
     showDialog.value = false;
     fetchData();
-  } catch (err) {
+  } catch (err: any) {
     toast.add({
       severity: "error",
       summary: t('common.error'),
-      detail: t('staff.toast.saveFailed'),
-      life: 3000,
+      detail: err.message || t('staff.toast.saveFailed'),
+      life: 4000,
     });
   } finally {
     loading.value = false;
