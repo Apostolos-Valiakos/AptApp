@@ -23,8 +23,10 @@ SSH into the VPS as root (or a sudo user), then:
 ```bash
 apt update && apt upgrade -y
 
+# A minimal Debian image often ships without curl or sudo — install them first.
+apt install -y curl sudo ufw fail2ban git
+
 # Basic hardening: firewall + a non-root deploy user (skip if you already have one)
-apt install -y ufw fail2ban git
 adduser deploy
 usermod -aG sudo deploy
 ufw allow OpenSSH
@@ -33,7 +35,7 @@ ufw allow 443/tcp
 ufw enable
 ```
 
-From here on, do everything as the `deploy` user (`su - deploy`), not root.
+From here on, do everything as the `deploy` user (`su - deploy`), not root. (If you'd rather skip creating a separate user and just stay root, that's fine too — drop `sudo` from the commands below, since root doesn't need it.)
 
 ### Install Docker Engine + Compose plugin
 
@@ -70,9 +72,9 @@ nano .env
 
 ```env
 # --- Database (used by both the db container and the app) ---
-POSTGRES_DB=fresha_clone
+POSTGRES_DB=book4beauty
 POSTGRES_PASSWORD=<generate a strong password>
-POSTGRES_URI=postgresql://postgres:<same password>@db:5432/fresha_clone
+POSTGRES_URI=postgresql://postgres:<same password>@db:5432/book4beauty
 
 # --- App ---
 PORT=3000
@@ -104,11 +106,13 @@ Notes:
 
 Your schema's foundational tables were never created by any script in this codebase — they only exist because they were set up once, and everything since has been incremental `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` migrations that the app re-applies automatically on every boot. So: **export the real thing with `pg_dump`, don't hand-write a schema file.**
 
-To avoid a client-version mismatch (a dump made with newer server tools can't be read by an older local `pg_restore`), do the dump using the **same Postgres version this project runs in production** (17), via a one-off Docker container — this works regardless of what's installed on your machine:
+To avoid a client-version mismatch (a dump made with newer server tools can't be read by an older local `pg_restore`), do the dump using the **same Postgres version this project runs in production** (17), via a one-off Docker container — this works regardless of what's installed on your machine.
+
+Note: your local database is named `fresha_clone` — that's just the source you're dumping *from*. The production database on the VPS is named `book4beauty` (set via `POSTGRES_DB` in the production `.env` above) — that's what you're restoring *into*. The name doesn't need to match on both sides.
 
 ```bash
 # Run from your local machine, against your local Postgres.
-# Adjust host/port/user/db to match your local .env.
+# Adjust host/port/user/db to match your local .env (source db: fresha_clone).
 docker run --rm postgres:17-alpine pg_dump \
   -h host.docker.internal -p 5432 -U postgres -d fresha_clone \
   -Fc -f /tmp/local_dump.dump --no-owner --no-privileges \
@@ -138,7 +142,7 @@ Restore:
 ```bash
 cat local_dump.dump | docker compose exec -T db pg_restore \
   --verbose --clean --if-exists --no-owner --no-privileges \
-  -U postgres -d fresha_clone
+  -U postgres -d book4beauty
 ```
 
 ### Clear transactional data for a clean start
@@ -146,7 +150,7 @@ cat local_dump.dump | docker compose exec -T db pg_restore \
 You chose to bring the schema and shop configuration (shops, staff, services) but **not** live customer data. After the restore above, run:
 
 ```bash
-docker compose exec -T db psql -U postgres -d fresha_clone <<'SQL'
+docker compose exec -T db psql -U postgres -d book4beauty <<'SQL'
 TRUNCATE TABLE
   transactions,
   appointment_services,
@@ -180,8 +184,8 @@ Watch for:
 Verify tables landed correctly:
 
 ```bash
-docker compose exec -T db psql -U postgres -d fresha_clone -c "\dt"
-docker compose exec -T db psql -U postgres -d fresha_clone -c "SELECT count(*) FROM shops;"
+docker compose exec -T db psql -U postgres -d book4beauty -c "\dt"
+docker compose exec -T db psql -U postgres -d book4beauty -c "SELECT count(*) FROM shops;"
 ```
 
 At this point the app is reachable at `http://your-vps-ip:3000` — but keep reading, we're about to lock that down and put HTTPS in front of it.
@@ -276,7 +280,7 @@ docker compose logs -f app
 
 **Backups** (set up a cron job on the host):
 ```bash
-docker compose exec -T db pg_dump -U postgres -Fc fresha_clone > ~/backups/backup-$(date +%F).dump
+docker compose exec -T db pg_dump -U postgres -Fc book4beauty > ~/backups/backup-$(date +%F).dump
 ```
 Keep these off-box too (rsync to another machine or object storage) — a backup that only lives on the same VPS doesn't protect you if the VPS itself is lost.
 

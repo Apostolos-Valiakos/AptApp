@@ -4,7 +4,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD} # From .env
-      POSTGRES_DB: ${POSTGRES_DB} # e.g., fresha_clone
+      POSTGRES_DB: ${POSTGRES_DB} # e.g., book4beauty
       POSTGRES_USER: postgres # Or custom user
       TZ: "UTC"
     volumes:
@@ -61,11 +61,11 @@ volumes:
   redisdata:
   uploads:
 # docker compose up -d
-# docker compose exec -i db psql -U postgres -d fresha_clone < backup.sql
+# docker compose exec -i db psql -U postgres -d book4beauty < backup.sql
 # git pull → docker compose down && docker compose up -d --build
 
-# sudo docker compose exec -T db psql -U postgres -d fresha_clone -c "\dt"          # list all tables
-# sudo docker compose exec -T db psql -U postgres -d fresha_clone -c "SELECT count(*) FROM clients;"  # example table check
+# sudo docker compose exec -T db psql -U postgres -d book4beauty -c "\dt"          # list all tables
+# sudo docker compose exec -T db psql -U postgres -d book4beauty -c "SELECT count(*) FROM clients;"  # example table check
 
 # cat db_backup.sql | sudo docker compose exec -T db pg_restore \
 #   --verbose \
@@ -74,4 +74,4 @@ volumes:
 #   --no-owner \
 #   --no-privileges \
 #   -U postgres \
-#   -d fresha_clone
+#   -d book4beauty
