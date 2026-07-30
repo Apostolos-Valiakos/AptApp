@@ -52,9 +52,9 @@ docker compose version
 ## 2. Get the code onto the VPS
 
 ```bash
-cd ~
-git clone <your-repo-url> booking
-cd booking
+mkdir -p /opt/book4beauty
+git clone <your-repo-url> /opt/book4beauty
+cd /opt/book4beauty
 ```
 
 (If the repo is private, set up a deploy key or use `scp`/`rsync` instead of `git clone`.)
@@ -66,7 +66,7 @@ cd booking
 Copy the structure of your local `.env`, but **do not reuse dev secrets** — generate new ones for production. On the VPS:
 
 ```bash
-cd ~/booking
+cd /opt/book4beauty
 nano .env
 ```
 
@@ -81,7 +81,8 @@ PORT=3000
 NODE_ENV=production
 JWT_SECRET=<generate: openssl rand -hex 32>
 MESSAGE_ENCRYPTION_KEY=<generate: openssl rand -hex 32>
-ALLOWED_ORIGINS=https://yourdomain.com
+ALLOWED_ORIGINS=https://book4beauty.gr
+PUBLIC_BASE_URL=https://book4beauty.gr
 
 # --- Email (for reminders, invites, demo-request notifications) ---
 EMAIL_HOST=smtp.gmail.com
@@ -97,6 +98,7 @@ OWNER_PASSWORD=<pick a strong password>
 Notes:
 - `POSTGRES_URI` uses host `db` (the Docker service name), not `localhost` — that's how containers reach each other on the compose network.
 - Generate secrets with `openssl rand -hex 32` — don't hand-type them.
+- `PUBLIC_BASE_URL` is used to build links inside emails (appointment reminders, unsubscribe, client-portal invites) — set it to your real public URL with **no port** (Nginx handles 443 externally; the app never needs `:3000` in a link anyone outside the VPS will click).
 - `ALLOWED_ORIGINS` is a comma-separated list if you ever serve from more than one origin (e.g. a Capacitor app). Since the app serves its own frontend from the same origin, this mainly matters for Socket.IO's CORS check and any cross-origin API callers.
 - `EMAIL_PASS` for Gmail must be an **App Password** (16 chars, unrelated to your normal login password) — an actual password will fail with a `535 5.7.8 Username and Password not accepted` auth error.
 
@@ -112,19 +114,22 @@ Note: your local database is named `fresha_clone` — that's just the source you
 
 ```bash
 # Run from your local machine, against your local Postgres.
-# Adjust host/port/user/db to match your local .env (source db: fresha_clone).
-docker run --rm postgres:17-alpine pg_dump \
-  -h host.docker.internal -p 5432 -U postgres -d fresha_clone \
-  -Fc -f /tmp/local_dump.dump --no-owner --no-privileges \
+# Adjust user/db/password to match your local .env (source db: fresha_clone).
+# --network host shares your machine's network with the container, so "localhost"
+# inside it is your machine's localhost — the reliable way to do this on native
+# Linux Docker (host.docker.internal is a Docker Desktop convenience that doesn't
+# resolve by default on Linux Engine).
+docker run --rm --network host \
+  -e PGPASSWORD=<your local postgres password> \
+  postgres:17-alpine \
+  pg_dump -h localhost -p 5432 -U postgres -d fresha_clone -Fc --no-owner --no-privileges \
   > local_dump.dump
 ```
-
-If `host.docker.internal` doesn't resolve (Linux Docker sometimes needs `--add-host=host.docker.internal:host-gateway`), use your machine's LAN IP instead of `localhost`.
 
 Transfer the dump to the VPS:
 
 ```bash
-scp local_dump.dump deploy@your-vps-ip:~/booking/local_dump.dump
+scp local_dump.dump deploy@your-vps-ip:/opt/book4beauty/local_dump.dump
 ```
 
 ### Restore it on the VPS
@@ -132,7 +137,7 @@ scp local_dump.dump deploy@your-vps-ip:~/booking/local_dump.dump
 Start just the database first:
 
 ```bash
-cd ~/booking
+cd /opt/book4beauty
 docker compose up -d db
 docker compose logs -f db   # wait for "database system is ready to accept connections", then Ctrl+C
 ```
@@ -170,7 +175,7 @@ This keeps `shops`, `users` (logins), `staff`, `staff_services`, `services`, and
 ## 5. Bring up the full stack
 
 ```bash
-cd ~/booking
+cd /opt/book4beauty
 docker compose up -d --build
 docker compose logs -f app
 ```
@@ -194,18 +199,18 @@ At this point the app is reachable at `http://your-vps-ip:3000` — but keep rea
 
 ## 6. Put Nginx + Let's Encrypt in front
 
-Install Nginx and Certbot on the **host** (not in Docker):
+Install Nginx and Certbot on the **host** (not in Docker). (Commands below drop `sudo` — adjust if you're on the non-root `deploy` user instead of root.)
 
 ```bash
-sudo apt install -y nginx certbot python3-certbot-nginx
+apt install -y nginx certbot python3-certbot-nginx
 ```
 
-Create `/etc/nginx/sites-available/booking`:
+Create `/etc/nginx/sites-available/book4beauty`:
 
 ```nginx
 server {
     listen 80;
-    server_name yourdomain.com;
+    server_name book4beauty.gr www.book4beauty.gr;
 
     location / {
         proxy_pass http://127.0.0.1:3000;
@@ -220,10 +225,12 @@ server {
 }
 ```
 
+(Drop `www.book4beauty.gr` from `server_name` and the `-d` flag below if that subdomain doesn't have its own DNS A record — Certbot fails on any domain that doesn't resolve.)
+
 ```bash
-sudo ln -s /etc/nginx/sites-available/booking /etc/nginx/sites-enabled/
-sudo nginx -t && sudo systemctl reload nginx
-sudo certbot --nginx -d yourdomain.com
+ln -s /etc/nginx/sites-available/book4beauty /etc/nginx/sites-enabled/
+nginx -t && systemctl reload nginx
+certbot --nginx -d book4beauty.gr -d www.book4beauty.gr
 ```
 
 Certbot rewrites the config to redirect HTTP→HTTPS and sets up auto-renewal (`systemctl status certbot.timer`).
@@ -248,7 +255,7 @@ Then:
 
 ```bash
 docker compose up -d
-sudo ufw delete allow 3000/tcp 2>/dev/null || true   # in case you'd opened it
+ufw delete allow 3000/tcp 2>/dev/null || true   # in case you'd opened it
 ```
 
 Your firewall should now only allow 22 (SSH), 80, and 443.
@@ -257,7 +264,7 @@ Your firewall should now only allow 22 (SSH), 80, and 443.
 
 ## 7. Final verification
 
-1. Visit `https://yourdomain.com` — the landing page should load over HTTPS.
+1. Visit `https://book4beauty.gr` — the landing page should load over HTTPS.
 2. Log in at `/login` with `OWNER_USERNAME`/`OWNER_PASSWORD` — you should land with only the "Platform" nav item visible.
 3. Create a shop from the Platform console, create an admin login for it, log in as that admin in an incognito window — confirm the scheduler loads.
 4. Submit the "Request a Demo" form on the landing page and confirm it shows up under Platform → Demo Requests, and that the notification email arrives (check `docker compose logs app` if not — a bad `EMAIL_PASS` shows up there as an `EAUTH`/`535` error, not a UI error).
@@ -268,7 +275,7 @@ Your firewall should now only allow 22 (SSH), 80, and 443.
 
 **Deploying an update:**
 ```bash
-cd ~/booking
+cd /opt/book4beauty
 git pull
 docker compose up -d --build
 ```

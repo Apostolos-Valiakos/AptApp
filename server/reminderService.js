@@ -7,10 +7,13 @@ const nodemailer = require("nodemailer");
 const pool = require("./db");
 const crypto = require("crypto");
 
-// Same convention as vite.config.mjs (${env.API_URL}:${env.PORT}) — API_URL
-// is the bare host, the port is appended separately so this never needs to
-// be touched when moving between local/dev/production environments.
-const PUBLIC_BASE_URL = `${process.env.API_URL}:${process.env.PORT}`;
+// In production behind a reverse proxy (Nginx/TLS), the public URL has no port
+// to append — set PUBLIC_BASE_URL explicitly (e.g. https://yourdomain.com) and
+// it takes precedence. Falls back to the old ${API_URL}:${PORT} convention
+// (matches vite.config.mjs's dev proxy) for local/dev environments that don't
+// set it.
+const PUBLIC_BASE_URL =
+  process.env.PUBLIC_BASE_URL || `${process.env.API_URL}:${process.env.PORT}`;
 
 // 1. Configure Nodemailer
 const transporter = nodemailer.createTransport({

@@ -44,7 +44,7 @@ services:
       NODE_ENV: production
       MESSAGE_ENCRYPTION_KEY: ${MESSAGE_ENCRYPTION_KEY}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS} # Comma-separated list, e.g. https://yourdomain.com
-      # Add any other env vars from your .env (e.g., API_URL if needed)
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL} # e.g. https://yourdomain.com — no port; used in email links
       EMAIL_HOST: ${EMAIL_HOST}
       EMAIL_PORT: ${EMAIL_PORT}
       EMAIL_USER: ${EMAIL_USER}

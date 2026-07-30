@@ -4425,7 +4425,7 @@ app.post("/api/v1/clients/:id/invite", authenticateToken, async (req, res) => {
       { expiresIn: "48h" },
     );
 
-    const signupUrl = `https://interventio.gr/signup?token=${inviteToken}`;
+    const signupUrl = `${PUBLIC_BASE_URL}/signup?token=${inviteToken}`;
     const nodemailer = require("nodemailer");
 
     const transporter = nodemailer.createTransport({
