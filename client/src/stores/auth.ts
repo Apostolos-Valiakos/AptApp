@@ -25,7 +25,6 @@ export const useAuthStore = defineStore("auth", () => {
 
   // Plan-tier feature flags, sourced from the shop_plan set on login — same up-to-24h
   // staleness already accepted for shop_status (only refreshed at login, not per-request).
-  const hasPortalAccess = computed(() => user.value?.shop_plan !== "trial");
   const hasReportsAccess = computed(() => user.value?.shop_plan === "pro");
   const hasGiftCardsAccess = computed(() => user.value?.shop_plan === "pro");
 
@@ -118,7 +117,6 @@ export const useAuthStore = defineStore("auth", () => {
     isOwner,
     isShopAdmin,
     isAnalyticsAllowed,
-    hasPortalAccess,
     hasReportsAccess,
     hasGiftCardsAccess,
     isClient,

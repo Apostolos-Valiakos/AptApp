@@ -49,14 +49,12 @@ export const useChatStore = defineStore("chat", () => {
   const messages = ref<Map<string, Message[]>>(new Map());
   const activeChannelId = ref<string | null>(null);
   const isConnected = ref(false);
-  const onlineUsers = ref<Set<string>>(new Set());
   const typingUsers = ref<Map<string, Set<string>>>(new Map());
   const isMinimized = ref(true);
   const remoteHideCash = ref(false);
   const cashLocked = ref(false);
   const remoteHideCard = ref(false);
   const cardLocked = ref(false);
-  // const notificationSound = ref<HTMLAudioElement | null>(null);
 
   const totalUnreadCount = computed(() => {
     if (!channels.value || !Array.isArray(channels.value)) {
@@ -90,12 +88,6 @@ export const useChatStore = defineStore("chat", () => {
   const connect = (token: string) => {
     if (socket.value?.connected) return;
 
-    // const socketUrl = window.location.origin;
-
-    // socket.value = io(socketUrl, {
-    //   auth: { token },
-    //   transports: ["websocket", "polling"],
-    // });
     const socketUrl =
       (import.meta.env.VITE_API_BASE_URL as string) || window.location.origin;
     socket.value = io(socketUrl, {
@@ -109,18 +101,6 @@ export const useChatStore = defineStore("chat", () => {
 
     socket.value.on("disconnect", () => {
       isConnected.value = false;
-    });
-
-    socket.value.on("users:online", (userIds: string[]) => {
-      onlineUsers.value = new Set(userIds);
-    });
-
-    socket.value.on("user:online", ({ userId }: { userId: string }) => {
-      onlineUsers.value.add(userId);
-    });
-
-    socket.value.on("user:offline", ({ userId }: { userId: string }) => {
-      onlineUsers.value.delete(userId);
     });
 
     socket.value.on("chat:message", (message: Message) => {
@@ -156,7 +136,6 @@ export const useChatStore = defineStore("chat", () => {
         // AND I don't have that specific chat window open
         if (!isFromMe && !isChatOpen) {
           channel.unread_count = (channel.unread_count || 0) + 1;
-          // playNotificationSound();
         }
       }
 
@@ -235,9 +214,6 @@ export const useChatStore = defineStore("chat", () => {
     //   cardLocked.value = hidden;
     //   localStorage.setItem("hideCardPaid", String(hidden));
     // });
-
-    // Initialize notification sound
-    // notificationSound.value = new Audio("/notification.mp3");
   };
 
   const disconnect = () => {
@@ -471,18 +447,6 @@ export const useChatStore = defineStore("chat", () => {
     }
   };
 
-  // const playNotificationSound = () => {
-  //   if (!isMinimized.value) return;
-
-  //   try {
-  //     notificationSound.value?.play().catch((err) => {
-  //       console.log("Could not play notification sound:", err);
-  //     });
-  //   } catch (err) {
-  //     console.log("Notification sound error:", err);
-  //   }
-  // };
-
   const toggleMinimized = () => {
     isMinimized.value = !isMinimized.value;
   };
@@ -499,7 +463,6 @@ export const useChatStore = defineStore("chat", () => {
     activeChannel,
     activeMessages,
     isConnected,
-    onlineUsers,
     typingInActiveChannel,
     isMinimized,
     totalUnreadCount,

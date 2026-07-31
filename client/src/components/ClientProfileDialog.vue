@@ -317,7 +317,6 @@
 
 <script setup lang="ts">
 import { ref, watch, computed } from "vue";
-import Exercises from "./Exercises.vue";
 import { useAuthStore } from "../stores/auth";
 import { useSettingsStore } from "../stores/settings";
 import { storeToRefs } from "pinia";

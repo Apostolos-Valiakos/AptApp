@@ -89,6 +89,5 @@ export const useSettingsStore = defineStore("settings", () => {
     toggleHideCardPaid,
     shopSettings,
     fetchShopSettings,
-    isStaff,
   };
 });
