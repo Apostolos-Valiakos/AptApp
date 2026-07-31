@@ -117,8 +117,6 @@ const processReminders = async () => {
       const endTimeStr = formatTime(appt.end_time);
       const dayStr = formatDay(appt.start_time);
       const windowText = describeReminderWindow(appt.reminder_hours_before);
-      const therapistFullName =
-        `${appt.staff_name}`.trim() || "Επαγγελματίας Υγείας";
       const formatCalendarDate = (date) => {
         return new Date(date).toISOString().replace(/-|:|\.\d\d\d/g, "");
       };
@@ -135,10 +133,10 @@ const processReminders = async () => {
       const confirmButtonHtml = `
         <div style="text-align: center; margin: 0 0 32px 0;">
             <a href="${confirmUrl}"
-              style="display: block; background-color: #8B6F4E; color: white; padding: 16px 32px; border-radius: 16px; text-decoration: none; font-weight: 800; font-size: 16px; box-shadow: 0 4px 6px rgba(139, 111, 78, 0.25);">
+              style="display: block; background-color: #7A1F44; color: white; padding: 16px 32px; border-radius: 16px; text-decoration: none; font-weight: 800; font-size: 16px; box-shadow: 0 4px 6px rgba(122, 31, 68, 0.25);">
               ΕΠΙΒΕΒΑΙΩΣΗ ΡΑΝΤΕΒΟΥ
             </a>
-            <p style="color: #7A6A5A; font-size: 12px; margin-top: 12px;">
+            <p style="color: #7A5A66; font-size: 12px; margin-top: 12px;">
                 Πατήστε το παραπάνω κουμπί για να επιβεβαιώσετε την παρουσία σας.
             </p>
         </div>
@@ -182,7 +180,7 @@ const processReminders = async () => {
                     &quot;Segoe UI&quot;,
                     Roboto,
                     sans-serif;
-                  background-color: #F9F5F0;
+                  background-color: #FBF0EC;
                   padding: 40px 10px;
                   margin: 0;
                   -webkit-font-smoothing: antialiased;
@@ -196,7 +194,7 @@ const processReminders = async () => {
                     border-radius: 32px;
                     overflow: hidden;
                     box-shadow:
-                      0 20px 25px -5px rgba(139, 111, 78, 0.12),
+                      0 20px 25px -5px rgba(122, 31, 68, 0.12),
                       0 10px 10px -5px rgba(0, 0, 0, 0.04);
                   "
                 >
@@ -204,7 +202,7 @@ const processReminders = async () => {
                     <div
                       style="
                         display: inline-block;
-                        background-color: #8B6F4E;
+                        background-color: #7A1F44;
                         color: white;
                         padding: 4px 12px;
                         border-radius: 9999px;
@@ -226,15 +224,15 @@ const processReminders = async () => {
                         letter-spacing: -0.025em;
                       "
                     >
-                      <span style="color: #8B6F4E">Pure</span
-                      ><span style="color: #2C2C2C"> Spa &amp; Massage Experience</span>
+                      <span style="color: #2B141F">Book4</span
+                      ><span style="color: #7A1F44">Beauty</span>
                     </h2>
                   </div>
 
                   <div class="inner-padding" style="padding: 0 40px 40px 40px">
                     <h1
                       style="
-                        color: #2C2C2C;
+                        color: #2B141F;
                         font-family: Georgia, serif;
                         font-size: 32px;
                         font-weight: 700;
@@ -243,12 +241,12 @@ const processReminders = async () => {
                         letter-spacing: -1px;
                       "
                     >
-                      Υπενθύμιση <span style="color: #D4A97A">Ραντεβού</span>
+                      Υπενθύμιση <span style="color: #C9A15A">Ραντεβού</span>
                     </h1>
 
                     <p
                       style="
-                        color: #5C4A3A;
+                        color: #5A3E48;
                         font-size: 16px;
                         line-height: 1.6;
                         margin-bottom: 8px;
@@ -256,14 +254,14 @@ const processReminders = async () => {
                     >
                       Γεια σας,
                     </p>
-                    <p style="color: #5C4A3A; font-size: 16px; line-height: 1.6">
+                    <p style="color: #5A3E48; font-size: 16px; line-height: 1.6">
                       Αυτή είναι μια φιλική υπενθύμιση ${windowText} για το ραντεβού σας στο
-                      <strong style="color: #2C2C2C">${appt.shop_name}</strong>.
+                      <strong style="color: #2B141F">${appt.shop_name}</strong>.
                     </p>
 
                     <div
                       style="
-                        background-color: #F9F5F0;
+                        background-color: #FBF0EC;
                         border-radius: 24px;
                         padding: 30px;
                         margin: 32px 0;
@@ -279,7 +277,7 @@ const processReminders = async () => {
                       >
                         <div
                           style="
-                            color: #8B6F4E;
+                            color: #7A1F44;
                             font-size: 11px;
                             text-transform: uppercase;
                             font-weight: 800;
@@ -289,7 +287,7 @@ const processReminders = async () => {
                         >
                           Πότε
                         </div>
-                        <div style="color: #2C2C2C; font-size: 18px; font-weight: 700">
+                        <div style="color: #2B141F; font-size: 18px; font-weight: 700">
                           ${dayStr}, ${startTimeStr} - ${endTimeStr}
                         </div>
                       </div>
@@ -299,7 +297,7 @@ const processReminders = async () => {
                       >
                         <div
                           style="
-                            color: #8B6F4E;
+                            color: #7A1F44;
                             font-size: 11px;
                             text-transform: uppercase;
                             font-weight: 800;
@@ -309,7 +307,7 @@ const processReminders = async () => {
                         >
                           Υπηρεσία
                         </div>
-                        <div style="color: #2C2C2C; font-size: 18px; font-weight: 700">
+                        <div style="color: #2B141F; font-size: 18px; font-weight: 700">
                           ${appt.service_name}
                         </div>
                       </div>
@@ -318,17 +316,17 @@ const processReminders = async () => {
 
                     <div
                       style="
-                        border-left: 4px solid #D4A97A;
+                        border-left: 4px solid #C9A15A;
                         padding-left: 20px;
                         margin: 32px 0;
                       "
                     >
-                      <h4 style="margin: 0 0 8px 0; color: #2C2C2C; font-weight: 700">
+                      <h4 style="margin: 0 0 8px 0; color: #2B141F; font-weight: 700">
                         Χρήσιμες Πληροφορίες:
                       </h4>
                       <ul
                         style="
-                          color: #7A6A5A;
+                          color: #7A5A66;
                           font-size: 15px;
                           padding-left: 0;
                           list-style: none;
@@ -336,7 +334,7 @@ const processReminders = async () => {
                         "
                       >
                         <li style="display: flex; align-items: center">
-                          <span style="color: #8B6F4E; margin-right: 8px">✓</span>
+                          <span style="color: #7A1F44; margin-right: 8px">✓</span>
                           Παρακαλούμε να προσέλθετε 5-10 λεπτά νωρίτερα.
                         </li>
                       </ul>
@@ -346,13 +344,13 @@ const processReminders = async () => {
                       style="
                         margin-top: 40px;
                         text-align: center;
-                        border-top: 1px solid #EDE8E1;
+                        border-top: 1px solid #F3E2DA;
                         padding-top: 32px;
                       "
                     >
                       <p
                         style="
-                          color: #2C2C2C;
+                          color: #2B141F;
                           font-size: 14px;
                           font-weight: 700;
                           margin-bottom: 20px;
@@ -367,7 +365,7 @@ const processReminders = async () => {
                         class="button-stack"
                         style="
                           display: inline-block;
-                          background-color: #2C2C2C;
+                          background-color: #2B141F;
                           color: white;
                           padding: 12px 24px;
                           border-radius: 12px;
@@ -397,8 +395,8 @@ const processReminders = async () => {
                         style="
                           display: inline-block;
                           background-color: white;
-                          color: #2C2C2C;
-                          border: 2px solid #EDE8E1;
+                          color: #2B141F;
+                          border: 2px solid #F3E2DA;
                           padding: 10px 24px;
                           border-radius: 12px;
                           text-decoration: none;
@@ -419,16 +417,16 @@ const processReminders = async () => {
                       style="
                         margin-top: 20px;
                         padding-top: 20px;
-                        border-top: 1px solid #EDE8E1;
+                        border-top: 1px solid #F3E2DA;
                         text-align: center;
                       "
                     >
-                      <p style="color: #A89A8A; font-size: 11px; line-height: 1.4">
+                      <p style="color: #A88A95; font-size: 11px; line-height: 1.4">
                         Λαμβάνετε αυτό το email ως υπενθύμιση για το ραντεβού σας.<br />
                         Αν δεν επιθυμείτε να λαμβάνετε πλέον ειδοποιήσεις,
                         <a
                           href="${unsubUrl}"
-                          style="color: #8B6F4E; text-decoration: underline"
+                          style="color: #7A1F44; text-decoration: underline"
                           >πατήστε εδώ για διαγραφή</a
                         >.
                       </p>
@@ -446,7 +444,7 @@ const processReminders = async () => {
                     <div style="margin-bottom: 20px">
                       <span
                         style="
-                          color: #2C2C2C;
+                          color: #2B141F;
                           font-family: Georgia, serif;
                           font-size: 18px;
                           font-weight: 700;
@@ -458,7 +456,7 @@ const processReminders = async () => {
                     </div>
                     <p
                       style="
-                        color: #8B6F4E;
+                        color: #7A1F44;
                         margin-bottom: 12px;
                         font-size: 13px;
                         font-weight: 700;
@@ -466,11 +464,11 @@ const processReminders = async () => {
                         letter-spacing: 0.05em;
                       "
                     >
-                      Powered by Pure Spa &amp; Massage Experience
+                      Powered by Book4Beauty
                     </p>
 
-                    <p style="color: #A89A8A; font-size: 12px; margin: 0; line-height: 1.5">
-                      © ${new Date().getFullYear()} Pure Spa &amp; Massage Experience.<br />
+                    <p style="color: #A88A95; font-size: 12px; margin: 0; line-height: 1.5">
+                      © ${new Date().getFullYear()} Book4Beauty.<br />
                       All rights reserved.
                     </p>
                   </div>

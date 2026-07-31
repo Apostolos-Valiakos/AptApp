@@ -970,7 +970,7 @@ const serviceChartData = computed(() => ({
     {
       data: salesReport.value.map((s: any) => Number(s.total_revenue)),
       backgroundColor: [
-        "#8B6F4E",
+        "#7A1F44",
         "#3b82f6",
         "#10b981",
         "#8b5cf6",

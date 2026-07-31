@@ -66,7 +66,7 @@ import { i18n } from "./i18n";
 
 const MyPreset = definePreset(Aura, {
   semantic: {
-    primary: palette("#8B6F4E"),
+    primary: palette("#7A1F44"),
   },
 });
 

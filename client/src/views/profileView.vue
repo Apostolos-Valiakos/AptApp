@@ -852,7 +852,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed, reactive, watch } from "vue";
+import { ref, onMounted, computed, reactive } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
 import { useRouter } from "vue-router";
@@ -917,7 +917,7 @@ const security = reactive({
 });
 
 // --- Theme / Branding Logic ---
-const pickerColor = ref("8B6F4E");
+const pickerColor = ref("7A1F44");
 const selectedColor = computed(() => themeStore.primaryColor);
 
 const isShopAdmin = computed(() => {
@@ -926,8 +926,8 @@ const isShopAdmin = computed(() => {
 });
 
 const presets = [
-  "#8B6F4E", // Warm Brown (default)
-  "#D4A97A", // Gold Sand
+  "#7A1F44", // Berry (default)
+  "#C9A15A", // Champagne Gold
   "#3b82f6", // Blue
   "#10b981", // Emerald
   "#8b5cf6", // Violet

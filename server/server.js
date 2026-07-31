@@ -21,7 +21,6 @@ const cors = require("cors");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 const multer = require("multer");
-const fs = require("fs");
 const { Server } = require("socket.io");
 const bcrypt = require("bcrypt");
 const crypto = require("crypto");
@@ -61,38 +60,6 @@ const publicActionLimiter = rateLimit({
 });
 
 const { PUBLIC_BASE_URL } = require("./reminderService");
-
-// ==================== FILE UPLOAD SETUP ====================
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadDir),
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, uniqueSuffix + "-" + file.originalname);
-  },
-});
-const eoppyReport = (rows) => {
-  return rows.reduce(
-    (acc, row) => {
-      // Determine the key based on boolean is_eoppy
-      const category = row.is_eoppy ? "eoppy_count" : "non_eoppy_count";
-
-      // Initialize category if it's the first time we see it
-      if (!acc[category]) {
-        acc[category] = { total: 0, services: {} };
-      }
-
-      // Add to the total and map the service name to its count
-      acc[category].total += row.service_count;
-      acc[category].services[row.service_name] = row.service_count;
-
-      return acc;
-    },
-    {
-      eoppy_count: { total: 0, services: {} },
-      non_eoppy_count: { total: 0, services: {} },
-    },
-  );
-};
 
 const addRecurrenceInterval = (date, freq) => {
   const result = new Date(date);
@@ -391,22 +358,6 @@ const performSingleUpdate = async (client, id, shopId, body) => {
   }
 };
 
-const upload = multer({
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 10MB
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = /jpeg|jpg|png|gif|pdf|doc|docx|xls|xlsx/;
-    const extname = allowedTypes.test(
-      path.extname(file.originalname).toLowerCase(),
-    );
-    const mimetype = allowedTypes.test(file.mimetype);
-    if (extname && mimetype) {
-      cb(null, true);
-    } else {
-      cb(new Error("Invalid file type"));
-    }
-  },
-});
 // ==================== MIDDLEWARE ====================
 app.use(
   helmet({
@@ -824,7 +775,6 @@ app.post("/api/v1/staff", authenticateToken, requireStaffCapacity, async (req, r
     email,
     phone,
     role,
-    color,
     username,
     password,
     visible_in_calendar,
@@ -1462,32 +1412,6 @@ app.delete(
 );
 
 // --- CLIENT ROUTES ---
-// app.get("/api/v1/clients", authenticateToken, async (req, res) => {
-//   try {
-//     const { rows } = await pool.query(
-//       `SELECT c.*,
-//         -- Count only EOPPY appointments
-//         (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND is_eoppy = true) as eoppy_count,
-//         -- Count appointments that are NOT EOPPY (is_eoppy is false or null)
-//         (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND (is_eoppy = false OR is_eoppy IS NULL)) as non_eoppy_count
-//       FROM clients c
-//       WHERE shop_id = $1
-//       ORDER BY last_name`,
-//       [req.shopId],
-//     );
-
-//     const data = rows.map((c) => ({
-//       ...c,
-//       full_name: `${c.first_name} ${c.last_name}`,
-//       eoppy_count: parseInt(c.eoppy_count || 0),
-//       non_eoppy_count: parseInt(c.non_eoppy_count || 0),
-//     }));
-
-//     res.json(data);
-//   } catch (err) {
-//     res.status(500).json({ error: "Internal server error" });
-//   }
-// });
 app.get("/api/v1/clients", authenticateToken, async (req, res) => {
   const { slim, search, limit, offset } = req.query;
   try {
@@ -1713,33 +1637,6 @@ app.put("/api/v1/clients/:id", authenticateToken, async (req, res) => {
   }
 });
 
-// app.delete("/api/v1/clients/:id", authenticateToken, async (req, res) => {
-//   try {
-//     const result = await pool.query(
-//       "DELETE FROM clients WHERE id = $1 AND shop_id = $2",
-//       [req.params.id, req.shopId],
-//     );
-
-//     // Optional check if the client even existed
-//     if (result.rowCount === 0) {
-//       return res.status(404).json({ error: "Client not found" });
-//     }
-
-//     res.json({ success: true });
-//   } catch (err) {
-//     // 1. Intercept the PostgreSQL Foreign Key Violation Error (Code 23503)
-//     if (err.code === "23503") {
-//       return res.status(409).json({
-//         error:
-//           "Δεν μπορείτε να διαγράψετε αυτόν τον πελάτη, επειδή υπάρχουν ραντεβού καταχωρημένα στο όνομά του.",
-//       });
-//     }
-
-//     // 2. Generic fallback error (hides the ugly SQL from the user)
-//     console.error("Delete Client Error:", err);
-//     res.status(500).json({ error: "Αποτυχία διαγραφής πελάτη." });
-//   }
-// });
 app.delete("/api/v1/clients/:id", authenticateToken, async (req, res) => {
   const { id } = req.params;
   try {
@@ -1979,11 +1876,11 @@ app.get("/api/v1/unsubscribe", publicActionLimiter, async (req, res) => {
 
     // Return a nice styled confirmation page
     res.send(`
-            <div style="font-family: 'Inter', sans-serif; text-align: center; padding: 100px 20px; background: #F9F5F0; min-height: 100vh;">
-                <div style="background: white; padding: 40px; border-radius: 20px; display: inline-block; box-shadow: 0 10px 25px rgba(139, 111, 78, 0.1);">
-                    <h1 style="color: #2C2C2C; font-family: Georgia, serif; margin-bottom: 10px;">Επιτυχής Διαγραφή</h1>
-                    <p style="color: #5C4A3A;">Έχετε διαγραφεί με επιτυχία από τη λίστα των υπενθυμίσεων.</p>
-                    <a href="${PUBLIC_BASE_URL}/" style="display: inline-block; margin-top: 20px; color: #8B6F4E; text-decoration: none; font-weight: bold;">Επιστροφή στην Αρχική</a>
+            <div style="font-family: 'Inter', sans-serif; text-align: center; padding: 100px 20px; background: #FBF0EC; min-height: 100vh;">
+                <div style="background: white; padding: 40px; border-radius: 20px; display: inline-block; box-shadow: 0 10px 25px rgba(122, 31, 68, 0.1);">
+                    <h1 style="color: #2B141F; font-family: Georgia, serif; margin-bottom: 10px;">Επιτυχής Διαγραφή</h1>
+                    <p style="color: #5A3E48;">Έχετε διαγραφεί με επιτυχία από τη λίστα των υπενθυμίσεων.</p>
+                    <a href="${PUBLIC_BASE_URL}/" style="display: inline-block; margin-top: 20px; color: #7A1F44; text-decoration: none; font-weight: bold;">Επιστροφή στην Αρχική</a>
                 </div>
             </div>
         `);
@@ -2024,7 +1921,7 @@ app.post("/api/v1/demo-requests", publicActionLimiter, async (req, res) => {
       });
 
       await transporter.sendMail({
-        from: `"BookFlow" <${process.env.EMAIL_USER}>`,
+        from: `"Book4Beauty" <${process.env.EMAIL_USER}>`,
         to: process.env.DEMO_REQUEST_EMAIL || process.env.EMAIL_USER,
         replyTo: email,
         subject: `New demo request: ${shop_name}`,
@@ -2086,12 +1983,12 @@ app.get(
 
       // Success Styled Page
       res.send(`
-      <div style="font-family: 'Inter', sans-serif; text-align: center; padding: 100px 20px; background: #F9F5F0; min-height: 100vh;">
-          <div style="background: white; padding: 40px; border-radius: 32px; display: inline-block; box-shadow: 0 20px 25px rgba(139, 111, 78, 0.12); max-width: 400px;">
+      <div style="font-family: 'Inter', sans-serif; text-align: center; padding: 100px 20px; background: #FBF0EC; min-height: 100vh;">
+          <div style="background: white; padding: 40px; border-radius: 32px; display: inline-block; box-shadow: 0 20px 25px rgba(122, 31, 68, 0.12); max-width: 400px;">
               <div style="font-size: 48px; margin-bottom: 20px;">✅</div>
-              <h1 style="color: #2C2C2C; font-family: Georgia, serif; margin-bottom: 10px; font-size: 24px;">Το ραντεβού επιβεβαιώθηκε!</h1>
-              <p style="color: #5C4A3A; line-height: 1.5;">Σας ευχαριστούμε. Η κράτησή σας έχει επισημανθεί ως επιβεβαιωμένη στο σύστημά μας. Ανυπομονούμε να σας δούμε!</p>
-              <a href="${PUBLIC_BASE_URL}/" style="display: inline-block; margin-top: 30px; background: #8B6F4E; color: white; padding: 12px 24px; border-radius: 12px; text-decoration: none; font-weight: bold;">Επιστροφή στην Αρχική</a>
+              <h1 style="color: #2B141F; font-family: Georgia, serif; margin-bottom: 10px; font-size: 24px;">Το ραντεβού επιβεβαιώθηκε!</h1>
+              <p style="color: #5A3E48; line-height: 1.5;">Σας ευχαριστούμε. Η κράτησή σας έχει επισημανθεί ως επιβεβαιωμένη στο σύστημά μας. Ανυπομονούμε να σας δούμε!</p>
+              <a href="${PUBLIC_BASE_URL}/" style="display: inline-block; margin-top: 30px; background: #7A1F44; color: white; padding: 12px 24px; border-radius: 12px; text-decoration: none; font-weight: bold;">Επιστροφή στην Αρχική</a>
           </div>
       </div>
     `);
@@ -3357,46 +3254,6 @@ app.get("/api/v1/chat/channels", authenticateToken, async (req, res) => {
 });
 
 // Create new channel
-app.post("/api/v1/chat/channels", authenticateToken, async (req, res) => {
-  const { name, description, memberIds = [] } = req.body;
-  const client = await pool.connect();
-
-  try {
-    await client.query("BEGIN");
-
-    const channelResult = await client.query(
-      `INSERT INTO chat_channels (shop_id, name, description, created_by)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
-      [req.shopId, name, description, req.user.userId],
-    );
-
-    const channel = channelResult.rows[0];
-
-    await client.query(
-      `INSERT INTO channel_members (channel_id, user_id) VALUES ($1, $2)`,
-      [channel.id, req.user.userId],
-    );
-
-    for (const userId of memberIds) {
-      if (userId !== req.user.userId) {
-        await client.query(
-          `INSERT INTO channel_members (channel_id, user_id) VALUES ($1, $2)`,
-          [channel.id, userId],
-        );
-      }
-    }
-
-    await client.query("COMMIT");
-    res.json(channel);
-  } catch (err) {
-    await client.query("ROLLBACK");
-    console.error("Error creating channel:", err);
-    res.status(500).json({ error: "Failed to create channel" });
-  } finally {
-    client.release();
-  }
-});
-
 // Get messages for a channel
 app.get(
   "/api/v1/chat/channels/:channelId/messages",
@@ -3636,23 +3493,6 @@ app.post(
   },
 );
 
-// Get all shop users for adding to channels
-app.get("/api/v1/chat/shop-users", authenticateToken, async (req, res) => {
-  try {
-    const { rows } = await pool.query(
-      `SELECT u.id, u.username, s.name as staff_name
-       FROM users u
-       LEFT JOIN staff s ON u.staff_id = s.id
-       WHERE u.shop_id = $1
-       ORDER BY s.name, u.username`,
-      [req.shopId],
-    );
-    res.json(rows);
-  } catch (err) {
-    console.error("Error fetching shop users:", err);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
 app.get("/api/v1/shop", authenticateToken, async (req, res) => {
   try {
     // 2. Add the WHERE clause with the $1 placeholder
@@ -3853,33 +3693,6 @@ app.delete("/api/v1/staff/:id/photo", authenticateToken, async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     console.error("Error deleting staff photo:", err);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-// ==================== KEEP ALL YOUR OTHER ROUTES ====================
-// (Profile, Staff, Clients, Services, Appointments, Reports, etc.)
-// ... Copy all routes from your original server.js here ...
-
-app.get("/api/v1/profile", authenticateToken, async (req, res) => {
-  try {
-    const { rows } = await pool.query(
-      `SELECT u.id as user_id, u.username, u.role, 
-        s.name as shop_name, s.id as shop_id, s.ergotherapia as ergotherapia,
-        st.id as staff_id, st.name as staff_name,
-        st.email as staff_email, st.phone as staff_phone, st.specialty
-      FROM users u
-      LEFT JOIN shops s ON u.shop_id = s.id
-      LEFT JOIN staff st ON u.staff_id = st.id
-      WHERE u.id = $1`,
-      [req.user.userId],
-    );
-    console.log(rows);
-    if (rows.length === 0)
-      return res.status(404).json({ error: "User not found" });
-    res.json(rows[0]);
-  } catch (err) {
-    console.error(err);
     res.status(500).json({ error: "Internal server error" });
   }
 });
