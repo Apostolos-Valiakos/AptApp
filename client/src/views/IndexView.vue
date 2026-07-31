@@ -11,24 +11,59 @@
       >
         <div class="flex items-center gap-2">
           <div
-            class="w-8 h-8 rounded-full bg-[var(--p-primary-100)] flex items-center justify-center"
+            class="w-8 h-8 rounded-full bg-[#F3E2DA] flex items-center justify-center"
           >
-            <i class="pi pi-calendar text-[var(--p-primary-600)] text-sm"></i>
+            <svg viewBox="0 0 100 100" class="w-5 h-5">
+              <g fill="#7A1F44">
+                <path d="M50,50 C40,35 40,15 50,8 C60,15 60,35 50,50 Z" />
+                <path
+                  d="M50,50 C40,35 40,15 50,8 C60,15 60,35 50,50 Z"
+                  transform="rotate(90 50 50)"
+                />
+                <path
+                  d="M50,50 C40,35 40,15 50,8 C60,15 60,35 50,50 Z"
+                  transform="rotate(180 50 50)"
+                />
+                <path
+                  d="M50,50 C40,35 40,15 50,8 C60,15 60,35 50,50 Z"
+                  transform="rotate(270 50 50)"
+                />
+              </g>
+              <circle cx="50" cy="50" r="6.5" fill="#C9A15A" />
+            </svg>
           </div>
           <span
             class="text-xl font-semibold tracking-wide text-gray-800"
             style="font-family: &quot;Georgia&quot;, serif"
           >
-            Book<span class="text-[var(--p-primary-700)] font-bold">Flow</span>
+            Book4<span class="text-[var(--p-primary-700)] font-bold"
+              >Beauty</span
+            >
           </span>
         </div>
         <div
           class="hidden md:flex items-center gap-8 text-sm font-medium text-gray-600"
         >
-          <a href="#features" class="hover:text-[var(--p-primary-color)] transition-colors">{{ t('landing.nav.features') }}</a>
-          <a href="#how-it-works" class="hover:text-[var(--p-primary-color)] transition-colors">{{ t('landing.nav.howItWorks') }}</a>
-          <a href="#pricing" class="hover:text-[var(--p-primary-color)] transition-colors">{{ t('landing.nav.pricing') }}</a>
-          <a href="#contact" class="hover:text-[var(--p-primary-color)] transition-colors">{{ t('landing.nav.contact') }}</a>
+          <a
+            href="#features"
+            class="hover:text-[var(--p-primary-color)] transition-colors"
+            >{{ t("landing.nav.features") }}</a
+          >
+          <a
+            href="#how-it-works"
+            class="hover:text-[var(--p-primary-color)] transition-colors"
+            >{{ t("landing.nav.howItWorks") }}</a
+          >
+          <a
+            href="#pricing"
+            class="hover:text-[var(--p-primary-color)] transition-colors"
+            >{{ t("landing.nav.pricing") }}</a
+          >
+          <a
+            href="#contact"
+            class="hover:text-[var(--p-primary-color)] transition-colors"
+            >{{ t("landing.nav.contact") }}</a
+          >
           <Button
             :label="t('landing.nav.signIn')"
             icon="pi pi-sign-in"
@@ -70,19 +105,21 @@
         <p
           class="text-[var(--p-primary-300)] text-xs tracking-[0.4em] uppercase mb-6 font-light"
         >
-          {{ t('landing.hero.eyebrow') }}
+          {{ t("landing.hero.eyebrow") }}
         </p>
         <h1
           class="text-5xl md:text-7xl font-light text-white mb-6 leading-tight"
           style="font-family: &quot;Georgia&quot;, serif"
         >
-          {{ t('landing.hero.headline1') }}<br />
-          <span class="text-[var(--p-primary-300)] italic">{{ t('landing.hero.headline2') }}</span>
+          {{ t("landing.hero.headline1") }}<br />
+          <span class="text-[var(--p-primary-300)] italic">{{
+            t("landing.hero.headline2")
+          }}</span>
         </h1>
         <p
           class="text-gray-300 text-lg mb-10 max-w-2xl mx-auto leading-relaxed font-light"
         >
-          {{ t('landing.hero.subheading') }}
+          {{ t("landing.hero.subheading") }}
         </p>
         <div class="flex flex-wrap justify-center gap-4">
           <Button
@@ -114,14 +151,16 @@
     ═══════════════════════════════════════════════════════ -->
     <section id="how-it-works" class="py-24 bg-[var(--p-primary-50)]">
       <div class="max-w-5xl mx-auto px-4 text-center">
-        <p class="text-[var(--p-primary-color)] text-xs tracking-[0.3em] uppercase mb-4 font-semibold">
-          {{ t('landing.value.eyebrow') }}
+        <p
+          class="text-[var(--p-primary-color)] text-xs tracking-[0.3em] uppercase mb-4 font-semibold"
+        >
+          {{ t("landing.value.eyebrow") }}
         </p>
         <h2
           class="text-4xl font-light text-gray-800 mb-6"
           style="font-family: &quot;Georgia&quot;, serif"
         >
-          {{ t('landing.value.title') }}
+          {{ t("landing.value.title") }}
         </h2>
         <div class="w-16 h-0.5 bg-[var(--p-primary-300)] mx-auto mb-8"></div>
 
@@ -130,7 +169,9 @@
             <div
               class="w-14 h-14 bg-[var(--p-primary-100)] rounded-full flex items-center justify-center mx-auto mb-4"
             >
-              <i :class="[item.icon, 'text-[var(--p-primary-600)] text-xl']"></i>
+              <i
+                :class="[item.icon, 'text-[var(--p-primary-600)] text-xl']"
+              ></i>
             </div>
             <h4 class="font-semibold text-gray-800 mb-2">
               {{ t(`landing.value.items.${item.key}.title`) }}
@@ -149,14 +190,16 @@
     <section id="features" class="py-24 bg-[var(--p-primary-100)]">
       <div class="max-w-7xl mx-auto px-4">
         <div class="text-center mb-16">
-          <p class="text-[var(--p-primary-color)] text-xs tracking-[0.3em] uppercase mb-4 font-semibold">
-            {{ t('landing.features.eyebrow') }}
+          <p
+            class="text-[var(--p-primary-color)] text-xs tracking-[0.3em] uppercase mb-4 font-semibold"
+          >
+            {{ t("landing.features.eyebrow") }}
           </p>
           <h2
             class="text-4xl font-light text-gray-800 mb-4"
             style="font-family: &quot;Georgia&quot;, serif"
           >
-            {{ t('landing.features.title') }}
+            {{ t("landing.features.title") }}
           </h2>
           <div class="w-16 h-0.5 bg-[var(--p-primary-300)] mx-auto"></div>
         </div>
@@ -167,10 +210,16 @@
             :key="feature.key"
             class="group bg-[var(--p-primary-50)] rounded-2xl overflow-hidden border border-[var(--p-primary-200)]/50 hover:border-[var(--p-primary-color)]/40 hover:shadow-xl transition-all duration-300"
           >
-            <div class="h-1 w-full bg-gradient-to-r from-[var(--p-primary-300)] to-[var(--p-primary-color)]"></div>
+            <div
+              class="h-1 w-full bg-gradient-to-r from-[var(--p-primary-300)] to-[var(--p-primary-color)]"
+            ></div>
             <div class="p-7">
-              <div class="w-12 h-12 rounded-full flex items-center justify-center mb-4 bg-[var(--p-primary-100)]">
-                <i :class="[feature.icon, 'text-xl text-[var(--p-primary-600)]']"></i>
+              <div
+                class="w-12 h-12 rounded-full flex items-center justify-center mb-4 bg-[var(--p-primary-100)]"
+              >
+                <i
+                  :class="[feature.icon, 'text-xl text-[var(--p-primary-600)]']"
+                ></i>
               </div>
               <h3 class="font-semibold text-gray-800 mb-2 text-lg">
                 {{ t(`landing.features.items.${feature.key}.title`) }}
@@ -190,17 +239,21 @@
     <section id="pricing" class="py-24 bg-[var(--p-primary-50)]">
       <div class="max-w-7xl mx-auto px-4">
         <div class="text-center mb-16">
-          <p class="text-[var(--p-primary-color)] text-xs tracking-[0.3em] uppercase mb-4 font-semibold">
-            {{ t('landing.pricing.eyebrow') }}
+          <p
+            class="text-[var(--p-primary-color)] text-xs tracking-[0.3em] uppercase mb-4 font-semibold"
+          >
+            {{ t("landing.pricing.eyebrow") }}
           </p>
           <h2
             class="text-4xl font-light text-gray-800 mb-4"
             style="font-family: &quot;Georgia&quot;, serif"
           >
-            {{ t('landing.pricing.title') }}
+            {{ t("landing.pricing.title") }}
           </h2>
           <div class="w-16 h-0.5 bg-[var(--p-primary-300)] mx-auto mb-4"></div>
-          <p class="text-gray-500 text-sm max-w-xl mx-auto">{{ t('landing.pricing.subtitle') }}</p>
+          <p class="text-gray-500 text-sm max-w-xl mx-auto">
+            {{ t("landing.pricing.subtitle") }}
+          </p>
         </div>
 
         <div class="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto">
@@ -208,20 +261,37 @@
             v-for="tier in pricingTiers"
             :key="tier.key"
             class="rounded-2xl p-7 border transition-all duration-300"
-            :class="tier.highlight
-              ? 'bg-[var(--p-primary-color)] border-[var(--p-primary-color)] text-white shadow-xl scale-105'
-              : 'bg-white border-[var(--p-primary-200)]/50 hover:shadow-lg'"
+            :class="
+              tier.highlight
+                ? 'bg-[var(--p-primary-color)] border-[var(--p-primary-color)] text-white shadow-xl scale-105'
+                : 'bg-white border-[var(--p-primary-200)]/50 hover:shadow-lg'
+            "
           >
-            <h3 class="font-semibold text-lg mb-1" :class="tier.highlight ? 'text-white' : 'text-gray-800'">
+            <h3
+              class="font-semibold text-lg mb-1"
+              :class="tier.highlight ? 'text-white' : 'text-gray-800'"
+            >
               {{ t(`landing.pricing.tiers.${tier.key}.name`) }}
             </h3>
-            <p class="text-sm mb-6" :class="tier.highlight ? 'text-white/80' : 'text-gray-500'">
+            <p
+              class="text-sm mb-6"
+              :class="tier.highlight ? 'text-white/80' : 'text-gray-500'"
+            >
               {{ t(`landing.pricing.tiers.${tier.key}.description`) }}
             </p>
             <ul class="space-y-2 mb-8 text-sm">
               <li v-for="n in 3" :key="n" class="flex items-start gap-2">
-                <i class="pi pi-check text-xs mt-1" :class="tier.highlight ? 'text-white' : 'text-[var(--p-primary-color)]'"></i>
-                <span :class="tier.highlight ? 'text-white/90' : 'text-gray-600'">
+                <i
+                  class="pi pi-check text-xs mt-1"
+                  :class="
+                    tier.highlight
+                      ? 'text-white'
+                      : 'text-[var(--p-primary-color)]'
+                  "
+                ></i>
+                <span
+                  :class="tier.highlight ? 'text-white/90' : 'text-gray-600'"
+                >
                   {{ t(`landing.pricing.tiers.${tier.key}.feature${n}`) }}
                 </span>
               </li>
@@ -229,7 +299,11 @@
             <Button
               :label="t(`landing.pricing.tiers.${tier.key}.cta`)"
               class="w-full border-none justify-center"
-              :class="tier.highlight ? '!bg-white !text-[var(--p-primary-color)]' : '!bg-[var(--p-primary-color)] !text-white'"
+              :class="
+                tier.highlight
+                  ? '!bg-white !text-[var(--p-primary-color)]'
+                  : '!bg-[var(--p-primary-color)] !text-white'
+              "
               @click="scrollToContact"
             />
           </div>
@@ -243,51 +317,71 @@
     <section id="contact" class="py-24 bg-[var(--p-primary-950)]">
       <div class="max-w-3xl mx-auto px-4">
         <div class="text-center mb-12">
-          <p class="text-[var(--p-primary-300)] text-xs tracking-[0.3em] uppercase mb-4 font-semibold">
-            {{ t('landing.contact.eyebrow') }}
+          <p
+            class="text-[var(--p-primary-300)] text-xs tracking-[0.3em] uppercase mb-4 font-semibold"
+          >
+            {{ t("landing.contact.eyebrow") }}
           </p>
           <h2
             class="text-4xl font-light text-white mb-4"
             style="font-family: &quot;Georgia&quot;, serif"
           >
-            {{ t('landing.contact.title') }}
+            {{ t("landing.contact.title") }}
           </h2>
           <div class="w-16 h-0.5 bg-[var(--p-primary-300)] mx-auto mb-4"></div>
-          <p class="text-gray-400 text-sm max-w-xl mx-auto">{{ t('landing.contact.subtitle') }}</p>
+          <p class="text-gray-400 text-sm max-w-xl mx-auto">
+            {{ t("landing.contact.subtitle") }}
+          </p>
         </div>
 
         <div class="bg-white rounded-2xl shadow-xl p-8 sm:p-10">
           <div v-if="submitted" class="text-center py-8">
-            <div class="w-14 h-14 bg-[var(--p-primary-100)] rounded-full flex items-center justify-center mx-auto mb-4">
+            <div
+              class="w-14 h-14 bg-[var(--p-primary-100)] rounded-full flex items-center justify-center mx-auto mb-4"
+            >
               <i class="pi pi-check text-[var(--p-primary-600)] text-2xl"></i>
             </div>
-            <h3 class="text-xl font-semibold text-gray-800 mb-2">{{ t('landing.contact.success.title') }}</h3>
-            <p class="text-gray-500 text-sm">{{ t('landing.contact.success.subtitle') }}</p>
+            <h3 class="text-xl font-semibold text-gray-800 mb-2">
+              {{ t("landing.contact.success.title") }}
+            </h3>
+            <p class="text-gray-500 text-sm">
+              {{ t("landing.contact.success.subtitle") }}
+            </p>
           </div>
 
           <form v-else @submit.prevent="submitDemoRequest" class="space-y-4">
             <div class="grid sm:grid-cols-2 gap-4">
               <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('landing.contact.form.name') }}</label>
+                <label class="block text-sm font-medium text-gray-700 mb-1">{{
+                  t("landing.contact.form.name")
+                }}</label>
                 <InputText v-model="form.name" class="w-full" />
               </div>
               <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('landing.contact.form.email') }}</label>
+                <label class="block text-sm font-medium text-gray-700 mb-1">{{
+                  t("landing.contact.form.email")
+                }}</label>
                 <InputText v-model="form.email" type="email" class="w-full" />
               </div>
             </div>
             <div class="grid sm:grid-cols-2 gap-4">
               <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('landing.contact.form.shopName') }}</label>
+                <label class="block text-sm font-medium text-gray-700 mb-1">{{
+                  t("landing.contact.form.shopName")
+                }}</label>
                 <InputText v-model="form.shop_name" class="w-full" />
               </div>
               <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('landing.contact.form.phone') }}</label>
+                <label class="block text-sm font-medium text-gray-700 mb-1">{{
+                  t("landing.contact.form.phone")
+                }}</label>
                 <InputText v-model="form.phone" class="w-full" />
               </div>
             </div>
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('landing.contact.form.message') }}</label>
+              <label class="block text-sm font-medium text-gray-700 mb-1">{{
+                t("landing.contact.form.message")
+              }}</label>
               <Textarea v-model="form.message" class="w-full" rows="3" />
             </div>
 
@@ -295,7 +389,11 @@
 
             <Button
               type="submit"
-              :label="submitting ? t('landing.contact.form.submitting') : t('landing.contact.form.submit')"
+              :label="
+                submitting
+                  ? t('landing.contact.form.submitting')
+                  : t('landing.contact.form.submit')
+              "
               icon="pi pi-send"
               class="w-full !bg-[var(--p-primary-color)] border-none justify-center !py-3"
               :loading="submitting"
@@ -314,11 +412,13 @@
           class="text-xl font-light text-white mb-2"
           style="font-family: &quot;Georgia&quot;, serif"
         >
-          Book<span class="text-[var(--p-primary-300)]">Flow</span>
+          Book4<span class="text-[var(--p-primary-300)]">Beauty</span>
         </div>
-        <p class="text-gray-500 text-xs mb-6">{{ t('landing.footer.tagline') }}</p>
+        <p class="text-gray-500 text-xs mb-6">
+          {{ t("landing.footer.tagline") }}
+        </p>
         <div class="border-t border-gray-800 pt-6 text-xs text-gray-600">
-          {{ t('landing.footer.rights') }}
+          {{ t("landing.footer.rights") }}
         </div>
       </div>
     </footer>

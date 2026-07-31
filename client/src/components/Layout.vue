@@ -16,13 +16,30 @@
               <div
                 class="w-9 h-9 bg-white rounded-xl flex items-center justify-center shadow-sm transition-transform group-hover:rotate-12"
               >
-                <img src="../../static/logo for photos-02.png" />
+                <svg viewBox="0 0 100 100" class="w-6 h-6">
+                  <g fill="#7A1F44">
+                    <path d="M50,50 C40,35 40,15 50,8 C60,15 60,35 50,50 Z" />
+                    <path
+                      d="M50,50 C40,35 40,15 50,8 C60,15 60,35 50,50 Z"
+                      transform="rotate(90 50 50)"
+                    />
+                    <path
+                      d="M50,50 C40,35 40,15 50,8 C60,15 60,35 50,50 Z"
+                      transform="rotate(180 50 50)"
+                    />
+                    <path
+                      d="M50,50 C40,35 40,15 50,8 C60,15 60,35 50,50 Z"
+                      transform="rotate(270 50 50)"
+                    />
+                  </g>
+                  <circle cx="50" cy="50" r="6.5" fill="#C9A15A" />
+                </svg>
               </div>
               <span
                 v-if="!authStore.isAuthenticated"
                 class="ml-3 text-xl font-extrabold tracking-tight text-white whitespace-nowrap"
               >
-                BookFlow
+                Book4Beauty
               </span>
             </div>
 

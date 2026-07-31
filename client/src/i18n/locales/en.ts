@@ -691,12 +691,12 @@ export default {
       eyebrow: 'For Spas, Salons & Therapy Practices',
       headline1: 'Run your practice,',
       headline2: 'not your paperwork',
-      subheading: 'BookFlow brings online booking, staff scheduling, client management and reporting into one simple platform built for wellness and therapy businesses.',
+      subheading: 'Book4Beauty brings online booking, staff scheduling, client management and reporting into one simple platform built for wellness and therapy businesses.',
       ctaPrimary: 'Request a Demo',
       ctaSecondary: 'Sign In',
     },
     value: {
-      eyebrow: 'Why BookFlow',
+      eyebrow: 'Why Book4Beauty',
       title: 'Everything your front desk needs',
       items: {
         scheduling: {
@@ -750,7 +750,7 @@ export default {
       tiers: {
         trial: {
           name: 'Trial',
-          description: 'Try BookFlow with your own data, risk-free.',
+          description: 'Try Book4Beauty with your own data, risk-free.',
           feature1: 'Full scheduling & calendar',
           feature2: 'Up to 2 staff members',
           feature3: 'Email support',
@@ -796,7 +796,7 @@ export default {
     },
     footer: {
       tagline: 'Booking software for spas, salons & therapy practices.',
-      rights: '© 2026 BookFlow. All rights reserved.',
+      rights: '© 2026 Book4Beauty. All rights reserved.',
     },
   },
   demoRequests: {
