@@ -228,6 +228,9 @@ server {
 (Drop `www.book4beauty.gr` from `server_name` and the `-d` flag below if that subdomain doesn't have its own DNS A record — Certbot fails on any domain that doesn't resolve.)
 
 ```bash
+rm -f /etc/nginx/sites-enabled/default   # Debian's stock "Welcome to nginx" site — remove it or it
+                                          # silently catches any request that doesn't match a server_name
+                                          # (e.g. visiting the VPS by raw IP)
 ln -s /etc/nginx/sites-available/book4beauty /etc/nginx/sites-enabled/
 nginx -t && systemctl reload nginx
 certbot --nginx -d book4beauty.gr -d www.book4beauty.gr
