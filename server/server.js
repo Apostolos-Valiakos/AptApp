@@ -2095,6 +2095,14 @@ app.delete("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
   try {
     await client.query("BEGIN");
 
+    // Look up the client now, before the row is deleted, so their balance
+    // can be recalculated after the appointment is gone.
+    const affectedClientRes = await client.query(
+      "SELECT client_id FROM appointments WHERE id = $1 AND shop_id = $2",
+      [id, req.shopId],
+    );
+    const affectedClientId = affectedClientRes.rows[0]?.client_id || null;
+
     // Collect the appointment ids being deleted so product stock can be restored
     let deletedIds = [id];
     let groupInfo = null;
