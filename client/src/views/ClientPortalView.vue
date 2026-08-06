@@ -327,7 +327,7 @@
           >
             <Column field="start_time" :header="t('portal.past.date')">
               <template #body="{ data }">
-                {{ new Date(data.start_time).toLocaleDateString() }}
+                {{ new Date(data.start_time).toLocaleDateString("en-GB") }}
               </template>
             </Column>
 

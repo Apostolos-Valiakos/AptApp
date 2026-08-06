@@ -19,7 +19,7 @@
 
         <div class="flex-1">
           <label class="text-sm font-medium">Date</label>
-          <Calendar v-model="filters.date" placeholder="Select date" showIcon />
+          <Calendar v-model="filters.date" placeholder="Select date" dateFormat="dd/mm/yy" showIcon />
         </div>
 
         <div class="flex-1">

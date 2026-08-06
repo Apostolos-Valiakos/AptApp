@@ -568,7 +568,7 @@
           </Column>
           <Column field="issued_at" :header="t('giftCards.table.issued')" sortable>
             <template #body="slotProps">
-              {{ new Date(slotProps.data.issued_at).toLocaleDateString() }}
+              {{ new Date(slotProps.data.issued_at).toLocaleDateString("en-GB") }}
             </template>
           </Column>
         </DataTable>

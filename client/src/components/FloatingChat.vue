@@ -543,7 +543,7 @@ const formatTime = (timestamp: string) => {
   if (now.toDateString() === date.toDateString()) {
     return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   }
-  return date.toLocaleDateString();
+  return date.toLocaleDateString("en-GB");
 };
 
 const formatFileSize = (bytes: number | undefined) => {
@@ -570,13 +570,8 @@ const resolveImageUrl = (message: any) => {
   if (message.id && !String(message.id).startsWith("temp-")) {
     const token = localStorage.getItem("token");
 
-    const apiUrl = process.env.API_URL || "http://localhost";
-    const port = process.env.PORT || "3000";
-
     const baseUrl =
-      process.env.NODE_ENV === "production"
-        ? window.location.origin
-        : `${apiUrl}:${port}`;
+      (import.meta.env.VITE_API_BASE_URL as string) || window.location.origin;
 
     return `${baseUrl}/api/v1/chat/file/${message.id}?token=${token}`;
   }

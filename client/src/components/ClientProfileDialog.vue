@@ -204,7 +204,7 @@
           >
             <div>
               <div class="font-bold text-gray-900">
-                {{ new Date(appt.start_time).toLocaleDateString() }}
+                {{ new Date(appt.start_time).toLocaleDateString("en-GB") }}
                 <span class="text-gray-400 font-normal text-sm ml-2">{{
                   new Date(appt.start_time).toLocaleTimeString([], {
                     hour: "2-digit",
@@ -279,7 +279,7 @@
                   </div>
                   <div class="text-xs text-gray-500">
                     {{ formatSize(file.file_size) }} •
-                    {{ new Date(file.uploaded_at).toLocaleDateString() }}
+                    {{ new Date(file.uploaded_at).toLocaleDateString("en-GB") }}
                   </div>
                 </div>
               </div>

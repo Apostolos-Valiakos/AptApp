@@ -75,6 +75,7 @@
             v-model="service.start_time"
             showTime
             hourFormat="24"
+            dateFormat="dd/mm/yy"
             class="w-full p-inputtext-sm"
             @hide="recalcTimes"
           />
