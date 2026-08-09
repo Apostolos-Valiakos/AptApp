@@ -16,6 +16,9 @@ const profileView = () => import("../views/profileView.vue");
 const ClientPortalView = () => import("../views/ClientPortalView.vue");
 const SignupView = () => import("../views/SignupView.vue");
 const ShopsView = () => import("../views/ShopsView.vue");
+const MembershipTiersView = () => import("../views/MembershipTiersView.vue");
+const MembershipReportView = () => import("../views/MembershipReportView.vue");
+const QrScannerView = () => import("../views/QrScannerView.vue");
 const DemoRequestsView = () => import("../views/DemoRequestsView.vue");
 
 const routes = [
@@ -59,6 +62,17 @@ const routes = [
             component: FinancialsView,
             meta: { requiresAnalytics: true },
           },
+          {
+            path: "membership-tiers",
+            component: MembershipTiersView,
+            meta: { requiresAnalytics: true },
+          },
+          {
+            path: "membership-report",
+            component: MembershipReportView,
+            meta: { requiresAnalytics: true },
+          },
+          { path: "qr-scanner", component: QrScannerView },
           {
             path: "platform/shops",
             component: ShopsView,

@@ -233,11 +233,30 @@ const navItems = computed(() => [
     icon: "pi pi-ticket",
   },
   {
+    label: t("nav.membershipTiers"),
+    path: "/app/membership-tiers",
+    ownerOnly: true,
+    icon: "pi pi-id-card",
+  },
+  {
+    label: t("nav.qrScanner"),
+    path: "/app/qr-scanner",
+    ownerOnly: false,
+    icon: "pi pi-qrcode",
+  },
+  {
     label: t("nav.analytics"),
     path: "/app/financials",
     ownerOnly: false,
     financialsOnly: true,
     icon: "pi pi-chart-bar",
+  },
+  {
+    label: t("nav.membershipReport"),
+    path: "/app/membership-report",
+    ownerOnly: false,
+    financialsOnly: true,
+    icon: "pi pi-chart-pie",
   },
   {
     label: t("nav.platform"),

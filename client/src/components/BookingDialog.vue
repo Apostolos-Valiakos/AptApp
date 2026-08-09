@@ -234,9 +234,14 @@
               :previousDebt="previousDebt"
               :depositAmount="form.deposit_amount"
               :loading="paymentLoading"
+              :paidPaymentMethod="form.payment_method"
+              :clientId="form.client_id"
+              :catalogServices="services"
+              :appointmentServices="servicesList"
               v-model:paymentMethod="selectedPaymentMethod"
               v-model:amountToPay="amountToPayNow"
               v-model:giftCardId="selectedGiftCardId"
+              v-model:membershipRedemptions="selectedMembershipRedemptions"
               @pay="recordPayment"
             />
           </div>
@@ -483,8 +488,9 @@ const currentProfileId = ref<string | null>(null);
 const notifyClient = ref(true);
 const newClient = ref({ first_name: "", last_name: "", phone: "" });
 const amountToPayNow = ref(0);
-const selectedPaymentMethod = ref<"card" | "cash" | "gift-card">("card");
+const selectedPaymentMethod = ref<"card" | "cash" | "gift-card" | "membership">("card");
 const selectedGiftCardId = ref<string | null>(null);
+const selectedMembershipRedemptions = ref<any[]>([]);
 const bookingPaymentsRef = ref<any>(null);
 
 const statusOptions = computed(() => [
@@ -936,7 +942,7 @@ const executeSave = async (close = true, scope = "single") => {
 };
 
 const recordPayment = async (
-  split: { amount2: number; payment_method2: string; gift_card_id2: string | null } | null,
+  split: { amount2: number; payment_method2: string; gift_card_id2: string | null; redemptions2?: any[] } | null,
 ) => {
   if (amountToPayNow.value <= 0) return;
   paymentLoading.value = true;
@@ -960,10 +966,12 @@ const recordPayment = async (
         amount: amountToPayNow.value,
         payment_method: selectedPaymentMethod.value,
         gift_card_id: selectedGiftCardId.value,
+        redemptions: selectedMembershipRedemptions.value,
         ...(split ? {
           amount2: split.amount2,
           payment_method2: split.payment_method2,
           gift_card_id2: split.gift_card_id2,
+          redemptions2: split.redemptions2,
         } : {}),
       }),
     });
@@ -997,7 +1005,8 @@ const recordPayment = async (
       // Reset gift-card selection — its cached remaining_balance is now stale,
       // and any further payment (e.g. covering a shortfall) needs a fresh pick.
       selectedGiftCardId.value = null;
-      if (selectedPaymentMethod.value === "gift-card") {
+      selectedMembershipRedemptions.value = [];
+      if (selectedPaymentMethod.value === "gift-card" || selectedPaymentMethod.value === "membership") {
         selectedPaymentMethod.value = "card";
       }
       bookingPaymentsRef.value?.disableSplit();

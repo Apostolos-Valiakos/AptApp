@@ -61,6 +61,7 @@ const publicActionLimiter = rateLimit({
 });
 
 const { PUBLIC_BASE_URL } = require("./reminderService");
+require("./membershipService");
 
 // ==================== FILE UPLOAD SETUP ====================
 const uploadDir = path.join(__dirname, "uploads");
@@ -2441,12 +2442,16 @@ app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
     amount,
     payment_method = "card",
     gift_card_id,
+    redemptions, // [{ service_id, count }] — required when payment_method === 'membership'
     amount2,
     payment_method2,
     gift_card_id2,
+    redemptions2,
   } = req.body;
 
-  if (!amount || Number(amount) <= 0) {
+  // Membership legs derive their own amount server-side from validated
+  // quota redemptions — the client never gets to assert an amount for them.
+  if (payment_method !== "membership" && (!amount || Number(amount) <= 0)) {
     return res.status(400).json({ error: "Invalid payment amount" });
   }
   if (payment_method === "gift-card" && !gift_card_id) {
@@ -2454,8 +2459,12 @@ app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
       .status(400)
       .json({ error: "gift_card_id is required for gift-card payments" });
   }
+  if (payment_method === "membership" && (!redemptions || !redemptions.length)) {
+    return res.status(400).json({ error: "redemptions is required for membership payments" });
+  }
   const hasSecondLeg =
-    amount2 !== undefined && amount2 !== null && Number(amount2) > 0;
+    (amount2 !== undefined && amount2 !== null && Number(amount2) > 0) ||
+    (payment_method2 === "membership" && redemptions2 && redemptions2.length > 0);
   if (hasSecondLeg) {
     if (!payment_method2) {
       return res
@@ -2468,6 +2477,9 @@ app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
         .json({
           error: "gift_card_id2 is required for a gift-card second payment",
         });
+    }
+    if (payment_method2 === "membership" && (!redemptions2 || !redemptions2.length)) {
+      return res.status(400).json({ error: "redemptions2 is required for a membership second payment" });
     }
   }
 
@@ -2628,30 +2640,149 @@ app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
     return null;
   };
 
+  // Membership redemption is deliberately its own path rather than a variant
+  // of processLeg above: it only ever pays for services in THIS appointment
+  // (never old debt — quota is tied to specific covered services in this
+  // visit), and its "amount" is derived from validated quota usage, not
+  // asserted by the client. Mirrors applyPaymentToAppointment's bookkeeping
+  // (transactions row + appointment payment_status/deposit_amount) without
+  // touching the FIFO cash/card/gift-card logic above at all.
+  const processMembershipLeg = async (redemptionList, splitGroupId) => {
+    const membershipRes = await client.query(
+      `SELECT * FROM client_memberships WHERE client_id = $1 AND shop_id = $2 AND status = 'active'`,
+      [client_id, req.shopId],
+    );
+    if (membershipRes.rows.length === 0) return { error: "No active membership found for this client" };
+    const membership = membershipRes.rows[0];
+
+    const tierServicesRes = await client.query(
+      `SELECT service_id, quota_per_month FROM membership_tier_services WHERE tier_id = $1`,
+      [membership.tier_id],
+    );
+    const coverage = new Map(tierServicesRes.rows.map((r) => [r.service_id, r.quota_per_month]));
+
+    let totalAmount = 0;
+    const usageRowsToInsert = []; // { service_id }
+
+    for (const redemption of redemptionList) {
+      const { service_id, count } = redemption;
+      const qty = Number(count) || 0;
+      if (qty <= 0) continue;
+
+      if (!coverage.has(service_id)) {
+        return { error: "One of the selected services isn't covered by this membership" };
+      }
+      const quotaPerMonth = coverage.get(service_id);
+
+      if (quotaPerMonth !== null) {
+        const usedRes = await client.query(
+          `SELECT COUNT(*) FROM membership_usage
+           WHERE client_membership_id = $1 AND service_id = $2 AND used_at >= date_trunc('month', NOW())`,
+          [membership.id, service_id],
+        );
+        const usedThisMonth = parseInt(usedRes.rows[0].count);
+        if (usedThisMonth + qty > quotaPerMonth) {
+          return { error: "Not enough remaining membership quota for one of the selected services" };
+        }
+      }
+
+      const apptServicesRes = await client.query(
+        `SELECT id, COALESCE(price_override, (SELECT price FROM services WHERE id = $2)) as price
+         FROM appointment_services WHERE appointment_id = $1 AND service_id = $2
+         ORDER BY id LIMIT $3`,
+        [appointment_id, service_id, qty],
+      );
+      if (apptServicesRes.rows.length < qty) {
+        return { error: "This appointment doesn't have that many occurrences of one of the selected services" };
+      }
+
+      for (const row of apptServicesRes.rows) {
+        totalAmount += Number(row.price);
+        usageRowsToInsert.push({ service_id });
+      }
+    }
+
+    if (usageRowsToInsert.length === 0) {
+      return { error: "Nothing was selected to redeem via membership" };
+    }
+
+    for (const usage of usageRowsToInsert) {
+      await client.query(
+        `INSERT INTO membership_usage (client_membership_id, service_id, appointment_id, used_at)
+         VALUES ($1, $2, $3, NOW())`,
+        [membership.id, usage.service_id, appointment_id],
+      );
+    }
+
+    await client.query(
+      `INSERT INTO transactions (appointment_id, client_id, amount, payment_method, transaction_type, shop_id, split_group_id, created_at)
+       VALUES ($1, $2, $3, 'membership', 'payment', $4, $5, NOW())`,
+      [appointment_id, client_id, totalAmount, req.shopId, splitGroupId],
+    );
+
+    const priceRes = await client.query(
+      `SELECT
+         COALESCE((SELECT SUM(price_override) FROM appointment_services WHERE appointment_id = $1), 0)
+         + COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = $1), 0) as total_price`,
+      [appointment_id],
+    );
+    const totalPrice = Number(priceRes.rows[0].total_price);
+
+    const alreadyPaidRes = await client.query(
+      `SELECT COALESCE(SUM(amount), 0) as paid FROM transactions WHERE appointment_id = $1`,
+      [appointment_id],
+    );
+    const totalPaid = Number(alreadyPaidRes.rows[0].paid);
+    const isFullyPaid = totalPaid >= totalPrice - 0.01;
+
+    await client.query(
+      `UPDATE appointments
+       SET payment_status = $1,
+           status = CASE WHEN status = 'completed' THEN 'completed' ELSE $2 END,
+           deposit_amount = deposit_amount + $3
+       WHERE id = $4 AND shop_id = $5`,
+      [
+        isFullyPaid ? "paid" : "partial",
+        isFullyPaid ? "completed" : "confirmed",
+        totalAmount,
+        appointment_id,
+        req.shopId,
+      ],
+    );
+
+    return { error: null };
+  };
+
   try {
     await client.query("BEGIN");
 
     // A shared id links both rows of a split payment so reports can flag them
     const splitGroupId = hasSecondLeg ? crypto.randomUUID() : null;
 
-    const leg1Error = await processLeg({
-      legAmount: amount,
-      legMethod: payment_method,
-      legGiftCardId: gift_card_id,
-      splitGroupId,
-    });
+    const leg1Error =
+      payment_method === "membership"
+        ? (await processMembershipLeg(redemptions, splitGroupId)).error
+        : await processLeg({
+            legAmount: amount,
+            legMethod: payment_method,
+            legGiftCardId: gift_card_id,
+            splitGroupId,
+          });
     if (leg1Error) {
       await client.query("ROLLBACK");
       return res.status(400).json({ error: leg1Error });
     }
 
     if (hasSecondLeg) {
-      const leg2Error = await processLeg({
-        legAmount: amount2,
-        legMethod: payment_method2,
-        legGiftCardId: gift_card_id2,
-        splitGroupId,
-      });
+      const leg2Error =
+        payment_method2 === "membership"
+          ? (await processMembershipLeg(redemptions2, splitGroupId)).error
+          : await processLeg({
+              legAmount: amount2,
+              legMethod: payment_method2,
+              legGiftCardId: gift_card_id2,
+              splitGroupId,
+            });
       if (leg2Error) {
         await client.query("ROLLBACK");
         return res.status(400).json({ error: leg2Error });
@@ -5009,6 +5140,99 @@ app.put("/api/v1/portal/notifications", authenticateToken, async (req, res) => {
   }
 })();
 
+// ==================== MEMBERSHIP CLUB SCHEMA ====================
+// Sequential IIFE: later tables/columns reference earlier ones.
+(async () => {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS membership_tiers (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        shop_id UUID NOT NULL REFERENCES shops(id),
+        name VARCHAR(100) NOT NULL,
+        monthly_price NUMERIC(10,2) NOT NULL DEFAULT 0,
+        yearly_price NUMERIC(10,2) NOT NULL DEFAULT 0,
+        color VARCHAR(20),
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        is_active BOOLEAN NOT NULL DEFAULT true,
+        grace_period_days INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    // What a tier covers. quota_per_month = NULL means unlimited.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS membership_tier_services (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        tier_id UUID NOT NULL REFERENCES membership_tiers(id) ON DELETE CASCADE,
+        service_id UUID NOT NULL REFERENCES services(id) ON DELETE CASCADE,
+        quota_per_month INTEGER,
+        UNIQUE (tier_id, service_id)
+      )
+    `);
+
+    // A client's enrollment. billing_cycle is payment frequency only — quotas
+    // always reset monthly regardless of monthly/yearly billing (see plan).
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS client_memberships (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+        shop_id UUID NOT NULL REFERENCES shops(id),
+        tier_id UUID NOT NULL REFERENCES membership_tiers(id),
+        billing_cycle VARCHAR(10) NOT NULL CHECK (billing_cycle IN ('monthly', 'yearly')),
+        status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'paused', 'cancelled', 'expired')),
+        started_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        current_period_start TIMESTAMP NOT NULL DEFAULT NOW(),
+        current_period_end TIMESTAMP NOT NULL,
+        last_payment_recorded_at TIMESTAMP,
+        renewal_reminder_sent_at TIMESTAMP,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    // One row per redeemed visit. Remaining quota for the current month is
+    // always computed as quota_per_month - COUNT(rows with used_at in the
+    // current calendar month) — no separate "reset" write needed.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS membership_usage (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        client_membership_id UUID NOT NULL REFERENCES client_memberships(id) ON DELETE CASCADE,
+        service_id UUID NOT NULL REFERENCES services(id),
+        appointment_id UUID REFERENCES appointments(id) ON DELETE SET NULL,
+        used_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    // Every client gets a QR code, independent of membership — used for staff
+    // lookup and (per the contest rework below) registering contest entries.
+    await pool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS qr_token UUID DEFAULT gen_random_uuid()`);
+    await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_clients_qr_token ON clients (qr_token)`);
+
+    // Contest participation via QR scan — replaces the old computed
+    // "1 entry per completed+paid appointment" mechanic entirely. The unique
+    // constraint enforces at most one scan-entry per client per contest per day.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS contest_entries (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        contest_id INTEGER NOT NULL REFERENCES contests(id) ON DELETE CASCADE,
+        client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+        shop_id UUID NOT NULL REFERENCES shops(id),
+        entry_date DATE NOT NULL DEFAULT CURRENT_DATE,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        UNIQUE (contest_id, client_id, entry_date)
+      )
+    `);
+
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_membership_tier_services_tier ON membership_tier_services (tier_id)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_client_memberships_client ON client_memberships (client_id)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_client_memberships_shop_status ON client_memberships (shop_id, status)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_membership_usage_membership ON membership_usage (client_membership_id)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_membership_usage_used_at ON membership_usage (used_at)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_contest_entries_contest_client ON contest_entries (contest_id, client_id)`);
+  } catch (err) {
+    console.error("Failed to run membership-club schema setup:", err);
+  }
+})();
+
 // ==================== LANDING PAGE / DEMO REQUESTS SCHEMA ====================
 (async () => {
   try {
@@ -5062,21 +5286,16 @@ app.get("/api/v1/contests/active", authenticateToken, async (req, res) => {
     const contest = rows[0];
     const clientId = req.user.clientId || req.query.client_id;
 
+    // Entries now come exclusively from QR-scan check-ins at the front desk
+    // (contest_entries) — the old "1 entry per completed+paid appointment"
+    // auto-count has been retired entirely.
     let entries = 0;
     if (clientId) {
       const entryRes = await pool.query(
-        `SELECT COUNT(DISTINCT a.id) as entries
-         FROM appointments a
-         JOIN appointment_services aps ON aps.appointment_id = a.id
-         WHERE a.client_id = $1
-           AND a.shop_id = $2
-           AND a.status = 'completed'
-           AND a.payment_status = 'paid'
-           AND aps.start_time >= $3
-           AND aps.start_time <= $4`,
-        [clientId, req.shopId, contest.start_date, contest.end_date],
+        `SELECT COUNT(*) FROM contest_entries WHERE contest_id = $1 AND client_id = $2`,
+        [contest.id, clientId],
       );
-      entries = parseInt(entryRes.rows[0].entries) || 0;
+      entries = parseInt(entryRes.rows[0].count) || 0;
     }
 
     res.json({ ...contest, entries });
@@ -5367,6 +5586,493 @@ app.delete("/api/v1/gift-cards/:id", authenticateToken, async (req, res) => {
     if (rowCount === 0)
       return res.status(404).json({ error: "Gift card not found" });
     res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ==================== MEMBERSHIP TIERS ====================
+
+// List all tiers for the shop, with their covered services + quotas (any
+// authenticated user — needed by the booking dialog's membership picker).
+app.get("/api/v1/membership-tiers", authenticateToken, async (req, res) => {
+  try {
+    const { rows: tiers } = await pool.query(
+      `SELECT * FROM membership_tiers WHERE shop_id = $1 ORDER BY sort_order, created_at`,
+      [req.shopId],
+    );
+    const { rows: tierServices } = await pool.query(
+      `SELECT mts.tier_id, mts.service_id, mts.quota_per_month, s.name as service_name, s.price as service_price
+       FROM membership_tier_services mts
+       JOIN services s ON s.id = mts.service_id
+       WHERE mts.tier_id = ANY($1)`,
+      [tiers.map((t) => t.id)],
+    );
+    const byTier = new Map();
+    for (const ts of tierServices) {
+      if (!byTier.has(ts.tier_id)) byTier.set(ts.tier_id, []);
+      byTier.get(ts.tier_id).push(ts);
+    }
+    res.json(tiers.map((t) => ({ ...t, services: byTier.get(t.id) || [] })));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Create a tier — admin only. Body: { name, monthly_price, yearly_price,
+// color, grace_period_days, services: [{ service_id, quota_per_month }] }
+app.post("/api/v1/membership-tiers", authenticateToken, async (req, res) => {
+  if (req.user.role !== "admin" && req.user.role !== "super_admin") {
+    return res.status(403).json({ error: "Admins only" });
+  }
+  const { name, monthly_price, yearly_price, color, grace_period_days, services } = req.body;
+  if (!name) return res.status(400).json({ error: "name is required" });
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query(
+      `INSERT INTO membership_tiers (shop_id, name, monthly_price, yearly_price, color, grace_period_days)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [
+        req.shopId,
+        name,
+        monthly_price || 0,
+        yearly_price || 0,
+        color || null,
+        grace_period_days || 0,
+      ],
+    );
+    const tier = rows[0];
+
+    for (const svc of services || []) {
+      await client.query(
+        `INSERT INTO membership_tier_services (tier_id, service_id, quota_per_month) VALUES ($1, $2, $3)`,
+        [tier.id, svc.service_id, svc.quota_per_month ?? null],
+      );
+    }
+
+    await client.query("COMMIT");
+    res.json(tier);
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  } finally {
+    client.release();
+  }
+});
+
+// Update a tier — admin only. Replaces the covered-services list wholesale
+// (delete-then-reinsert), same pattern as staff_services.
+app.put("/api/v1/membership-tiers/:id", authenticateToken, async (req, res) => {
+  if (req.user.role !== "admin" && req.user.role !== "super_admin") {
+    return res.status(403).json({ error: "Admins only" });
+  }
+  const { name, monthly_price, yearly_price, color, grace_period_days, is_active, services } = req.body;
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query(
+      `UPDATE membership_tiers
+       SET name = $1, monthly_price = $2, yearly_price = $3, color = $4,
+           grace_period_days = $5, is_active = $6
+       WHERE id = $7 AND shop_id = $8 RETURNING *`,
+      [
+        name,
+        monthly_price || 0,
+        yearly_price || 0,
+        color || null,
+        grace_period_days || 0,
+        is_active !== false,
+        req.params.id,
+        req.shopId,
+      ],
+    );
+    if (rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Tier not found" });
+    }
+
+    await client.query(`DELETE FROM membership_tier_services WHERE tier_id = $1`, [req.params.id]);
+    for (const svc of services || []) {
+      await client.query(
+        `INSERT INTO membership_tier_services (tier_id, service_id, quota_per_month) VALUES ($1, $2, $3)`,
+        [req.params.id, svc.service_id, svc.quota_per_month ?? null],
+      );
+    }
+
+    await client.query("COMMIT");
+    res.json(rows[0]);
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  } finally {
+    client.release();
+  }
+});
+
+// Delete a tier — admin only. Blocked once any client has EVER enrolled in
+// it (any status, not just active/paused) — client_memberships.tier_id has
+// no ON DELETE clause on purpose (deleting would either cascade away
+// historical membership/usage/revenue records or violate the FK outright),
+// so a tier that's ever been used can only be deactivated, never removed.
+app.delete("/api/v1/membership-tiers/:id", authenticateToken, async (req, res) => {
+  if (req.user.role !== "admin" && req.user.role !== "super_admin") {
+    return res.status(403).json({ error: "Admins only" });
+  }
+  try {
+    const everUsedCount = await pool.query(
+      `SELECT COUNT(*) FROM client_memberships WHERE tier_id = $1`,
+      [req.params.id],
+    );
+    if (parseInt(everUsedCount.rows[0].count) > 0) {
+      return res.status(400).json({ error: "This tier has enrollment history and can't be deleted. Deactivate it instead." });
+    }
+    const { rowCount } = await pool.query(
+      `DELETE FROM membership_tiers WHERE id = $1 AND shop_id = $2`,
+      [req.params.id, req.shopId],
+    );
+    if (rowCount === 0) return res.status(404).json({ error: "Tier not found" });
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ==================== CLIENT MEMBERSHIPS ====================
+
+// Current membership (any status, most recent) + per-covered-service usage
+// for the current calendar month. Quotas always reset on the 1st of the
+// month regardless of monthly/yearly billing — computed live, no reset job.
+app.get("/api/v1/clients/:id/membership", authenticateToken, async (req, res) => {
+  if (req.user.role === "client" && String(req.user.clientId) !== String(req.params.id)) {
+    return res.status(403).json({ error: "Unauthorized to view this membership" });
+  }
+  try {
+    const { rows } = await pool.query(
+      `SELECT cm.*, mt.name as tier_name, mt.monthly_price, mt.yearly_price, mt.grace_period_days
+       FROM client_memberships cm
+       JOIN membership_tiers mt ON mt.id = cm.tier_id
+       WHERE cm.client_id = $1 AND cm.shop_id = $2
+       ORDER BY cm.created_at DESC LIMIT 1`,
+      [req.params.id, req.shopId],
+    );
+    if (rows.length === 0) return res.json({ membership: null, usage: [] });
+
+    const membership = rows[0];
+    const { rows: usage } = await pool.query(
+      `SELECT mts.service_id, s.name as service_name, mts.quota_per_month,
+              COALESCE((
+                SELECT COUNT(*) FROM membership_usage mu
+                WHERE mu.client_membership_id = $1 AND mu.service_id = mts.service_id
+                  AND mu.used_at >= date_trunc('month', NOW())
+              ), 0) as used_this_month
+       FROM membership_tier_services mts
+       JOIN services s ON s.id = mts.service_id
+       WHERE mts.tier_id = $2`,
+      [membership.id, membership.tier_id],
+    );
+
+    res.json({
+      membership,
+      usage: usage.map((u) => ({
+        ...u,
+        used_this_month: parseInt(u.used_this_month),
+        remaining: u.quota_per_month === null ? null : Math.max(0, u.quota_per_month - parseInt(u.used_this_month)),
+      })),
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Assign/change a client's membership tier — admin only. Cancels any
+// existing active/paused enrollment and starts a fresh one. Payment is
+// recorded manually, same pattern as gift-card sales (no payment gateway).
+app.post("/api/v1/clients/:id/membership", authenticateToken, async (req, res) => {
+  if (req.user.role !== "admin" && req.user.role !== "super_admin") {
+    return res.status(403).json({ error: "Admins only" });
+  }
+  const { tier_id, billing_cycle, payment_method } = req.body;
+  if (!tier_id || !["monthly", "yearly"].includes(billing_cycle)) {
+    return res.status(400).json({ error: "tier_id and a valid billing_cycle are required" });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const tierRes = await client.query(
+      `SELECT * FROM membership_tiers WHERE id = $1 AND shop_id = $2`,
+      [tier_id, req.shopId],
+    );
+    if (tierRes.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Tier not found" });
+    }
+    const tier = tierRes.rows[0];
+
+    await client.query(
+      `UPDATE client_memberships SET status = 'cancelled'
+       WHERE client_id = $1 AND status IN ('active', 'paused')`,
+      [req.params.id],
+    );
+
+    const periodInterval = billing_cycle === "yearly" ? "1 year" : "1 month";
+    const { rows } = await client.query(
+      `INSERT INTO client_memberships
+         (client_id, shop_id, tier_id, billing_cycle, status, started_at, current_period_start, current_period_end, last_payment_recorded_at)
+       VALUES ($1, $2, $3, $4, 'active', NOW(), NOW(), NOW() + $5::interval, NOW())
+       RETURNING *`,
+      [req.params.id, req.shopId, tier_id, billing_cycle, periodInterval],
+    );
+
+    const amount = billing_cycle === "yearly" ? tier.yearly_price : tier.monthly_price;
+    await client.query(
+      `INSERT INTO transactions (appointment_id, client_id, amount, payment_method, transaction_type, shop_id, created_at)
+       VALUES (NULL, $1, $2, $3, 'membership_sale', $4, NOW())`,
+      [req.params.id, amount, payment_method || "cash", req.shopId],
+    );
+
+    await client.query("COMMIT");
+    res.json(rows[0]);
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  } finally {
+    client.release();
+  }
+});
+
+// Renew the client's current (active or lapsed-within-grace) membership for
+// another billing cycle — admin only.
+app.post("/api/v1/clients/:id/membership/renew", authenticateToken, async (req, res) => {
+  if (req.user.role !== "admin" && req.user.role !== "super_admin") {
+    return res.status(403).json({ error: "Admins only" });
+  }
+  const { payment_method } = req.body;
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const { rows } = await client.query(
+      `SELECT cm.*, mt.monthly_price, mt.yearly_price
+       FROM client_memberships cm
+       JOIN membership_tiers mt ON mt.id = cm.tier_id
+       WHERE cm.client_id = $1 AND cm.shop_id = $2 AND cm.status IN ('active', 'expired')
+       ORDER BY cm.created_at DESC LIMIT 1`,
+      [req.params.id, req.shopId],
+    );
+    if (rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "No renewable membership found" });
+    }
+    const membership = rows[0];
+    const periodInterval = membership.billing_cycle === "yearly" ? "1 year" : "1 month";
+
+    const updated = await client.query(
+      `UPDATE client_memberships
+       SET status = 'active',
+           current_period_start = GREATEST(current_period_end, NOW()),
+           current_period_end = GREATEST(current_period_end, NOW()) + $2::interval,
+           last_payment_recorded_at = NOW(),
+           renewal_reminder_sent_at = NULL
+       WHERE id = $1
+       RETURNING *`,
+      [membership.id, periodInterval],
+    );
+
+    const amount = membership.billing_cycle === "yearly" ? membership.yearly_price : membership.monthly_price;
+    await client.query(
+      `INSERT INTO transactions (appointment_id, client_id, amount, payment_method, transaction_type, shop_id, created_at)
+       VALUES (NULL, $1, $2, $3, 'membership_sale', $4, NOW())`,
+      [req.params.id, amount, payment_method || "cash", req.shopId],
+    );
+
+    await client.query("COMMIT");
+    res.json(updated.rows[0]);
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  } finally {
+    client.release();
+  }
+});
+
+// Cancel a client's membership — admin only.
+app.delete("/api/v1/clients/:id/membership", authenticateToken, async (req, res) => {
+  if (req.user.role !== "admin" && req.user.role !== "super_admin") {
+    return res.status(403).json({ error: "Admins only" });
+  }
+  try {
+    const { rowCount } = await pool.query(
+      `UPDATE client_memberships SET status = 'cancelled'
+       WHERE client_id = $1 AND shop_id = $2 AND status IN ('active', 'paused')`,
+      [req.params.id, req.shopId],
+    );
+    if (rowCount === 0) return res.status(404).json({ error: "No active membership found" });
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ==================== QR SCAN (front-desk identification + contest entry) ====================
+// Every client has a QR code, not just members — this is a general
+// identification/lookup tool. If a contest is currently active, scanning
+// also registers a contest entry (capped at one per client per day).
+app.post("/api/v1/qr/scan", authenticateToken, async (req, res) => {
+  const { token } = req.body;
+  if (!token) return res.status(400).json({ error: "token is required" });
+
+  try {
+    const clientRes = await pool.query(
+      `SELECT id, first_name, last_name, phone, email
+       FROM clients WHERE qr_token = $1 AND shop_id = $2 AND is_deleted IS NOT TRUE`,
+      [token, req.shopId],
+    );
+    if (clientRes.rows.length === 0) {
+      return res.status(404).json({ error: "No client found for this code" });
+    }
+    const foundClient = clientRes.rows[0];
+
+    const membershipRes = await pool.query(
+      `SELECT cm.status, mt.name as tier_name
+       FROM client_memberships cm
+       JOIN membership_tiers mt ON mt.id = cm.tier_id
+       WHERE cm.client_id = $1 AND cm.shop_id = $2
+       ORDER BY cm.created_at DESC LIMIT 1`,
+      [foundClient.id, req.shopId],
+    );
+
+    const contestRes = await pool.query(
+      `SELECT id, name FROM contests
+       WHERE shop_id = $1 AND NOW() BETWEEN start_date AND end_date
+       ORDER BY start_date DESC LIMIT 1`,
+      [req.shopId],
+    );
+
+    let contestResult = null;
+    if (contestRes.rows.length > 0) {
+      const contest = contestRes.rows[0];
+      const insertRes = await pool.query(
+        `INSERT INTO contest_entries (contest_id, client_id, shop_id, entry_date)
+         VALUES ($1, $2, $3, CURRENT_DATE)
+         ON CONFLICT (contest_id, client_id, entry_date) DO NOTHING
+         RETURNING id`,
+        [contest.id, foundClient.id, req.shopId],
+      );
+      contestResult = {
+        name: contest.name,
+        entry_added: insertRes.rows.length > 0,
+      };
+    }
+
+    res.json({
+      client: {
+        id: foundClient.id,
+        first_name: foundClient.first_name,
+        last_name: foundClient.last_name,
+        full_name: `${foundClient.first_name} ${foundClient.last_name}`,
+        phone: foundClient.phone,
+      },
+      membership: membershipRes.rows[0] || null,
+      contest: contestResult,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ==================== MEMBERSHIP REPORT ====================
+app.get("/api/v1/reports/membership", authenticateToken, requireAnalyticsAccess, async (req, res) => {
+  const { from, to } = req.query;
+  try {
+    const byTierRes = await pool.query(
+      `SELECT mt.id, mt.name, mt.monthly_price, mt.yearly_price,
+              COUNT(*) FILTER (WHERE cm.status = 'active') as active_count,
+              COUNT(*) FILTER (WHERE cm.status = 'paused') as paused_count
+       FROM membership_tiers mt
+       LEFT JOIN client_memberships cm ON cm.tier_id = mt.id
+       WHERE mt.shop_id = $1
+       GROUP BY mt.id
+       ORDER BY mt.sort_order`,
+      [req.shopId],
+    );
+
+    const mrrRes = await pool.query(
+      `SELECT COALESCE(SUM(
+         CASE WHEN cm.billing_cycle = 'yearly' THEN mt.yearly_price / 12 ELSE mt.monthly_price END
+       ), 0) as mrr
+       FROM client_memberships cm
+       JOIN membership_tiers mt ON mt.id = cm.tier_id
+       WHERE cm.shop_id = $1 AND cm.status = 'active'`,
+      [req.shopId],
+    );
+
+    const nearExpiryRes = await pool.query(
+      `SELECT cm.id, cm.current_period_end, c.first_name, c.last_name, mt.name as tier_name
+       FROM client_memberships cm
+       JOIN clients c ON c.id = cm.client_id
+       JOIN membership_tiers mt ON mt.id = cm.tier_id
+       WHERE cm.shop_id = $1 AND cm.status = 'active'
+         AND cm.current_period_end <= NOW() + INTERVAL '7 days'
+       ORDER BY cm.current_period_end ASC`,
+      [req.shopId],
+    );
+
+    const mostUsedRes = await pool.query(
+      `SELECT s.name as service_name, COUNT(*) as uses
+       FROM membership_usage mu
+       JOIN client_memberships cm ON cm.id = mu.client_membership_id
+       JOIN services s ON s.id = mu.service_id
+       WHERE cm.shop_id = $1 AND mu.used_at >= date_trunc('month', NOW())
+       GROUP BY s.name
+       ORDER BY uses DESC
+       LIMIT 10`,
+      [req.shopId],
+    );
+
+    const revenueParams = [req.shopId];
+    let revenueDateClause = "";
+    if (from) {
+      revenueParams.push(from);
+      revenueDateClause += ` AND created_at >= $${revenueParams.length}`;
+    }
+    if (to) {
+      revenueParams.push(to);
+      revenueDateClause += ` AND created_at <= $${revenueParams.length}`;
+    }
+    const revenueRes = await pool.query(
+      `SELECT COALESCE(SUM(amount), 0) as total FROM transactions
+       WHERE shop_id = $1 AND transaction_type = 'membership_sale' ${revenueDateClause}`,
+      revenueParams,
+    );
+
+    res.json({
+      by_tier: byTierRes.rows.map((r) => ({
+        ...r,
+        active_count: parseInt(r.active_count),
+        paused_count: parseInt(r.paused_count),
+      })),
+      total_active: byTierRes.rows.reduce((sum, r) => sum + parseInt(r.active_count), 0),
+      mrr_estimate: Number(mrrRes.rows[0].mrr),
+      membership_revenue: Number(revenueRes.rows[0].total),
+      near_expiry: nearExpiryRes.rows,
+      most_used_services: mostUsedRes.rows.map((r) => ({ ...r, uses: parseInt(r.uses) })),
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Internal server error" });

@@ -51,6 +51,40 @@
     <div v-else class="grid grid-cols-1 md:grid-cols-3 gap-6">
       <!-- Left Sidebar -->
       <div class="md:col-span-1 space-y-6">
+        <!-- My Membership -->
+        <div class="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+          <h3 class="font-bold text-gray-700 mb-4">{{ t("portal.membership.title") }}</h3>
+
+          <div v-if="membershipLoading" class="text-center py-4">
+            <i class="pi pi-spin pi-spinner text-2xl text-gray-300"></i>
+          </div>
+
+          <template v-else>
+            <div v-if="membership" class="space-y-3">
+              <div class="flex items-center justify-between">
+                <span class="font-bold text-[var(--p-primary-600)]">{{ membership.tier_name }}</span>
+                <span class="text-xs text-gray-400">
+                  {{ t("portal.membership.renewsOn", { date: new Date(membership.current_period_end).toLocaleDateString() }) }}
+                </span>
+              </div>
+              <div v-for="u in membershipUsage" :key="u.service_id" class="text-sm flex justify-between">
+                <span class="text-gray-600">{{ u.service_name }}</span>
+                <span class="font-medium text-gray-900">
+                  {{ u.quota_per_month === null ? `${u.used_this_month} / ∞` : `${u.used_this_month} / ${u.quota_per_month}` }}
+                </span>
+              </div>
+            </div>
+            <div v-else class="text-sm text-gray-400 text-center py-2">
+              {{ t("portal.membership.none") }}
+            </div>
+          </template>
+
+          <div class="border-t border-gray-100 mt-4 pt-4 flex flex-col items-center">
+            <canvas ref="qrCanvas" class="w-32 h-32"></canvas>
+            <p class="text-xs text-gray-400 mt-2 text-center">{{ t("portal.membership.qrNote") }}</p>
+          </div>
+        </div>
+
         <!-- Upcoming Appointments -->
         <div class="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
           <h3 class="font-bold text-gray-700 mb-4">
@@ -355,7 +389,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed, reactive } from "vue";
+import { ref, onMounted, computed, reactive, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
 import { useAuthStore } from "../stores/auth";
 import Skeleton from "primevue/skeleton";
@@ -364,6 +398,7 @@ import Column from "primevue/column";
 import Button from "primevue/button";
 import Password from "primevue/password";
 import { useToast } from "primevue/usetoast";
+import QRCode from "qrcode";
 
 const { t } = useI18n();
 const authStore = useAuthStore();
@@ -374,6 +409,11 @@ const activeContest = ref<any>(null);
 const clientData = ref<any>(null);
 const history = ref<any[]>([]);
 const files = ref<any[]>([]);
+
+const membership = ref<any>(null);
+const membershipUsage = ref<any[]>([]);
+const membershipLoading = ref(true);
+const qrCanvas = ref<HTMLCanvasElement | null>(null);
 
 const showEditProfile = ref(false);
 const showChangePassword = ref(false);
@@ -439,6 +479,27 @@ onMounted(async () => {
   } catch (err) {
   } finally {
     loading.value = false;
+  }
+
+  try {
+    const memRes = await fetch(`/api/v1/clients/${authStore.clientId}/membership`, {
+      headers: { Authorization: `Bearer ${authStore.token}` },
+    });
+    if (memRes.ok) {
+      const memData = await memRes.json();
+      membership.value = memData.membership;
+      membershipUsage.value = memData.usage || [];
+    }
+  } catch {
+  } finally {
+    membershipLoading.value = false;
+  }
+
+  if (clientData.value?.qr_token) {
+    await nextTick();
+    if (qrCanvas.value) {
+      QRCode.toCanvas(qrCanvas.value, clientData.value.qr_token, { width: 128 }).catch(() => {});
+    }
   }
 });
 

@@ -61,7 +61,7 @@
 
       <div class="flex gap-6 border-b border-gray-200 mb-6 overflow-x-auto">
         <button
-          v-for="tab in ['Info', 'Αρχεία', 'History']"
+          v-for="tab in ['Info', 'Αρχεία', 'History', 'Membership']"
           :key="tab"
           @click="activeTab = tab"
           class="pb-2 px-1 text-sm font-medium transition-colors border-b-2 whitespace-nowrap"
@@ -235,6 +235,89 @@
               </span>
             </div>
           </div>
+        </div>
+        <div v-if="activeTab === 'Membership'" class="space-y-4">
+          <div v-if="membershipLoading" class="text-center py-8">
+            <i class="pi pi-spin pi-spinner text-2xl text-gray-400"></i>
+          </div>
+
+          <template v-else>
+            <div v-if="membership" class="space-y-4">
+              <div class="flex justify-between items-center p-4 bg-gray-50 rounded-lg border border-gray-100">
+                <div>
+                  <div class="font-bold text-gray-900">{{ membership.tier_name }}</div>
+                  <span
+                    class="text-xs px-2 py-0.5 rounded uppercase font-bold mt-1 inline-block"
+                    :class="membershipStatusClass(membership.status)"
+                  >
+                    {{ membership.status }}
+                  </span>
+                </div>
+                <div class="text-right text-sm text-gray-500">
+                  Renews on<br />
+                  <span class="font-bold text-gray-900">{{ new Date(membership.current_period_end).toLocaleDateString() }}</span>
+                </div>
+              </div>
+
+              <div v-if="membershipUsage.length" class="space-y-2">
+                <div
+                  v-for="u in membershipUsage"
+                  :key="u.service_id"
+                  class="flex justify-between items-center text-sm p-2 border-b border-gray-50 last:border-0"
+                >
+                  <span class="text-gray-700">{{ u.service_name }}</span>
+                  <span class="font-medium text-gray-900">
+                    {{ u.quota_per_month === null ? `${u.used_this_month} used (unlimited)` : `${u.used_this_month} / ${u.quota_per_month} used` }}
+                  </span>
+                </div>
+              </div>
+
+              <div v-if="isShopAdmin" class="flex flex-wrap gap-2 pt-2">
+                <Button label="Renew" size="small" @click="renewMembership" :loading="membershipActionLoading" />
+                <Button label="Change Tier" size="small" text @click="showAssignMembership = !showAssignMembership" />
+                <Button label="Cancel Membership" size="small" severity="danger" text @click="confirmCancelMembership" />
+              </div>
+            </div>
+
+            <div v-else class="text-center text-gray-400 py-8">
+              No active membership.
+            </div>
+
+            <div v-if="isShopAdmin && (!membership || showAssignMembership)" class="border-t border-gray-100 pt-4 space-y-3">
+              <h4 class="text-sm font-bold text-gray-700">{{ membership ? 'Change Tier' : 'Assign a Membership' }}</h4>
+              <Dropdown
+                v-model="assignForm.tier_id"
+                :options="allTiers"
+                optionLabel="name"
+                optionValue="id"
+                placeholder="Select tier"
+                class="w-full"
+              />
+              <Dropdown
+                v-model="assignForm.billing_cycle"
+                :options="[{ label: 'Monthly', value: 'monthly' }, { label: 'Yearly', value: 'yearly' }]"
+                optionLabel="label"
+                optionValue="value"
+                class="w-full"
+              />
+              <Dropdown
+                v-model="assignForm.payment_method"
+                :options="['cash', 'card', 'bank-transfer']"
+                placeholder="Payment method"
+                class="w-full"
+              />
+              <div class="flex gap-2">
+                <Button
+                  label="Confirm"
+                  size="small"
+                  @click="assignMembership"
+                  :loading="membershipActionLoading"
+                  :disabled="!assignForm.tier_id"
+                />
+                <Button v-if="showAssignMembership" label="Cancel" size="small" text @click="showAssignMembership = false" />
+              </div>
+            </div>
+          </template>
         </div>
         <div v-if="activeTab === 'Αρχεία'" class="space-y-4">
           <div
@@ -428,12 +511,112 @@ const fetchClientData = async () => {
     loading.value = false;
   }
 };
+
+// --- Membership ---
+const membership = ref<any>(null);
+const membershipUsage = ref<any[]>([]);
+const membershipLoading = ref(false);
+const membershipActionLoading = ref(false);
+const allTiers = ref<any[]>([]);
+const showAssignMembership = ref(false);
+const assignForm = ref<any>({ tier_id: null, billing_cycle: "monthly", payment_method: "cash" });
+
+const membershipStatusClass = (status: string) => {
+  if (status === "active") return "bg-green-100 text-green-700";
+  if (status === "expired" || status === "cancelled") return "bg-red-100 text-red-700";
+  return "bg-gray-100 text-gray-600";
+};
+
+const fetchMembership = async () => {
+  if (!props.clientId) return;
+  membershipLoading.value = true;
+  try {
+    const res = await fetch(`/api/v1/clients/${props.clientId}/membership`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    membership.value = data.membership;
+    membershipUsage.value = data.usage || [];
+    showAssignMembership.value = false;
+  } finally {
+    membershipLoading.value = false;
+  }
+};
+
+const fetchAllTiers = async () => {
+  const res = await fetch("/api/v1/membership-tiers", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (res.ok) allTiers.value = (await res.json()).filter((t: any) => t.is_active);
+};
+
+const assignMembership = async () => {
+  if (!assignForm.value.tier_id) return;
+  membershipActionLoading.value = true;
+  try {
+    const res = await fetch(`/api/v1/clients/${props.clientId}/membership`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify(assignForm.value),
+    });
+    if (!res.ok) throw new Error((await res.json()).error || "Failed to assign membership");
+    toast.add({ severity: "success", summary: "Membership assigned", life: 3000 });
+    await fetchMembership();
+  } catch (e: any) {
+    toast.add({ severity: "error", summary: "Error", detail: e.message, life: 4000 });
+  } finally {
+    membershipActionLoading.value = false;
+  }
+};
+
+const renewMembership = async () => {
+  membershipActionLoading.value = true;
+  try {
+    const res = await fetch(`/api/v1/clients/${props.clientId}/membership/renew`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ payment_method: "cash" }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error || "Failed to renew");
+    toast.add({ severity: "success", summary: "Membership renewed", life: 3000 });
+    await fetchMembership();
+  } catch (e: any) {
+    toast.add({ severity: "error", summary: "Error", detail: e.message, life: 4000 });
+  } finally {
+    membershipActionLoading.value = false;
+  }
+};
+
+const confirmCancelMembership = () => {
+  confirm.require({
+    message: "Cancel this client's membership?",
+    header: "Cancel Membership",
+    icon: "pi pi-exclamation-triangle",
+    acceptClass: "p-button-danger",
+    accept: async () => {
+      try {
+        const res = await fetch(`/api/v1/clients/${props.clientId}/membership`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) throw new Error("Failed to cancel");
+        toast.add({ severity: "success", summary: "Membership cancelled", life: 3000 });
+        await fetchMembership();
+      } catch (e: any) {
+        toast.add({ severity: "error", summary: "Error", detail: e.message, life: 4000 });
+      }
+    },
+  });
+};
+
 watch(
   () => props.visible,
   (val) => {
     if (val && props.clientId) {
       activeTab.value = "Info";
       fetchClientData();
+      fetchMembership();
+      fetchAllTiers();
       settingsStore.fetchShopSettings();
     }
   },
