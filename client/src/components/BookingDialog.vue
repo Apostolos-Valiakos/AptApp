@@ -87,14 +87,17 @@
               >
 
               <div v-if="!form.client_id" class="flex gap-2">
-                <Dropdown
-                  v-model="form.client_id"
-                  :options="clients"
+                <AutoComplete
+                  v-model="selectedClient"
+                  :suggestions="clientSuggestions"
                   optionLabel="full_name"
-                  optionValue="id"
                   :placeholder="t('booking.searchClient')"
-                  filter
+                  :loading="searchingClients"
+                  forceSelection
                   class="w-full"
+                  inputClass="w-full"
+                  @complete="searchClients"
+                  @update:modelValue="onClientPicked"
                 />
                 <Button
                   icon="pi pi-plus"
@@ -107,7 +110,7 @@
               <div v-else class="flex gap-2">
                 <div
                   class="flex-grow flex justify-between items-center p-3 border border-gray-200 rounded-xl bg-gray-50 hover:bg-red-50 hover:border-red-200 transition-colors cursor-pointer group"
-                  @click="form.client_id = null"
+                  @click="clearSelectedClient"
                 >
                   <div class="flex items-center gap-3">
                     <div
@@ -422,7 +425,6 @@ const { t } = useI18n();
 const props = defineProps([
   "visible",
   "appointment",
-  "clients",
   "services",
   "staff",
   "allProducts",
@@ -516,9 +518,68 @@ onUnmounted(() => {
 
 // === COMPUTED ===
 const isEditMode = computed(() => !!form.value.id);
-const selectedClient = computed(() =>
-  props.clients.find((c: any) => c.id === form.value.client_id),
-);
+
+// --- Client selection (server-side search — with 5000+ clients we never load
+// the full list, see calendar.ts) ---
+const selectedClient = ref<any>(null);
+const clientSuggestions = ref<any[]>([]);
+const searchingClients = ref(false);
+let clientSearchTimeout: ReturnType<typeof setTimeout> | null = null;
+
+const searchClients = (event: { query: string }) => {
+  const q = event.query.trim();
+  if (clientSearchTimeout) clearTimeout(clientSearchTimeout);
+  if (!q) {
+    clientSuggestions.value = [];
+    return;
+  }
+  searchingClients.value = true;
+  clientSearchTimeout = setTimeout(async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(
+        `/api/v1/clients?slim=true&search=${encodeURIComponent(q)}&limit=10`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      clientSuggestions.value = res.ok ? await res.json() : [];
+    } finally {
+      searchingClients.value = false;
+    }
+  }, 300);
+};
+
+const onClientPicked = (client: any) => {
+  if (client && typeof client === "object") {
+    selectedClient.value = client;
+    form.value.client_id = client.id;
+  }
+};
+
+const clearSelectedClient = () => {
+  form.value.client_id = null;
+  selectedClient.value = null;
+  clientSuggestions.value = [];
+};
+
+// Re-hydrates selectedClient for an existing appointment without ever loading
+// the full client list — an instant approximation from the appointment payload
+// itself, refined a moment later with the full slim record (adds custom_fields).
+const loadClientById = async (clientId: string, fallback: any) => {
+  selectedClient.value = fallback;
+  if (!clientId) return;
+  try {
+    const token = localStorage.getItem("token");
+    const res = await fetch(`/api/v1/clients?slim=true&id=${clientId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.ok) {
+      const rows = await res.json();
+      if (rows[0]) selectedClient.value = rows[0];
+    }
+  } catch {
+    // keep the fallback if the lookup fails
+  }
+};
 
 // Financial Calculations
 const currentApptTotal = computed(() => {
@@ -628,6 +689,19 @@ watch(
         is_eoppy: !!val.is_eoppy,
       };
 
+      if (val.client_id) {
+        loadClientById(val.client_id, {
+          id: val.client_id,
+          first_name: val.first_name,
+          last_name: val.last_name,
+          full_name: `${val.first_name || ""} ${val.last_name || ""}`.trim(),
+          phone: val.client_phone,
+          outstanding_balance: Number(val.client_outstanding_balance || 0),
+        });
+      } else {
+        selectedClient.value = null;
+      }
+
       let rule = null;
       if (val.recurrence) {
         try {
@@ -691,6 +765,9 @@ watch(
     } else {
       // === NEW MODE ===
       const newStart = val?.start_time ? new Date(val.start_time) : new Date();
+
+      selectedClient.value = null;
+      clientSuggestions.value = [];
 
       form.value = {
         id: null,
@@ -1042,8 +1119,8 @@ const saveNewClient = async () => {
     client.non_eoppy_breakdown = { total: 0, services: {} };
     client.outstanding_balance = 0; // Good practice to default this too
 
-    // 3. Push to state and select it
-    props.clients.push(client);
+    // 3. Select it directly (no shared client list to push into anymore)
+    selectedClient.value = client;
     form.value.client_id = client.id;
     showQuickAddClient.value = false;
     newClient.value = { first_name: "", last_name: "", phone: "" };

@@ -175,7 +175,6 @@
     <BookingDialog
       v-model:visible="dialogVisible"
       :appointment="selectedAppointment"
-      :clients="calendarStore.clients"
       :services="calendarStore.services"
       :staff="calendarStore.resources"
       :allProducts="calendarStore.products"

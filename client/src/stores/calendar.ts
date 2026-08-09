@@ -4,7 +4,6 @@ import { ref } from "vue";
 export const useCalendarStore = defineStore("calendar", () => {
   const resources = ref<any[]>([]);
   const events = ref<any[]>([]);
-  const clients = ref<any[]>([]);
   const services = ref<any[]>([]);
   const products = ref<any[]>([]);
 
@@ -19,11 +18,12 @@ export const useCalendarStore = defineStore("calendar", () => {
         "Content-Type": "application/json",
       };
 
-      // Removed appointments from this Promise.all
-      const [staffRes, clientsRes, servicesRes, productsRes] =
+      // Removed appointments from this Promise.all. Clients are NOT fetched here —
+      // with 5000+ clients that made this a slow eager load; the booking dialog's
+      // client picker now does its own server-side search instead (slim + search + limit).
+      const [staffRes, servicesRes, productsRes] =
         await Promise.all([
           fetch("/api/v1/staff", { headers }),
-          fetch("/api/v1/clients?slim=true", { headers }),
           fetch("/api/v1/services", { headers }),
           fetch("/api/v1/products", { headers }),
         ]);
@@ -33,7 +33,6 @@ export const useCalendarStore = defineStore("calendar", () => {
         .filter((s: any) => s.visible_in_calendar !== false)
         .sort((a: any, b: any) => (a.sort_order || 0) - (b.sort_order || 0));
 
-      clients.value = await clientsRes.json();
       services.value = await servicesRes.json();
       products.value = await productsRes.json();
 
@@ -100,7 +99,6 @@ export const useCalendarStore = defineStore("calendar", () => {
   return {
     resources,
     events,
-    clients,
     services,
     products,
     fetchBaseResources,

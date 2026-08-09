@@ -1441,15 +1441,20 @@ app.delete(
 //   }
 // });
 app.get("/api/v1/clients", authenticateToken, async (req, res) => {
-  const { slim, search, limit, offset } = req.query;
+  const { slim, search, limit, offset, id } = req.query;
   try {
     // Slim mode: lightweight list for dropdowns (scheduler, booking dialog).
     // With `search` + `limit` it becomes a fast autocomplete lookup instead of
     // shipping the entire client table (used by the Gift Cards client picker).
+    // With `id` it's an exact single-row lookup (used to re-hydrate the booking
+    // dialog's already-selected client without loading the full client list).
     if (slim === "true") {
       const slimParams = [req.shopId];
       let slimSearchClause = "";
-      if (search) {
+      if (id) {
+        slimParams.push(id);
+        slimSearchClause = ` AND id = $${slimParams.length}`;
+      } else if (search) {
         slimParams.push(`%${String(search).trim()}%`);
         slimSearchClause = ` AND (first_name || ' ' || last_name ILIKE $${slimParams.length}
           OR email ILIKE $${slimParams.length}
