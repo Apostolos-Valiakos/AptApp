@@ -156,6 +156,7 @@
               :staff="staff"
               :baseStartTime="new Date(form.start_time)"
               :default-staff-id="currentStaffId"
+              :timeOff="props.timeOff || []"
             />
 
             <!-- Status + Block time -->
@@ -428,6 +429,7 @@ const props = defineProps([
   "services",
   "staff",
   "allProducts",
+  "timeOff",
 ]);
 
 const emit = defineEmits(["update:visible", "save"]);

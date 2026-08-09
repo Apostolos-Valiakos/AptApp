@@ -178,6 +178,7 @@
       :services="calendarStore.services"
       :staff="calendarStore.resources"
       :allProducts="calendarStore.products"
+      :timeOff="calendarStore.timeOff"
       @save="handleSave"
     />
     <AppointmentSwapDialog
@@ -401,6 +402,64 @@ const calendarEvents = computed(() => {
   return events;
 });
 
+// staff_time_off DATE columns come back as full ISO timestamps (pg parses DATE
+// into a local-midnight Date, then JSON serialization renders it in UTC), so
+// always round-trip through local date parts rather than using the raw string.
+const toLocalDateStr = (v: any) => {
+  const d = new Date(v);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const timeOffBackgroundEvents = computed(() => {
+  const entries = calendarStore.timeOff;
+  if (!Array.isArray(entries)) return [];
+
+  return entries.map((entry: any) => {
+    const isLeave = entry.type === "leave";
+    const startDateStr = toLocalDateStr(entry.start_date);
+
+    const endDateExclusive = (dateStr: any) => {
+      const d = new Date(`${toLocalDateStr(dateStr)}T00:00:00`);
+      d.setDate(d.getDate() + 1);
+      return toLocalDateStr(d);
+    };
+
+    let durationLabel = "";
+    if (isLeave) {
+      const endDateStr = toLocalDateStr(entry.end_date);
+      const days = Math.round((new Date(`${endDateStr}T00:00:00`).getTime() - new Date(`${startDateStr}T00:00:00`).getTime()) / 86400000) + 1;
+      durationLabel = days === 1 ? "1 ημέρα" : `${days} ημέρες`;
+    } else {
+      const [sh, sm] = (entry.start_time || "0:0").split(":").map(Number);
+      const [eh, em] = (entry.end_time || "0:0").split(":").map(Number);
+      const minutes = eh * 60 + em - (sh * 60 + sm);
+      durationLabel = `${minutes} λεπτά`;
+    }
+
+    const typeLabel = isLeave ? "Άδεια" : "Διάλειμμα";
+
+    return {
+      id: `timeoff_${entry.id}`,
+      resourceId: entry.staff_id?.toString(),
+      display: "background",
+      backgroundColor: isLeave ? "rgba(239, 68, 68, 0.15)" : "rgba(107, 114, 128, 0.2)",
+      start: isLeave ? startDateStr : `${startDateStr}T${entry.start_time}`,
+      end: isLeave ? endDateExclusive(entry.end_date) : `${startDateStr}T${entry.end_time}`,
+      title: `${typeLabel} (${durationLabel})`,
+      extendedProps: {
+        isTimeOff: true,
+        timeOffType: entry.type,
+        reason: entry.reason,
+        durationLabel,
+        typeLabel,
+      },
+    };
+  });
+});
+
 // --- Actions ---
 const openNewAppointment = () => {
   selectedAppointment.value = null;
@@ -505,8 +564,21 @@ const calendarOptions = ref({
   },
 
   eventContent: (arg: any) => {
-    const timeText = arg.timeText;
     const props = arg.event.extendedProps;
+
+    if (props.isTimeOff) {
+      return {
+        html: `
+        <div class="relative w-full h-full p-1 flex flex-col leading-tight overflow-hidden">
+          <div class="text-[9px] md:text-[11px] font-bold text-gray-600 break-words whitespace-normal">${props.typeLabel}</div>
+          <div class="text-[9px] md:text-[10px] text-gray-500 break-words whitespace-normal">${props.durationLabel}</div>
+          ${props.reason ? `<div class="text-[9px] md:text-[10px] text-gray-400 italic break-words whitespace-normal">${props.reason}</div>` : ""}
+        </div>
+      `,
+      };
+    }
+
+    const timeText = arg.timeText;
     const status = props.fullAppointment?.status;
 
     const isCancelled = status === "cancelled" || status === "no_show";
@@ -601,12 +673,12 @@ const calendarOptions = ref({
 });
 
 watch(
-  [calendarResources, calendarEvents],
-  ([newResources, newEvents]) => {
+  [calendarResources, calendarEvents, timeOffBackgroundEvents],
+  ([newResources, newEvents, newTimeOffEvents]) => {
     if (!fullCalendar.value) return;
     const api = fullCalendar.value.getApi();
     api.setOption("resources", newResources);
-    api.setOption("events", newEvents);
+    api.setOption("events", [...newEvents, ...newTimeOffEvents]);
   },
   { deep: true },
 );

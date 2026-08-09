@@ -57,7 +57,7 @@
           }}</label>
           <Dropdown
             v-model="service.staff_id"
-            :options="getFilteredStaff(service.service_id)"
+            :options="getFilteredStaff(service)"
             optionLabel="name"
             optionValue="id"
             class="w-full p-inputtext-sm"
@@ -132,18 +132,59 @@ const props = defineProps({
   staff: { type: Array as () => any[], default: () => [] },
   baseStartTime: { type: Date, default: () => new Date() },
   defaultStaffId: { type: [Number, String], default: null },
+  timeOff: { type: Array as () => any[], default: () => [] },
 });
 
 const emit = defineEmits(["update:modelValue"]);
 
-const getFilteredStaff = (serviceId: any) => {
-  if (!serviceId) return props.staff;
-  return props.staff.filter(
-    (s: any) =>
-      !s.service_ids ||
-      s.service_ids.length === 0 ||
-      s.service_ids.includes(serviceId),
-  );
+const toLocalDateStr = (d: Date) => {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+// staff_time_off DATE columns come back as full ISO timestamps (pg parses DATE
+// into a local-midnight Date, then JSON serialization renders it in UTC), so
+// always round-trip through local date parts rather than slicing the string.
+const toDateOnly = (v: any) => toLocalDateStr(new Date(v));
+
+const isStaffUnavailable = (staffId: any, serviceStart: any, durationMinutes: number) => {
+  if (!serviceStart) return false;
+  const start = new Date(serviceStart);
+  const end = new Date(start.getTime() + (durationMinutes || 60) * 60000);
+  const dateStr = toLocalDateStr(start);
+
+  return props.timeOff.some((entry: any) => {
+    if (String(entry.staff_id) !== String(staffId)) return false;
+    if (entry.type === "leave") {
+      return dateStr >= toDateOnly(entry.start_date) && dateStr <= toDateOnly(entry.end_date);
+    }
+    const entryDate = toDateOnly(entry.start_date);
+    if (entryDate !== dateStr) return false;
+    const breakStart = new Date(`${entryDate}T${entry.start_time}`);
+    const breakEnd = new Date(`${entryDate}T${entry.end_time}`);
+    return start < breakEnd && end > breakStart;
+  });
+};
+
+const getFilteredStaff = (service: any) => {
+  const serviceId = service.service_id;
+  let list = !serviceId
+    ? props.staff
+    : props.staff.filter(
+        (s: any) =>
+          !s.service_ids ||
+          s.service_ids.length === 0 ||
+          s.service_ids.includes(serviceId),
+      );
+
+  if (service.start_time) {
+    list = list.filter(
+      (s: any) => !isStaffUnavailable(s.id, service.start_time, service.duration_override),
+    );
+  }
+  return list;
 };
 
 const addService = () => {

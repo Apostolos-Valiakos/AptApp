@@ -896,6 +896,141 @@ app.delete("/api/v1/staff/:id", authenticateToken, async (req, res) => {
   }
 });
 
+// ==================== STAFF TIME OFF (LEAVE / BREAK) ====================
+
+// All time-off entries for the shop (used to render calendar background blocks)
+app.get("/api/v1/time-off", authenticateToken, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, staff_id, type, start_date, end_date, start_time, end_time, reason
+       FROM staff_time_off WHERE shop_id = $1
+       ORDER BY start_date DESC`,
+      [req.shopId],
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Time-off entries for a single staff member (used by the Staff page dialog)
+app.get("/api/v1/staff/:id/time-off", authenticateToken, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, type, start_date, end_date, start_time, end_time, reason, created_at
+       FROM staff_time_off WHERE staff_id = $1 AND shop_id = $2
+       ORDER BY start_date DESC`,
+      [req.params.id, req.shopId],
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Create a leave or break — warns about conflicting appointments unless force=true
+app.post("/api/v1/staff/:id/time-off", authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const { type, start_date, end_date, start_time, end_time, reason, force } = req.body;
+
+  if (!type || !["leave", "break"].includes(type)) {
+    return res.status(400).json({ error: "type must be 'leave' or 'break'" });
+  }
+  if (!start_date || !end_date) {
+    return res.status(400).json({ error: "start_date and end_date are required" });
+  }
+  if (type === "break" && (!start_time || !end_time)) {
+    return res.status(400).json({ error: "start_time and end_time are required for a break" });
+  }
+
+  try {
+    const staffCheck = await pool.query(
+      `SELECT id FROM staff WHERE id = $1 AND shop_id = $2`,
+      [id, req.shopId],
+    );
+    if (staffCheck.rows.length === 0) {
+      return res.status(404).json({ error: "Staff member not found" });
+    }
+
+    // Find appointments that would conflict with this time-off window
+    let conflictQuery;
+    let conflictParams;
+    if (type === "leave") {
+      conflictQuery = `
+        SELECT a.id, aps.start_time, s.name as service_name,
+               c.first_name || ' ' || c.last_name as client_name
+        FROM appointment_services aps
+        JOIN appointments a ON a.id = aps.appointment_id
+        LEFT JOIN services s ON s.id = aps.service_id
+        LEFT JOIN clients c ON c.id = a.client_id
+        WHERE aps.staff_id = $1 AND a.shop_id = $2 AND a.status != 'cancelled'
+          AND aps.start_time::date BETWEEN $3::date AND $4::date
+        ORDER BY aps.start_time`;
+      conflictParams = [id, req.shopId, start_date, end_date];
+    } else {
+      conflictQuery = `
+        SELECT a.id, aps.start_time, s.name as service_name,
+               c.first_name || ' ' || c.last_name as client_name
+        FROM appointment_services aps
+        JOIN appointments a ON a.id = aps.appointment_id
+        LEFT JOIN services s ON s.id = aps.service_id
+        LEFT JOIN clients c ON c.id = a.client_id
+        WHERE aps.staff_id = $1 AND a.shop_id = $2 AND a.status != 'cancelled'
+          AND aps.start_time::date = $3::date
+          AND aps.start_time < ($3::date + $5::time)
+          AND (aps.start_time + (COALESCE(aps.duration_override, 60) || ' minutes')::interval) > ($3::date + $4::time)
+        ORDER BY aps.start_time`;
+      conflictParams = [id, req.shopId, start_date, start_time, end_time];
+    }
+
+    const conflicts = await pool.query(conflictQuery, conflictParams);
+
+    if (conflicts.rows.length > 0 && force !== true) {
+      return res.status(409).json({
+        error: "conflicts_found",
+        conflicts: conflicts.rows,
+      });
+    }
+
+    const { rows } = await pool.query(
+      `INSERT INTO staff_time_off
+         (staff_id, shop_id, type, start_date, end_date, start_time, end_time, reason)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING *`,
+      [
+        id,
+        req.shopId,
+        type,
+        start_date,
+        end_date,
+        type === "break" ? start_time : null,
+        type === "break" ? end_time : null,
+        reason || null,
+      ],
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.delete("/api/v1/staff/:id/time-off/:timeOffId", authenticateToken, async (req, res) => {
+  try {
+    const { rowCount } = await pool.query(
+      `DELETE FROM staff_time_off WHERE id = $1 AND staff_id = $2 AND shop_id = $3`,
+      [req.params.timeOffId, req.params.id, req.shopId],
+    );
+    if (rowCount === 0) return res.status(404).json({ error: "Not found" });
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // Create Staff Login
 const STAFF_LOGIN_ROLES = ["staff", "frontdesk"];
 
@@ -4723,6 +4858,23 @@ app.put("/api/v1/portal/notifications", authenticateToken, async (req, res) => {
       `ALTER TABLE staff ADD COLUMN IF NOT EXISTS visible_in_calendar BOOLEAN NOT NULL DEFAULT true`,
     );
 
+    // Staff leave (full day(s) off) and breaks (a time window on one day).
+    // start_time/end_time are NULL for a leave entry (the whole day is off).
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS staff_time_off (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        staff_id UUID NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+        shop_id UUID NOT NULL REFERENCES shops(id),
+        type VARCHAR(10) NOT NULL CHECK (type IN ('leave', 'break')),
+        start_date DATE NOT NULL,
+        end_date DATE NOT NULL,
+        start_time TIME,
+        end_time TIME,
+        reason TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+
     // ==================== PERFORMANCE INDEXES ====================
     const startupIndexes = [
       "CREATE INDEX IF NOT EXISTS idx_transactions_appointment_id ON transactions (appointment_id)",
@@ -4735,6 +4887,8 @@ app.put("/api/v1/portal/notifications", authenticateToken, async (req, res) => {
       "CREATE INDEX IF NOT EXISTS idx_gift_cards_shop_id ON gift_cards (shop_id)",
       "CREATE INDEX IF NOT EXISTS idx_gift_cards_card_number ON gift_cards (card_number)",
       "CREATE INDEX IF NOT EXISTS idx_gift_cards_client_id ON gift_cards (client_id)",
+      "CREATE INDEX IF NOT EXISTS idx_staff_time_off_staff_id ON staff_time_off (staff_id)",
+      "CREATE INDEX IF NOT EXISTS idx_staff_time_off_dates ON staff_time_off (start_date, end_date)",
     ];
     for (const sql of startupIndexes) {
       await pool.query(sql);
