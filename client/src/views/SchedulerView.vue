@@ -7,8 +7,9 @@
       <!-- LEFT: Navigation -->
       <div class="flex items-center gap-2">
         <button
-          @click="calendarApi?.prev()"
-          class="p-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-800 transition-colors"
+          @click="canGoPrev && calendarApi?.prev()"
+          :disabled="!canGoPrev"
+          class="p-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent"
           title="Previous"
         >
           <i class="pi pi-chevron-left text-sm"></i>
@@ -220,6 +221,15 @@ const toast = useToast();
 const calendarStore = useCalendarStore();
 const settings = useSettingsStore();
 
+// Plain "staff" (not frontdesk/admin/super_admin) can only ever browse today
+// and forward — mirrors the same restriction enforced server-side in
+// GET /api/v1/appointments, so navigation UI can't even attempt to go back.
+const isStaffRole = computed(() => authStore.user?.role === "staff");
+const todayDateStr = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+
 // UI State
 const dialogVisible = ref(false);
 const swapDialogVisible = ref(false);
@@ -230,6 +240,15 @@ const currentView = ref("resourceTimeGridDay");
 const currentStart = ref("");
 const currentEnd = ref("");
 const isFetching = ref(false);
+
+const canGoPrev = computed(() => {
+  if (!isStaffRole.value || !currentStart.value) return true;
+  const viewStart = new Date(currentStart.value);
+  viewStart.setHours(0, 0, 0, 0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return viewStart > today;
+});
 
 // --- Fit staff toggle ---
 const fitStaff = ref(localStorage.getItem("fitStaff") === "true");
@@ -513,6 +532,7 @@ const calendarOptions = ref({
   titleFormat: { weekday: "long", year: "numeric", month: "short", day: "numeric" },
   resourceOrder: "sort_order",
   initialView: "resourceTimeGridDay",
+  validRange: isStaffRole.value ? { start: todayDateStr() } : undefined,
   allDaySlot: false,
   slotDuration: "00:15:00",
   slotLabelInterval: "01:00",

@@ -2015,6 +2015,22 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
         ? ` AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) >= NOW() - INTERVAL '3 months'`
         : "";
 
+    // 4. Plain "staff" (not frontdesk/admin/super_admin) can only ever see their
+    // own appointments, and never anything before today. Enforced here — not
+    // just hidden client-side — so it can't be bypassed by calling the API
+    // directly with a different date range or another staff member's id.
+    let staffOwnClause = "";
+    if (req.user.role === "staff") {
+      if (req.user.staffId) {
+        params.push(req.user.staffId);
+        staffOwnClause = ` AND EXISTS (SELECT 1 FROM appointment_services aps_staff WHERE aps_staff.appointment_id = a.id AND aps_staff.staff_id = $${params.length})`;
+      } else {
+        // No linked staff profile — nothing to show.
+        staffOwnClause = " AND FALSE";
+      }
+      staffOwnClause += ` AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) >= CURRENT_DATE`;
+    }
+
     const { rows } = await pool.query(
       `
       SELECT 
@@ -2063,7 +2079,7 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
         ), '[]') as services
       FROM appointments a
       LEFT JOIN clients c ON a.client_id = c.id
-      WHERE a.shop_id = $1 ${visibilityClause} ${dateFilter} ${threeMonthClause}
+      WHERE a.shop_id = $1 ${visibilityClause} ${dateFilter} ${threeMonthClause} ${staffOwnClause}
       GROUP BY a.id, c.first_name, c.last_name, c.phone, c.outstanding_balance
       ORDER BY (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) ASC
     `,
