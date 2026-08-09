@@ -432,10 +432,24 @@ app.use(
     origin: allowedOrigins,
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: ["Content-Type", "Authorization", "Idempotency-Key"],
   }),
 );
 app.use(express.json());
+
+// ==================== HEALTH CHECK ====================
+// Used by the Docker healthcheck and external uptime monitoring.
+// Deliberately unauthenticated (monitors won't have a JWT) and does a real
+// DB round-trip so a hung/unreachable Postgres is reported as unhealthy,
+// not just "the Node process is still running".
+app.get("/health", async (req, res) => {
+  try {
+    await pool.query("SELECT 1");
+    res.status(200).json({ status: "ok" });
+  } catch (err) {
+    res.status(503).json({ status: "error", error: err.message });
+  }
+});
 
 const distPath = path.join(__dirname, "../dist");
 app.use(express.static(distPath));
@@ -453,6 +467,28 @@ const safeUUID = (id) => {
   if (!id || typeof id !== "string") return null;
   const cleanId = id.trim();
   return cleanId.length === 36 ? cleanId : null;
+};
+
+// --- HELPERS: Idempotency for the client's offline write queue ---
+// Call inside an open transaction, right after BEGIN. If a cached response
+// exists for this key, the caller should ROLLBACK and return it as-is
+// without re-running the write.
+const checkIdempotency = async (client, key, shopId) => {
+  if (!key) return null;
+  const { rows } = await client.query(
+    "SELECT response_status, response_body FROM idempotency_keys WHERE key = $1 AND shop_id = $2",
+    [key, shopId],
+  );
+  return rows[0] || null;
+};
+// Call right before COMMIT, once the response body is final.
+const saveIdempotency = async (client, key, shopId, status, body) => {
+  if (!key) return;
+  await client.query(
+    `INSERT INTO idempotency_keys (key, shop_id, response_status, response_body)
+     VALUES ($1, $2, $3, $4) ON CONFLICT (key) DO NOTHING`,
+    [key, shopId, status, JSON.stringify(body)],
+  );
 };
 
 // --- HELPER: Recalculate Outstanding Balance for a Client ---
@@ -2050,9 +2086,16 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
 });
 
 app.post("/api/v1/appointments", authenticateToken, async (req, res) => {
+  const idempotencyKey = req.headers["idempotency-key"] || null;
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+
+    const cached = await checkIdempotency(client, idempotencyKey, req.shopId);
+    if (cached) {
+      await client.query("ROLLBACK");
+      return res.status(cached.response_status).json(cached.response_body);
+    }
 
     const { firstAppointmentId, validClientId } = await createAppointmentSeries(
       client,
@@ -2065,12 +2108,15 @@ app.post("/api/v1/appointments", authenticateToken, async (req, res) => {
       newBalance = await recalculateClientBalance(client, validClientId);
     }
 
-    await client.query("COMMIT");
-    res.json({
+    const responseBody = {
       id: firstAppointmentId,
       success: true,
       new_balance: newBalance,
-    });
+    };
+    await saveIdempotency(client, idempotencyKey, req.shopId, 200, responseBody);
+
+    await client.query("COMMIT");
+    res.json(responseBody);
   } catch (err) {
     await client.query("ROLLBACK");
     console.error("Create Appointment Error:", err);
@@ -2234,10 +2280,18 @@ app.get(
 app.put("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
   const { id } = req.params;
   const { scope } = req.query;
+  const idempotencyKey = req.headers["idempotency-key"] || null;
 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+
+    const cached = await checkIdempotency(client, idempotencyKey, req.shopId);
+    if (cached) {
+      await client.query("ROLLBACK");
+      return res.status(cached.response_status).json(cached.response_body);
+    }
+
     const validClientId = safeUUID(req.body.client_id);
 
     if (scope === "series") {
@@ -2309,8 +2363,11 @@ app.put("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
       newBalance = await recalculateClientBalance(client, validClientId);
     }
 
+    const responseBody = { success: true, new_balance: newBalance };
+    await saveIdempotency(client, idempotencyKey, req.shopId, 200, responseBody);
+
     await client.query("COMMIT");
-    res.json({ success: true, new_balance: newBalance });
+    res.json(responseBody);
   } catch (err) {
     await client.query("ROLLBACK");
     console.error("Update Appointment Error:", err);
@@ -2497,6 +2554,7 @@ app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
     }
   }
 
+  const idempotencyKey = req.headers["idempotency-key"] || null;
   const client = await pool.connect();
 
   // Processes ONE payment leg against the client's current owed appointments
@@ -2770,6 +2828,12 @@ app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
   try {
     await client.query("BEGIN");
 
+    const cached = await checkIdempotency(client, idempotencyKey, req.shopId);
+    if (cached) {
+      await client.query("ROLLBACK");
+      return res.status(cached.response_status).json(cached.response_body);
+    }
+
     // A shared id links both rows of a split payment so reports can flag them
     const splitGroupId = hasSecondLeg ? crypto.randomUUID() : null;
 
@@ -2806,8 +2870,11 @@ app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
     // Recalculate client balance and return it so the frontend can update without guessing
     const newBalance = await recalculateClientBalance(client, client_id);
 
+    const responseBody = { success: true, new_balance: newBalance };
+    await saveIdempotency(client, idempotencyKey, req.shopId, 200, responseBody);
+
     await client.query("COMMIT");
-    res.json({ success: true, new_balance: newBalance });
+    res.json(responseBody);
   } catch (e) {
     await client.query("ROLLBACK");
     console.error("Payment error:", e);
@@ -5205,6 +5272,31 @@ app.put("/api/v1/portal/notifications", authenticateToken, async (req, res) => {
     }
   } catch (err) {
     console.error("Failed to run startup schema/index setup:", err);
+  }
+})();
+
+// ==================== OFFLINE-SYNC IDEMPOTENCY ====================
+// Backs the client's IndexedDB offline write queue: a queued
+// appointment/payment write carries an Idempotency-Key header, and if the
+// same key is replayed (e.g. a flaky reconnect causes a retry after the
+// first attempt already succeeded), the cached response is returned instead
+// of re-running the write.
+(async () => {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS idempotency_keys (
+        key VARCHAR(100) PRIMARY KEY,
+        shop_id UUID NOT NULL REFERENCES shops(id),
+        response_status INT NOT NULL,
+        response_body JSONB NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await pool.query(
+      "CREATE INDEX IF NOT EXISTS idx_idempotency_keys_created_at ON idempotency_keys (created_at)",
+    );
+  } catch (err) {
+    console.error("Failed to run idempotency_keys schema setup:", err);
   }
 })();
 

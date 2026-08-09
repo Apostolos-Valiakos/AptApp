@@ -424,6 +424,7 @@ import BookingSidebar from "./booking/bookingSideBar.vue";
 import ClientProfileDialog from "./ClientProfileDialog.vue";
 import { useConfirm } from "primevue/useconfirm";
 import { useToast } from "primevue/usetoast";
+import { fetchOrQueue } from "../offline/queue";
 const confirm = useConfirm();
 const toast = useToast();
 const { t } = useI18n();
@@ -871,7 +872,6 @@ const executeSave = async (close = true, scope = "single") => {
   }
 
   loading.value = true;
-  const token = localStorage.getItem("token");
 
   let url = form.value.id
     ? `/api/v1/appointments/${form.value.id}?scope=${scope}`
@@ -895,15 +895,36 @@ const executeSave = async (close = true, scope = "single") => {
       products: productsList.value,
     };
 
-    const res = await fetch(url, {
-      method,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(payload),
+    const result = await fetchOrQueue(url, method, payload, {
+      kind: "appointment",
+      label: `${form.value.client_id ? selectedClient.value?.first_name || "" : ""} ${t(
+        "booking.editDialog.title",
+      )}`.trim(),
     });
 
+    if (result.queued) {
+      // No network reached the server at all — the write is safely persisted
+      // in IndexedDB and will replay automatically once reconnected. It will
+      // NOT appear on the calendar (or get a real id) until then.
+      toast.add({
+        severity: "warn",
+        summary: t("booking.toast.savedOffline"),
+        detail: t("booking.toast.savedOfflineDetail"),
+        life: 5000,
+      });
+      originalSnapshot.value = {
+        price: currentApptTotal.value,
+        deposit: form.value.deposit_amount,
+        isPast: originalSnapshot.value.isPast,
+      };
+      if (close) {
+        emit("save");
+        dialogVisible.value = false;
+      }
+      return;
+    }
+
+    const res = result.response;
     const data = await res.json();
 
     if (!res.ok) {
@@ -946,21 +967,32 @@ const recordPayment = async (
 ) => {
   if (amountToPayNow.value <= 0) return;
   paymentLoading.value = true;
-  const token = localStorage.getItem("token");
 
   // Save any pending form changes (services, notes) before processing payment.
   // Do NOT force status='completed' here — the transaction endpoint handles that
   // atomically so a failed payment can't leave the appointment marked complete.
   await save(false);
 
+  if (!form.value.id) {
+    // The appointment itself was just created offline and hasn't synced yet
+    // (no real id to attach a payment to). Payments need an existing
+    // appointment, so this one specifically can't be queued — surface it
+    // clearly instead of silently sending a transaction with no target.
+    toast.add({
+      severity: "warn",
+      summary: t("booking.toast.paymentFailed"),
+      detail: t("booking.toast.paymentWaitingForSync"),
+      life: 5000,
+    });
+    paymentLoading.value = false;
+    return;
+  }
+
   try {
-    const res = await fetch("/api/v1/transactions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
+    const result = await fetchOrQueue(
+      "/api/v1/transactions",
+      "POST",
+      {
         appointment_id: form.value.id,
         client_id: form.value.client_id,
         amount: amountToPayNow.value,
@@ -973,8 +1005,32 @@ const recordPayment = async (
           gift_card_id2: split.gift_card_id2,
           redemptions2: split.redemptions2,
         } : {}),
-      }),
-    });
+      },
+      { kind: "payment", label: `${t("payment.title")} — ${selectedClient.value?.first_name || ""}`.trim() },
+    );
+
+    if (result.queued) {
+      const totalPaidThisVisit = amountToPayNow.value + (split?.amount2 || 0);
+      // Reflect the payment locally right away so staff aren't blocked, but
+      // this is optimistic — the server hasn't actually seen it yet.
+      form.value.deposit_amount += totalPaidThisVisit;
+      toast.add({
+        severity: "warn",
+        summary: t("booking.toast.savedOffline"),
+        detail: t("booking.toast.paymentQueuedDetail"),
+        life: 5000,
+      });
+      selectedGiftCardId.value = null;
+      selectedMembershipRedemptions.value = [];
+      if (selectedPaymentMethod.value === "gift-card" || selectedPaymentMethod.value === "membership") {
+        selectedPaymentMethod.value = "card";
+      }
+      bookingPaymentsRef.value?.disableSplit();
+      paymentLoading.value = false;
+      return;
+    }
+
+    const res = result.response;
 
     if (res.ok) {
       const data = await res.json();

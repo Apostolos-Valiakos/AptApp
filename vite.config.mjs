@@ -22,6 +22,11 @@ export default defineConfig(({ mode }) => {
           target: `${env.API_URL}:${env.PORT}`,
           ws: true,
         },
+        "/health": {
+          target: `${env.API_URL}:${env.PORT}`,
+          changeOrigin: true,
+          secure: false,
+        },
       },
     },
     build: {

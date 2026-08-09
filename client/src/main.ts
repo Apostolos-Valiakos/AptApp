@@ -9,7 +9,9 @@ if (_apiBase) {
   window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
     if (
       typeof input === "string" &&
-      (input.startsWith("/api") || input.startsWith("/socket.io"))
+      (input.startsWith("/api") ||
+        input.startsWith("/socket.io") ||
+        input.startsWith("/health"))
     ) {
       return _orig(_apiBase + input, init);
     }
@@ -63,6 +65,7 @@ import Column from "primevue/column";
 import Chart from "primevue/chart";
 import { useThemeStore } from "./stores/themes";
 import { i18n } from "./i18n";
+import { initOfflineSync } from "./offline/queue";
 
 const MyPreset = definePreset(Aura, {
   semantic: {
@@ -130,6 +133,10 @@ const initApp = async () => {
   app.component("ConfirmDialog", ConfirmDialog);
   app.component("DataTable", DataTable);
   app.component("Column", Column);
+
+  // Offline write queue: safe to init even when logged out, it just sits
+  // idle with an empty queue until a booking/payment write actually needs it.
+  initOfflineSync();
 
   // 6. Mount the app (Removes the index.html spinner)
   app.mount("#app");

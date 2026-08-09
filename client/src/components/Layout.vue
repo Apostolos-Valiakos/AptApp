@@ -162,6 +162,67 @@
       </button>
     </div>
 
+    <div
+      v-if="authStore.isAuthenticated && pendingWrites.length > 0"
+      class="sticky top-16 z-40"
+    >
+      <div
+        class="text-center py-2 text-sm font-bold flex items-center justify-center gap-3 cursor-pointer"
+        :class="conflictCount > 0 ? 'bg-red-500 text-white' : 'bg-amber-500 text-white'"
+        @click="offlinePanelOpen = !offlinePanelOpen"
+      >
+        <i class="pi pi-cloud-upload"></i>
+        <span v-if="conflictCount > 0">
+          {{ t('offline.conflicts', { count: conflictCount }) }}
+        </span>
+        <span v-else>
+          {{ t('offline.pending', { count: pendingCount }) }}
+        </span>
+        <button
+          v-if="pendingCount > 0"
+          @click.stop="syncNow"
+          :disabled="isSyncingNow"
+          class="underline disabled:opacity-60"
+        >
+          {{ isSyncingNow ? t('offline.syncing') : t('offline.syncNow') }}
+        </button>
+        <i :class="offlinePanelOpen ? 'pi pi-chevron-up' : 'pi pi-chevron-down'"></i>
+      </div>
+      <div
+        v-if="offlinePanelOpen"
+        class="bg-white dark:bg-[var(--p-primary-900)] border-b border-[var(--p-primary-200)] shadow-lg max-h-64 overflow-y-auto"
+      >
+        <div
+          v-for="w in pendingWrites"
+          :key="w.id"
+          class="px-4 py-2 border-b border-[var(--p-primary-100)] flex items-center justify-between gap-3 text-sm"
+        >
+          <div class="min-w-0">
+            <div class="font-bold truncate">{{ w.label || w.kind }}</div>
+            <div v-if="w.status === 'conflict'" class="text-red-600 text-xs truncate">
+              {{ w.lastError }}
+            </div>
+          </div>
+          <div class="flex items-center gap-2 flex-shrink-0">
+            <button
+              v-if="w.status === 'conflict'"
+              @click="retryQueuedWrite(w.id)"
+              class="text-xs underline text-[var(--p-primary-600)]"
+            >
+              {{ t('offline.retry') }}
+            </button>
+            <button
+              v-if="w.status === 'conflict'"
+              @click="discardQueuedWrite(w.id)"
+              class="text-xs underline text-red-600"
+            >
+              {{ t('offline.discard') }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <main
       :class="[
         isFullWidthPage
@@ -184,6 +245,14 @@ import { useChatStore } from "../stores/chat";
 import { useSettingsStore } from "../stores/settings";
 import FloatingChat from "../components/FloatingChat.vue";
 import { useI18n } from "vue-i18n";
+import {
+  pendingWrites,
+  pendingCount,
+  conflictCount,
+  flushQueue,
+  retryQueuedWrite,
+  discardQueuedWrite,
+} from "../offline/queue";
 
 const router = useRouter();
 const route = useRoute();
@@ -192,6 +261,17 @@ const chatStore = useChatStore();
 const settingsStore = useSettingsStore();
 const mobileMenuOpen = ref(false);
 const { t, locale } = useI18n();
+
+const offlinePanelOpen = ref(false);
+const isSyncingNow = ref(false);
+const syncNow = async () => {
+  isSyncingNow.value = true;
+  try {
+    await flushQueue();
+  } finally {
+    isSyncingNow.value = false;
+  }
+};
 
 const isDark = ref(false);
 
