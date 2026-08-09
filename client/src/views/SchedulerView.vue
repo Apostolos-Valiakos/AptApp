@@ -367,7 +367,10 @@ const calendarEvents = computed(() => {
     const status = appt.status || "new";
     if (statusFilter.value === "active" && (status === "cancelled" || status === "no_show")) return;
     if (statusFilter.value === "cancelled" && status !== "cancelled" && status !== "no_show") return;
-    if (settings.hideCashPaid && appt.payment_status === "paid" && appt.payment_method === "cash") return;
+    const isCashEquivalent =
+      appt.payment_method === "cash" ||
+      (appt.payment_method === "gift-card" && appt.gift_card_source_method === "cash");
+    if (settings.hideCashPaid && appt.payment_status === "paid" && isCashEquivalent) return;
     if (settings.hideCardPaid && appt.payment_status === "paid" && appt.payment_method === "card") return;
 
     appt.services.forEach((svc: any, index: number) => {

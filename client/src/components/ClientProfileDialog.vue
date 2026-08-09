@@ -360,7 +360,10 @@ const initials = computed(() => {
 
 const visibleHistory = computed(() => {
   return history.value.filter((a) => {
-    if (settingsStore.hideCashPaid && a.payment_status === "paid" && a.payment_method === "cash") return false;
+    const isCashEquivalent =
+      a.payment_method === "cash" ||
+      (a.payment_method === "gift-card" && a.gift_card_source_method === "cash");
+    if (settingsStore.hideCashPaid && a.payment_status === "paid" && isCashEquivalent) return false;
     if (settingsStore.hideCardPaid && a.payment_status === "paid" && a.payment_method === "card") return false;
     return true;
   });

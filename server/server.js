@@ -506,21 +506,39 @@ const getVisibilityClause = (user, tableAlias = "a") => {
   return ` AND ${tableAlias}.save_receipt = true`;
 };
 
-// --- REVENUE EXCLUSION HELPERS (Ctrl+1 hides cash+gift-card, Ctrl+8 hides card — independent toggles) ---
+// --- REVENUE EXCLUSION HELPERS (Ctrl+1 hides cash + gift-cards that were themselves
+// bought with cash, Ctrl+8 hides card — independent toggles). A gift-card payment is
+// only cash-equivalent if the card's own purchase_payment_method was cash; a card- or
+// bank-transfer-funded gift card is left alone.
+//
+// payment_method = 'membership' is excluded UNCONDITIONALLY, regardless of the
+// Ctrl+1/Ctrl+8 toggles — this isn't a privacy setting, it's correctness: a
+// membership-covered visit isn't new revenue, the money was already recognized
+// as a 'membership_sale' transaction when the client bought/renewed the plan
+// (that transaction uses a real payment_method like cash/card, so it's counted
+// normally and is unaffected by this exclusion).
 const buildRevenueExclusionClause = (excludeCash, excludeCard, alias = "a") => {
-  const methods = [];
-  if (excludeCash === "true") methods.push("'cash'", "'gift-card'");
-  if (excludeCard === "true") methods.push("'card'");
-  if (methods.length === 0) return "";
-  return `AND NOT (${alias}.payment_status = 'paid' AND EXISTS (SELECT 1 FROM transactions _t WHERE _t.appointment_id = ${alias}.id AND _t.payment_method IN (${methods.join(", ")})))`;
+  const conditions = [`_t.payment_method = 'membership'`];
+  if (excludeCash === "true") {
+    conditions.push(`_t.payment_method = 'cash'`);
+    conditions.push(
+      `(_t.payment_method = 'gift-card' AND EXISTS (SELECT 1 FROM gift_cards _gc WHERE _gc.id = _t.gift_card_id AND _gc.purchase_payment_method = 'cash'))`,
+    );
+  }
+  if (excludeCard === "true") conditions.push(`_t.payment_method = 'card'`);
+  return `AND NOT (${alias}.payment_status = 'paid' AND EXISTS (SELECT 1 FROM transactions _t WHERE _t.appointment_id = ${alias}.id AND (${conditions.join(" OR ")})))`;
 };
 
 const buildTxnMethodExclusionClause = (excludeCash, excludeCard, columnPrefix = "") => {
-  const methods = [];
-  if (excludeCash === "true") methods.push("'cash'", "'gift-card'");
-  if (excludeCard === "true") methods.push("'card'");
-  if (methods.length === 0) return "";
-  return `AND ${columnPrefix}payment_method NOT IN (${methods.join(", ")})`;
+  const conditions = [`${columnPrefix}payment_method = 'membership'`];
+  if (excludeCash === "true") {
+    conditions.push(`${columnPrefix}payment_method = 'cash'`);
+    conditions.push(
+      `(${columnPrefix}payment_method = 'gift-card' AND EXISTS (SELECT 1 FROM gift_cards _gc WHERE _gc.id = ${columnPrefix}gift_card_id AND _gc.purchase_payment_method = 'cash'))`,
+    );
+  }
+  if (excludeCard === "true") conditions.push(`${columnPrefix}payment_method = 'card'`);
+  return `AND NOT (${conditions.join(" OR ")})`;
 };
 
 // --- MIDDLEWARE ---
@@ -1967,6 +1985,12 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
         COALESCE(c.outstanding_balance, 0) as client_outstanding_balance,
         COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0) as deposit_amount,
         (SELECT payment_method FROM transactions WHERE appointment_id = a.id ORDER BY created_at DESC LIMIT 1) as payment_method,
+        (
+          SELECT gc.purchase_payment_method FROM transactions t
+          JOIN gift_cards gc ON gc.id = t.gift_card_id
+          WHERE t.appointment_id = a.id AND t.payment_method = 'gift-card'
+          ORDER BY t.created_at DESC LIMIT 1
+        ) as gift_card_source_method,
         (
           COALESCE((SELECT SUM(COALESCE(aps2.price_override, s2.price)) FROM appointment_services aps2 JOIN services s2 ON aps2.service_id = s2.id WHERE aps2.appointment_id = a.id), 0) +
           COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = a.id), 0)
@@ -4237,7 +4261,14 @@ app.get("/api/v1/clients/:id/full", authenticateToken, async (req, res) => {
             SELECT payment_method FROM transactions
             WHERE appointment_id = a.id
             ORDER BY created_at DESC LIMIT 1
-          ) as payment_method
+          ) as payment_method,
+
+          (
+            SELECT gc.purchase_payment_method FROM transactions t
+            JOIN gift_cards gc ON gc.id = t.gift_card_id
+            WHERE t.appointment_id = a.id AND t.payment_method = 'gift-card'
+            ORDER BY t.created_at DESC LIMIT 1
+          ) as gift_card_source_method
 
         FROM appointments a
         WHERE a.client_id = $1 AND a.shop_id = $2
