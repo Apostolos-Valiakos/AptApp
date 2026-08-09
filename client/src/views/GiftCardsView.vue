@@ -19,7 +19,7 @@
     </div>
 
     <DataTable
-      :value="giftCards"
+      :value="visibleGiftCards"
       :loading="loading"
       responsiveLayout="scroll"
       class="p-datatable-sm"
@@ -37,6 +37,12 @@
 
       <Column field="card_number" :header="t('giftCards.table.cardNumber')" sortable></Column>
       <Column field="customer_name" :header="t('giftCards.table.customer')" sortable></Column>
+
+      <Column :header="t('giftCards.table.soldBy')" sortable field="sold_by_name">
+        <template #body="slotProps">
+          {{ slotProps.data.sold_by_name || t('giftCards.dialog.frontdesk') }}
+        </template>
+      </Column>
 
       <Column
         v-if="!settingsStore.hideCashPaid"
@@ -78,6 +84,12 @@
       <Column :header="t('giftCards.table.expires')" sortable field="expires_at">
         <template #body="slotProps">
           {{ formatDate(slotProps.data.expires_at) }}
+        </template>
+      </Column>
+
+      <Column :header="t('giftCards.table.usedOn')" sortable field="last_used_at">
+        <template #body="slotProps">
+          {{ slotProps.data.last_used_at ? formatDate(slotProps.data.last_used_at) : t('giftCards.table.neverUsed') }}
         </template>
       </Column>
 
@@ -159,6 +171,17 @@
             class="w-full"
           />
         </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('giftCards.dialog.soldBy') }}</label>
+          <Dropdown
+            v-model="form.sold_by_staff_id"
+            :options="soldByOptions"
+            optionLabel="name"
+            optionValue="id"
+            class="w-full"
+          />
+        </div>
       </div>
 
       <template #footer>
@@ -178,7 +201,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
@@ -190,6 +213,12 @@ const confirm = useConfirm();
 const settingsStore = useSettingsStore();
 
 const giftCards = ref<any[]>([]);
+
+const visibleGiftCards = computed(() =>
+  settingsStore.hideCashPaid
+    ? giftCards.value.filter((c) => c.purchase_payment_method !== "cash")
+    : giftCards.value,
+);
 const loading = ref(true);
 const saving = ref(false);
 const cardDialog = ref(false);
@@ -208,6 +237,7 @@ const form = ref<any>({
   customer_name: "",
   initial_amount: null,
   purchase_payment_method: "cash",
+  sold_by_staff_id: null,
 });
 
 const token = () => localStorage.getItem("token");
@@ -224,8 +254,30 @@ const fetchGiftCards = async () => {
   }
 };
 
+// --- Staff list for the "Sold By" picker (small dataset — plain fetch is fine) ---
+const staffList = ref<any[]>([]);
+const soldByOptions = computed(() => [
+  { id: null, name: t("giftCards.dialog.frontdesk") },
+  ...staffList.value,
+]);
+
+const fetchStaff = async () => {
+  try {
+    const res = await fetch("/api/v1/staff", {
+      headers: { Authorization: `Bearer ${token()}` },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      staffList.value = data.filter((s: any) => s.is_active);
+    }
+  } catch {
+    // non-critical — the dropdown just falls back to "Frontdesk" only
+  }
+};
+
 onMounted(() => {
   fetchGiftCards();
+  fetchStaff();
 });
 
 // --- Client autocomplete (server-side search, no upfront full-list load) ---
@@ -275,6 +327,7 @@ const openNewDialog = () => {
     customer_name: "",
     initial_amount: null,
     purchase_payment_method: "cash",
+    sold_by_staff_id: null,
   };
   cardDialog.value = true;
 };
@@ -293,6 +346,7 @@ const editCard = (card: any) => {
     customer_name: card.customer_name,
     initial_amount: card.initial_amount,
     purchase_payment_method: card.purchase_payment_method,
+    sold_by_staff_id: card.sold_by_staff_id || null,
   };
   cardDialog.value = true;
 };

@@ -3013,29 +3013,61 @@ app.get("/api/v1/reports/gift-cards", authenticateToken, requireAnalyticsAccess,
 
 app.get("/api/v1/reports/staff", authenticateToken, requireAnalyticsAccess, async (req, res) => {
   const { from, to, excludeCash, excludeCard } = req.query;
-  const params = [req.shopId];
+  const params = [req.shopId]; // $1, shared by both subqueries below
 
-  let whereClause = "WHERE a.shop_id = $1" + getVisibilityClause(req.user, "a");
-  whereClause += " " + buildRevenueExclusionClause(excludeCash, excludeCard, "a");
-
+  // --- Service revenue/hours per staff (existing behavior) ---
+  let svcWhere = "WHERE a.shop_id = $1" + getVisibilityClause(req.user, "a");
+  svcWhere += " " + buildRevenueExclusionClause(excludeCash, excludeCard, "a");
   if (from) {
     params.push(from);
-    whereClause += ` AND aps.start_time >= $${params.length}`;
+    svcWhere += ` AND aps.start_time >= $${params.length}`;
   }
   if (to) {
     params.push(to);
-    whereClause += ` AND aps.start_time <= $${params.length}`;
+    svcWhere += ` AND aps.start_time <= $${params.length}`;
   }
+
+  // --- Gift cards sold per staff member (Frontdesk / null sales are excluded —
+  // there's no staff member to attribute them to in a per-staff breakdown) ---
+  let gcWhere = "WHERE gc.shop_id = $1 AND gc.sold_by_staff_id IS NOT NULL";
+  if (excludeCash === "true") gcWhere += " AND gc.purchase_payment_method != 'cash'";
+  if (excludeCard === "true") gcWhere += " AND gc.purchase_payment_method != 'card'";
+  if (from) {
+    params.push(from);
+    gcWhere += ` AND gc.issued_at >= $${params.length}`;
+  }
+  if (to) {
+    params.push(to);
+    gcWhere += ` AND gc.issued_at <= $${params.length}`;
+  }
+
   try {
     const { rows } = await pool.query(
-      `SELECT st.name as staff_name, COUNT(aps.id) as appointment_count,
-        SUM(COALESCE(aps.duration_override, s.duration_minutes)) as total_hours,
-        SUM(COALESCE(aps.price_override, s.price)) as total_revenue
-      FROM appointment_services aps
-      JOIN staff st ON aps.staff_id = st.id
-      JOIN services s ON aps.service_id = s.id
-      JOIN appointments a ON aps.appointment_id = a.id
-      ${whereClause} GROUP BY st.name ORDER BY total_revenue DESC`,
+      `SELECT st.id as staff_id, st.name as staff_name,
+        COALESCE(ss.appointment_count, 0) as appointment_count,
+        COALESCE(ss.total_hours, 0) as total_hours,
+        COALESCE(ss.total_revenue, 0) as total_revenue,
+        COALESCE(gcs.gift_card_count, 0) as gift_card_count,
+        COALESCE(gcs.gift_card_revenue, 0) as gift_card_revenue
+      FROM staff st
+      LEFT JOIN (
+        SELECT aps.staff_id, COUNT(aps.id) as appointment_count,
+          SUM(COALESCE(aps.duration_override, s.duration_minutes)) as total_hours,
+          SUM(COALESCE(aps.price_override, s.price)) as total_revenue
+        FROM appointment_services aps
+        JOIN services s ON aps.service_id = s.id
+        JOIN appointments a ON aps.appointment_id = a.id
+        ${svcWhere}
+        GROUP BY aps.staff_id
+      ) ss ON ss.staff_id = st.id
+      LEFT JOIN (
+        SELECT gc.sold_by_staff_id, COUNT(*) as gift_card_count, SUM(gc.initial_amount) as gift_card_revenue
+        FROM gift_cards gc
+        ${gcWhere}
+        GROUP BY gc.sold_by_staff_id
+      ) gcs ON gcs.sold_by_staff_id = st.id
+      WHERE st.shop_id = $1 AND (ss.staff_id IS NOT NULL OR gcs.sold_by_staff_id IS NOT NULL)
+      ORDER BY total_revenue DESC`,
       params,
     );
     res.json(rows);
@@ -4873,6 +4905,12 @@ app.put("/api/v1/portal/notifications", authenticateToken, async (req, res) => {
     await pool.query(
       `ALTER TABLE transactions ADD COLUMN IF NOT EXISTS gift_card_id UUID REFERENCES gift_cards(id) ON DELETE SET NULL`,
     );
+    // Which staff member sold the card. NULL means "Frontdesk" (no specific
+    // staff member attributed) — the app always sends an explicit value (a
+    // staff id or null-for-frontdesk), this is just nullable at the DB level.
+    await pool.query(
+      `ALTER TABLE gift_cards ADD COLUMN IF NOT EXISTS sold_by_staff_id UUID REFERENCES staff(id) ON DELETE SET NULL`,
+    );
     // Shared across the two rows created by a single "split" payment (e.g. part
     // gift-card + part cash in one visit), so reports can flag them as linked.
     await pool.query(
@@ -4918,6 +4956,7 @@ app.put("/api/v1/portal/notifications", authenticateToken, async (req, res) => {
       "CREATE INDEX IF NOT EXISTS idx_gift_cards_shop_id ON gift_cards (shop_id)",
       "CREATE INDEX IF NOT EXISTS idx_gift_cards_card_number ON gift_cards (card_number)",
       "CREATE INDEX IF NOT EXISTS idx_gift_cards_client_id ON gift_cards (client_id)",
+      "CREATE INDEX IF NOT EXISTS idx_gift_cards_sold_by_staff_id ON gift_cards (sold_by_staff_id)",
       "CREATE INDEX IF NOT EXISTS idx_staff_time_off_staff_id ON staff_time_off (staff_id)",
       "CREATE INDEX IF NOT EXISTS idx_staff_time_off_dates ON staff_time_off (start_date, end_date)",
     ];
@@ -5163,9 +5202,16 @@ app.get("/api/v1/gift-cards", authenticateToken, async (req, res) => {
   }
   try {
     const { rows } = await pool.query(
-      `SELECT id, card_number, client_id, customer_name, initial_amount,
-              remaining_balance, purchase_payment_method, issued_at, expires_at
-       FROM gift_cards WHERE shop_id = $1 ORDER BY issued_at DESC`,
+      `SELECT gc.id, gc.card_number, gc.client_id, gc.customer_name, gc.initial_amount,
+              gc.remaining_balance, gc.purchase_payment_method, gc.issued_at, gc.expires_at,
+              gc.sold_by_staff_id, st.name as sold_by_name,
+              (
+                SELECT MAX(t.created_at) FROM transactions t
+                WHERE t.gift_card_id = gc.id AND t.payment_method = 'gift-card'
+              ) as last_used_at
+       FROM gift_cards gc
+       LEFT JOIN staff st ON st.id = gc.sold_by_staff_id
+       WHERE gc.shop_id = $1 ORDER BY gc.issued_at DESC`,
       [req.shopId],
     );
     res.json(rows.map((c) => ({ ...c, status: giftCardStatus(c) })));
@@ -5209,6 +5255,7 @@ app.post("/api/v1/gift-cards", authenticateToken, async (req, res) => {
     customer_name,
     initial_amount,
     purchase_payment_method,
+    sold_by_staff_id,
   } = req.body;
 
   if (
@@ -5222,6 +5269,13 @@ app.post("/api/v1/gift-cards", authenticateToken, async (req, res) => {
         "card_number, customer_name and a positive initial_amount are required",
     });
   }
+  // sold_by_staff_id is a required field in the app: either a real staff id or
+  // null for "Frontdesk". Only a genuinely missing key is rejected.
+  if (sold_by_staff_id === undefined) {
+    return res.status(400).json({
+      error: "sold_by_staff_id is required (use null for Frontdesk)",
+    });
+  }
 
   const client = await pool.connect();
   try {
@@ -5230,8 +5284,8 @@ app.post("/api/v1/gift-cards", authenticateToken, async (req, res) => {
     const { rows } = await client.query(
       `INSERT INTO gift_cards
          (card_number, client_id, customer_name, initial_amount, remaining_balance,
-          purchase_payment_method, shop_id, issued_at, expires_at)
-       VALUES ($1, $2, $3, $4, $4, $5, $6, NOW(), NOW() + INTERVAL '3 months')
+          purchase_payment_method, shop_id, issued_at, expires_at, sold_by_staff_id)
+       VALUES ($1, $2, $3, $4, $4, $5, $6, NOW(), NOW() + INTERVAL '3 months', $7)
        RETURNING *`,
       [
         card_number,
@@ -5240,6 +5294,7 @@ app.post("/api/v1/gift-cards", authenticateToken, async (req, res) => {
         initial_amount,
         purchase_payment_method || "cash",
         req.shopId,
+        sold_by_staff_id || null,
       ],
     );
     const card = rows[0];
@@ -5274,17 +5329,18 @@ app.put("/api/v1/gift-cards/:id", authenticateToken, async (req, res) => {
   if (req.user.role !== "admin" && req.user.role !== "super_admin") {
     return res.status(403).json({ error: "Admins only" });
   }
-  const { card_number, customer_name, client_id } = req.body;
+  const { card_number, customer_name, client_id, sold_by_staff_id } = req.body;
   try {
     const { rows } = await pool.query(
       `UPDATE gift_cards
-       SET card_number = $1, customer_name = $2, client_id = $3
-       WHERE id = $4 AND shop_id = $5
+       SET card_number = $1, customer_name = $2, client_id = $3, sold_by_staff_id = $4
+       WHERE id = $5 AND shop_id = $6
        RETURNING *`,
       [
         card_number,
         customer_name,
         client_id || null,
+        sold_by_staff_id || null,
         req.params.id,
         req.shopId,
       ],
