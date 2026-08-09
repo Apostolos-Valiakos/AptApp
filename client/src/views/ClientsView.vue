@@ -419,7 +419,6 @@ const pageOffset = ref(0);
 
 const fetchClients = async () => {
   loading.value = true;
-  loading.value = true;
   try {
     const params = new URLSearchParams({
       limit: String(pageRows.value),
@@ -430,13 +429,10 @@ const fetchClients = async () => {
     const res = await fetch(`/api/v1/clients?${params}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    if (res.ok) {
-      const data = await res.json();
-      clients.value = data.clients || [];
-      totalClients.value = data.total || 0;
-    }
     if (!res.ok) throw new Error("Request failed");
-    clients.value = await res.json();
+    const data = await res.json();
+    clients.value = data.clients || [];
+    totalClients.value = data.total || 0;
   } catch (err) {
     console.error(err);
     toast.add({

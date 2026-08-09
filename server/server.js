@@ -63,6 +63,8 @@ const publicActionLimiter = rateLimit({
 const { PUBLIC_BASE_URL } = require("./reminderService");
 
 // ==================== FILE UPLOAD SETUP ====================
+const uploadDir = path.join(__dirname, "uploads");
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
   filename: (req, file, cb) => {
@@ -2146,6 +2148,13 @@ app.delete("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+
+    // Look up the client now — the row won't exist to query after deletion.
+    const affectedClientRes = await client.query(
+      "SELECT client_id FROM appointments WHERE id = $1 AND shop_id = $2",
+      [id, req.shopId],
+    );
+    const affectedClientId = affectedClientRes.rows[0]?.client_id || null;
 
     // Collect the appointment ids being deleted so product stock can be restored
     let deletedIds = [id];
