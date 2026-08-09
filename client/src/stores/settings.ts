@@ -34,6 +34,18 @@ export const useSettingsStore = defineStore("settings", () => {
     localStorage.setItem("hideCashPaid", String(newVal));
   });
 
+  // Persisted, shop-wide Ctrl+1 lock (set via "Disconnect all users" in Shop
+  // Settings) — unlike hideCashPaid/hideCardPaid above, this isn't something
+  // the user chose; it applies from the very first render on any device,
+  // seeded from the user object the login response already carries.
+  const cashLockedByShop = ref(!!user?.shop_force_hide_cash);
+  if (cashLockedByShop.value) hideCashPaid.value = true;
+
+  const setCashLockedByShop = (locked: boolean) => {
+    cashLockedByShop.value = locked;
+    if (locked) hideCashPaid.value = true;
+  };
+
   // Ctrl+8 "hide card-paid revenue" macro — independent of the cash one, same mechanics.
   const hideCardPaid = ref(localStorage.getItem("hideCardPaid") === "true");
 
@@ -84,6 +96,8 @@ export const useSettingsStore = defineStore("settings", () => {
     hideCashPaid,
     setHideCashPaid,
     toggleHideCashPaid,
+    cashLockedByShop,
+    setCashLockedByShop,
     hideCardPaid,
     setHideCardPaid,
     toggleHideCardPaid,

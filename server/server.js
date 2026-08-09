@@ -544,6 +544,12 @@ const buildTxnMethodExclusionClause = (excludeCash, excludeCard, columnPrefix = 
 
 // --- MIDDLEWARE ---
 
+// In-memory cache of shops.force_logout_at (shopId -> ms timestamp), so the
+// "disconnect all users" revocation check below never costs a DB round trip
+// on the hot path. Populated at startup and refreshed only when an admin
+// actually triggers a force-logout (see POST /api/v1/shop/force-logout).
+const forceLogoutCache = new Map();
+
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers["authorization"];
   const token = (authHeader && authHeader.split(" ")[1]) || req.query.token;
@@ -552,6 +558,14 @@ const authenticateToken = (req, res, next) => {
 
   jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
     if (err) return res.sendStatus(403);
+
+    if (user.shopId) {
+      const forcedAt = forceLogoutCache.get(user.shopId);
+      if (forcedAt && user.iat * 1000 < forcedAt) {
+        return res.status(401).json({ error: "session_revoked" });
+      }
+    }
+
     req.user = user;
     req.shopId = user.shopId;
     next();
@@ -590,7 +604,7 @@ app.post("/api/v1/login", loginLimiter, async (req, res) => {
   try {
     // 1. Find user by username only (don't check password in SQL)
     const result = await pool.query(
-      `SELECT u.*, s.name as shop_name, s.status as shop_status
+      `SELECT u.*, s.name as shop_name, s.status as shop_status, s.force_hide_cash as shop_force_hide_cash
        FROM users u
        LEFT JOIN shops s ON u.shop_id = s.id
        WHERE u.username = $1`,
@@ -3986,6 +4000,82 @@ app.put("/api/v1/shop/theme", authenticateToken, async (req, res) => {
   }
 });
 
+// Force-logout every user in this shop (revokes all previously-issued tokens
+// on their next request) and locks Ctrl+1 (hide cash) shop-wide. The calling
+// admin is transparently re-issued a fresh token so their own session survives.
+app.post("/api/v1/shop/force-logout", authenticateToken, async (req, res) => {
+  if (req.user.role !== "super_admin") {
+    return res.status(403).json({ error: "Super admins only" });
+  }
+  try {
+    // Truncated to whole seconds to match JWT `iat` granularity — otherwise the
+    // admin's own token, re-issued a few milliseconds later in this same
+    // request, could land in the same second but "before" a sub-second NOW()
+    // and get spuriously rejected as revoked.
+    const { rows } = await pool.query(
+      `UPDATE shops SET force_logout_at = date_trunc('second', NOW()), force_hide_cash = true
+       WHERE id = $1 RETURNING force_logout_at`,
+      [req.shopId],
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ error: "Shop not found" });
+    }
+
+    forceLogoutCache.set(req.shopId, new Date(rows[0].force_logout_at).getTime());
+
+    // Re-issue the calling admin a fresh token (new iat) so their own session
+    // survives the revocation that just invalidated everyone else's.
+    const freshToken = jwt.sign(
+      {
+        userId: req.user.userId,
+        username: req.user.username,
+        role: req.user.role,
+        shopId: req.user.shopId,
+        staffId: req.user.staffId,
+        clientId: req.user.clientId,
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: "24h" },
+    );
+
+    // Immediate effect for anyone currently connected; the revocation above
+    // guarantees it for everyone else on their next request regardless.
+    io.to(`shop:${req.shopId}`).emit("force:logout");
+    io.to(`shop:${req.shopId}`).emit("cash:filter:set", { hidden: true });
+
+    res.json({ token: freshToken });
+  } catch (err) {
+    console.error("Error forcing shop logout:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Releases the shop-wide Ctrl+1 lock set by force-logout above.
+app.post("/api/v1/shop/release-cash-lock", authenticateToken, async (req, res) => {
+  if (req.user.role !== "super_admin") {
+    return res.status(403).json({ error: "Super admins only" });
+  }
+  try {
+    const { rowCount } = await pool.query(
+      `UPDATE shops SET force_hide_cash = false WHERE id = $1`,
+      [req.shopId],
+    );
+    if (rowCount === 0) {
+      return res.status(404).json({ error: "Shop not found" });
+    }
+
+    // Distinct from cash:filter:set on purpose — releasing the lock hands
+    // control back to each staff member, it should not also force-unhide
+    // cash figures for everyone the instant an admin clicks it.
+    io.to(`shop:${req.shopId}`).emit("cash:lock:released");
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Error releasing cash lock:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 app.put("/api/v1/shop/services", authenticateToken, async (req, res) => {
   const { ergotherapia, physiotherapia, logotherapia } = req.body;
 
@@ -5108,6 +5198,11 @@ app.put("/api/v1/portal/notifications", authenticateToken, async (req, res) => {
     await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS owner_email VARCHAR(255)`);
     await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMP`);
     await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS notes TEXT`);
+    // "Disconnect all users" admin action: any JWT issued before this timestamp
+    // is rejected by authenticateToken (see forceLogoutCache below). Combined
+    // with force_hide_cash, a persisted shop-wide Ctrl+1 lock applied at login.
+    await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS force_logout_at TIMESTAMP`);
+    await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS force_hide_cash BOOLEAN NOT NULL DEFAULT false`);
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true`);
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT NOW()`);
     await pool.query(`
@@ -5134,6 +5229,15 @@ app.put("/api/v1/portal/notifications", authenticateToken, async (req, res) => {
         );
         console.log(`Bootstrapped owner account "${process.env.OWNER_USERNAME}"`);
       }
+    }
+
+    // Warm the in-memory force-logout cache so a restart doesn't silently
+    // re-accept tokens that were revoked before the server went down.
+    const { rows: forcedShops } = await pool.query(
+      `SELECT id, force_logout_at FROM shops WHERE force_logout_at IS NOT NULL`,
+    );
+    for (const s of forcedShops) {
+      forceLogoutCache.set(s.id, new Date(s.force_logout_at).getTime());
     }
   } catch (err) {
     console.error("Failed to run platform-admin schema setup:", err);

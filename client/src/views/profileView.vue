@@ -256,6 +256,40 @@
             </div>
           </div>
         </div>
+
+        <!-- Force Logout Everyone (super_admin only) -->
+        <div
+          v-if="isSuperAdmin"
+          class="bg-white rounded-2xl shadow-sm border border-red-100 p-6"
+        >
+          <h3 class="text-base font-bold text-gray-900 mb-1">{{ t('profile.forceLogout.title') }}</h3>
+          <p class="text-sm text-gray-500 mb-4">{{ t('profile.forceLogout.description') }}</p>
+
+          <div v-if="settingsStore.cashLockedByShop" class="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2 text-sm text-amber-800">
+            <i class="pi pi-lock"></i>
+            {{ t('profile.forceLogout.currentlyLocked') }}
+          </div>
+
+          <div class="flex flex-col gap-2">
+            <Button
+              :label="t('profile.forceLogout.button')"
+              icon="pi pi-power-off"
+              severity="danger"
+              class="w-full"
+              :loading="forcingLogout"
+              @click="confirmForceLogout"
+            />
+            <Button
+              v-if="settingsStore.cashLockedByShop"
+              :label="t('profile.forceLogout.release')"
+              icon="pi pi-lock-open"
+              text
+              class="w-full"
+              :loading="releasingLock"
+              @click="releaseLock"
+            />
+          </div>
+        </div>
       </div>
 
       <!-- Right Column -->
@@ -850,14 +884,18 @@
       />
     </template>
   </Dialog>
+
+  <ConfirmDialog></ConfirmDialog>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, computed, reactive, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
+import { useConfirm } from "primevue/useconfirm";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "../stores/auth";
+import { useSettingsStore } from "../stores/settings";
 import { useThemeStore } from "../stores/themes"; // Import Theme Store
 
 import Password from "primevue/password";
@@ -872,8 +910,10 @@ import DatePicker from "primevue/datepicker";
 
 const { t } = useI18n();
 const toast = useToast();
+const confirm = useConfirm();
 const router = useRouter();
 const authStore = useAuthStore();
+const settingsStore = useSettingsStore();
 const themeStore = useThemeStore(); // Init Theme Store
 
 const isLoadingProfile = ref(true);
@@ -924,6 +964,13 @@ const selectedColor = computed(() => themeStore.primaryColor);
 const isShopAdmin = computed(() => {
   const role = authStore.user?.role || profile.value?.role;
   return role === "admin" || role === "super_admin" || role === "frontdesk";
+});
+
+// Shop-wide "disconnect everyone" is destructive and shop-wide — restricted
+// to super_admin only, not plain admin.
+const isSuperAdmin = computed(() => {
+  const role = authStore.user?.role || profile.value?.role;
+  return role === "super_admin";
 });
 
 const presets = [
@@ -1281,6 +1328,84 @@ const uploadPhoto = async (e: Event) => {
 const handleLogout = () => {
   authStore.logout();
   router.push("/login");
+};
+
+// --- Force Logout Everyone (super_admin only) ---
+const forcingLogout = ref(false);
+const releasingLock = ref(false);
+const authToken = () => localStorage.getItem("token");
+
+const confirmForceLogout = () => {
+  confirm.require({
+    message: t("profile.forceLogout.confirmMessage"),
+    header: t("profile.forceLogout.confirmHeader"),
+    icon: "pi pi-exclamation-triangle",
+    acceptClass: "p-button-danger",
+    accept: forceLogout,
+  });
+};
+
+const forceLogout = async () => {
+  forcingLogout.value = true;
+  try {
+    const res = await fetch("/api/v1/shop/force-logout", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${authToken()}` },
+    });
+    if (!res.ok) throw new Error("Request failed");
+    const data = await res.json();
+
+    // Keep the calling admin's own session alive with a fresh token, and
+    // reflect the lock immediately in this session too (the broadcast only
+    // reaches other already-connected clients).
+    authStore.refreshToken(data.token);
+    settingsStore.setCashLockedByShop(true);
+
+    toast.add({
+      severity: "success",
+      summary: t("common.success"),
+      detail: t("profile.forceLogout.toastSuccess"),
+      life: 4000,
+    });
+  } catch (e) {
+    toast.add({
+      severity: "error",
+      summary: t("common.error"),
+      detail: t("profile.forceLogout.toastFailed"),
+      life: 4000,
+    });
+  } finally {
+    forcingLogout.value = false;
+  }
+};
+
+const releaseLock = async () => {
+  releasingLock.value = true;
+  try {
+    const res = await fetch("/api/v1/shop/release-cash-lock", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${authToken()}` },
+    });
+    if (!res.ok) throw new Error("Request failed");
+
+    settingsStore.setCashLockedByShop(false);
+
+    toast.add({
+      severity: "success",
+      summary: t("common.success"),
+      detail: t("profile.forceLogout.releaseToastSuccess"),
+      life: 3000,
+    });
+  } catch (e) {
+    toast.add({
+      severity: "error",
+      summary: t("common.error"),
+      detail: t("profile.forceLogout.toastFailed"),
+      life: 4000,
+    });
+  } finally {
+    releasingLock.value = false;
+  }
 };
 
 const toggleDarkMode = () => {

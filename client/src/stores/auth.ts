@@ -1,5 +1,6 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
+import { useSettingsStore } from "./settings";
 
 export const useAuthStore = defineStore("auth", () => {
   const user = ref(JSON.parse(localStorage.getItem("user") || "null"));
@@ -54,6 +55,9 @@ export const useAuthStore = defineStore("auth", () => {
         user.value = data.user;
         localStorage.setItem("user", JSON.stringify(data.user));
 
+        // Persisted, shop-wide Ctrl+1 lock — applies from first render, on any device.
+        useSettingsStore().setCashLockedByShop(!!data.user?.shop_force_hide_cash);
+
         return { success: true };
       } else {
         return { success: false, error: data.error };
@@ -62,6 +66,14 @@ export const useAuthStore = defineStore("auth", () => {
       console.error(e);
       return { success: false, error: "Network error" };
     }
+  };
+
+  // Swaps in a freshly re-issued token without touching `user` — used after
+  // "Disconnect all users", which revokes every token for this shop (including
+  // the calling admin's own) but hands back a fresh one so their session survives.
+  const refreshToken = (newToken: string) => {
+    token.value = newToken;
+    localStorage.setItem("token", newToken);
   };
 
   const logout = () => {
@@ -117,6 +129,7 @@ export const useAuthStore = defineStore("auth", () => {
     clientId,
     login,
     logout,
+    refreshToken,
     startImpersonation,
     exitImpersonation,
   };

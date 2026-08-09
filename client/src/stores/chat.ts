@@ -2,6 +2,8 @@ import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { io, Socket } from "socket.io-client";
 import { useAuthStore } from "./auth"; // Import auth store to access user info
+import { useSettingsStore } from "./settings";
+import router from "../router";
 
 interface User {
   id: string;
@@ -223,10 +225,25 @@ export const useChatStore = defineStore("chat", () => {
       }
     );
 
+    // "Disconnect all users" — the server has already revoked every token for
+    // this shop; drop the local session immediately rather than waiting for
+    // the next failed API call to surface it.
+    socket.value.on("force:logout", () => {
+      authStore.logout();
+      router.push("/login");
+    });
+
     socket.value.on("cash:filter:set", ({ hidden }: { hidden: boolean }) => {
       remoteHideCash.value = hidden;
       cashLocked.value = hidden; // locked when super_admin hides, free when super_admin unhides
       localStorage.setItem("hideCashPaid", String(hidden));
+    });
+
+    // The persisted shop-wide policy lock coming off (see release-cash-lock) —
+    // separate from cash:filter:set, this only unlocks, it doesn't also
+    // force-unhide cash figures for everyone.
+    socket.value.on("cash:lock:released", () => {
+      useSettingsStore().setCashLockedByShop(false);
     });
 
     socket.value.on("card:filter:set", ({ hidden }: { hidden: boolean }) => {

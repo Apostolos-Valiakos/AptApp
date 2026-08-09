@@ -328,6 +328,10 @@ const isSuperAdmin = computed(() => authStore.user?.role === "super_admin");
 const handleKeydown = (e: KeyboardEvent) => {
   if (e.ctrlKey && e.key === "1") {
     e.preventDefault();
+    // Persisted shop-wide policy lock (set via "Disconnect all users" in Shop
+    // Settings) — deliberate, so not even super_admin overrides it here;
+    // it only comes off via the explicit "Release" action on that page.
+    if (settingsStore.cashLockedByShop) return;
     // Only super_admin can override a remotely locked filter
     if (!isSuperAdmin.value && chatStore.cashLocked) return;
     settingsStore.toggleHideCashPaid();
