@@ -4761,6 +4761,19 @@ app.delete("/api/v1/exercises/:id", authenticateToken, async (req, res) => {
   }
 });
 
+// Lightens a shop's brand color into a subtle background tint for email
+// templates (e.g. "#ff93d4" -> "rgba(255, 147, 212, 0.08)"). Falls back to a
+// neutral gray tint if the color is missing/malformed.
+const hexToRgba = (hex, alpha) => {
+  const match = /^#?([0-9a-f]{6})$/i.exec(hex || "");
+  if (!match) return `rgba(17, 24, 39, ${alpha})`;
+  const int = parseInt(match[1], 16);
+  const r = (int >> 16) & 255;
+  const g = (int >> 8) & 255;
+  const b = int & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
 // Invite Endpoint
 app.post("/api/v1/clients/:id/invite", authenticateToken, async (req, res) => {
   const { id } = req.params;
@@ -4785,12 +4798,18 @@ app.post("/api/v1/clients/:id/invite", authenticateToken, async (req, res) => {
     if (userCheck.rows.length > 0)
       return res.status(400).json({ error: "Client already has an account" });
 
-    // Fetch shop reply_email
+    // Fetch shop branding
     const shopRes = await pool.query(
-      "SELECT reply_email FROM shops WHERE id = $1",
+      "SELECT name, reply_email, primary_color FROM shops WHERE id = $1",
       [req.shopId],
     );
-    const replyEmail = shopRes.rows[0]?.reply_email || null;
+    const shopRow = shopRes.rows[0] || {};
+    const replyEmail = shopRow.reply_email || null;
+    const shopName = shopRow.name || req.user.shopName || process.env.APP_NAME || "Booking";
+    const brandColor = shopRow.primary_color || "#111827";
+    const brandTint = hexToRgba(brandColor, 0.08);
+    const brandTintBorder = hexToRgba(brandColor, 0.2);
+    const brandShadow = hexToRgba(brandColor, 0.3);
 
     // Generate temporary token for signup
     const inviteToken = jwt.sign(
@@ -4799,7 +4818,7 @@ app.post("/api/v1/clients/:id/invite", authenticateToken, async (req, res) => {
       { expiresIn: "48h" },
     );
 
-    const signupUrl = `https://interventio.gr/signup?token=${inviteToken}`;
+    const signupUrl = `${process.env.FRONTEND_URL}/signup?token=${inviteToken}`;
     const nodemailer = require("nodemailer");
 
     const transporter = nodemailer.createTransport({
@@ -4816,7 +4835,7 @@ app.post("/api/v1/clients/:id/invite", authenticateToken, async (req, res) => {
     });
 
     await transporter.sendMail({
-      from: `"${req.user.shopName || "Booking"}" <${process.env.EMAIL_USER}>`,
+      from: `"${shopName}" <${process.env.EMAIL_USER}>`,
       ...(replyEmail && { replyTo: replyEmail }),
       to: client.email,
       subject: "Invitation to your Client Portal",
@@ -4832,24 +4851,24 @@ app.post("/api/v1/clients/:id/invite", authenticateToken, async (req, res) => {
         .button-stack { display: block !important; width: 100% !important; margin: 10px 0 !important; box-sizing: border-box !important; }
       }
       /* Hover effect for buttons */
-      .btn-hover:hover { background-color: #ff7ec7 !important; transform: translateY(-2px); }
+      .btn-hover:hover { opacity: 0.9 !important; transform: translateY(-2px); }
     </style>
   </head>
-  <body style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #fff5f9; padding: 40px 10px; margin: 0; -webkit-font-smoothing: antialiased;">
-    <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 32px; overflow: hidden; box-shadow: 0 20px 25px -5px rgba(255, 147, 212, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);">
-      
+  <body style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: ${brandTint}; padding: 40px 10px; margin: 0; -webkit-font-smoothing: antialiased;">
+    <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 32px; overflow: hidden; box-shadow: 0 20px 25px -5px ${hexToRgba(brandColor, 0.1)}, 0 10px 10px -5px rgba(0, 0, 0, 0.04);">
+
       <div style="padding: 40px 40px 20px 40px; text-align: left">
-        <div style="display: inline-block; background-color: #ff93d4; color: white; padding: 4px 12px; border-radius: 9999px; font-size: 12px; font-weight: 700; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 0.05em;">
+        <div style="display: inline-block; background-color: ${brandColor}; color: white; padding: 4px 12px; border-radius: 9999px; font-size: 12px; font-weight: 700; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 0.05em;">
           Πρόσκληση
         </div>
         <h2 style="margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.025em;">
-          <span style="color: #111827">${req.user.shopName || "Petalouda"}</span><span style="color: #ff93d4">Portal</span>
+          <span style="color: #111827">${shopName}</span><span style="color: ${brandColor}"> Portal</span>
         </h2>
       </div>
 
       <div class="inner-padding" style="padding: 0 40px 40px 40px">
         <h1 style="color: #111827; font-size: 32px; font-weight: 800; margin-bottom: 24px; line-height: 1.1; letter-spacing: -1px;">
-          Καλώς ήρθατε στο <span style="color: #ff7ec7">Online Portal</span> μας
+          Καλώς ήρθατε στο <span style="color: ${brandColor}">Online Portal</span> μας
         </h1>
 
         <p style="color: #4b5563; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
@@ -4859,25 +4878,25 @@ app.post("/api/v1/clients/:id/invite", authenticateToken, async (req, res) => {
           Είμαστε ενθουσιασμένοι που σας προσκαλούμε στη νέα μας πλατφόρμα. Εδώ μπορείτε να διαχειρίζεστε τα ραντεβού σας και να έχετε πρόσβαση στα έγγραφά σας 24/7.
         </p>
 
-        <div style="background-color: #fff5f9; border-radius: 24px; padding: 30px; margin: 32px 0; border: 1px solid rgba(255, 147, 212, 0.2);">
+        <div style="background-color: ${brandTint}; border-radius: 24px; padding: 30px; margin: 32px 0; border: 1px solid ${brandTintBorder};">
           <ul style="color: #374151; font-size: 15px; padding-left: 0; list-style: none; margin: 0;">
             <li style="margin-bottom: 12px; display: flex; align-items: center;">
-              <span style="color: #ff93d4; margin-right: 12px; font-size: 18px;">📅</span> 
+              <span style="color: ${brandColor}; margin-right: 12px; font-size: 18px;">📅</span>
               <strong>Προβολή ραντεβού:</strong> Δείτε τα επόμενα ραντεβού σας.
             </li>
             <li style="margin-bottom: 12px; display: flex; align-items: center;">
-              <span style="color: #ff93d4; margin-right: 12px; font-size: 18px;">🕒</span> 
+              <span style="color: ${brandColor}; margin-right: 12px; font-size: 18px;">🕒</span>
               <strong>Ιστορικό:</strong> Πλήρης έλεγχος των επισκέψεών σας.
             </li>
             <li style="display: flex; align-items: center;">
-              <span style="color: #ff93d4; margin-right: 12px; font-size: 18px;">📁</span> 
+              <span style="color: ${brandColor}; margin-right: 12px; font-size: 18px;">📁</span>
               <strong>Αρχεία:</strong> Κατεβάστε σημαντικά έγγραφα και οδηγίες.
             </li>
           </ul>
         </div>
 
         <div style="text-align: center; margin-top: 40px;">
-          <a href="${signupUrl}" class="btn-hover button-stack" style="display: inline-block; background-color: #ff93d4; color: white; padding: 18px 40px; border-radius: 16px; text-decoration: none; font-weight: 700; font-size: 16px; transition: all 0.2s ease; box-shadow: 0 10px 15px -3px rgba(255, 147, 212, 0.3);">
+          <a href="${signupUrl}" class="btn-hover button-stack" style="display: inline-block; background-color: ${brandColor}; color: white; padding: 18px 40px; border-radius: 16px; text-decoration: none; font-weight: 700; font-size: 16px; transition: all 0.2s ease; box-shadow: 0 10px 15px -3px ${brandShadow};">
             Ενεργοποίηση Λογαριασμού
           </a>
           <p style="color: #9ca3af; font-size: 12px; margin-top: 25px;">
@@ -4886,12 +4905,12 @@ app.post("/api/v1/clients/:id/invite", authenticateToken, async (req, res) => {
         </div>
       </div>
 
-      <div style="background-color: #fff; padding: 40px; text-align: center; border-top: 1px solid rgba(255, 147, 212, 0.1);">
+      <div style="background-color: #fff; padding: 40px; text-align: center; border-top: 1px solid ${hexToRgba(brandColor, 0.1)};">
         <p style="color: #111827; font-size: 16px; font-weight: 700; margin-bottom: 8px;">
-          ${req.user.shopName || "Petalouda"}<span style="color: #ff93d4"> Booking</span>
+          ${shopName}<span style="color: ${brandColor}"> Booking</span>
         </p>
         <p style="color: #9ca3af; font-size: 12px; margin: 0;">
-          © 2026 Powered by Interventio Booking System
+          © ${new Date().getFullYear()} Powered by ${process.env.APP_NAME || "Booking"}
         </p>
       </div>
     </div>

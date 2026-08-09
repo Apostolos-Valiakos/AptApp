@@ -49,6 +49,8 @@ services:
       EMAIL_PORT: ${EMAIL_PORT}
       EMAIL_USER: ${EMAIL_USER}
       EMAIL_PASS: ${EMAIL_PASS}
+      APP_NAME: ${APP_NAME}
+      FRONTEND_URL: ${FRONTEND_URL}
     ports:
       - "3000:3000" # Expose to host (access http://your-vps-ip:3000)
     volumes:
