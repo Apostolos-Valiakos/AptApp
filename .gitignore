@@ -8,3 +8,6 @@ Installation Steps.pdf
 .claude/
 *.sql
 server/tests/
+scripts/__pycache__/sync_bookings.cpython-312.pyc
+scripts/__pycache__/import_appointments.cpython-312.pyc
+scripts/backup_before_import_20260704_102527.dump

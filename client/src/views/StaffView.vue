@@ -4,12 +4,16 @@
     <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
       <div class="flex justify-between items-center">
         <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-xl bg-[var(--p-primary-50)] flex items-center justify-center">
+          <div
+            class="w-10 h-10 rounded-xl bg-[var(--p-primary-50)] flex items-center justify-center"
+          >
             <i class="pi pi-id-card text-[var(--p-primary-600)]"></i>
           </div>
           <div>
-            <h1 class="text-2xl font-bold text-gray-900">{{ t('staff.title') }}</h1>
-            <p class="text-sm text-gray-500">{{ t('staff.addNew') }}</p>
+            <h1 class="text-2xl font-bold text-gray-900">
+              {{ t("staff.title") }}
+            </h1>
+            <p class="text-sm text-gray-500">{{ t("staff.addNew") }}</p>
           </div>
         </div>
         <Button :label="t('staff.addNew')" icon="pi pi-plus" @click="openNew" />
@@ -41,10 +45,16 @@
         </template>
 
         <template #empty>
-          <div class="flex flex-col items-center justify-center py-16 text-center">
+          <div
+            class="flex flex-col items-center justify-center py-16 text-center"
+          >
             <i class="pi pi-users text-5xl text-gray-200 mb-4"></i>
-            <p class="text-gray-500 font-semibold text-lg">{{ t('staff.empty.title') }}</p>
-            <p class="text-gray-400 text-sm mt-1">{{ t('staff.empty.subtitle') }}</p>
+            <p class="text-gray-500 font-semibold text-lg">
+              {{ t("staff.empty.title") }}
+            </p>
+            <p class="text-gray-400 text-sm mt-1">
+              {{ t("staff.empty.subtitle") }}
+            </p>
           </div>
         </template>
 
@@ -52,12 +62,18 @@
         <Column field="name" :header="t('staff.table.name')">
           <template #body="slotProps">
             <div class="flex items-center gap-3">
-              <div class="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm bg-[var(--p-primary-100)] text-[var(--p-primary-600)] flex-shrink-0">
+              <div
+                class="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm bg-[var(--p-primary-100)] text-[var(--p-primary-600)] flex-shrink-0"
+              >
                 {{ slotProps.data.name?.charAt(0)?.toUpperCase() }}
               </div>
               <div class="min-w-0">
-                <div class="font-semibold text-gray-900">{{ slotProps.data.name }}</div>
-                <div class="text-xs text-gray-400 truncate">{{ slotProps.data.email || '—' }}</div>
+                <div class="font-semibold text-gray-900">
+                  {{ slotProps.data.name }}
+                </div>
+                <div class="text-xs text-gray-400 truncate">
+                  {{ slotProps.data.email || "—" }}
+                </div>
               </div>
             </div>
           </template>
@@ -65,7 +81,9 @@
 
         <Column field="phone" :header="t('staff.table.phone')">
           <template #body="slotProps">
-            <span class="text-sm text-gray-700">{{ slotProps.data.phone || '—' }}</span>
+            <span class="text-sm text-gray-700">{{
+              slotProps.data.phone || "—"
+            }}</span>
           </template>
         </Column>
 
@@ -122,34 +140,48 @@
   <!-- Add/Edit Staff Dialog -->
   <Dialog
     v-model:visible="showDialog"
-    :header="editingStaff.id ? t('staff.dialog.editStaff') : t('staff.dialog.newStaff')"
+    :header="
+      editingStaff.id ? t('staff.dialog.editStaff') : t('staff.dialog.newStaff')
+    "
     modal
     class="w-full max-w-2xl"
   >
     <div class="space-y-5 mt-2">
       <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('staff.dialog.firstName') }}</label>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{
+            t("staff.dialog.firstName")
+          }}</label>
           <InputText v-model="editingStaff.first_name" class="w-full" />
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('staff.dialog.lastName') }}</label>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{
+            t("staff.dialog.lastName")
+          }}</label>
           <InputText v-model="editingStaff.last_name" class="w-full" />
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('common.email') }}</label>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{
+            t("common.email")
+          }}</label>
           <InputText v-model="editingStaff.email" class="w-full" />
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('common.phone') }}</label>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{
+            t("common.phone")
+          }}</label>
           <InputText v-model="editingStaff.phone" class="w-full" />
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('staff.dialog.specialty') }}</label>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{
+            t("staff.dialog.specialty")
+          }}</label>
           <InputText v-model="editingStaff.specialty" class="w-full" />
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('staff.dialog.hourlyRate') }}</label>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{
+            t("staff.dialog.hourlyRate")
+          }}</label>
           <InputNumber
             v-model="editingStaff.hourly_rate"
             mode="currency"
@@ -158,7 +190,9 @@
           />
         </div>
         <div class="md:col-span-2">
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('staff.dialog.servicesProvided') }}</label>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{
+            t("staff.dialog.servicesProvided")
+          }}</label>
           <MultiSelect
             v-model="editingStaff.service_ids"
             :options="services"
@@ -173,8 +207,12 @@
         <div class="md:col-span-2 flex items-center gap-3">
           <ToggleSwitch v-model="editingStaff.visible_in_calendar" />
           <div>
-            <div class="text-sm font-medium text-gray-700">{{ t('staff.dialog.visibleInCalendar') }}</div>
-            <div class="text-xs text-gray-400">{{ t('staff.dialog.visibleInCalendarNote') }}</div>
+            <div class="text-sm font-medium text-gray-700">
+              {{ t("staff.dialog.visibleInCalendar") }}
+            </div>
+            <div class="text-xs text-gray-400">
+              {{ t("staff.dialog.visibleInCalendarNote") }}
+            </div>
           </div>
         </div>
       </div>
@@ -204,10 +242,14 @@
   >
     <div class="space-y-5 pt-2">
       <p class="text-sm text-gray-600">
-        {{ t('staff.loginDialog.description', { name: loginStaffTarget?.name }) }}
+        {{
+          t("staff.loginDialog.description", { name: loginStaffTarget?.name })
+        }}
       </p>
       <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('staff.loginDialog.username') }}</label>
+        <label class="block text-sm font-medium text-gray-700 mb-1">{{
+          t("staff.loginDialog.username")
+        }}</label>
         <InputText
           v-model="newLogin.username"
           class="w-full"
@@ -215,7 +257,9 @@
         />
       </div>
       <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('staff.loginDialog.password') }}</label>
+        <label class="block text-sm font-medium text-gray-700 mb-1">{{
+          t("staff.loginDialog.password")
+        }}</label>
         <InputText
           v-model="newLogin.password"
           class="w-full"
@@ -224,7 +268,9 @@
         />
       </div>
       <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('staff.loginDialog.role') }}</label>
+        <label class="block text-sm font-medium text-gray-700 mb-1">{{
+          t("staff.loginDialog.role")
+        }}</label>
         <Dropdown
           v-model="newLogin.role"
           :options="loginRoleOptions"
@@ -256,15 +302,18 @@
     v-model:visible="showTimeOffDialog"
     :header="t('staff.timeOff.title', { name: timeOffTarget?.name })"
     modal
-    class="w-full max-w-xl"
+    class="w-full max-w-2xl"
   >
     <div class="space-y-4 mt-2">
       <!-- Existing entries -->
       <div v-if="timeOffLoading" class="text-center py-6 text-gray-400 text-sm">
-        {{ t('common.loading') }}
+        {{ t("common.loading") }}
       </div>
-      <div v-else-if="timeOffEntries.length === 0" class="text-center py-6 text-gray-400 text-sm">
-        {{ t('staff.timeOff.empty') }}
+      <div
+        v-else-if="timeOffEntries.length === 0"
+        class="text-center py-6 text-gray-400 text-sm"
+      >
+        {{ t("staff.timeOff.empty") }}
       </div>
       <div v-else class="space-y-2 max-h-64 overflow-y-auto">
         <div
@@ -274,20 +323,31 @@
         >
           <div class="flex items-center gap-3">
             <Tag
-              :value="entry.type === 'leave' ? t('staff.timeOff.leave') : t('staff.timeOff.break')"
+              :value="
+                entry.type === 'leave'
+                  ? t('staff.timeOff.leave')
+                  : t('staff.timeOff.break')
+              "
               :severity="entry.type === 'leave' ? 'warn' : 'info'"
             />
             <div>
               <div class="text-sm font-medium text-gray-800">
                 <template v-if="entry.type === 'leave'">
                   {{ formatDate(entry.start_date) }}
-                  <span v-if="entry.start_date !== entry.end_date"> — {{ formatDate(entry.end_date) }}</span>
+                  <span v-if="entry.start_date !== entry.end_date">
+                    — {{ formatDate(entry.end_date) }}</span
+                  >
                 </template>
                 <template v-else>
-                  {{ formatDate(entry.start_date) }}, {{ entry.start_time?.slice(0,5) }}–{{ entry.end_time?.slice(0,5) }}
+                  {{ formatDate(entry.start_date) }},
+                  {{ entry.start_time?.slice(0, 5) }}–{{
+                    entry.end_time?.slice(0, 5)
+                  }}
                 </template>
               </div>
-              <div v-if="entry.reason" class="text-xs text-gray-400">{{ entry.reason }}</div>
+              <div v-if="entry.reason" class="text-xs text-gray-400">
+                {{ entry.reason }}
+              </div>
             </div>
           </div>
           <Button
@@ -316,44 +376,102 @@
         />
       </div>
 
-      <div v-else class="p-4 bg-[var(--p-primary-50)] rounded-xl space-y-3 border border-[var(--p-primary-100)]">
+      <div
+        v-else
+        class="p-4 bg-[var(--p-primary-50)] rounded-xl space-y-3 border border-[var(--p-primary-100)]"
+      >
         <div class="text-sm font-bold text-gray-700">
-          {{ addMode === 'leave' ? t('staff.timeOff.addLeave') : t('staff.timeOff.addBreak') }}
+          {{
+            addMode === "leave"
+              ? t("staff.timeOff.addLeave")
+              : t("staff.timeOff.addBreak")
+          }}
         </div>
 
         <div v-if="addMode === 'leave'" class="grid grid-cols-2 gap-3">
           <div class="min-w-0">
-            <label class="block text-xs text-gray-500 mb-1">{{ t('staff.timeOff.startDate') }}</label>
-            <DatePicker v-model="newTimeOff.start_date" dateFormat="dd/mm/yy" showIcon class="w-full" />
+            <label class="block text-xs text-gray-500 mb-1">{{
+              t("staff.timeOff.startDate")
+            }}</label>
+            <DatePicker
+              v-model="newTimeOff.start_date"
+              dateFormat="dd/mm/yy"
+              showIcon
+              class="w-full"
+              inputClass="w-full"
+            />
           </div>
           <div class="min-w-0">
-            <label class="block text-xs text-gray-500 mb-1">{{ t('staff.timeOff.endDate') }}</label>
-            <DatePicker v-model="newTimeOff.end_date" dateFormat="dd/mm/yy" showIcon class="w-full" />
+            <label class="block text-xs text-gray-500 mb-1">{{
+              t("staff.timeOff.endDate")
+            }}</label>
+            <DatePicker
+              v-model="newTimeOff.end_date"
+              dateFormat="dd/mm/yy"
+              showIcon
+              class="w-full"
+              inputClass="w-full"
+            />
           </div>
         </div>
 
         <div v-else class="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div class="min-w-0">
-            <label class="block text-xs text-gray-500 mb-1">{{ t('staff.timeOff.date') }}</label>
-            <DatePicker v-model="newTimeOff.start_date" dateFormat="dd/mm/yy" showIcon class="w-full" />
+            <label class="block text-xs text-gray-500 mb-1">{{
+              t("staff.timeOff.date")
+            }}</label>
+            <DatePicker
+              v-model="newTimeOff.start_date"
+              dateFormat="dd/mm/yy"
+              showIcon
+              class="w-full"
+              inputClass="w-full"
+            />
           </div>
           <div class="min-w-0">
-            <label class="block text-xs text-gray-500 mb-1">{{ t('staff.timeOff.startTime') }}</label>
-            <DatePicker v-model="newTimeOff.start_time" timeOnly hourFormat="24" class="w-full" />
+            <label class="block text-xs text-gray-500 mb-1">{{
+              t("staff.timeOff.startTime")
+            }}</label>
+            <DatePicker
+              v-model="newTimeOff.start_time"
+              timeOnly
+              hourFormat="24"
+              class="w-full"
+              inputClass="w-full"
+            />
           </div>
           <div class="min-w-0">
-            <label class="block text-xs text-gray-500 mb-1">{{ t('staff.timeOff.endTime') }}</label>
-            <DatePicker v-model="newTimeOff.end_time" timeOnly hourFormat="24" class="w-full" />
+            <label class="block text-xs text-gray-500 mb-1">{{
+              t("staff.timeOff.endTime")
+            }}</label>
+            <DatePicker
+              v-model="newTimeOff.end_time"
+              timeOnly
+              hourFormat="24"
+              class="w-full"
+              inputClass="w-full"
+            />
           </div>
         </div>
 
         <div>
-          <label class="block text-xs text-gray-500 mb-1">{{ t('staff.timeOff.reason') }}</label>
-          <InputText v-model="newTimeOff.reason" class="w-full" :placeholder="t('staff.timeOff.reasonPlaceholder')" />
+          <label class="block text-xs text-gray-500 mb-1">{{
+            t("staff.timeOff.reason")
+          }}</label>
+          <InputText
+            v-model="newTimeOff.reason"
+            class="w-full"
+            :placeholder="t('staff.timeOff.reasonPlaceholder')"
+          />
         </div>
 
         <div class="flex justify-end gap-2 pt-1">
-          <Button :label="t('common.cancel')" text size="small" @click="cancelAddTimeOff" />
+          <Button
+            :label="t('common.cancel')"
+            text
+            size="small"
+            @click="cancelAddTimeOff"
+          />
           <Button
             :label="t('common.save')"
             size="small"
@@ -432,8 +550,8 @@ const fetchData = async () => {
     console.error(err);
     toast.add({
       severity: "error",
-      summary: t('common.error'),
-      detail: t('staff.toast.loadFailed'),
+      summary: t("common.error"),
+      detail: t("staff.toast.loadFailed"),
       life: 4000,
     });
   } finally {
@@ -484,8 +602,8 @@ const saveStaff = async () => {
     if (!res.ok) throw new Error("Failed");
     toast.add({
       severity: "success",
-      summary: t('common.success'),
-      detail: t('staff.toast.saved'),
+      summary: t("common.success"),
+      detail: t("staff.toast.saved"),
       life: 3000,
     });
     showDialog.value = false;
@@ -493,8 +611,8 @@ const saveStaff = async () => {
   } catch (err) {
     toast.add({
       severity: "error",
-      summary: t('common.error'),
-      detail: t('staff.toast.saveFailed'),
+      summary: t("common.error"),
+      detail: t("staff.toast.saveFailed"),
       life: 3000,
     });
   } finally {
@@ -536,15 +654,17 @@ const createLogin = async () => {
 
     toast.add({
       severity: "success",
-      summary: t('staff.toast.accountCreated'),
-      detail: t('staff.toast.accountDetail', { name: loginStaffTarget.value.name }),
+      summary: t("staff.toast.accountCreated"),
+      detail: t("staff.toast.accountDetail", {
+        name: loginStaffTarget.value.name,
+      }),
       life: 4000,
     });
     showLoginDialog.value = false;
   } catch (e: any) {
     toast.add({
       severity: "error",
-      summary: t('common.error'),
+      summary: t("common.error"),
       detail: e.message,
       life: 4000,
     });
@@ -556,7 +676,11 @@ const createLogin = async () => {
 // Add confirmDelete and deleteStaff functions
 // --- Time Off (Leave / Break) Handlers ---
 const formatDate = (d: string) =>
-  new Date(d).toLocaleDateString("el-GR", { day: "2-digit", month: "2-digit", year: "numeric" });
+  new Date(d).toLocaleDateString("el-GR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
 
 const toDateStr = (d: Date) => {
   const yyyy = d.getFullYear();
@@ -582,9 +706,12 @@ const fetchTimeOffEntries = async () => {
   timeOffLoading.value = true;
   const token = localStorage.getItem("token");
   try {
-    const res = await fetch(`/api/v1/staff/${timeOffTarget.value.id}/time-off`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const res = await fetch(
+      `/api/v1/staff/${timeOffTarget.value.id}/time-off`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      },
+    );
     timeOffEntries.value = res.ok ? await res.json() : [];
   } finally {
     timeOffLoading.value = false;
@@ -593,7 +720,13 @@ const fetchTimeOffEntries = async () => {
 
 const startAddLeave = () => {
   addMode.value = "leave";
-  newTimeOff.value = { start_date: new Date(), end_date: new Date(), start_time: null, end_time: null, reason: "" };
+  newTimeOff.value = {
+    start_date: new Date(),
+    end_date: new Date(),
+    start_time: null,
+    end_time: null,
+    reason: "",
+  };
 };
 
 const startAddBreak = () => {
@@ -602,7 +735,13 @@ const startAddBreak = () => {
   defaultStart.setHours(13, 0, 0, 0);
   const defaultEnd = new Date();
   defaultEnd.setHours(14, 0, 0, 0);
-  newTimeOff.value = { start_date: new Date(), end_date: new Date(), start_time: defaultStart, end_time: defaultEnd, reason: "" };
+  newTimeOff.value = {
+    start_date: new Date(),
+    end_date: new Date(),
+    start_time: defaultStart,
+    end_time: defaultEnd,
+    reason: "",
+  };
 };
 
 const cancelAddTimeOff = () => {
@@ -617,7 +756,9 @@ const saveTimeOff = async (force = false) => {
   const payload: any = {
     type: addMode.value,
     start_date: toDateStr(newTimeOff.value.start_date),
-    end_date: toDateStr(isLeave ? newTimeOff.value.end_date : newTimeOff.value.start_date),
+    end_date: toDateStr(
+      isLeave ? newTimeOff.value.end_date : newTimeOff.value.start_date,
+    ),
     reason: newTimeOff.value.reason || null,
     force,
   };
@@ -627,19 +768,31 @@ const saveTimeOff = async (force = false) => {
   }
 
   try {
-    const res = await fetch(`/api/v1/staff/${timeOffTarget.value.id}/time-off`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify(payload),
-    });
+    const res = await fetch(
+      `/api/v1/staff/${timeOffTarget.value.id}/time-off`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      },
+    );
 
     if (res.status === 409) {
       const data = await res.json();
       const list = (data.conflicts || [])
-        .map((c: any) => `• ${c.client_name || "—"} — ${c.service_name || ""} (${formatDate(c.start_time)})`)
+        .map(
+          (c: any) =>
+            `• ${c.client_name || "—"} — ${c.service_name || ""} (${formatDate(c.start_time)})`,
+        )
         .join("\n");
       confirm.require({
-        message: t("staff.timeOff.conflictMessage", { count: data.conflicts.length, list }),
+        message: t("staff.timeOff.conflictMessage", {
+          count: data.conflicts.length,
+          list,
+        }),
         header: t("staff.timeOff.conflictHeader"),
         icon: "pi pi-exclamation-triangle",
         acceptClass: "p-button-warning",
@@ -650,12 +803,22 @@ const saveTimeOff = async (force = false) => {
 
     if (!res.ok) throw new Error("Failed");
 
-    toast.add({ severity: "success", summary: t("common.success"), detail: t("staff.timeOff.saved"), life: 3000 });
+    toast.add({
+      severity: "success",
+      summary: t("common.success"),
+      detail: t("staff.timeOff.saved"),
+      life: 3000,
+    });
     addMode.value = null;
     await fetchTimeOffEntries();
     await calendarStore.refreshTimeOff();
   } catch (err) {
-    toast.add({ severity: "error", summary: t("common.error"), detail: t("staff.timeOff.saveFailed"), life: 4000 });
+    toast.add({
+      severity: "error",
+      summary: t("common.error"),
+      detail: t("staff.timeOff.saveFailed"),
+      life: 4000,
+    });
   } finally {
     timeOffSaving.value = false;
   }
@@ -664,23 +827,35 @@ const saveTimeOff = async (force = false) => {
 const deleteTimeOffEntry = async (entryId: string) => {
   const token = localStorage.getItem("token");
   try {
-    const res = await fetch(`/api/v1/staff/${timeOffTarget.value.id}/time-off/${entryId}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const res = await fetch(
+      `/api/v1/staff/${timeOffTarget.value.id}/time-off/${entryId}`,
+      {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      },
+    );
     if (!res.ok) throw new Error("Failed");
     timeOffEntries.value = timeOffEntries.value.filter((e) => e.id !== entryId);
-    toast.add({ severity: "success", summary: t("staff.timeOff.deleted"), life: 3000 });
+    toast.add({
+      severity: "success",
+      summary: t("staff.timeOff.deleted"),
+      life: 3000,
+    });
     await calendarStore.refreshTimeOff();
   } catch {
-    toast.add({ severity: "error", summary: t("common.error"), detail: t("staff.timeOff.deleteFailed"), life: 4000 });
+    toast.add({
+      severity: "error",
+      summary: t("common.error"),
+      detail: t("staff.timeOff.deleteFailed"),
+      life: 4000,
+    });
   }
 };
 
 const confirmDelete = (staff: any) => {
   confirm.require({
-    message: t('staff.confirmDelete', { name: staff.name }),
-    header: t('common.confirmDelete'),
+    message: t("staff.confirmDelete", { name: staff.name }),
+    header: t("common.confirmDelete"),
     icon: "pi pi-exclamation-triangle",
     acceptClass: "p-button-danger",
     accept: () => deleteStaff(staff),
@@ -699,16 +874,16 @@ const deleteStaff = async (staff: any) => {
 
     toast.add({
       severity: "success",
-      summary: t('common.success'),
-      detail: t('staff.toast.deleted'),
+      summary: t("common.success"),
+      detail: t("staff.toast.deleted"),
       life: 3000,
     });
     fetchData();
   } catch (err) {
     toast.add({
       severity: "error",
-      summary: t('common.error'),
-      detail: t('staff.toast.deleteFailed'),
+      summary: t("common.error"),
+      detail: t("staff.toast.deleteFailed"),
       life: 4000,
     });
   }
