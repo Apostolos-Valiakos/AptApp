@@ -56,7 +56,10 @@ export const useAuthStore = defineStore("auth", () => {
         localStorage.setItem("user", JSON.stringify(data.user));
 
         // Persisted, shop-wide Ctrl+1 lock — applies from first render, on any device.
-        useSettingsStore().setCashLockedByShop(!!data.user?.shop_force_hide_cash);
+        useSettingsStore().setCashLockedByShop(
+          !!data.user?.shop_force_hide_cash,
+          data.user?.shop_force_hide_cash_locked_by || null,
+        );
 
         return { success: true };
       } else {

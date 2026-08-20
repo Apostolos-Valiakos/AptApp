@@ -586,6 +586,15 @@ const buildTxnMethodExclusionClause = (excludeCash, excludeCard, columnPrefix = 
 // actually triggers a force-logout (see POST /api/v1/shop/force-logout).
 const forceLogoutCache = new Map();
 
+// Last-known live Ctrl+1/Ctrl+8 broadcast state per shop (shopId -> boolean).
+// The live broadcast itself is fire-and-forget over the socket — anyone
+// disconnected at the exact moment a super_admin toggles it (flaky wifi, a
+// dev-server WS proxy hiccup, etc.) never receives that event and has no
+// other way to learn the current state. Caching it here lets a (re)connecting
+// socket be synced immediately instead of waiting for the next toggle.
+const cashFilterCache = new Map();
+const cardFilterCache = new Map();
+
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers["authorization"];
   const token = (authHeader && authHeader.split(" ")[1]) || req.query.token;
@@ -606,6 +615,17 @@ const authenticateToken = (req, res, next) => {
     req.shopId = user.shopId;
     next();
   });
+};
+
+// Whether `userRole` is allowed to change the cash-hide filter given who
+// currently holds the lock. An admin's lock can be released by any admin (or
+// a super_admin); a super_admin's lock is exclusive to super_admin — a
+// deliberate safety valve so the shop can never get stuck hidden waiting on
+// one specific person.
+const canUnlockCashFilter = (userRole, lockedBy) => {
+  if (!lockedBy) return true;
+  if (userRole === "super_admin") return true;
+  return userRole === lockedBy;
 };
 
 // Analytics/financials/reports are admin-only — frontdesk has admin access everywhere else.
@@ -640,7 +660,8 @@ app.post("/api/v1/login", loginLimiter, async (req, res) => {
   try {
     // 1. Find user by username only (don't check password in SQL)
     const result = await pool.query(
-      `SELECT u.*, s.name as shop_name, s.status as shop_status, s.force_hide_cash as shop_force_hide_cash
+      `SELECT u.*, s.name as shop_name, s.status as shop_status, s.force_hide_cash as shop_force_hide_cash,
+              s.force_hide_cash_locked_by as shop_force_hide_cash_locked_by
        FROM users u
        LEFT JOIN shops s ON u.shop_id = s.id
        WHERE u.username = $1`,
@@ -3539,8 +3560,42 @@ io.use((socket, next) => {
 });
 
 // Socket.IO Connection Handler
-io.on("connection", (socket) => {
+io.on("connection", async (socket) => {
   socket.join(`shop:${socket.user.shopId}`);
+
+  // Sync this (re)connecting socket to the shop's current cash/card-filter
+  // state. A live broadcast only reaches sockets connected at the exact
+  // moment it fires — anyone who was mid-reconnect otherwise stays stuck on
+  // stale state (visible cash appointments that should be hidden, or vice
+  // versa) until someone happens to toggle it again. Checked fresh on every
+  // connection rather than only at login, since a release can also be
+  // missed while disconnected.
+  try {
+    const shopId = socket.user.shopId;
+    if (shopId) {
+      const shopRes = await pool.query(
+        `SELECT force_hide_cash, force_hide_cash_locked_by FROM shops WHERE id = $1`,
+        [shopId],
+      );
+      const hardLocked = !!shopRes.rows[0]?.force_hide_cash;
+      if (hardLocked) {
+        socket.emit("cash:filter:set", {
+          hidden: true,
+          lockedBy: shopRes.rows[0]?.force_hide_cash_locked_by || null,
+        });
+      } else {
+        socket.emit("cash:lock:released");
+        if (cashFilterCache.has(shopId)) {
+          socket.emit("cash:filter:set", { hidden: cashFilterCache.get(shopId), lockedBy: null });
+        }
+      }
+      if (cardFilterCache.has(shopId)) {
+        socket.emit("card:filter:set", { hidden: cardFilterCache.get(shopId) });
+      }
+    }
+  } catch (err) {
+    console.error("Failed to sync filter state on connect:", err);
+  }
 
   socket.on("channel:join", ({ channelId }) => {
     socket.join(`channel:${channelId}`);
@@ -3688,6 +3743,7 @@ io.on("connection", (socket) => {
   // Remote cash-filter broadcast — super_admin only
   socket.on("cash:filter:broadcast", ({ hidden }) => {
     if (socket.user.role !== "super_admin") return;
+    cashFilterCache.set(socket.user.shopId, !!hidden);
     io.to(`shop:${socket.user.shopId}`).emit("cash:filter:set", {
       hidden: !!hidden,
     });
@@ -3696,6 +3752,7 @@ io.on("connection", (socket) => {
   // Remote card-filter broadcast — super_admin only, independent of cash
   socket.on("card:filter:broadcast", ({ hidden }) => {
     if (socket.user.role !== "super_admin") return;
+    cardFilterCache.set(socket.user.shopId, !!hidden);
     io.to(`shop:${socket.user.shopId}`).emit("card:filter:set", {
       hidden: !!hidden,
     });
@@ -4096,7 +4153,7 @@ app.post("/api/v1/shop/force-logout", authenticateToken, async (req, res) => {
     // request, could land in the same second but "before" a sub-second NOW()
     // and get spuriously rejected as revoked.
     const { rows } = await pool.query(
-      `UPDATE shops SET force_logout_at = date_trunc('second', NOW()), force_hide_cash = true
+      `UPDATE shops SET force_logout_at = date_trunc('second', NOW()), force_hide_cash = true, force_hide_cash_locked_by = 'super_admin'
        WHERE id = $1 RETURNING force_logout_at`,
       [req.shopId],
     );
@@ -4105,6 +4162,7 @@ app.post("/api/v1/shop/force-logout", authenticateToken, async (req, res) => {
     }
 
     forceLogoutCache.set(req.shopId, new Date(rows[0].force_logout_at).getTime());
+    cashFilterCache.set(req.shopId, true);
 
     // Re-issue the calling admin a fresh token (new iat) so their own session
     // survives the revocation that just invalidated everyone else's.
@@ -4124,7 +4182,7 @@ app.post("/api/v1/shop/force-logout", authenticateToken, async (req, res) => {
     // Immediate effect for anyone currently connected; the revocation above
     // guarantees it for everyone else on their next request regardless.
     io.to(`shop:${req.shopId}`).emit("force:logout");
-    io.to(`shop:${req.shopId}`).emit("cash:filter:set", { hidden: true });
+    io.to(`shop:${req.shopId}`).emit("cash:filter:set", { hidden: true, lockedBy: "super_admin" });
 
     res.json({ token: freshToken });
   } catch (err) {
@@ -4140,12 +4198,13 @@ app.post("/api/v1/shop/release-cash-lock", authenticateToken, async (req, res) =
   }
   try {
     const { rowCount } = await pool.query(
-      `UPDATE shops SET force_hide_cash = false WHERE id = $1`,
+      `UPDATE shops SET force_hide_cash = false, force_hide_cash_locked_by = NULL WHERE id = $1`,
       [req.shopId],
     );
     if (rowCount === 0) {
       return res.status(404).json({ error: "Shop not found" });
     }
+    cashFilterCache.delete(req.shopId);
 
     // Distinct from cash:filter:set on purpose — releasing the lock hands
     // control back to each staff member, it should not also force-unhide
@@ -4155,6 +4214,93 @@ app.post("/api/v1/shop/release-cash-lock", authenticateToken, async (req, res) =
     res.json({ success: true });
   } catch (err) {
     console.error("Error releasing cash lock:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Toggles the shop-wide cash-hide filter and broadcasts it live — used by
+// both admin and super_admin (via Ctrl+1). Turning it ON locks it to the
+// caller's tier (see canUnlockCashFilter); turning it OFF clears the lock
+// entirely. Persisted in shops.force_hide_cash(_locked_by) — not just a live
+// socket push — so it's also correct for anyone who logs in fresh or
+// reconnects later (see the socket connection handler and /filter-state).
+app.post("/api/v1/shop/cash-filter", authenticateToken, async (req, res) => {
+  if (req.user.role !== "admin" && req.user.role !== "super_admin") {
+    return res.status(403).json({ error: "Admins only" });
+  }
+  const hidden = !!req.body.hidden;
+  try {
+    const shopRes = await pool.query(
+      `SELECT force_hide_cash_locked_by FROM shops WHERE id = $1`,
+      [req.shopId],
+    );
+    if (shopRes.rows.length === 0) {
+      return res.status(404).json({ error: "Shop not found" });
+    }
+    const lockedBy = shopRes.rows[0].force_hide_cash_locked_by;
+    if (!canUnlockCashFilter(req.user.role, lockedBy)) {
+      return res.status(403).json({
+        error:
+          lockedBy === "super_admin"
+            ? "This filter is locked by a super admin. Only a super admin can change it."
+            : "This filter is locked by another admin. Ask them, or a super admin can override it.",
+      });
+    }
+
+    const newLockedBy = hidden ? req.user.role : null;
+    await pool.query(
+      `UPDATE shops SET force_hide_cash = $1, force_hide_cash_locked_by = $2 WHERE id = $3`,
+      [hidden, newLockedBy, req.shopId],
+    );
+    if (hidden) {
+      cashFilterCache.set(req.shopId, true);
+    } else {
+      cashFilterCache.delete(req.shopId);
+    }
+
+    if (hidden) {
+      io.to(`shop:${req.shopId}`).emit("cash:filter:set", { hidden: true, lockedBy: newLockedBy });
+    } else {
+      io.to(`shop:${req.shopId}`).emit("cash:lock:released");
+      io.to(`shop:${req.shopId}`).emit("cash:filter:set", { hidden: false, lockedBy: null });
+    }
+
+    res.json({ success: true, hidden, lockedBy: newLockedBy });
+  } catch (err) {
+    console.error("Error updating cash filter:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Plain-HTTP fallback for the cash/card-filter socket broadcasts above.
+// A phone browser suspends JS and silently drops its WebSocket while
+// backgrounded — the socket-connect sync only helps once the app is running
+// again to receive it, which can lag well behind the user actually reopening
+// the tab. A normal fetch on foreground/mount doesn't depend on a live
+// socket at all, so the client calls this instead of waiting on one.
+app.get("/api/v1/shop/filter-state", authenticateToken, async (req, res) => {
+  try {
+    if (!req.shopId) {
+      return res.json({ cashLocked: false, cashLockedBy: null, cashHidden: null, cardHidden: null });
+    }
+    const { rows } = await pool.query(
+      `SELECT force_hide_cash, force_hide_cash_locked_by FROM shops WHERE id = $1`,
+      [req.shopId],
+    );
+    const hardLocked = !!rows[0]?.force_hide_cash;
+    const lockedBy = rows[0]?.force_hide_cash_locked_by || null;
+    res.json({
+      cashLocked: hardLocked,
+      cashLockedBy: hardLocked ? lockedBy : null,
+      cashHidden: hardLocked
+        ? true
+        : cashFilterCache.has(req.shopId)
+          ? cashFilterCache.get(req.shopId)
+          : null,
+      cardHidden: cardFilterCache.has(req.shopId) ? cardFilterCache.get(req.shopId) : null,
+    });
+  } catch (err) {
+    console.error("Error fetching filter state:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -5330,6 +5476,11 @@ app.put("/api/v1/portal/notifications", authenticateToken, async (req, res) => {
     // with force_hide_cash, a persisted shop-wide Ctrl+1 lock applied at login.
     await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS force_logout_at TIMESTAMP`);
     await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS force_hide_cash BOOLEAN NOT NULL DEFAULT false`);
+    // Which tier currently owns the cash-hide lock ('admin' | 'super_admin' |
+    // NULL when unlocked) — an admin's lock can be released by any admin or a
+    // super_admin, but a super_admin's lock can only be released by a
+    // super_admin. See canUnlockCashFilter.
+    await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS force_hide_cash_locked_by VARCHAR(20)`);
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true`);
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT NOW()`);
     await pool.query(`

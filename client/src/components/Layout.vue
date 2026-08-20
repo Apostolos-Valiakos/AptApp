@@ -245,6 +245,7 @@ import { useChatStore } from "../stores/chat";
 import { useSettingsStore } from "../stores/settings";
 import FloatingChat from "../components/FloatingChat.vue";
 import { useI18n } from "vue-i18n";
+import { useToast } from "primevue/usetoast";
 import {
   pendingWrites,
   pendingCount,
@@ -259,6 +260,7 @@ const route = useRoute();
 const authStore = useAuthStore();
 const chatStore = useChatStore();
 const settingsStore = useSettingsStore();
+const toast = useToast();
 const mobileMenuOpen = ref(false);
 const { t, locale } = useI18n();
 
@@ -397,23 +399,48 @@ const handleExitImpersonation = () => {
 
 // --- Ctrl+1: hide cash/gift-card revenue (global — works on any authenticated page) ---
 const isSuperAdmin = computed(() => authStore.user?.role === "super_admin");
+const isAdminOrAbove = computed(
+  () => authStore.user?.role === "admin" || authStore.user?.role === "super_admin",
+);
+
+// Admin/super_admin: persists + broadcasts shop-wide via the server, which
+// enforces who's allowed to change a currently-locked filter (an admin's
+// lock can be released by any admin or a super_admin; a super_admin's lock
+// is exclusive to super_admin). See POST /api/v1/shop/cash-filter.
+const toggleCashFilterAsAdmin = async () => {
+  const newHidden = !settingsStore.hideCashPaid;
+  try {
+    const token = localStorage.getItem("token");
+    const res = await fetch("/api/v1/shop/cash-filter", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ hidden: newHidden }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      toast.add({ severity: "warn", summary: t("common.error"), detail: data.error, life: 4000 });
+      return;
+    }
+    // The server's own broadcast will also confirm this for every connected
+    // tab (including this one) — setting it locally too avoids waiting on it.
+    settingsStore.setHideCashPaid(newHidden);
+    settingsStore.setCashLockedByShop(data.hidden, data.lockedBy);
+  } catch {
+    toast.add({ severity: "error", summary: t("common.error"), detail: t("booking.toast.networkError"), life: 3000 });
+  }
+};
 
 const handleKeydown = (e: KeyboardEvent) => {
   if (e.ctrlKey && e.key === "1") {
     e.preventDefault();
-    // Persisted shop-wide policy lock (set via "Disconnect all users" in Shop
-    // Settings) — deliberate, so not even super_admin overrides it here;
-    // it only comes off via the explicit "Release" action on that page.
-    if (settingsStore.cashLockedByShop) return;
-    // Only super_admin can override a remotely locked filter
-    if (!isSuperAdmin.value && chatStore.cashLocked) return;
-    settingsStore.toggleHideCashPaid();
-    // Only super_admin broadcasts the new state to all connected clients
-    if (isSuperAdmin.value) {
-      chatStore.socket?.emit("cash:filter:broadcast", {
-        hidden: settingsStore.hideCashPaid,
-      });
+    if (isAdminOrAbove.value) {
+      toggleCashFilterAsAdmin();
+      return;
     }
+    // Plain staff/frontdesk: purely local, unless an admin/super_admin
+    // currently has it locked shop-wide.
+    if (settingsStore.cashLockedByShop) return;
+    settingsStore.toggleHideCashPaid();
   } else if (e.ctrlKey && e.key === "8") {
     e.preventDefault();
     // Independent lock/broadcast for card, mirrors the cash macro exactly
@@ -441,6 +468,40 @@ watch(
   },
 );
 
+// Plain-HTTP fallback for the cash/card-filter socket broadcasts. A phone
+// browser suspends JS and drops its WebSocket while backgrounded — waiting
+// on the socket to reconnect and re-sync (see server.js) only helps once the
+// tab is actually running again to receive it, which can lag well behind
+// the user reopening it. This fetch doesn't depend on a live socket at all,
+// so it's called on mount, whenever the tab becomes visible again, and on a
+// low-frequency timer as a last-resort safety net.
+const resyncFilterState = async () => {
+  if (!authStore.isAuthenticated || authStore.isClient) return;
+  try {
+    const token = localStorage.getItem("token");
+    const res = await fetch("/api/v1/shop/filter-state", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.cashLocked) {
+      settingsStore.setCashLockedByShop(true, data.cashLockedBy);
+    } else {
+      settingsStore.setCashLockedByShop(false);
+      if (data.cashHidden !== null) settingsStore.setHideCashPaid(data.cashHidden);
+    }
+    if (data.cardHidden !== null) settingsStore.setHideCardPaid(data.cardHidden);
+  } catch {
+    // best-effort — the socket-connect sync and the next live broadcast are the other paths
+  }
+};
+
+const handleVisibilityChange = () => {
+  if (document.visibilityState === "visible") resyncFilterState();
+};
+
+let filterResyncTimer: ReturnType<typeof setInterval> | null = null;
+
 onMounted(() => {
   // Respect system or previously stored dark theme
   const storedTheme = localStorage.getItem("theme");
@@ -453,10 +514,16 @@ onMounted(() => {
     const token = localStorage.getItem("token");
     if (token) chatStore.connect(token);
   }
+
+  resyncFilterState();
+  document.addEventListener("visibilitychange", handleVisibilityChange);
+  filterResyncTimer = setInterval(resyncFilterState, 45000);
 });
 
 onUnmounted(() => {
   window.removeEventListener("keydown", handleKeydown);
+  document.removeEventListener("visibilitychange", handleVisibilityChange);
+  if (filterResyncTimer) clearInterval(filterResyncTimer);
 });
 </script>
 

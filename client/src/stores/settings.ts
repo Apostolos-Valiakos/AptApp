@@ -38,15 +38,21 @@ export const useSettingsStore = defineStore("settings", () => {
     localStorage.setItem("hideCashPaid", String(newVal));
   });
 
-  // Persisted, shop-wide Ctrl+1 lock (set via "Disconnect all users" in Shop
-  // Settings) — unlike hideCashPaid/hideCardPaid above, this isn't something
-  // the user chose; it applies from the very first render on any device,
-  // seeded from the user object the login response already carries.
+  // Persisted, shop-wide Ctrl+1 lock (set by an admin or super_admin's
+  // Ctrl+1, or by "Disconnect all users") — unlike hideCashPaid/hideCardPaid
+  // above, this isn't something the user chose; it applies from the very
+  // first render on any device, seeded from the user object the login
+  // response already carries. cashLockedByRole records WHICH tier owns the
+  // lock ('admin' | 'super_admin' | null) — an admin's lock can be released
+  // by any admin or a super_admin, but a super_admin's lock is exclusive to
+  // super_admin (mirrors canUnlockCashFilter in server.js).
   const cashLockedByShop = ref(!!user?.shop_force_hide_cash);
+  const cashLockedByRole = ref<string | null>(user?.shop_force_hide_cash_locked_by || null);
   if (cashLockedByShop.value) hideCashPaid.value = true;
 
-  const setCashLockedByShop = (locked: boolean) => {
+  const setCashLockedByShop = (locked: boolean, lockedByRole: string | null = null) => {
     cashLockedByShop.value = locked;
+    cashLockedByRole.value = locked ? lockedByRole : null;
     if (locked) hideCashPaid.value = true;
   };
 
@@ -101,6 +107,7 @@ export const useSettingsStore = defineStore("settings", () => {
     setHideCashPaid,
     toggleHideCashPaid,
     cashLockedByShop,
+    cashLockedByRole,
     setCashLockedByShop,
     hideCardPaid,
     setHideCardPaid,

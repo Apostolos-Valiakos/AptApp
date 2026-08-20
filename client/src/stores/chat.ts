@@ -233,11 +233,17 @@ export const useChatStore = defineStore("chat", () => {
       router.push("/login");
     });
 
-    socket.value.on("cash:filter:set", ({ hidden }: { hidden: boolean }) => {
-      remoteHideCash.value = hidden;
-      cashLocked.value = hidden; // locked when super_admin hides, free when super_admin unhides
-      localStorage.setItem("hideCashPaid", String(hidden));
-    });
+    socket.value.on(
+      "cash:filter:set",
+      ({ hidden, lockedBy }: { hidden: boolean; lockedBy?: string | null }) => {
+        remoteHideCash.value = hidden;
+        cashLocked.value = hidden; // blocks plain staff from toggling locally while true
+        localStorage.setItem("hideCashPaid", String(hidden));
+        // Every hide from an admin/super_admin is now a real persisted lock
+        // (see server.js POST /api/v1/shop/cash-filter) — reflect who owns it.
+        useSettingsStore().setCashLockedByShop(hidden && !!lockedBy, lockedBy || null);
+      },
+    );
 
     // The persisted shop-wide policy lock coming off (see release-cash-lock) —
     // separate from cash:filter:set, this only unlocks, it doesn't also
