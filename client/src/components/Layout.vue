@@ -332,13 +332,6 @@ const navItems = computed(() => [
     icon: "pi pi-chart-bar",
   },
   {
-    label: t("nav.membershipReport"),
-    path: "/app/membership-report",
-    ownerOnly: false,
-    financialsOnly: true,
-    icon: "pi pi-chart-pie",
-  },
-  {
     label: t("nav.platform"),
     path: "/app/platform/shops",
     ownerOnly: false,

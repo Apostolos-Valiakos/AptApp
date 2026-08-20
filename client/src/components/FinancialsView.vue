@@ -1,11 +1,19 @@
 <template>
   <div class="p-6 max-w-7xl mx-auto">
     <!-- Page Header -->
-    <div class="mb-8">
-      <h1 class="text-2xl font-bold text-gray-900">
-        {{ t("analytics.title") }}
-      </h1>
-      <p class="text-gray-500 mt-1 text-sm">{{ t("analytics.subtitle") }}</p>
+    <div class="mb-8 flex items-start justify-between gap-4 flex-wrap">
+      <div>
+        <h1 class="text-2xl font-bold text-gray-900">
+          {{ t("analytics.title") }}
+        </h1>
+        <p class="text-gray-500 mt-1 text-sm">{{ t("analytics.subtitle") }}</p>
+      </div>
+      <Button
+        :label="t('nav.membershipReport')"
+        icon="pi pi-chart-pie"
+        class="p-button-outlined flex-shrink-0"
+        @click="router.push('/app/membership-report')"
+      />
     </div>
 
     <!-- Filter Bar -->
@@ -734,6 +742,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import { useRouter } from "vue-router";
 import { useToast } from "primevue/usetoast";
 import TabView from "primevue/tabview";
 import TabPanel from "primevue/tabpanel";
@@ -742,6 +751,7 @@ import ClientDemographics from "./ClientDemographics.vue";
 import { useSettingsStore } from "../stores/settings";
 
 const { t } = useI18n();
+const router = useRouter();
 const toast = useToast();
 const settingsStore = useSettingsStore();
 const loading = ref(true);
