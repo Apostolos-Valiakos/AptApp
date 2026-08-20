@@ -4,6 +4,9 @@ if (process.env.NODE_ENV !== "production") {
 const cron = require("node-cron");
 const nodemailer = require("nodemailer");
 const pool = require("./db");
+const path = require("path");
+
+const LOGO_PATH = path.join(__dirname, "../client/static/logo for photos-02.png");
 
 const transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST,
@@ -53,6 +56,7 @@ const processRenewalReminders = async () => {
           subject: `Η συνδρομή σας (${row.tier_name}) λήγει σύντομα`,
           html: `
             <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 24px;">
+              <img src="cid:brand-logo" alt="${row.shop_name}" width="40" height="40" style="width: 40px; height: 40px; object-fit: contain; margin-bottom: 16px;" />
               <h2 style="color: #2C2C2C;">Γεια σας ${row.first_name},</h2>
               <p style="color: #5C4A3A; font-size: 15px; line-height: 1.6;">
                 Η συνδρομή σας <strong>${row.tier_name}</strong> στο ${row.shop_name} λήγει στις
@@ -63,6 +67,7 @@ const processRenewalReminders = async () => {
               </p>
             </div>
           `,
+          attachments: [{ filename: "logo.png", path: LOGO_PATH, cid: "brand-logo" }],
         });
         await pool.query(
           `UPDATE client_memberships SET renewal_reminder_sent_at = NOW() WHERE id = $1`,

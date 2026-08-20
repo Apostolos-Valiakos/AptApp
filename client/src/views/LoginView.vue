@@ -6,31 +6,9 @@
       <!-- Logo + Brand -->
       <div class="text-center mb-8">
         <div
-          class="w-14 h-14 bg-[var(--p-primary-100)] rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm"
+          class="w-14 h-14 bg-[var(--p-primary-100)] rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm overflow-hidden"
         >
-          <svg
-            viewBox="0 0 24 24"
-            class="w-8 h-8 stroke-[var(--p-primary-600)]"
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            stroke-width="1.5"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path
-              class="fill-[var(--p-primary-color)]"
-              fill-opacity="0.4"
-              d="M12 12.5C12 12.5 14.5 6 19 7C22 7.7 20.5 12.5 18 13.5C20.5 14.5 21 19 16.5 20.5C13.5 21.5 12 18 12 18"
-            />
-            <path
-              class="fill-[var(--p-primary-color)]"
-              fill-opacity="0.4"
-              d="M12 12.5C12 12.5 9.5 6 5 7C2 7.7 3.5 12.5 6 13.5C3.5 14.5 3 19 7.5 20.5C10.5 21.5 12 18 12 18"
-            />
-            <path d="M12 8V19" stroke-width="2" />
-            <path d="M12 8C12 8 10.5 3 8 4" />
-            <path d="M12 8C12 8 13.5 3 16 4" />
-          </svg>
+          <img src="../../static/logo for photos-02.png" class="w-9 h-9 object-contain" alt="Pure Spa & Massage Experience" />
         </div>
         <h1 class="text-2xl font-bold text-gray-900">Pure Spa &amp; Massage Experience</h1>
         <p class="text-gray-500 mt-1 text-sm">{{ t('login.subtitle') }}</p>

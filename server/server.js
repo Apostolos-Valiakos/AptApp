@@ -5068,6 +5068,13 @@ app.post("/api/v1/clients/:id/invite", authenticateToken, async (req, res) => {
       ...(replyEmail && { replyTo: replyEmail }),
       to: client.email,
       subject: "Invitation to your Client Portal",
+      attachments: [
+        {
+          filename: "logo.png",
+          path: path.join(__dirname, "../client/static/logo for photos-02.png"),
+          cid: "brand-logo",
+        },
+      ],
       html: `
 <!doctype html>
 <html>
@@ -5087,6 +5094,7 @@ app.post("/api/v1/clients/:id/invite", authenticateToken, async (req, res) => {
     <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 32px; overflow: hidden; box-shadow: 0 20px 25px -5px ${hexToRgba(brandColor, 0.1)}, 0 10px 10px -5px rgba(0, 0, 0, 0.04);">
 
       <div style="padding: 40px 40px 20px 40px; text-align: left">
+        <img src="cid:brand-logo" alt="${shopName}" width="48" height="48" style="width: 48px; height: 48px; object-fit: contain; margin-bottom: 16px;" />
         <div style="display: inline-block; background-color: ${brandColor}; color: white; padding: 4px 12px; border-radius: 9999px; font-size: 12px; font-weight: 700; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 0.05em;">
           Πρόσκληση
         </div>

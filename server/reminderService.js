@@ -6,6 +6,9 @@ const cron = require("node-cron");
 const nodemailer = require("nodemailer");
 const pool = require("./db");
 const crypto = require("crypto");
+const path = require("path");
+
+const LOGO_PATH = path.join(__dirname, "../client/static/logo for photos-02.png");
 
 // Same convention as vite.config.mjs (${env.API_URL}:${env.PORT}) — API_URL
 // is the bare host, the port is appended separately so this never needs to
@@ -197,6 +200,13 @@ const processReminders = async () => {
                   "
                 >
                   <div style="padding: 40px 40px 20px 40px; text-align: left">
+                    <img
+                      src="cid:brand-logo"
+                      alt="Pure Spa & Massage Experience"
+                      width="48"
+                      height="48"
+                      style="width: 48px; height: 48px; object-fit: contain; margin-bottom: 16px;"
+                    />
                     <div
                       style="
                         display: inline-block;
@@ -482,6 +492,7 @@ const processReminders = async () => {
           to: appt.client_email,
           subject: `Υπενθύμιση Ραντεβού - ${windowText}`,
           html: htmlContent,
+          attachments: [{ filename: "logo.png", path: LOGO_PATH, cid: "brand-logo" }],
         });
 
         // 3. Mark as sent using your specific column name
