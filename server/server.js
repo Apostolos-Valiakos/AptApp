@@ -4650,7 +4650,11 @@ app.get(
             (SELECT string_agg(s.name, ', ')
              FROM appointment_services aps
              JOIN services s ON aps.service_id = s.id
-             WHERE aps.appointment_id = a.id) as service_names
+             WHERE aps.appointment_id = a.id) as service_names,
+            (SELECT string_agg(DISTINCT st.name, ', ')
+             FROM appointment_services aps
+             JOIN staff st ON aps.staff_id = st.id
+             WHERE aps.appointment_id = a.id) as staff_names
          FROM appointments a
          WHERE a.client_id = $1 AND a.shop_id = $2
            AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) < NOW()

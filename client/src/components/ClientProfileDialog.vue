@@ -215,6 +215,9 @@
               <div class="text-sm text-gray-600 mt-1">
                 {{ appt.service_names || "No Services" }}
               </div>
+              <div v-if="appt.staff_names" class="text-xs text-gray-400 mt-0.5">
+                {{ appt.staff_names }}
+              </div>
             </div>
             <div
               class="flex justify-between w-full sm:w-auto sm:block text-right"

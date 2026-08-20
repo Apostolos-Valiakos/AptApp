@@ -96,11 +96,12 @@
             {{ formatApptDate(appt.start_time) }}
           </span>
           <span
-            class="text-right truncate font-medium"
+            class="text-right truncate"
             :class="isVoided(appt.status) ? 'line-through text-red-400' : 'text-gray-900'"
             :title="appt.service_names || ''"
           >
-            {{ appt.service_names || "—" }}
+            <span class="font-medium">{{ appt.service_names || "—" }}</span>
+            <span v-if="appt.staff_names" class="block text-xs text-gray-400 truncate">{{ appt.staff_names }}</span>
           </span>
         </div>
       </div>
