@@ -67,7 +67,7 @@
             class="flex justify-between items-center text-sm py-1.5 border-b border-gray-50 last:border-0"
           >
             <span class="text-gray-700">{{ m.first_name }} {{ m.last_name }} <span class="text-gray-400">({{ m.tier_name }})</span></span>
-            <span class="font-medium text-amber-600">{{ new Date(m.current_period_end).toLocaleDateString() }}</span>
+            <span class="font-medium text-amber-600">{{ new Date(m.current_period_end).toLocaleDateString("en-GB") }}</span>
           </div>
         </div>
       </div>

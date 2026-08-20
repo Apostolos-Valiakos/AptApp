@@ -543,7 +543,7 @@ const formatTime = (timestamp: string) => {
   if (now.toDateString() === date.toDateString()) {
     return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   }
-  return date.toLocaleDateString();
+  return date.toLocaleDateString("en-GB");
 };
 
 const formatFileSize = (bytes: number | undefined) => {
