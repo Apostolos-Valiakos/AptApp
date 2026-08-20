@@ -4,7 +4,11 @@
     <div
       v-if="activeContest"
       class="relative rounded-2xl overflow-hidden shadow-md"
-      :style="activeContest.image_url ? '' : 'background: linear-gradient(135deg, #8B6F4E, #D4A97A)'"
+      :style="
+        activeContest.image_url
+          ? ''
+          : 'background: linear-gradient(135deg, #8B6F4E, #D4A97A)'
+      "
     >
       <img
         v-if="activeContest.image_url"
@@ -18,15 +22,32 @@
         <div class="flex-1 text-white">
           <div class="flex items-center gap-2 mb-1">
             <i class="pi pi-trophy text-yellow-300 text-lg"></i>
-            <span class="text-xs font-semibold uppercase tracking-widest text-yellow-200">Διαγωνισμός</span>
+            <span
+              class="text-xs font-semibold uppercase tracking-widest text-yellow-200"
+              >Διαγωνισμός</span
+            >
           </div>
           <h2 class="text-xl font-bold">{{ activeContest.name }}</h2>
-          <p v-if="activeContest.description" class="text-sm text-white/80 mt-1">{{ activeContest.description }}</p>
+          <p
+            v-if="activeContest.description"
+            class="text-sm text-white/80 mt-1"
+          >
+            {{ activeContest.description }}
+          </p>
           <p class="text-xs text-white/60 mt-2">
-            Λήγει {{ new Date(activeContest.end_date).toLocaleDateString("el-GR", { day: "2-digit", month: "long", year: "numeric" }) }}
+            Λήγει
+            {{
+              new Date(activeContest.end_date).toLocaleDateString("el-GR", {
+                day: "2-digit",
+                month: "long",
+                year: "numeric",
+              })
+            }}
           </p>
         </div>
-        <div class="flex flex-col items-center bg-white/20 backdrop-blur-sm rounded-xl px-6 py-4 text-white min-w-[110px]">
+        <div
+          class="flex flex-col items-center bg-white/20 backdrop-blur-sm rounded-xl px-6 py-4 text-white min-w-[110px]"
+        >
           <span class="text-4xl font-black">{{ activeContest.entries }}</span>
           <span class="text-xs font-medium mt-1 text-white/80">Συμμετοχές</span>
         </div>
@@ -53,7 +74,9 @@
       <div class="md:col-span-1 space-y-6">
         <!-- My Membership -->
         <div class="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
-          <h3 class="font-bold text-gray-700 mb-4">{{ t("portal.membership.title") }}</h3>
+          <h3 class="font-bold text-gray-700 mb-4">
+            {{ t("portal.membership.title") }}
+          </h3>
 
           <div v-if="membershipLoading" class="text-center py-4">
             <i class="pi pi-spin pi-spinner text-2xl text-gray-300"></i>
@@ -62,15 +85,31 @@
           <template v-else>
             <div v-if="membership" class="space-y-3">
               <div class="flex items-center justify-between">
-                <span class="font-bold text-[var(--p-primary-600)]">{{ membership.tier_name }}</span>
+                <span class="font-bold text-[var(--p-primary-600)]">{{
+                  membership.tier_name
+                }}</span>
                 <span class="text-xs text-gray-400">
-                  {{ t("portal.membership.renewsOn", { date: new Date(membership.current_period_end).toLocaleDateString() }) }}
+                  {{
+                    t("portal.membership.renewsOn", {
+                      date: new Date(
+                        membership.current_period_end,
+                      ).toLocaleDateString("en-GB"),
+                    })
+                  }}
                 </span>
               </div>
-              <div v-for="u in membershipUsage" :key="u.service_id" class="text-sm flex justify-between">
+              <div
+                v-for="u in membershipUsage"
+                :key="u.service_id"
+                class="text-sm flex justify-between"
+              >
                 <span class="text-gray-600">{{ u.service_name }}</span>
                 <span class="font-medium text-gray-900">
-                  {{ u.quota_per_month === null ? `${u.used_this_month} / ∞` : `${u.used_this_month} / ${u.quota_per_month}` }}
+                  {{
+                    u.quota_per_month === null
+                      ? `${u.used_this_month} / ∞`
+                      : `${u.used_this_month} / ${u.quota_per_month}`
+                  }}
                 </span>
               </div>
             </div>
@@ -79,19 +118,26 @@
             </div>
           </template>
 
-          <div class="border-t border-gray-100 mt-4 pt-4 flex flex-col items-center">
-            <canvas ref="qrCanvas" class="w-32 h-32"></canvas>
-            <p class="text-xs text-gray-400 mt-2 text-center">{{ t("portal.membership.qrNote") }}</p>
+          <div
+            class="border-t border-gray-100 mt-4 pt-4 flex flex-col items-center"
+          >
+            <canvas
+              ref="qrCanvas"
+              class="w-32 h-32 cursor-pointer transition-transform hover:scale-105"
+              @click="showQrModal = true"
+            ></canvas>
+            <p class="text-xs text-gray-400 mt-2 text-center">
+              {{ t("portal.membership.qrNote") }}
+            </p>
           </div>
         </div>
 
         <!-- Upcoming Appointments -->
-        <div class="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+        <!-- <div class="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
           <h3 class="font-bold text-gray-700 mb-4">
             {{ t("portal.upcoming.title") }}
           </h3>
 
-          <!-- Empty state -->
           <div
             v-if="upcomingAppointments.length === 0"
             class="flex flex-col items-center justify-center py-10 text-center"
@@ -145,10 +191,10 @@
               </button>
             </div>
           </div>
-        </div>
+        </div> -->
 
         <!-- Documents -->
-        <div class="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+        <!-- <div class="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
           <h3 class="font-bold text-gray-700 mb-4">
             {{ t("portal.documents.title") }}
           </h3>
@@ -183,7 +229,7 @@
               />
             </li>
           </ul>
-        </div>
+        </div> -->
       </div>
 
       <!-- Edit Contact Info, Change Password, Email Notifications -->
@@ -360,7 +406,7 @@
           >
             <Column field="start_time" :header="t('portal.past.date')">
               <template #body="{ data }">
-                {{ new Date(data.start_time).toLocaleDateString() }}
+                {{ new Date(data.start_time).toLocaleDateString("en-GB") }}
               </template>
             </Column>
 
@@ -386,6 +432,18 @@
       </div> -->
     </div>
   </div>
+
+  <Dialog
+    v-model:visible="showQrModal"
+    modal
+    :header="t('portal.membership.qrNote')"
+    :style="{ width: '360px', maxWidth: '90vw' }"
+    @show="renderLargeQr"
+  >
+    <div class="flex justify-center py-4">
+      <canvas ref="qrCanvasLarge" class="w-64 h-64"></canvas>
+    </div>
+  </Dialog>
 </template>
 
 <script setup lang="ts">
@@ -414,6 +472,18 @@ const membership = ref<any>(null);
 const membershipUsage = ref<any[]>([]);
 const membershipLoading = ref(true);
 const qrCanvas = ref<HTMLCanvasElement | null>(null);
+const qrCanvasLarge = ref<HTMLCanvasElement | null>(null);
+const showQrModal = ref(false);
+
+// The dialog's content only mounts once it's actually shown, so the large
+// canvas doesn't exist yet on click — render it on the Dialog's @show event.
+const renderLargeQr = () => {
+  if (qrCanvasLarge.value && clientData.value?.qr_token) {
+    QRCode.toCanvas(qrCanvasLarge.value, clientData.value.qr_token, {
+      width: 256,
+    }).catch(() => {});
+  }
+};
 
 const showEditProfile = ref(false);
 const showChangePassword = ref(false);
@@ -482,9 +552,12 @@ onMounted(async () => {
   }
 
   try {
-    const memRes = await fetch(`/api/v1/clients/${authStore.clientId}/membership`, {
-      headers: { Authorization: `Bearer ${authStore.token}` },
-    });
+    const memRes = await fetch(
+      `/api/v1/clients/${authStore.clientId}/membership`,
+      {
+        headers: { Authorization: `Bearer ${authStore.token}` },
+      },
+    );
     if (memRes.ok) {
       const memData = await memRes.json();
       membership.value = memData.membership;
@@ -498,7 +571,9 @@ onMounted(async () => {
   if (clientData.value?.qr_token) {
     await nextTick();
     if (qrCanvas.value) {
-      QRCode.toCanvas(qrCanvas.value, clientData.value.qr_token, { width: 128 }).catch(() => {});
+      QRCode.toCanvas(qrCanvas.value, clientData.value.qr_token, {
+        width: 128,
+      }).catch(() => {});
     }
   }
 });
@@ -515,9 +590,19 @@ const cancelAppointment = async (appt: any) => {
     history.value = history.value.map((a: any) =>
       a.id === appt.id ? { ...a, status: "cancelled" } : a,
     );
-    toast.add({ severity: "success", summary: "Cancelled", detail: "Appointment cancelled.", life: 3000 });
+    toast.add({
+      severity: "success",
+      summary: "Cancelled",
+      detail: "Appointment cancelled.",
+      life: 3000,
+    });
   } catch (e: any) {
-    toast.add({ severity: "error", summary: "Error", detail: e.message, life: 3000 });
+    toast.add({
+      severity: "error",
+      summary: "Error",
+      detail: e.message,
+      life: 3000,
+    });
   }
 };
 
@@ -533,9 +618,19 @@ const confirmAppointment = async (appt: any) => {
     history.value = history.value.map((a: any) =>
       a.id === appt.id ? { ...a, status: "confirmed" } : a,
     );
-    toast.add({ severity: "success", summary: "Confirmed", detail: "Appointment confirmed.", life: 3000 });
+    toast.add({
+      severity: "success",
+      summary: "Confirmed",
+      detail: "Appointment confirmed.",
+      life: 3000,
+    });
   } catch (e: any) {
-    toast.add({ severity: "error", summary: "Error", detail: e.message, life: 3000 });
+    toast.add({
+      severity: "error",
+      summary: "Error",
+      detail: e.message,
+      life: 3000,
+    });
   }
 };
 
