@@ -27,9 +27,28 @@
         >
           <i class="pi pi-chevron-right text-sm"></i>
         </button>
-        <h2 class="text-sm md:text-base font-bold text-gray-800 min-w-[120px] md:min-w-[180px] select-none">
-          {{ currentTitle }}
-        </h2>
+        <div class="relative">
+          <button
+            @click.stop="toggleDatePicker"
+            class="flex items-center gap-1 text-sm md:text-base font-bold text-gray-800 min-w-[120px] md:min-w-[180px] select-none hover:text-[var(--p-primary-700)] transition-colors"
+          >
+            {{ currentTitle }}
+            <i class="pi pi-chevron-down text-[10px] text-gray-400"></i>
+          </button>
+          <div
+            v-if="showDatePicker"
+            @click.stop
+            class="absolute top-full left-0 mt-2 z-50 bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden"
+          >
+            <DatePicker
+              inline
+              v-model="pickerDate"
+              dateFormat="dd/mm/yy"
+              :minDate="isStaffRole ? todayDate : undefined"
+              @date-select="onDatePicked"
+            />
+          </div>
+        </div>
       </div>
 
       <!-- RIGHT: Controls -->
@@ -240,6 +259,13 @@ const currentView = ref("resourceTimeGridDay");
 const currentStart = ref("");
 const currentEnd = ref("");
 const isFetching = ref(false);
+const showDatePicker = ref(false);
+const pickerDate = ref<Date | null>(null);
+const todayDate = computed(() => {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+});
 
 const canGoPrev = computed(() => {
   if (!isStaffRole.value || !currentStart.value) return true;
@@ -338,7 +364,27 @@ const changeView = (viewName: string) => {
   }
 };
 
-const closeMenus = () => {};
+const closeMenus = () => {
+  showDatePicker.value = false;
+};
+
+// --- Date picker popover ---
+const toggleDatePicker = () => {
+  if (!showDatePicker.value) pickerDate.value = calendarApi.value?.getDate() ?? new Date();
+  showDatePicker.value = !showDatePicker.value;
+};
+
+const onDatePicked = (date: Date) => {
+  const api = calendarApi.value;
+  if (api) {
+    // Don't read api.view.title synchronously here — when the date range
+    // actually changes, FullCalendar hasn't recomputed it yet. Let the
+    // existing datesSet callback update the title once it actually renders.
+    api.changeView("resourceTimeGridDay", date);
+    currentView.value = "resourceTimeGridDay";
+  }
+  showDatePicker.value = false;
+};
 
 // --- Color helpers ---
 const stringToPastelColor = (str: string) => {
