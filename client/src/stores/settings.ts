@@ -5,10 +5,14 @@ export const useSettingsStore = defineStore("settings", () => {
   const user = JSON.parse(localStorage.getItem("user") || "null");
   const isStaff = user?.role === "staff";
 
-  const savedFilter = localStorage.getItem("scheduler_resource_filter");
-  const resourceFilter = ref<"all" | "me">(
-    isStaff ? "me" : (savedFilter as "all" | "me") || "all",
-  );
+  // "me" is currently only ever a deliberate choice for the "staff" role —
+  // the UI has no way for any other role to select it (ColorModelToggle only
+  // renders for staff; see below). Reading a saved value for non-staff roles
+  // let a stale "me" from an earlier staff login on a shared/reception
+  // device silently carry over into e.g. a frontdesk session, whose own
+  // staff profile is deliberately hidden from the calendar — leaving them
+  // with an empty schedule. Non-staff always start on "all".
+  const resourceFilter = ref<"all" | "me">(isStaff ? "me" : "all");
 
   const setResourceFilter = (mode: "all" | "me") => {
     if (isStaff) return;

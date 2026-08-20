@@ -85,7 +85,7 @@
           </button>
         </div>
 
-        <ColorModelToggle />
+        <ColorModelToggle v-if="settings.isStaff" />
 
         <!-- Add New -->
         <button
