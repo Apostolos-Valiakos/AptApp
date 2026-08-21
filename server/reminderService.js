@@ -10,10 +10,14 @@ const path = require("path");
 
 const LOGO_PATH = path.join(__dirname, "../client/static/logo for photos-02.png");
 
-// Same convention as vite.config.mjs (${env.API_URL}:${env.PORT}) — API_URL
-// is the bare host, the port is appended separately so this never needs to
-// be touched when moving between local/dev/production environments.
-const PUBLIC_BASE_URL = `${process.env.API_URL}:${process.env.PORT}`;
+// Local/LAN dev derives this from API_URL:PORT (same convention as
+// vite.config.mjs), since there's no reverse proxy hiding the port there.
+// In production this must be set explicitly — behind Nginx the app only
+// listens on 127.0.0.1:3000, so a link built as https://domain:3000/...
+// would be unreachable from outside the VPS. Same override pattern as
+// FRONTEND_URL below (an explicit full origin, used as-is, no port math).
+const PUBLIC_BASE_URL =
+  process.env.PUBLIC_BASE_URL || `${process.env.API_URL}:${process.env.PORT}`;
 
 // 1. Configure Nodemailer
 const transporter = nodemailer.createTransport({

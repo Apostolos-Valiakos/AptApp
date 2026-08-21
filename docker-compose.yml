@@ -6,22 +6,15 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD} # From .env
       POSTGRES_DB: ${POSTGRES_DB} # e.g., fresha_clone
       POSTGRES_USER: postgres # Or custom user
-      TZ: "UTC"
+      # Must match the app service's TZ below — appointment scheduling, the
+      # staff working-hours/time-off day-of-week logic, and reminder emails
+      # all depend on wall-clock day/time, not UTC. Change both if the shop
+      # is not in Greece.
+      TZ: "Europe/Athens"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    volumes:
-      - redisdata:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -34,25 +27,28 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      redis:
-        condition: service_healthy
     environment:
       POSTGRES_URI: postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
-      REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET}
       PORT: 3000
       NODE_ENV: production
       MESSAGE_ENCRYPTION_KEY: ${MESSAGE_ENCRYPTION_KEY}
-      ALLOWED_ORIGIN: ${ALLOWED_ORIGIN} # Update to your domain in prod
-      # Add any other env vars from your .env (e.g., API_URL if needed)
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS} # comma-separated; server.js reads the plural form
       EMAIL_HOST: ${EMAIL_HOST}
       EMAIL_PORT: ${EMAIL_PORT}
       EMAIL_USER: ${EMAIL_USER}
       EMAIL_PASS: ${EMAIL_PASS}
       APP_NAME: ${APP_NAME}
       FRONTEND_URL: ${FRONTEND_URL}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
+      API_URL: ${API_URL}
+      OWNER_USERNAME: ${OWNER_USERNAME} # without these, there is no way to log into the Platform console
+      OWNER_PASSWORD: ${OWNER_PASSWORD}
+      TZ: "Europe/Athens" # must match the db service above
     ports:
-      - "3000:3000" # Expose to host (access http://your-vps-ip:3000)
+      # Bound to localhost only — Nginx on the host is the public entry point
+      # (see DEPLOY.md). Do not change this to "3000:3000" in production.
+      - "127.0.0.1:3000:3000"
     volumes:
       - uploads:/app/uploads # Persistent file uploads (adjust path if your uploadDir is different)
     healthcheck:
@@ -64,20 +60,4 @@ services:
 
 volumes:
   pgdata:
-  redisdata:
   uploads:
-# docker compose up -d
-# docker compose exec -i db psql -U postgres -d fresha_clone < backup.sql
-# git pull → docker compose down && docker compose up -d --build
-
-# sudo docker compose exec -T db psql -U postgres -d fresha_clone -c "\dt"          # list all tables
-# sudo docker compose exec -T db psql -U postgres -d fresha_clone -c "SELECT count(*) FROM clients;"  # example table check
-
-# cat db_backup.sql | sudo docker compose exec -T db pg_restore \
-#   --verbose \
-#   --clean \
-#   --if-exists \
-#   --no-owner \
-#   --no-privileges \
-#   -U postgres \
-#   -d fresha_clone
