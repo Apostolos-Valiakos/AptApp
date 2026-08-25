@@ -10,6 +10,7 @@ export interface WorkingHourRange {
   day_of_week: number; // 0=Sunday..6=Saturday, matches JS Date#getDay()
   start_time: string; // "HH:MM" or "HH:MM:SS"
   end_time: string;
+  effective_from: string; // "YYYY-MM-DD" — rows sharing (staff_id, effective_from) form one version
 }
 
 export interface TimeOffEntry {
@@ -61,17 +62,33 @@ export const isDuringTimeOff = (
   });
 };
 
-export const getWorkingRangesForDay = (
+// Resolves whichever schedule VERSION was/is active for a staff member as of
+// a given date — not just "their pattern," since it can change over time.
+// Returns null when no version exists as of that date at all (distinct from
+// a version existing with zero ranges for that weekday, i.e. a real day off —
+// both used to collapse into the same [] under the old single-pattern model,
+// which is exactly the ambiguity this needs to resolve): null means
+// "unrestricted" everywhere it's consumed, [] means "blocked, day off."
+export const getWorkingRangesForDate = (
   workingHours: WorkingHourRange[],
   staffId: any,
-  dayOfWeek: number,
-): { start: string; end: string }[] =>
-  (workingHours || [])
-    .filter(
-      (w) => String(w.staff_id) === String(staffId) && w.day_of_week === dayOfWeek,
-    )
+  date: Date | string,
+): { start: string; end: string }[] | null => {
+  const dateStr = typeof date === "string" ? date.slice(0, 10) : toLocalDateStr(date);
+  const dow = new Date(`${dateStr}T00:00:00`).getDay();
+  const staffRows = (workingHours || []).filter(
+    (w) => String(w.staff_id) === String(staffId) && w.effective_from <= dateStr,
+  );
+  if (staffRows.length === 0) return null;
+  const latest = staffRows.reduce(
+    (m, w) => (w.effective_from > m ? w.effective_from : m),
+    staffRows[0].effective_from,
+  );
+  return staffRows
+    .filter((w) => w.effective_from === latest && w.day_of_week === dow)
     .map((w) => ({ start: w.start_time, end: w.end_time }))
     .sort((a, b) => a.start.localeCompare(b.start));
+};
 
 export const isWithinWorkingHours = (
   workingHours: WorkingHourRange[],
@@ -83,8 +100,9 @@ export const isWithinWorkingHours = (
   const staffMember = (staffList || []).find((s) => String(s.id) === String(staffId));
   if (!staffMember?.working_hours_enabled) return true; // unconfigured — unrestricted
 
-  const ranges = getWorkingRangesForDay(workingHours, staffId, start.getDay());
-  if (ranges.length === 0) return false; // opted in, day off
+  const ranges = getWorkingRangesForDate(workingHours, staffId, start);
+  if (ranges === null) return true; // no version resolvable for this date — fail open
+  if (ranges.length === 0) return false; // a version exists, this weekday is a real day off
 
   const dateStr = toLocalDateStr(start);
   return ranges.some((r) => {
@@ -103,9 +121,9 @@ export const isStaffAvailable = (params: {
   end: Date;
 }): { available: boolean; reason?: "time_off" | "outside_hours" } => {
   if (!params.staffId) return { available: true };
-  // Mirrors the server-side exemption in assertStaffAvailable — neither
-  // time-off nor working-hours are historically versioned, so re-validating
-  // a past appointment against the CURRENT schedule would block unrelated
+  // Mirrors the server-side exemption in assertStaffAvailable — deliberately
+  // unconditional even though working-hours now has effective-dated versions:
+  // re-validating a past appointment on every save would block unrelated
   // edits (payments, notes) the moment a staff member's schedule changes.
   if (params.start.getTime() < Date.now()) return { available: true };
   if (isDuringTimeOff(params.timeOff, params.staffId, params.start, params.end)) {

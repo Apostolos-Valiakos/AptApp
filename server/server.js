@@ -125,13 +125,13 @@ class StaffUnavailableError extends Error {
 // (pre-existing, working) time-off conflict-check query for consistency.
 const assertStaffAvailable = async (client, { staffId, shopId, startTime, durationMinutes }) => {
   if (!staffId) return;
-  // Both staff_working_hours and staff_time_off reflect the CURRENT schedule —
-  // there's no historical versioning. Without this, editing an unrelated
-  // field on a past appointment (recording a payment, marking a no-show)
-  // would start failing the moment a staff member's schedule changes,
-  // since every save re-validates staffId/start_time/duration regardless of
-  // whether the time itself is being touched. Only future/current-moment
-  // bookings need to respect the live schedule.
+  // Deliberately unconditional, regardless of staff_working_hours now having
+  // effective-dated versions: editing an unrelated field on a past
+  // appointment (recording a payment, marking a no-show) must never start
+  // failing just because a staff member's schedule has since changed, since
+  // every save re-validates staffId/start_time/duration whether or not the
+  // time itself is being touched. Only future/current-moment bookings need
+  // to respect the live schedule.
   if (new Date(startTime).getTime() < Date.now()) return;
   const duration = durationMinutes || 60;
 
@@ -155,15 +155,34 @@ const assertStaffAvailable = async (client, { staffId, shopId, startTime, durati
   );
   if (!staffRow.rows[0]?.working_hours_enabled) return;
 
+  // Version-scoped: resolves whichever schedule was/will be active as of this
+  // appointment's own date, not necessarily "today's" pattern — a booking for
+  // a date on/after a staged future version's effective_from must be checked
+  // against THAT version, since by then it's the one actually governing.
+  //
+  // Two queries, not one: if no version can be resolved at all for this date
+  // (e.g. working_hours_enabled was just turned on with only a staged FUTURE
+  // version and no "current" one yet, leaving a gap before it), MAX(...)
+  // returns NULL, and "effective_from = NULL" would never match any row in a
+  // single combined query — silently blocking the booking instead of failing
+  // open. Resolving the version first makes "no data for this date" explicit.
+  const versionRow = await client.query(
+    `SELECT MAX(effective_from) AS latest FROM staff_working_hours
+     WHERE staff_id = $1 AND effective_from <= $2::timestamptz::date`,
+    [staffId, startTime],
+  );
+  const latestVersion = versionRow.rows[0]?.latest;
+  if (!latestVersion) return; // no schedule data as of this date — fail open
+
   const fits = await client.query(
     `SELECT 1 FROM staff_working_hours
-     WHERE staff_id = $1
-       AND day_of_week = EXTRACT(DOW FROM $2::timestamptz)
-       AND $2::timestamptz::time >= start_time
-       AND ($2::timestamptz + ($3 || ' minutes')::interval)::time <= end_time
-       AND ($2::timestamptz + ($3 || ' minutes')::interval)::date = $2::timestamptz::date
+     WHERE staff_id = $1 AND effective_from = $2
+       AND day_of_week = EXTRACT(DOW FROM $3::timestamptz)
+       AND $3::timestamptz::time >= start_time
+       AND ($3::timestamptz + ($4 || ' minutes')::interval)::time <= end_time
+       AND ($3::timestamptz + ($4 || ' minutes')::interval)::date = $3::timestamptz::date
      LIMIT 1`,
-    [staffId, startTime, duration],
+    [staffId, latestVersion, startTime, duration],
   );
   if (fits.rows.length === 0) throw new StaffUnavailableError("outside_working_hours", staffId);
 };
@@ -1199,10 +1218,18 @@ app.delete("/api/v1/staff/:id/time-off/:timeOffId", authenticateToken, async (re
 
 // Shop-wide working hours — one shot fetch for the calendar (day-view resource
 // visibility + off-hours shading), mirrors the shop-wide /api/v1/time-off.
+// Returns EVERY version (past/current/upcoming) unfiltered — the client
+// resolves whichever one applies to the currently-displayed calendar date
+// itself (see client/src/utils/staffAvailability.ts's getWorkingRangesForDate),
+// so a single fetch here covers navigating to any past or future week without
+// a new date-scoped endpoint. The ::text cast avoids a known bug: pg parses
+// DATE into a local-midnight JS Date, which serializes to JSON in UTC and can
+// silently shift the date by a day depending on timezone.
 app.get("/api/v1/working-hours", authenticateToken, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT staff_id, day_of_week, start_time, end_time FROM staff_working_hours WHERE shop_id = $1`,
+      `SELECT staff_id, day_of_week, start_time, end_time, effective_from::text AS effective_from
+       FROM staff_working_hours WHERE shop_id = $1`,
       [req.shopId],
     );
     res.json(rows);
@@ -1212,6 +1239,10 @@ app.get("/api/v1/working-hours", authenticateToken, async (req, res) => {
   }
 });
 
+// "current" = the version active as of today (MAX effective_from <= today);
+// "upcoming" = a staged future version (MIN effective_from > today), if any —
+// by construction of the POST handler below, at most one distinct future
+// effective_from ever exists per staff, so this is safely a single version.
 app.get("/api/v1/staff/:id/working-hours", authenticateToken, async (req, res) => {
   try {
     const staff = await pool.query(
@@ -1221,12 +1252,33 @@ app.get("/api/v1/staff/:id/working-hours", authenticateToken, async (req, res) =
     if (staff.rows.length === 0) {
       return res.status(404).json({ error: "Staff member not found" });
     }
-    const { rows } = await pool.query(
-      `SELECT day_of_week, start_time, end_time FROM staff_working_hours
-       WHERE staff_id = $1 AND shop_id = $2 ORDER BY day_of_week, start_time`,
+
+    const current = await pool.query(
+      `SELECT day_of_week, start_time, end_time, effective_from::text AS effective_from
+       FROM staff_working_hours
+       WHERE staff_id = $1 AND shop_id = $2
+         AND effective_from = (
+           SELECT MAX(effective_from) FROM staff_working_hours
+           WHERE staff_id = $1 AND shop_id = $2 AND effective_from <= CURRENT_DATE)
+       ORDER BY day_of_week, start_time`,
       [req.params.id, req.shopId],
     );
-    res.json({ enabled: staff.rows[0].working_hours_enabled, ranges: rows });
+    const upcoming = await pool.query(
+      `SELECT day_of_week, start_time, end_time, effective_from::text AS effective_from
+       FROM staff_working_hours
+       WHERE staff_id = $1 AND shop_id = $2
+         AND effective_from = (
+           SELECT MIN(effective_from) FROM staff_working_hours
+           WHERE staff_id = $1 AND shop_id = $2 AND effective_from > CURRENT_DATE)
+       ORDER BY day_of_week, start_time`,
+      [req.params.id, req.shopId],
+    );
+
+    res.json({
+      enabled: staff.rows[0].working_hours_enabled,
+      current: current.rows.length > 0 ? { effective_from: current.rows[0].effective_from, ranges: current.rows } : null,
+      upcoming: upcoming.rows.length > 0 ? { effective_from: upcoming.rows[0].effective_from, ranges: upcoming.rows } : null,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Internal server error" });
@@ -1234,15 +1286,20 @@ app.get("/api/v1/staff/:id/working-hours", authenticateToken, async (req, res) =
 });
 
 const TIME_HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+const DATE_YYYYMMDD = /^\d{4}-\d{2}-\d{2}$/;
 
-// Replaces a staff member's weekly working-hours pattern wholesale. Warns
-// about future appointments the new pattern would no longer cover (same
-// conflicts_found/force pattern as staff_time_off) unless force=true.
-// enabled=false always clears everything with no conflict check, since
-// disabling can only ever loosen restrictions, never create a new one.
+// Saves exactly ONE effective-dated version — either "current" (effective_from
+// = today) or "upcoming" (effective_from in the future); which one is decided
+// entirely by the submitted date, not a separate flag. Warns about
+// appointments on/after this version's effective_from that it would no
+// longer cover (same conflicts_found/force pattern as staff_time_off) unless
+// force=true — appointments before effective_from are governed by whatever
+// version applies there instead, untouched by this save. enabled=false always
+// clears everything (current AND any staged upcoming version) with no
+// conflict check, since disabling can only ever loosen restrictions.
 app.post("/api/v1/staff/:id/working-hours", authenticateToken, async (req, res) => {
   const { id } = req.params;
-  const { enabled, schedule, force } = req.body;
+  const { enabled, effective_from, schedule, force } = req.body;
 
   if (typeof enabled !== "boolean") {
     return res.status(400).json({ error: "enabled must be a boolean" });
@@ -1250,6 +1307,9 @@ app.post("/api/v1/staff/:id/working-hours", authenticateToken, async (req, res) 
 
   let proposed = [];
   if (enabled) {
+    if (!DATE_YYYYMMDD.test(effective_from || "")) {
+      return res.status(400).json({ error: "effective_from must be YYYY-MM-DD" });
+    }
     if (!Array.isArray(schedule)) {
       return res.status(400).json({ error: "schedule must be an array" });
     }
@@ -1292,11 +1352,38 @@ app.post("/api/v1/staff/:id/working-hours", authenticateToken, async (req, res) 
       return res.status(404).json({ error: "Staff member not found" });
     }
 
+    let isCurrentSlot = false;
+    if (enabled) {
+      // Server's CURRENT_DATE (not Node's clock) is authoritative — matches
+      // the timezone convention every other date/time check in this guard uses.
+      const todayRow = await pool.query(`SELECT CURRENT_DATE::text AS today`);
+      const today = todayRow.rows[0].today;
+      if (effective_from < today) {
+        return res.status(400).json({ error: "effective_from cannot be in the past" });
+      }
+      isCurrentSlot = effective_from === today;
+    }
+
     if (enabled && force !== true) {
+      // Asymmetric bound: saving "current" while an upcoming version is
+      // already staged must not flag appointments on/after that staged
+      // version's effective_from — those are its concern, not this save's.
+      // Saving "upcoming" has no upper bound (nothing can exist beyond the
+      // single staged slot).
+      let upperBound = null;
+      if (isCurrentSlot) {
+        const upcomingRow = await pool.query(
+          `SELECT MIN(effective_from)::text AS ef FROM staff_working_hours
+           WHERE staff_id = $1 AND effective_from > CURRENT_DATE`,
+          [id],
+        );
+        upperBound = upcomingRow.rows[0]?.ef || null;
+      }
+
       const conflicts = await pool.query(
         `
         WITH proposed(day_of_week, start_time, end_time) AS (
-          SELECT * FROM json_to_recordset($3::json) AS x(day_of_week int, start_time time, end_time time)
+          SELECT * FROM json_to_recordset($4::json) AS x(day_of_week int, start_time time, end_time time)
         )
         SELECT a.id, aps.start_time, s.name AS service_name,
                c.first_name || ' ' || c.last_name AS client_name
@@ -1306,7 +1393,8 @@ app.post("/api/v1/staff/:id/working-hours", authenticateToken, async (req, res) 
         LEFT JOIN clients c ON c.id = a.client_id
         WHERE aps.staff_id = $1 AND a.shop_id = $2
           AND a.status != 'cancelled' AND COALESCE(a.is_block, false) = false
-          AND aps.start_time >= NOW()
+          AND aps.start_time >= $3::date
+          AND ($5::date IS NULL OR aps.start_time < $5::date)
           AND NOT EXISTS (
             SELECT 1 FROM proposed p
             WHERE p.day_of_week = EXTRACT(DOW FROM aps.start_time)
@@ -1315,7 +1403,7 @@ app.post("/api/v1/staff/:id/working-hours", authenticateToken, async (req, res) 
               AND (aps.start_time + (COALESCE(aps.duration_override, 60) || ' minutes')::interval)::date = aps.start_time::date
           )
         ORDER BY aps.start_time`,
-        [id, req.shopId, JSON.stringify(proposed)],
+        [id, req.shopId, effective_from, JSON.stringify(proposed), upperBound],
       );
       if (conflicts.rows.length > 0) {
         return res.status(409).json({ error: "conflicts_found", conflicts: conflicts.rows });
@@ -1325,13 +1413,30 @@ app.post("/api/v1/staff/:id/working-hours", authenticateToken, async (req, res) 
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      await client.query(`DELETE FROM staff_working_hours WHERE staff_id = $1`, [id]);
+      if (!enabled) {
+        // Disabling wipes everything — current and any staged upcoming version.
+        await client.query(`DELETE FROM staff_working_hours WHERE staff_id = $1`, [id]);
+      } else if (isCurrentSlot) {
+        // Only today's slot — never touches superseded (past) versions, which
+        // must persist as the historical record the calendar's Day view relies on.
+        await client.query(
+          `DELETE FROM staff_working_hours WHERE staff_id = $1 AND effective_from = CURRENT_DATE`,
+          [id],
+        );
+      } else {
+        // Removes any previously-staged version regardless of its exact date —
+        // this is what enforces "at most one staged upcoming version."
+        await client.query(
+          `DELETE FROM staff_working_hours WHERE staff_id = $1 AND effective_from > CURRENT_DATE`,
+          [id],
+        );
+      }
       if (enabled) {
         for (const r of proposed) {
           await client.query(
-            `INSERT INTO staff_working_hours (staff_id, shop_id, day_of_week, start_time, end_time)
-             VALUES ($1, $2, $3, $4, $5)`,
-            [id, req.shopId, r.day_of_week, r.start_time, r.end_time],
+            `INSERT INTO staff_working_hours (staff_id, shop_id, day_of_week, start_time, end_time, effective_from)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [id, req.shopId, r.day_of_week, r.start_time, r.end_time, effective_from],
           );
         }
       }
@@ -1348,7 +1453,25 @@ app.post("/api/v1/staff/:id/working-hours", authenticateToken, async (req, res) 
       client.release();
     }
 
-    res.json({ success: true, enabled, schedule: proposed });
+    res.json({ success: true, enabled, effective_from: enabled ? effective_from : null, schedule: proposed });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Cancels a staged upcoming version, leaving "current" to govern indefinitely.
+// Not the same as saving an empty schedule for it (which would mean "day off
+// every day starting then") — this removes the staged change entirely. No
+// conflict check needed: canceling only ever loosens a not-yet-active
+// restriction, same reasoning as enabled=false.
+app.delete("/api/v1/staff/:id/working-hours/upcoming", authenticateToken, async (req, res) => {
+  try {
+    const { rowCount } = await pool.query(
+      `DELETE FROM staff_working_hours WHERE staff_id = $1 AND shop_id = $2 AND effective_from > CURRENT_DATE`,
+      [req.params.id, req.shopId],
+    );
+    res.json({ success: true, cleared: rowCount });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Internal server error" });
@@ -5685,6 +5808,16 @@ app.put("/api/v1/portal/notifications", authenticateToken, async (req, res) => {
         CHECK (end_time > start_time)
       )
     `);
+    // Effective-dated schedule versions: rows sharing (staff_id, effective_from)
+    // collectively form one version. "Current" and "upcoming" aren't stored
+    // states — they're just whichever version has the latest effective_from
+    // <=/> CURRENT_DATE at query time, so a staged version becomes current
+    // automatically the day it arrives, with no rollover job needed. Existing
+    // rows default to today, which resolves identically to the old
+    // single-pattern behavior for every past date (no version found -> unrestricted).
+    await pool.query(
+      `ALTER TABLE staff_working_hours ADD COLUMN IF NOT EXISTS effective_from DATE NOT NULL DEFAULT CURRENT_DATE`,
+    );
 
     // ==================== PERFORMANCE INDEXES ====================
     const startupIndexes = [
@@ -5704,6 +5837,7 @@ app.put("/api/v1/portal/notifications", authenticateToken, async (req, res) => {
       "CREATE INDEX IF NOT EXISTS idx_staff_working_hours_staff_id ON staff_working_hours (staff_id)",
       "CREATE INDEX IF NOT EXISTS idx_staff_working_hours_staff_day ON staff_working_hours (staff_id, day_of_week)",
       "CREATE INDEX IF NOT EXISTS idx_staff_working_hours_shop_id ON staff_working_hours (shop_id)",
+      "CREATE INDEX IF NOT EXISTS idx_staff_working_hours_staff_effective ON staff_working_hours (staff_id, effective_from)",
     ];
     for (const sql of startupIndexes) {
       await pool.query(sql);

@@ -234,7 +234,7 @@ import ColorModelToggle from "../components/ColorModelToggle.vue";
 import { useAuthStore } from "../stores/auth";
 import elLocale from "@fullcalendar/core/locales/el";
 import StaffReorderDialog from "../components/StaffReorderDialog.vue";
-import { isStaffAvailable, toLocalDateStr, getWorkingRangesForDay } from "../utils/staffAvailability";
+import { isStaffAvailable, toLocalDateStr, getWorkingRangesForDate } from "../utils/staffAvailability";
 
 const reorderDialogVisible = ref(false);
 const authStore = useAuthStore();
@@ -409,13 +409,10 @@ const getCategoryColor = (category: string) => {
   return map[category] || stringToPastelColor(category);
 };
 
-const getDowFromDateStr = (v: string) => new Date(v.includes("T") ? v : `${v}T00:00:00`).getDay();
-
-// Working hours have no historical versioning — only the current pattern is
-// stored. Hiding a resource or shading gaps on a PAST date would use today's
-// schedule to reinterpret history (e.g. hiding a staff member's column, and
-// with it their real past appointments, on a weekday they used to work but
-// no longer do). Only apply the day-gated behavior to today-or-future.
+// Still used by the unrelated staff-role navigation restriction below
+// (canGoPrev/validRange) — not by the working-hours display logic anymore,
+// now that schedule versions carry their own effective_from and can be
+// resolved correctly for any date, past included.
 const isPastDay = (dateStr: string) => dateStr.slice(0, 10) < todayDateStr();
 
 // --- Computed data ---
@@ -429,22 +426,20 @@ const calendarResources = computed(() => {
   }
 
   // Day view only — staff who opted into a working-hours pattern but don't
-  // work the currently-displayed day disappear as a resource entirely.
-  // Unconfigured staff (working_hours_enabled falsy) always pass through,
-  // exactly like today, and Week/Month views are untouched by design since
-  // FullCalendar's resource views use one fixed column set for the whole
-  // visible range — there's no way to show different staff per day there.
-  if (
-    currentView.value === "resourceTimeGridDay" &&
-    currentStart.value &&
-    !isPastDay(currentStart.value)
-  ) {
-    const dow = getDowFromDateStr(currentStart.value);
-    filtered = filtered.filter(
-      (r: any) =>
-        !r.working_hours_enabled ||
-        getWorkingRangesForDay(calendarStore.workingHours, r.id, dow).length > 0,
-    );
+  // work the currently-displayed day disappear as a resource entirely. This
+  // now resolves the schedule VERSION that was/is actually active on the
+  // displayed date, so it's correct whether that date is in the past,
+  // present, or a staged future change. Unconfigured staff (working_hours_enabled
+  // falsy) always pass through, exactly like today, and Week/Month views are
+  // untouched by design since FullCalendar's resource views use one fixed
+  // column set for the whole visible range — there's no way to show
+  // different staff per day there.
+  if (currentView.value === "resourceTimeGridDay" && currentStart.value) {
+    filtered = filtered.filter((r: any) => {
+      if (!r.working_hours_enabled) return true;
+      const ranges = getWorkingRangesForDate(calendarStore.workingHours, r.id, currentStart.value);
+      return ranges === null || ranges.length > 0;
+    });
   }
 
   return filtered.map((r: any) => ({
@@ -554,12 +549,13 @@ const timeOffBackgroundEvents = computed(() => {
 
 // Day view only, mirrors timeOffBackgroundEvents — shades the complement of
 // a staff member's working ranges (including the split-shift gap) within the
-// shop's visible slot window. Staff who haven't opted into working hours get
-// no shading at all, exactly as they get no resource-hiding above.
+// shop's visible slot window, using whichever schedule version was/is
+// actually active on the displayed date. Staff who haven't opted into
+// working hours — or for whom no version can be resolved as of this date —
+// get no shading at all, exactly as they get no resource-hiding above.
 const workingHoursBackgroundEvents = computed(() => {
-  if (currentView.value !== "resourceTimeGridDay" || !currentStart.value || isPastDay(currentStart.value)) return [];
+  if (currentView.value !== "resourceTimeGridDay" || !currentStart.value) return [];
 
-  const dow = getDowFromDateStr(currentStart.value);
   const dateStr = toLocalDateStr(currentStart.value);
   const dayStart = shopSlotMinTime.value;
   const dayEnd = shopSlotMaxTime.value;
@@ -567,7 +563,8 @@ const workingHoursBackgroundEvents = computed(() => {
 
   for (const staffMember of calendarStore.resources) {
     if (!staffMember.working_hours_enabled) continue;
-    const ranges = getWorkingRangesForDay(calendarStore.workingHours, staffMember.id, dow);
+    const ranges = getWorkingRangesForDate(calendarStore.workingHours, staffMember.id, currentStart.value);
+    if (ranges === null) continue; // no version resolvable for this date — no shading
 
     let cursor = dayStart;
     const gaps: [string, string][] = [];

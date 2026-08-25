@@ -515,54 +515,107 @@
           </div>
         </div>
 
-        <div v-if="workingHoursEnabled" class="space-y-3">
-          <div
-            v-for="day in workingHoursDays"
-            :key="day.day_of_week"
-            class="p-3 bg-gray-50 rounded-xl border border-gray-100"
-          >
-            <div class="flex items-center gap-3">
-              <Checkbox :modelValue="day.active" binary @update:modelValue="toggleWorkingDay(day)" />
-              <span class="text-sm font-medium text-gray-800 w-24 flex-shrink-0">
-                {{ t(`staff.workingHours.days.${day.day_of_week}`) }}
-              </span>
+        <div v-if="workingHoursEnabled" class="space-y-4">
+          <!-- Current / Upcoming tab strip -->
+          <div class="flex items-center gap-1 bg-gray-100 rounded-lg p-1 w-fit">
+            <button
+              type="button"
+              class="px-3 py-1.5 text-xs font-semibold rounded-md transition-colors"
+              :class="workingHoursTab === 'current' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'"
+              @click="workingHoursTab = 'current'"
+            >
+              {{ t("staff.workingHours.tabs.current") }}
+            </button>
+            <button
+              type="button"
+              class="px-3 py-1.5 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5"
+              :class="workingHoursTab === 'upcoming' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'"
+              @click="workingHoursTab = 'upcoming'"
+            >
+              {{ workingHoursHadUpcoming ? t("staff.workingHours.tabs.upcoming") : t("staff.workingHours.tabs.stageChange") }}
+              <span v-if="workingHoursHadUpcoming" class="w-1.5 h-1.5 rounded-full bg-[var(--p-primary-500)]"></span>
+            </button>
+          </div>
 
-              <div v-if="day.active" class="flex-1 space-y-2 min-w-0">
-                <div
-                  v-for="(range, idx) in day.ranges"
-                  :key="idx"
-                  class="flex items-center gap-2"
-                >
-                  <DatePicker
-                    v-model="range.start_time"
-                    timeOnly
-                    hourFormat="24"
-                    class="w-full"
-                    inputClass="w-full"
-                  />
-                  <span class="text-gray-400 text-sm flex-shrink-0">—</span>
-                  <DatePicker
-                    v-model="range.end_time"
-                    timeOnly
-                    hourFormat="24"
-                    class="w-full"
-                    inputClass="w-full"
-                  />
+          <div v-if="workingHoursTab === 'upcoming'" class="flex items-center gap-3 flex-wrap">
+            <div class="min-w-0 flex-1">
+              <label class="block text-xs text-gray-500 mb-1">{{ t("staff.workingHours.effectiveFromLabel") }}</label>
+              <DatePicker
+                v-model="workingHoursUpcomingEffectiveFrom"
+                dateFormat="dd/mm/yy"
+                :minDate="tomorrowDate"
+                showIcon
+                class="w-full"
+                inputClass="w-full"
+              />
+            </div>
+            <Button
+              v-if="workingHoursHadUpcoming"
+              :label="t('staff.workingHours.cancelStaged')"
+              icon="pi pi-times"
+              text
+              severity="danger"
+              size="small"
+              class="mt-4"
+              @click="cancelStagedWorkingHours"
+            />
+          </div>
+          <p v-if="workingHoursTab === 'upcoming' && !workingHoursUpcomingEffectiveFrom" class="text-xs text-gray-400">
+            {{ t("staff.workingHours.pickStartDateHint") }}
+          </p>
+
+          <div
+            v-if="workingHoursTab === 'current' || workingHoursUpcomingEffectiveFrom"
+            class="space-y-3"
+          >
+            <div
+              v-for="day in activeWorkingDays"
+              :key="day.day_of_week"
+              class="p-3 bg-gray-50 rounded-xl border border-gray-100"
+            >
+              <div class="flex items-center gap-3">
+                <Checkbox :modelValue="day.active" binary @update:modelValue="toggleWorkingDay(day)" />
+                <span class="text-sm font-medium text-gray-800 w-24 flex-shrink-0">
+                  {{ t(`staff.workingHours.days.${day.day_of_week}`) }}
+                </span>
+
+                <div v-if="day.active" class="flex-1 space-y-2 min-w-0">
+                  <div
+                    v-for="(range, idx) in day.ranges"
+                    :key="idx"
+                    class="flex items-center gap-2"
+                  >
+                    <DatePicker
+                      v-model="range.start_time"
+                      timeOnly
+                      hourFormat="24"
+                      class="w-full"
+                      inputClass="w-full"
+                    />
+                    <span class="text-gray-400 text-sm flex-shrink-0">—</span>
+                    <DatePicker
+                      v-model="range.end_time"
+                      timeOnly
+                      hourFormat="24"
+                      class="w-full"
+                      inputClass="w-full"
+                    />
+                    <Button
+                      icon="pi pi-trash"
+                      class="p-button-rounded p-button-text p-button-sm p-button-danger flex-shrink-0"
+                      @click="removeWorkingRange(day, idx)"
+                    />
+                  </div>
                   <Button
-                    icon="pi pi-trash"
-                    class="p-button-rounded p-button-text p-button-sm p-button-danger flex-shrink-0"
-                    @click="removeWorkingRange(day, idx)"
+                    :label="t('staff.workingHours.addRange')"
+                    icon="pi pi-plus"
+                    text
+                    size="small"
+                    @click="addWorkingRange(day)"
                   />
                 </div>
-                <Button
-                  :label="t('staff.workingHours.addRange')"
-                  icon="pi pi-plus"
-                  text
-                  size="small"
-                  @click="addWorkingRange(day)"
-                />
+                <span v-else class="text-xs text-gray-400">{{ t("staff.workingHours.dayOff") }}</span>
               </div>
-              <span v-else class="text-xs text-gray-400">{{ t("staff.workingHours.dayOff") }}</span>
             </div>
           </div>
         </div>
@@ -634,13 +687,32 @@ const newTimeOff = ref<any>({
 
 // Working Hours Dialog State — day_of_week: 0=Sun..6=Sat (matches the DB and
 // JS Date#getDay()); displayed Mon->Sun in the UI via WEEKDAY_DISPLAY_ORDER.
+// Schedules are effective-dated versions now: "current" (effective_from =
+// today) and at most one staged "upcoming" version (effective_from in the
+// future) — the dialog edits each independently via a tab strip, but both
+// reuse the exact same day-row editor (toggleWorkingDay/addWorkingRange/
+// removeWorkingRange/defaultRange below all just operate on "the active
+// tab's days array", via the activeWorkingDays computed).
 const WEEKDAY_DISPLAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
 const showWorkingHoursDialog = ref(false);
 const workingHoursTarget = ref<any>(null);
 const workingHoursLoading = ref(false);
 const workingHoursSaving = ref(false);
 const workingHoursEnabled = ref(false);
-const workingHoursDays = ref<any[]>([]);
+const workingHoursTab = ref<"current" | "upcoming">("current");
+const workingHoursCurrentDays = ref<any[]>([]);
+const workingHoursUpcomingDays = ref<any[]>([]);
+const workingHoursUpcomingEffectiveFrom = ref<Date | null>(null);
+const workingHoursHadUpcoming = ref(false);
+const activeWorkingDays = computed(() =>
+  workingHoursTab.value === "current" ? workingHoursCurrentDays.value : workingHoursUpcomingDays.value,
+);
+const tomorrowDate = computed(() => {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  d.setHours(0, 0, 0, 0);
+  return d;
+});
 
 // ... (Existing fetch/save logic remains same) ...
 const fetchData = async () => {
@@ -979,31 +1051,72 @@ const defaultRange = () => {
 const buildEmptyWorkingDays = () =>
   WEEKDAY_DISPLAY_ORDER.map((dow) => ({ day_of_week: dow, active: false, ranges: [] as any[] }));
 
+const buildDaysFromRanges = (ranges: any[]) => {
+  const days = buildEmptyWorkingDays();
+  for (const r of ranges || []) {
+    const day = days.find((d) => d.day_of_week === r.day_of_week);
+    if (day) {
+      day.active = true;
+      day.ranges.push({
+        start_time: parseTimeToDate(r.start_time),
+        end_time: parseTimeToDate(r.end_time),
+      });
+    }
+  }
+  return days;
+};
+
+// Server DATE columns come back as full ISO timestamps if not explicitly
+// cast — the working-hours endpoints cast effective_from::text server-side
+// specifically so this stays a clean "YYYY-MM-DD" string, safe to parse as
+// local-midnight here without the UTC-shift issue documented in staffAvailability.ts.
+const parseDateOnly = (dateStr: string) => new Date(`${dateStr}T00:00:00`);
+
 const openWorkingHoursDialog = async (staffMember: any) => {
   workingHoursTarget.value = staffMember;
   showWorkingHoursDialog.value = true;
   workingHoursLoading.value = true;
+  workingHoursTab.value = "current";
   const token = localStorage.getItem("token");
   try {
     const res = await fetch(`/api/v1/staff/${staffMember.id}/working-hours`, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    const data = res.ok ? await res.json() : { enabled: false, ranges: [] };
+    const data = res.ok ? await res.json() : { enabled: false, current: null, upcoming: null };
     workingHoursEnabled.value = !!data.enabled;
-    const days = buildEmptyWorkingDays();
-    for (const r of data.ranges || []) {
-      const day = days.find((d) => d.day_of_week === r.day_of_week);
-      if (day) {
-        day.active = true;
-        day.ranges.push({
-          start_time: parseTimeToDate(r.start_time),
-          end_time: parseTimeToDate(r.end_time),
-        });
-      }
+    workingHoursCurrentDays.value = buildDaysFromRanges(data.current?.ranges || []);
+    workingHoursHadUpcoming.value = !!data.upcoming;
+    if (data.upcoming) {
+      workingHoursUpcomingDays.value = buildDaysFromRanges(data.upcoming.ranges);
+      workingHoursUpcomingEffectiveFrom.value = parseDateOnly(data.upcoming.effective_from);
+    } else {
+      workingHoursUpcomingDays.value = buildEmptyWorkingDays();
+      workingHoursUpcomingEffectiveFrom.value = null;
     }
-    workingHoursDays.value = days;
   } finally {
     workingHoursLoading.value = false;
+  }
+};
+
+// Removes a staged upcoming version entirely — distinct from saving it with
+// zero ranges (which would mean "day off every day starting then"). Reverts
+// to "current" governing indefinitely.
+const cancelStagedWorkingHours = async () => {
+  const token = localStorage.getItem("token");
+  try {
+    const res = await fetch(`/api/v1/staff/${workingHoursTarget.value.id}/working-hours/upcoming`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error("Failed");
+    workingHoursUpcomingDays.value = buildEmptyWorkingDays();
+    workingHoursUpcomingEffectiveFrom.value = null;
+    workingHoursHadUpcoming.value = false;
+    workingHoursTab.value = "current";
+    await calendarStore.refreshWorkingHours();
+    toast.add({ severity: "success", summary: t("common.success"), detail: t("staff.workingHours.saved"), life: 3000 });
+  } catch {
+    toast.add({ severity: "error", summary: t("common.error"), detail: t("staff.workingHours.saveFailed"), life: 4000 });
   }
 };
 
@@ -1029,9 +1142,20 @@ const removeWorkingRange = (day: any, idx: number) => {
 };
 
 const saveWorkingHours = async (force = false) => {
+  const isUpcoming = workingHoursTab.value === "upcoming";
+  if (workingHoursEnabled.value && isUpcoming && !workingHoursUpcomingEffectiveFrom.value) {
+    toast.add({
+      severity: "warn",
+      summary: t("common.error"),
+      detail: t("staff.workingHours.pickStartDateHint"),
+      life: 3000,
+    });
+    return;
+  }
+
   workingHoursSaving.value = true;
   const token = localStorage.getItem("token");
-  const schedule = workingHoursDays.value
+  const schedule = activeWorkingDays.value
     .filter((d) => d.active && d.ranges.length > 0)
     .map((d) => ({
       day_of_week: d.day_of_week,
@@ -1040,6 +1164,10 @@ const saveWorkingHours = async (force = false) => {
         end_time: toTimeStr(r.end_time),
       })),
     }));
+  // Editing "current" always means effective_from = today, full stop — there
+  // is no backdate-fix path. Staging a change is what the date picker on the
+  // "upcoming" tab is for.
+  const effectiveFrom = isUpcoming ? toDateStr(workingHoursUpcomingEffectiveFrom.value as Date) : toDateStr(new Date());
 
   try {
     const res = await fetch(`/api/v1/staff/${workingHoursTarget.value.id}/working-hours`, {
@@ -1048,7 +1176,12 @@ const saveWorkingHours = async (force = false) => {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ enabled: workingHoursEnabled.value, schedule, force }),
+      body: JSON.stringify({
+        enabled: workingHoursEnabled.value,
+        effective_from: workingHoursEnabled.value ? effectiveFrom : undefined,
+        schedule,
+        force,
+      }),
     });
 
     if (res.status === 409) {

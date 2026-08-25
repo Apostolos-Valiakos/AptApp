@@ -194,6 +194,15 @@ export default {
       saveFailed: 'Failed to save working hours',
       conflictHeader: 'Conflicting Appointments',
       conflictMessage: '{count} appointment(s) fall outside these hours:\n{list}\n\nSave anyway?',
+      tabs: {
+        current: 'Current schedule',
+        upcoming: 'Upcoming change',
+        stageChange: '+ Stage a change',
+      },
+      effectiveFromLabel: 'Starting from',
+      pickStartDateHint: 'Pick a start date for this change',
+      cancelStaged: 'Cancel staged change',
+      effectiveFromPast: 'The start date cannot be in the past',
       days: {
         '0': 'Sunday',
         '1': 'Monday',
