@@ -105,6 +105,69 @@ const addRecurrenceInterval = (date, freq) => {
   if (freq === "Monthly") result.setMonth(result.getMonth() + 1);
   return result;
 };
+// Thrown by assertStaffAvailable below — an unconditional, no-override
+// rejection (distinct from the conflicts_found/force pattern used when
+// SAVING new time-off/working-hours over existing appointments).
+class StaffUnavailableError extends Error {
+  constructor(reason, staffId) {
+    super("staff_unavailable");
+    this.reason = reason; // "time_off" | "outside_working_hours"
+    this.staffId = staffId;
+  }
+}
+
+// Hard-blocks booking a staff member during their leave/break (staff_time_off)
+// or, if they've opted into a configured schedule, outside their weekly
+// working hours (staff_working_hours). Staff who never configured working
+// hours (working_hours_enabled = false, the default) are unrestricted by that
+// second check — only time-off applies to them, exactly as it always has.
+// Uses the same timestamptz -> date/time cast convention as the existing
+// (pre-existing, working) time-off conflict-check query for consistency.
+const assertStaffAvailable = async (client, { staffId, shopId, startTime, durationMinutes }) => {
+  if (!staffId) return;
+  // Both staff_working_hours and staff_time_off reflect the CURRENT schedule —
+  // there's no historical versioning. Without this, editing an unrelated
+  // field on a past appointment (recording a payment, marking a no-show)
+  // would start failing the moment a staff member's schedule changes,
+  // since every save re-validates staffId/start_time/duration regardless of
+  // whether the time itself is being touched. Only future/current-moment
+  // bookings need to respect the live schedule.
+  if (new Date(startTime).getTime() < Date.now()) return;
+  const duration = durationMinutes || 60;
+
+  const timeOff = await client.query(
+    `SELECT 1 FROM staff_time_off
+     WHERE staff_id = $1 AND shop_id = $2
+       AND (
+         (type = 'leave' AND $3::timestamptz::date BETWEEN start_date AND end_date)
+         OR (type = 'break' AND $3::timestamptz::date = start_date
+             AND $3::timestamptz < (start_date + end_time)
+             AND ($3::timestamptz + ($4 || ' minutes')::interval) > (start_date + start_time))
+       )
+     LIMIT 1`,
+    [staffId, shopId, startTime, duration],
+  );
+  if (timeOff.rows.length > 0) throw new StaffUnavailableError("time_off", staffId);
+
+  const staffRow = await client.query(
+    `SELECT working_hours_enabled FROM staff WHERE id = $1 AND shop_id = $2`,
+    [staffId, shopId],
+  );
+  if (!staffRow.rows[0]?.working_hours_enabled) return;
+
+  const fits = await client.query(
+    `SELECT 1 FROM staff_working_hours
+     WHERE staff_id = $1
+       AND day_of_week = EXTRACT(DOW FROM $2::timestamptz)
+       AND $2::timestamptz::time >= start_time
+       AND ($2::timestamptz + ($3 || ' minutes')::interval)::time <= end_time
+       AND ($2::timestamptz + ($3 || ' minutes')::interval)::date = $2::timestamptz::date
+     LIMIT 1`,
+    [staffId, startTime, duration],
+  );
+  if (fits.rows.length === 0) throw new StaffUnavailableError("outside_working_hours", staffId);
+};
+
 const getGroupDetails = async (client, id, shopId) => {
   const res = await client.query(
     "SELECT group_id, (SELECT start_time FROM appointment_services WHERE appointment_id = appointments.id LIMIT 1) as start_time FROM appointments WHERE id = $1 AND shop_id = $2",
@@ -236,10 +299,17 @@ const createAppointmentSeries = async (client, data, shopId) => {
         const validServiceId = safeUUID(svc.service_id);
         const validStaffId = safeUUID(svc.staff_id);
 
+        await assertStaffAvailable(client, {
+          staffId: validStaffId,
+          shopId,
+          startTime: instanceStartIso,
+          durationMinutes: svc.duration_override,
+        });
+
         if (validServiceId) {
           await client.query(
             `INSERT INTO appointment_services (
-              appointment_id, service_id, staff_id, start_time, 
+              appointment_id, service_id, staff_id, start_time,
               duration_override, price_override, shop_id
             ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
             [
@@ -335,6 +405,12 @@ const performSingleUpdate = async (client, id, shopId, body) => {
   );
   if (!is_block) {
     for (const svc of services) {
+      await assertStaffAvailable(client, {
+        staffId: safeUUID(svc.staff_id),
+        shopId,
+        startTime: svc.start_time,
+        durationMinutes: svc.duration_override,
+      });
       if (safeUUID(svc.service_id)) {
         await client.query(
           `INSERT INTO appointment_services (
@@ -838,7 +914,7 @@ app.get("/api/v1/staff", authenticateToken, async (req, res) => {
       SELECT
         st.id, st.name, st.color_code, st.hourly_rate, st.is_active,
         st.email, st.phone, st.specialty, st.shop_id, st.sort_order,
-        st.visible_in_calendar,
+        st.visible_in_calendar, st.working_hours_enabled,
         COALESCE(
           json_agg(ss.service_id) FILTER (WHERE ss.service_id IS NOT NULL),
           '[]'
@@ -1115,6 +1191,164 @@ app.delete("/api/v1/staff/:id/time-off/:timeOffId", authenticateToken, async (re
     );
     if (rowCount === 0) return res.status(404).json({ error: "Not found" });
     res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Shop-wide working hours — one shot fetch for the calendar (day-view resource
+// visibility + off-hours shading), mirrors the shop-wide /api/v1/time-off.
+app.get("/api/v1/working-hours", authenticateToken, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT staff_id, day_of_week, start_time, end_time FROM staff_working_hours WHERE shop_id = $1`,
+      [req.shopId],
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.get("/api/v1/staff/:id/working-hours", authenticateToken, async (req, res) => {
+  try {
+    const staff = await pool.query(
+      `SELECT working_hours_enabled FROM staff WHERE id = $1 AND shop_id = $2`,
+      [req.params.id, req.shopId],
+    );
+    if (staff.rows.length === 0) {
+      return res.status(404).json({ error: "Staff member not found" });
+    }
+    const { rows } = await pool.query(
+      `SELECT day_of_week, start_time, end_time FROM staff_working_hours
+       WHERE staff_id = $1 AND shop_id = $2 ORDER BY day_of_week, start_time`,
+      [req.params.id, req.shopId],
+    );
+    res.json({ enabled: staff.rows[0].working_hours_enabled, ranges: rows });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+const TIME_HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+// Replaces a staff member's weekly working-hours pattern wholesale. Warns
+// about future appointments the new pattern would no longer cover (same
+// conflicts_found/force pattern as staff_time_off) unless force=true.
+// enabled=false always clears everything with no conflict check, since
+// disabling can only ever loosen restrictions, never create a new one.
+app.post("/api/v1/staff/:id/working-hours", authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const { enabled, schedule, force } = req.body;
+
+  if (typeof enabled !== "boolean") {
+    return res.status(400).json({ error: "enabled must be a boolean" });
+  }
+
+  let proposed = [];
+  if (enabled) {
+    if (!Array.isArray(schedule)) {
+      return res.status(400).json({ error: "schedule must be an array" });
+    }
+    const seenDays = new Set();
+    for (const day of schedule) {
+      const dow = day?.day_of_week;
+      if (!Number.isInteger(dow) || dow < 0 || dow > 6) {
+        return res.status(400).json({ error: "day_of_week must be an integer between 0 and 6" });
+      }
+      if (seenDays.has(dow)) {
+        return res.status(400).json({ error: "duplicate day_of_week in schedule", day_of_week: dow });
+      }
+      seenDays.add(dow);
+      if (!Array.isArray(day.ranges) || day.ranges.length === 0) {
+        return res.status(400).json({ error: "each day must have at least one range", day_of_week: dow });
+      }
+      const sorted = [...day.ranges].sort((a, b) => (a.start_time > b.start_time ? 1 : -1));
+      for (let i = 0; i < sorted.length; i++) {
+        const r = sorted[i];
+        if (!TIME_HHMM.test(r.start_time) || !TIME_HHMM.test(r.end_time)) {
+          return res.status(400).json({ error: "start_time/end_time must be HH:MM", day_of_week: dow });
+        }
+        if (r.end_time <= r.start_time) {
+          return res.status(400).json({ error: "end_time must be after start_time", day_of_week: dow });
+        }
+        if (i > 0 && r.start_time < sorted[i - 1].end_time) {
+          return res.status(400).json({ error: "overlapping_ranges", day_of_week: dow });
+        }
+        proposed.push({ day_of_week: dow, start_time: r.start_time, end_time: r.end_time });
+      }
+    }
+  }
+
+  try {
+    const staffCheck = await pool.query(
+      `SELECT id FROM staff WHERE id = $1 AND shop_id = $2`,
+      [id, req.shopId],
+    );
+    if (staffCheck.rows.length === 0) {
+      return res.status(404).json({ error: "Staff member not found" });
+    }
+
+    if (enabled && force !== true) {
+      const conflicts = await pool.query(
+        `
+        WITH proposed(day_of_week, start_time, end_time) AS (
+          SELECT * FROM json_to_recordset($3::json) AS x(day_of_week int, start_time time, end_time time)
+        )
+        SELECT a.id, aps.start_time, s.name AS service_name,
+               c.first_name || ' ' || c.last_name AS client_name
+        FROM appointment_services aps
+        JOIN appointments a ON a.id = aps.appointment_id
+        LEFT JOIN services s ON s.id = aps.service_id
+        LEFT JOIN clients c ON c.id = a.client_id
+        WHERE aps.staff_id = $1 AND a.shop_id = $2
+          AND a.status != 'cancelled' AND COALESCE(a.is_block, false) = false
+          AND aps.start_time >= NOW()
+          AND NOT EXISTS (
+            SELECT 1 FROM proposed p
+            WHERE p.day_of_week = EXTRACT(DOW FROM aps.start_time)
+              AND aps.start_time::time >= p.start_time
+              AND (aps.start_time + (COALESCE(aps.duration_override, 60) || ' minutes')::interval)::time <= p.end_time
+              AND (aps.start_time + (COALESCE(aps.duration_override, 60) || ' minutes')::interval)::date = aps.start_time::date
+          )
+        ORDER BY aps.start_time`,
+        [id, req.shopId, JSON.stringify(proposed)],
+      );
+      if (conflicts.rows.length > 0) {
+        return res.status(409).json({ error: "conflicts_found", conflicts: conflicts.rows });
+      }
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(`DELETE FROM staff_working_hours WHERE staff_id = $1`, [id]);
+      if (enabled) {
+        for (const r of proposed) {
+          await client.query(
+            `INSERT INTO staff_working_hours (staff_id, shop_id, day_of_week, start_time, end_time)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [id, req.shopId, r.day_of_week, r.start_time, r.end_time],
+          );
+        }
+      }
+      await client.query(`UPDATE staff SET working_hours_enabled = $1 WHERE id = $2 AND shop_id = $3`, [
+        enabled,
+        id,
+        req.shopId,
+      ]);
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
+
+    res.json({ success: true, enabled, schedule: proposed });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Internal server error" });
@@ -2156,6 +2390,9 @@ app.post("/api/v1/appointments", authenticateToken, async (req, res) => {
     res.json(responseBody);
   } catch (err) {
     await client.query("ROLLBACK");
+    if (err instanceof StaffUnavailableError) {
+      return res.status(422).json({ error: "staff_unavailable", reason: err.reason, staff_id: err.staffId });
+    }
     console.error("Create Appointment Error:", err);
     res.status(500).json({ error: "Failed to create appointment" });
   } finally {
@@ -2407,6 +2644,9 @@ app.put("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
     res.json(responseBody);
   } catch (err) {
     await client.query("ROLLBACK");
+    if (err instanceof StaffUnavailableError) {
+      return res.status(422).json({ error: "staff_unavailable", reason: err.reason, staff_id: err.staffId });
+    }
     console.error("Update Appointment Error:", err);
     res.status(500).json({ error: "Update failed" });
   } finally {
@@ -5425,6 +5665,27 @@ app.put("/api/v1/portal/notifications", authenticateToken, async (req, res) => {
       )
     `);
 
+    // Recurring weekly working-hours pattern. false (default) means "never
+    // configured" — fully unrestricted, exactly today's behavior for every
+    // pre-existing staff member. Once true, staff_working_hours rows become
+    // authoritative: a day with no rows is a day off; a day with rows is only
+    // bookable within them (multiple rows per day = a split shift).
+    await pool.query(
+      `ALTER TABLE staff ADD COLUMN IF NOT EXISTS working_hours_enabled BOOLEAN NOT NULL DEFAULT false`,
+    );
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS staff_working_hours (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        staff_id UUID NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+        shop_id UUID NOT NULL REFERENCES shops(id),
+        day_of_week SMALLINT NOT NULL CHECK (day_of_week BETWEEN 0 AND 6),
+        start_time TIME NOT NULL,
+        end_time TIME NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        CHECK (end_time > start_time)
+      )
+    `);
+
     // ==================== PERFORMANCE INDEXES ====================
     const startupIndexes = [
       "CREATE INDEX IF NOT EXISTS idx_transactions_appointment_id ON transactions (appointment_id)",
@@ -5440,6 +5701,9 @@ app.put("/api/v1/portal/notifications", authenticateToken, async (req, res) => {
       "CREATE INDEX IF NOT EXISTS idx_gift_cards_sold_by_staff_id ON gift_cards (sold_by_staff_id)",
       "CREATE INDEX IF NOT EXISTS idx_staff_time_off_staff_id ON staff_time_off (staff_id)",
       "CREATE INDEX IF NOT EXISTS idx_staff_time_off_dates ON staff_time_off (start_date, end_date)",
+      "CREATE INDEX IF NOT EXISTS idx_staff_working_hours_staff_id ON staff_working_hours (staff_id)",
+      "CREATE INDEX IF NOT EXISTS idx_staff_working_hours_staff_day ON staff_working_hours (staff_id, day_of_week)",
+      "CREATE INDEX IF NOT EXISTS idx_staff_working_hours_shop_id ON staff_working_hours (shop_id)",
     ];
     for (const sql of startupIndexes) {
       await pool.query(sql);

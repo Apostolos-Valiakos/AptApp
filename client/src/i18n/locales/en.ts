@@ -161,6 +161,7 @@ export default {
       createLogin: 'Create/Reset Login',
       delete: 'Delete Staff',
       timeOff: 'Manage Leave / Breaks',
+      workingHours: 'Set Working Hours',
     },
     timeOff: {
       title: 'Leave & Breaks — {name}',
@@ -182,6 +183,26 @@ export default {
       deleteFailed: 'Failed to delete time off',
       conflictHeader: 'Conflicting Appointments',
       conflictMessage: '{count} appointment(s) conflict with this time off:\n{list}\n\nSave anyway?',
+    },
+    workingHours: {
+      title: 'Working Hours — {name}',
+      enabledLabel: 'Restrict to specific working hours',
+      enabledHint: 'Off by default — the staff member is available every day, any hour, exactly as today.',
+      addRange: 'Add split shift',
+      dayOff: 'Day off',
+      saved: 'Working hours saved',
+      saveFailed: 'Failed to save working hours',
+      conflictHeader: 'Conflicting Appointments',
+      conflictMessage: '{count} appointment(s) fall outside these hours:\n{list}\n\nSave anyway?',
+      days: {
+        '0': 'Sunday',
+        '1': 'Monday',
+        '2': 'Tuesday',
+        '3': 'Wednesday',
+        '4': 'Thursday',
+        '5': 'Friday',
+        '6': 'Saturday',
+      },
     },
   },
   offline: {
@@ -747,6 +768,7 @@ export default {
     validation: {
       selectClient: 'Please select a client before saving.',
       addService: 'Please add at least one service before saving.',
+      staffUnavailable: 'This staff member is unavailable at that time (time off or outside their working hours).',
     },
   },
   payment: {

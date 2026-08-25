@@ -123,6 +123,7 @@
 <script setup lang="ts">
 import { useI18n } from "vue-i18n";
 import { useAuthStore } from "../../stores/auth";
+import { isStaffAvailable } from "../../utils/staffAvailability";
 const { t } = useI18n();
 const authStore = useAuthStore();
 const isShopAdmin = authStore.isShopAdmin;
@@ -134,39 +135,23 @@ const props = defineProps({
   baseStartTime: { type: Date, default: () => new Date() },
   defaultStaffId: { type: [Number, String], default: null },
   timeOff: { type: Array as () => any[], default: () => [] },
+  workingHours: { type: Array as () => any[], default: () => [] },
 });
 
 const emit = defineEmits(["update:modelValue"]);
-
-const toLocalDateStr = (d: Date) => {
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
-};
-
-// staff_time_off DATE columns come back as full ISO timestamps (pg parses DATE
-// into a local-midnight Date, then JSON serialization renders it in UTC), so
-// always round-trip through local date parts rather than slicing the string.
-const toDateOnly = (v: any) => toLocalDateStr(new Date(v));
 
 const isStaffUnavailable = (staffId: any, serviceStart: any, durationMinutes: number) => {
   if (!serviceStart) return false;
   const start = new Date(serviceStart);
   const end = new Date(start.getTime() + (durationMinutes || 60) * 60000);
-  const dateStr = toLocalDateStr(start);
-
-  return props.timeOff.some((entry: any) => {
-    if (String(entry.staff_id) !== String(staffId)) return false;
-    if (entry.type === "leave") {
-      return dateStr >= toDateOnly(entry.start_date) && dateStr <= toDateOnly(entry.end_date);
-    }
-    const entryDate = toDateOnly(entry.start_date);
-    if (entryDate !== dateStr) return false;
-    const breakStart = new Date(`${entryDate}T${entry.start_time}`);
-    const breakEnd = new Date(`${entryDate}T${entry.end_time}`);
-    return start < breakEnd && end > breakStart;
-  });
+  return !isStaffAvailable({
+    staffList: props.staff,
+    workingHours: props.workingHours,
+    timeOff: props.timeOff,
+    staffId,
+    start,
+    end,
+  }).available;
 };
 
 const getFilteredStaff = (service: any) => {

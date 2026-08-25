@@ -124,6 +124,14 @@
                 @click="openTimeOffDialog(slotProps.data)"
               />
               <Button
+                icon="pi pi-clock"
+                class="p-button-rounded p-button-text p-button-sm"
+                severity="info"
+                v-tooltip.top="t('staff.tooltips.workingHours')"
+                :aria-label="t('staff.tooltips.workingHours')"
+                @click="openWorkingHoursDialog(slotProps.data)"
+              />
+              <Button
                 icon="pi pi-trash"
                 class="p-button-rounded p-button-text p-button-danger p-button-sm"
                 v-tooltip.top="t('staff.tooltips.delete')"
@@ -483,6 +491,97 @@
     </div>
   </Dialog>
 
+  <!-- Working Hours Dialog -->
+  <Dialog
+    v-model:visible="showWorkingHoursDialog"
+    :header="t('staff.workingHours.title', { name: workingHoursTarget?.name })"
+    modal
+    class="w-full max-w-2xl"
+  >
+    <div class="space-y-4 mt-2">
+      <div v-if="workingHoursLoading" class="text-center py-6 text-gray-400 text-sm">
+        {{ t("common.loading") }}
+      </div>
+      <template v-else>
+        <div class="flex items-center gap-3 pb-3 border-b border-gray-100">
+          <ToggleSwitch v-model="workingHoursEnabled" />
+          <div>
+            <div class="text-sm font-medium text-gray-700">
+              {{ t("staff.workingHours.enabledLabel") }}
+            </div>
+            <div class="text-xs text-gray-400">
+              {{ t("staff.workingHours.enabledHint") }}
+            </div>
+          </div>
+        </div>
+
+        <div v-if="workingHoursEnabled" class="space-y-3">
+          <div
+            v-for="day in workingHoursDays"
+            :key="day.day_of_week"
+            class="p-3 bg-gray-50 rounded-xl border border-gray-100"
+          >
+            <div class="flex items-center gap-3">
+              <Checkbox :modelValue="day.active" binary @update:modelValue="toggleWorkingDay(day)" />
+              <span class="text-sm font-medium text-gray-800 w-24 flex-shrink-0">
+                {{ t(`staff.workingHours.days.${day.day_of_week}`) }}
+              </span>
+
+              <div v-if="day.active" class="flex-1 space-y-2 min-w-0">
+                <div
+                  v-for="(range, idx) in day.ranges"
+                  :key="idx"
+                  class="flex items-center gap-2"
+                >
+                  <DatePicker
+                    v-model="range.start_time"
+                    timeOnly
+                    hourFormat="24"
+                    class="w-full"
+                    inputClass="w-full"
+                  />
+                  <span class="text-gray-400 text-sm flex-shrink-0">—</span>
+                  <DatePicker
+                    v-model="range.end_time"
+                    timeOnly
+                    hourFormat="24"
+                    class="w-full"
+                    inputClass="w-full"
+                  />
+                  <Button
+                    icon="pi pi-trash"
+                    class="p-button-rounded p-button-text p-button-sm p-button-danger flex-shrink-0"
+                    @click="removeWorkingRange(day, idx)"
+                  />
+                </div>
+                <Button
+                  :label="t('staff.workingHours.addRange')"
+                  icon="pi pi-plus"
+                  text
+                  size="small"
+                  @click="addWorkingRange(day)"
+                />
+              </div>
+              <span v-else class="text-xs text-gray-400">{{ t("staff.workingHours.dayOff") }}</span>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+    <template #footer>
+      <Button
+        :label="t('common.cancel')"
+        text
+        @click="showWorkingHoursDialog = false"
+      />
+      <Button
+        :label="t('common.save')"
+        @click="saveWorkingHours()"
+        :loading="workingHoursSaving"
+      />
+    </template>
+  </Dialog>
+
   <ConfirmDialog></ConfirmDialog>
 </template>
 
@@ -532,6 +631,16 @@ const newTimeOff = ref<any>({
   end_time: null,
   reason: "",
 });
+
+// Working Hours Dialog State — day_of_week: 0=Sun..6=Sat (matches the DB and
+// JS Date#getDay()); displayed Mon->Sun in the UI via WEEKDAY_DISPLAY_ORDER.
+const WEEKDAY_DISPLAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
+const showWorkingHoursDialog = ref(false);
+const workingHoursTarget = ref<any>(null);
+const workingHoursLoading = ref(false);
+const workingHoursSaving = ref(false);
+const workingHoursEnabled = ref(false);
+const workingHoursDays = ref<any[]>([]);
 
 // ... (Existing fetch/save logic remains same) ...
 const fetchData = async () => {
@@ -849,6 +958,140 @@ const deleteTimeOffEntry = async (entryId: string) => {
       detail: t("staff.timeOff.deleteFailed"),
       life: 4000,
     });
+  }
+};
+
+const parseTimeToDate = (time: string) => {
+  const [h, m] = (time || "09:00").split(":").map(Number);
+  const d = new Date();
+  d.setHours(h, m, 0, 0);
+  return d;
+};
+
+const defaultRange = () => {
+  const start = new Date();
+  start.setHours(9, 0, 0, 0);
+  const end = new Date();
+  end.setHours(17, 0, 0, 0);
+  return { start_time: start, end_time: end };
+};
+
+const buildEmptyWorkingDays = () =>
+  WEEKDAY_DISPLAY_ORDER.map((dow) => ({ day_of_week: dow, active: false, ranges: [] as any[] }));
+
+const openWorkingHoursDialog = async (staffMember: any) => {
+  workingHoursTarget.value = staffMember;
+  showWorkingHoursDialog.value = true;
+  workingHoursLoading.value = true;
+  const token = localStorage.getItem("token");
+  try {
+    const res = await fetch(`/api/v1/staff/${staffMember.id}/working-hours`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = res.ok ? await res.json() : { enabled: false, ranges: [] };
+    workingHoursEnabled.value = !!data.enabled;
+    const days = buildEmptyWorkingDays();
+    for (const r of data.ranges || []) {
+      const day = days.find((d) => d.day_of_week === r.day_of_week);
+      if (day) {
+        day.active = true;
+        day.ranges.push({
+          start_time: parseTimeToDate(r.start_time),
+          end_time: parseTimeToDate(r.end_time),
+        });
+      }
+    }
+    workingHoursDays.value = days;
+  } finally {
+    workingHoursLoading.value = false;
+  }
+};
+
+// Checking a day for the first time auto-seeds one default range, so the UI
+// never has to represent "day on, zero ranges" — unchecking (or removing the
+// last range) clears it back to "day off" entirely.
+const toggleWorkingDay = (day: any) => {
+  day.active = !day.active;
+  if (day.active && day.ranges.length === 0) {
+    day.ranges.push(defaultRange());
+  } else if (!day.active) {
+    day.ranges = [];
+  }
+};
+
+const addWorkingRange = (day: any) => {
+  day.ranges.push(defaultRange());
+};
+
+const removeWorkingRange = (day: any, idx: number) => {
+  day.ranges.splice(idx, 1);
+  if (day.ranges.length === 0) day.active = false;
+};
+
+const saveWorkingHours = async (force = false) => {
+  workingHoursSaving.value = true;
+  const token = localStorage.getItem("token");
+  const schedule = workingHoursDays.value
+    .filter((d) => d.active && d.ranges.length > 0)
+    .map((d) => ({
+      day_of_week: d.day_of_week,
+      ranges: d.ranges.map((r: any) => ({
+        start_time: toTimeStr(r.start_time),
+        end_time: toTimeStr(r.end_time),
+      })),
+    }));
+
+  try {
+    const res = await fetch(`/api/v1/staff/${workingHoursTarget.value.id}/working-hours`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ enabled: workingHoursEnabled.value, schedule, force }),
+    });
+
+    if (res.status === 409) {
+      const data = await res.json();
+      const list = (data.conflicts || [])
+        .map(
+          (c: any) =>
+            `• ${c.client_name || "—"} — ${c.service_name || ""} (${formatDate(c.start_time)})`,
+        )
+        .join("\n");
+      confirm.require({
+        message: t("staff.workingHours.conflictMessage", {
+          count: data.conflicts.length,
+          list,
+        }),
+        header: t("staff.workingHours.conflictHeader"),
+        icon: "pi pi-exclamation-triangle",
+        acceptClass: "p-button-warning",
+        accept: () => saveWorkingHours(true),
+      });
+      return;
+    }
+
+    if (!res.ok) throw new Error("Failed");
+
+    toast.add({
+      severity: "success",
+      summary: t("common.success"),
+      detail: t("staff.workingHours.saved"),
+      life: 3000,
+    });
+    showWorkingHoursDialog.value = false;
+    await fetchData();
+    await calendarStore.refreshWorkingHours();
+  } catch (err) {
+    toast.add({
+      severity: "error",
+      summary: t("common.error"),
+      detail: t("staff.workingHours.saveFailed"),
+      life: 4000,
+    });
+  } finally {
+    workingHoursSaving.value = false;
   }
 };
 

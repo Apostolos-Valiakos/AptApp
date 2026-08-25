@@ -7,6 +7,7 @@ export const useCalendarStore = defineStore("calendar", () => {
   const services = ref<any[]>([]);
   const products = ref<any[]>([]);
   const timeOff = ref<any[]>([]);
+  const workingHours = ref<any[]>([]);
 
   // 1. Fetch only the static/base data needed to populate dropdowns and UI
   const fetchBaseResources = async () => {
@@ -22,12 +23,13 @@ export const useCalendarStore = defineStore("calendar", () => {
       // Removed appointments from this Promise.all. Clients are NOT fetched here —
       // with 5000+ clients that made this a slow eager load; the booking dialog's
       // client picker now does its own server-side search instead (slim + search + limit).
-      const [staffRes, servicesRes, productsRes, timeOffRes] =
+      const [staffRes, servicesRes, productsRes, timeOffRes, workingHoursRes] =
         await Promise.all([
           fetch("/api/v1/staff", { headers }),
           fetch("/api/v1/services", { headers }),
           fetch("/api/v1/products", { headers }),
           fetch("/api/v1/time-off", { headers }),
+          fetch("/api/v1/working-hours", { headers }),
         ]);
 
       const staffData = await staffRes.json();
@@ -38,6 +40,7 @@ export const useCalendarStore = defineStore("calendar", () => {
       services.value = await servicesRes.json();
       products.value = await productsRes.json();
       timeOff.value = timeOffRes.ok ? await timeOffRes.json() : [];
+      workingHours.value = workingHoursRes.ok ? await workingHoursRes.json() : [];
 
     } catch (err) {
       console.error("fetchBaseResources failed", err);
@@ -90,6 +93,19 @@ export const useCalendarStore = defineStore("calendar", () => {
     }
   };
 
+  const refreshWorkingHours = async () => {
+    const token = localStorage.getItem("token");
+    if (!token) return;
+    try {
+      const res = await fetch("/api/v1/working-hours", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) workingHours.value = await res.json();
+    } catch (err) {
+      console.error("refreshWorkingHours failed", err);
+    }
+  };
+
   const updateResourceOrder = async (reorderedStaff: any[]) => {
     resources.value = reorderedStaff;
 
@@ -118,9 +134,11 @@ export const useCalendarStore = defineStore("calendar", () => {
     services,
     products,
     timeOff,
+    workingHours,
     fetchBaseResources,
     fetchAppointments,
     updateResourceOrder,
     refreshTimeOff,
+    refreshWorkingHours,
   };
 });

@@ -157,6 +157,7 @@
               :baseStartTime="new Date(form.start_time)"
               :default-staff-id="currentStaffId"
               :timeOff="props.timeOff || []"
+              :workingHours="props.workingHours || []"
             />
 
             <!-- Status + Block time -->
@@ -425,6 +426,7 @@ import ClientProfileDialog from "./ClientProfileDialog.vue";
 import { useConfirm } from "primevue/useconfirm";
 import { useToast } from "primevue/usetoast";
 import { fetchOrQueue } from "../offline/queue";
+import { isStaffAvailable } from "../utils/staffAvailability";
 const confirm = useConfirm();
 const toast = useToast();
 const { t } = useI18n();
@@ -436,6 +438,7 @@ const props = defineProps([
   "staff",
   "allProducts",
   "timeOff",
+  "workingHours",
 ]);
 
 const emit = defineEmits(["update:visible", "save"]);
@@ -871,6 +874,37 @@ const executeSave = async (close = true, scope = "single") => {
     return;
   }
 
+  // Hard pre-save check — the staff dropdown in BookingServices already
+  // filters out unavailable staff, but that's only a filter on the options
+  // list; it isn't re-validated if the time changes after a staff member was
+  // picked, or if the field was pre-filled by dragging a calendar slot. The
+  // server is the actual authority (see assertStaffAvailable), this is just
+  // fast feedback before making a network call.
+  if (!form.value.is_block) {
+    for (const svc of servicesList.value) {
+      if (!svc.staff_id || !svc.start_time) continue;
+      const start = new Date(svc.start_time);
+      const end = new Date(start.getTime() + (svc.duration_override || 60) * 60000);
+      const availability = isStaffAvailable({
+        staffList: props.staff || [],
+        workingHours: props.workingHours || [],
+        timeOff: props.timeOff || [],
+        staffId: svc.staff_id,
+        start,
+        end,
+      });
+      if (!availability.available) {
+        toast.add({
+          severity: "error",
+          summary: t("common.error"),
+          detail: t("booking.validation.staffUnavailable"),
+          life: 4000,
+        });
+        return;
+      }
+    }
+  }
+
   loading.value = true;
 
   let url = form.value.id
@@ -928,6 +962,9 @@ const executeSave = async (close = true, scope = "single") => {
     const data = await res.json();
 
     if (!res.ok) {
+      if (data.error === "staff_unavailable") {
+        throw new Error(t("booking.validation.staffUnavailable"));
+      }
       throw new Error(data.error || "Failed to save");
     }
 

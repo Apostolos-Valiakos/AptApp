@@ -199,6 +199,7 @@
       :staff="calendarStore.resources"
       :allProducts="calendarStore.products"
       :timeOff="calendarStore.timeOff"
+      :workingHours="calendarStore.workingHours"
       @save="handleSave"
     />
     <AppointmentSwapDialog
@@ -233,6 +234,7 @@ import ColorModelToggle from "../components/ColorModelToggle.vue";
 import { useAuthStore } from "../stores/auth";
 import elLocale from "@fullcalendar/core/locales/el";
 import StaffReorderDialog from "../components/StaffReorderDialog.vue";
+import { isStaffAvailable, toLocalDateStr, getWorkingRangesForDay } from "../utils/staffAvailability";
 
 const reorderDialogVisible = ref(false);
 const authStore = useAuthStore();
@@ -259,6 +261,11 @@ const currentView = ref("resourceTimeGridDay");
 const currentStart = ref("");
 const currentEnd = ref("");
 const isFetching = ref(false);
+// Mirrors the shop's slotMinTime/slotMaxTime, set directly on the FullCalendar
+// API instance today (see onMounted below) but not otherwise stored reactively
+// — needed here to compute off-hours gaps within the visible window.
+const shopSlotMinTime = ref("07:00:00");
+const shopSlotMaxTime = ref("23:00:00");
 const showDatePicker = ref(false);
 const pickerDate = ref<Date | null>(null);
 const todayDate = computed(() => {
@@ -402,6 +409,15 @@ const getCategoryColor = (category: string) => {
   return map[category] || stringToPastelColor(category);
 };
 
+const getDowFromDateStr = (v: string) => new Date(v.includes("T") ? v : `${v}T00:00:00`).getDay();
+
+// Working hours have no historical versioning — only the current pattern is
+// stored. Hiding a resource or shading gaps on a PAST date would use today's
+// schedule to reinterpret history (e.g. hiding a staff member's column, and
+// with it their real past appointments, on a weekday they used to work but
+// no longer do). Only apply the day-gated behavior to today-or-future.
+const isPastDay = (dateStr: string) => dateStr.slice(0, 10) < todayDateStr();
+
 // --- Computed data ---
 const calendarResources = computed(() => {
   const res = calendarStore.resources;
@@ -410,6 +426,25 @@ const calendarResources = computed(() => {
   let filtered = res.filter((r: any) => r.is_active);
   if (settings.resourceFilter === "me" && authStore.user?.staff_id) {
     filtered = filtered.filter((r: any) => r.id === authStore.user.staff_id);
+  }
+
+  // Day view only — staff who opted into a working-hours pattern but don't
+  // work the currently-displayed day disappear as a resource entirely.
+  // Unconfigured staff (working_hours_enabled falsy) always pass through,
+  // exactly like today, and Week/Month views are untouched by design since
+  // FullCalendar's resource views use one fixed column set for the whole
+  // visible range — there's no way to show different staff per day there.
+  if (
+    currentView.value === "resourceTimeGridDay" &&
+    currentStart.value &&
+    !isPastDay(currentStart.value)
+  ) {
+    const dow = getDowFromDateStr(currentStart.value);
+    filtered = filtered.filter(
+      (r: any) =>
+        !r.working_hours_enabled ||
+        getWorkingRangesForDay(calendarStore.workingHours, r.id, dow).length > 0,
+    );
   }
 
   return filtered.map((r: any) => ({
@@ -470,17 +505,6 @@ const calendarEvents = computed(() => {
   return events;
 });
 
-// staff_time_off DATE columns come back as full ISO timestamps (pg parses DATE
-// into a local-midnight Date, then JSON serialization renders it in UTC), so
-// always round-trip through local date parts rather than using the raw string.
-const toLocalDateStr = (v: any) => {
-  const d = new Date(v);
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
-};
-
 const timeOffBackgroundEvents = computed(() => {
   const entries = calendarStore.timeOff;
   if (!Array.isArray(entries)) return [];
@@ -528,6 +552,46 @@ const timeOffBackgroundEvents = computed(() => {
   });
 });
 
+// Day view only, mirrors timeOffBackgroundEvents — shades the complement of
+// a staff member's working ranges (including the split-shift gap) within the
+// shop's visible slot window. Staff who haven't opted into working hours get
+// no shading at all, exactly as they get no resource-hiding above.
+const workingHoursBackgroundEvents = computed(() => {
+  if (currentView.value !== "resourceTimeGridDay" || !currentStart.value || isPastDay(currentStart.value)) return [];
+
+  const dow = getDowFromDateStr(currentStart.value);
+  const dateStr = toLocalDateStr(currentStart.value);
+  const dayStart = shopSlotMinTime.value;
+  const dayEnd = shopSlotMaxTime.value;
+  const events: any[] = [];
+
+  for (const staffMember of calendarStore.resources) {
+    if (!staffMember.working_hours_enabled) continue;
+    const ranges = getWorkingRangesForDay(calendarStore.workingHours, staffMember.id, dow);
+
+    let cursor = dayStart;
+    const gaps: [string, string][] = [];
+    for (const r of ranges) {
+      if (r.start > cursor) gaps.push([cursor, r.start]);
+      if (r.end > cursor) cursor = r.end;
+    }
+    if (dayEnd > cursor) gaps.push([cursor, dayEnd]);
+
+    gaps.forEach(([s, e], idx) => {
+      events.push({
+        id: `offhours_${staffMember.id}_${idx}`,
+        resourceId: staffMember.id.toString(),
+        display: "background",
+        classNames: ["fc-off-hours-bg"],
+        start: `${dateStr}T${s}`,
+        end: `${dateStr}T${e}`,
+        extendedProps: { isOffHours: true },
+      });
+    });
+  }
+  return events;
+});
+
 // --- Actions ---
 const openNewAppointment = () => {
   selectedAppointment.value = null;
@@ -546,7 +610,11 @@ const prepareServicesForUpdate = (services: any[]) =>
     duration_override: s.duration_override !== undefined ? s.duration_override : s.duration_minutes,
   }));
 
-const updateAppointment = async (id: string, updates: any) => {
+// Returns whether the update succeeded, so eventDrop/eventResize can revert
+// the optimistic drag on rejection (previously swallowed silently, leaving
+// the event visually stuck in the rejected spot — now common once staff
+// working-hours/time-off enforcement can reject a drag).
+const updateAppointment = async (id: string, updates: any): Promise<boolean> => {
   try {
     const token = localStorage.getItem("token");
     const res = await fetch(`/api/v1/appointments/${id}`, {
@@ -559,9 +627,28 @@ const updateAppointment = async (id: string, updates: any) => {
       throw new Error(err.error || "Update failed");
     }
     await calendarStore.fetchAppointments(currentStart.value, currentEnd.value);
+    return true;
   } catch (e: any) {
     toast.add({ severity: "error", summary: "Update Failed", detail: e.message || "Failed to update appointment", life: 3000 });
+    return false;
   }
+};
+
+// Shared gate for selectAllow/eventAllow — rejects a drag-select or an
+// existing appointment's drag/resize if it would land during a staff
+// member's time-off or outside their configured working hours. This is a
+// UX convenience only (prevents the gesture from ever completing); the
+// server-side assertStaffAvailable guard is the actual authority.
+const isRangeAllowedForResource = (start: Date, end: Date, resource: any) => {
+  if (!resource) return true;
+  return isStaffAvailable({
+    staffList: calendarStore.resources,
+    workingHours: calendarStore.workingHours,
+    timeOff: calendarStore.timeOff,
+    staffId: resource.id,
+    start,
+    end,
+  }).available;
 };
 
 const getDayMinWidth = () => (window.innerWidth < 768 ? 130 : 160);
@@ -594,6 +681,9 @@ const calendarOptions = ref({
   editable: true,
   selectable: true,
   selectMirror: true,
+  selectAllow: (info: any) => isRangeAllowedForResource(info.start, info.end, info.resource),
+  eventAllow: (dropInfo: any, draggedEvent: any) =>
+    isRangeAllowedForResource(dropInfo.start, dropInfo.end, dropInfo.resource || draggedEvent?.getResources?.()[0]),
   resources: [],
   events: [],
 
@@ -645,6 +735,12 @@ const calendarOptions = ref({
         </div>
       `,
       };
+    }
+
+    // Off-hours shading (working-hours gaps) is a plain textured background
+    // with no label — just the diagonal-stripe CSS class, nothing to render.
+    if (props.isOffHours) {
+      return { html: "" };
     }
 
     const timeText = arg.timeText;
@@ -701,7 +797,7 @@ const calendarOptions = ref({
     }
   },
 
-  eventDrop: (info: any) => {
+  eventDrop: async (info: any) => {
     const { appointmentId, serviceIndex, fullAppointment } = info.event.extendedProps;
     const newResourceId = info.newResource?.id;
     const start = info.event.start.getTime();
@@ -713,10 +809,11 @@ const calendarOptions = ref({
       services[serviceIndex].duration_override = (end - start) / 60000;
       if (newResourceId) services[serviceIndex].staff_id = newResourceId;
     }
-    updateAppointment(appointmentId, { ...fullAppointment, services });
+    const ok = await updateAppointment(appointmentId, { ...fullAppointment, services });
+    if (!ok) info.revert();
   },
 
-  eventResize: (info: any) => {
+  eventResize: async (info: any) => {
     const { appointmentId, serviceIndex, fullAppointment } = info.event.extendedProps;
     const start = info.event.start.getTime();
     const end = info.event.end.getTime();
@@ -727,7 +824,8 @@ const calendarOptions = ref({
       services[serviceIndex].duration_minutes = newDuration;
       services[serviceIndex].duration_override = newDuration;
     }
-    updateAppointment(appointmentId, { ...fullAppointment, services });
+    const ok = await updateAppointment(appointmentId, { ...fullAppointment, services });
+    if (!ok) info.revert();
   },
 
   select: (info: any) => {
@@ -742,12 +840,12 @@ const calendarOptions = ref({
 });
 
 watch(
-  [calendarResources, calendarEvents, timeOffBackgroundEvents],
-  ([newResources, newEvents, newTimeOffEvents]) => {
+  [calendarResources, calendarEvents, timeOffBackgroundEvents, workingHoursBackgroundEvents],
+  ([newResources, newEvents, newTimeOffEvents, newWorkingHoursEvents]) => {
     if (!fullCalendar.value) return;
     const api = fullCalendar.value.getApi();
     api.setOption("resources", newResources);
-    api.setOption("events", [...newEvents, ...newTimeOffEvents]);
+    api.setOption("events", [...newEvents, ...newTimeOffEvents, ...newWorkingHoursEvents]);
   },
   { deep: true },
 );
@@ -764,10 +862,12 @@ onMounted(async () => {
         const res = await fetch("/api/v1/shop", { headers: { Authorization: `Bearer ${token}` } });
         if (res.ok) {
           const shop = await res.json();
+          if (shop.slot_min_time) shopSlotMinTime.value = shop.slot_min_time + ":00";
+          if (shop.slot_max_time) shopSlotMaxTime.value = shop.slot_max_time + ":00";
           const api = calendarApi.value;
           if (api) {
-            if (shop.slot_min_time) api.setOption("slotMinTime", shop.slot_min_time + ":00");
-            if (shop.slot_max_time) api.setOption("slotMaxTime", shop.slot_max_time + ":00");
+            if (shop.slot_min_time) api.setOption("slotMinTime", shopSlotMinTime.value);
+            if (shop.slot_max_time) api.setOption("slotMaxTime", shopSlotMaxTime.value);
             if (typeof shop.show_weekends === "boolean") api.setOption("weekends", shop.show_weekends);
           }
         }
@@ -782,6 +882,22 @@ onMounted(async () => {
   --fc-border-color: #f3f4f6;
   --fc-now-indicator-color: #ef4444;
   --fc-today-bg-color: transparent;
+}
+
+/* Staff working-hours off-hours shading (Day view) — a texture rather than a
+   third flat color, so it stays distinguishable from the red "leave" and
+   gray "break" time-off tints, including for colorblind users. !important is
+   needed because FullCalendar's own .fc-bg-event rule sets the `background`
+   shorthand (color + image together), which otherwise wins the cascade by
+   source order and silently resets background-image back to none. */
+.fc-off-hours-bg {
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(100, 116, 139, 0.16) 0 6px,
+    transparent 6px 12px
+  ) !important;
+  background-color: transparent !important;
+  opacity: 1 !important;
 }
 
 .fc .fc-toolbar {
