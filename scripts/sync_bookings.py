@@ -44,6 +44,20 @@ STATUS_MAP = {
     "μη εμφανιση":   ("no-show",   "unpaid"),
 }
 
+# Known export-name variants that don't fuzzy-match cleanly against the DB's
+# canonical name, confirmed by hand rather than guessed — applied to the raw
+# service name before matching. Add to this as new export quirks turn up in
+# future syncs, rather than re-asking each time.
+SERVICE_NAME_ALIASES = {
+    "holistic-sauna-leave on": "HOLISTIC-SAUNA SCRUB-LEAVE ON",
+}
+
+# Rows whose service name is too generic to safely attribute to any specific
+# service — skipped outright rather than fuzzy-matched or auto-created.
+SKIP_SERVICE_NAMES = {
+    "1η συνεδρια",
+}
+
 
 def normalize(s) -> str:
     if not pd.notna(s):
@@ -120,11 +134,11 @@ def create_client(cur, full_name: str) -> str:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("excel", help="Path to the bookings .xlsx file")
+    parser.add_argument("excel", help="Path to the bookings .xlsx or .csv file")
     parser.add_argument("--commit", action="store_true")
     args = parser.parse_args()
 
-    df = pd.read_excel(args.excel)
+    df = pd.read_csv(args.excel) if args.excel.lower().endswith(".csv") else pd.read_excel(args.excel)
     df.columns = [c.strip() for c in df.columns]
     print(f"\nLoaded {len(df)} rows from '{args.excel}'\n")
 
@@ -162,6 +176,10 @@ def main():
         client_raw = str(row.get("Πελάτης", "")).strip()
         staff_raw = str(row.get("Υπάλληλος", "")).strip()
         service_raw = str(row.get("Υπηρεσία", "")).strip()
+
+        if normalize(service_raw) in SKIP_SERVICE_NAMES:
+            continue
+        service_raw = SERVICE_NAME_ALIASES.get(normalize(service_raw), service_raw)
 
         key = (normalize(client_raw), normalize(staff_raw), normalize(service_raw),
                start_time.strftime("%Y-%m-%d %H:%M"))
