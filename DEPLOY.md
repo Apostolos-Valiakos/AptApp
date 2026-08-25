@@ -78,32 +78,37 @@ nano .env
 ```env
 # --- Database (used by both the db container and the app) ---
 POSTGRES_DB=pure_production
-POSTGRES_PASSWORD=<generate a strong password>
-POSTGRES_URI=postgresql://postgres:<same password>@db:5432/pure_production
+POSTGRES_PASSWORD=CHANGEME_generate_a_strong_password
+POSTGRES_URI=postgresql://postgres:CHANGEME_same_password_as_above@db:5432/pure_production
 
 # --- App ---
 PORT=3000
 NODE_ENV=production
-JWT_SECRET=<generate: openssl rand -hex 32>
-MESSAGE_ENCRYPTION_KEY=<generate: openssl rand -hex 32>
+JWT_SECRET=CHANGEME_run_openssl_rand_hex_32
+MESSAGE_ENCRYPTION_KEY=CHANGEME_run_openssl_rand_hex_32
 ALLOWED_ORIGINS=https://your-domain.com
 PUBLIC_BASE_URL=https://your-domain.com
 FRONTEND_URL=https://your-domain.com
-APP_NAME=Pure Spa Booking
+APP_NAME="Pure Spa Booking"
 
 # --- Email (for reminders, invites, demo-request notifications) ---
 EMAIL_HOST=smtp.gmail.com
 EMAIL_PORT=465
-EMAIL_USER=<your sending address>
-EMAIL_PASS=<app password, not your real Gmail password>
+EMAIL_USER=CHANGEME_your_sending_address
+EMAIL_PASS="CHANGEME_gmail_app_password"
 
 # --- Owner account bootstrap (see server.js's schema-setup IIFE) ---
-OWNER_USERNAME=<pick a username>
-OWNER_PASSWORD=<pick a strong password>
+OWNER_USERNAME=CHANGEME_pick_a_username
+OWNER_PASSWORD=CHANGEME_pick_a_strong_password
 
 # --- Backups (Section 8) ---
-BACKUP_ENCRYPTION_KEY=<generate: openssl rand -base64 32>
+BACKUP_ENCRYPTION_KEY=CHANGEME_run_openssl_rand_base64_32
 ```
+
+**Every `CHANGEME_...` value above must be replaced before you're done** — none of them are usable as-is. Two hard-learned rules, since `scripts/backup_db.sh`/`scripts/restore_db.sh` read this file via bash's `source .env` (stricter than Docker Compose's own, more lenient `.env` parsing):
+- **Any value containing a space must be double-quoted** (`APP_NAME` and `EMAIL_PASS` already are, above — a Gmail App Password in particular is displayed as four space-separated groups; paste it with the spaces intact, inside the quotes). An unquoted space breaks `source` with a confusing `<word>: command not found` error.
+- **Never leave a placeholder that itself contains shell characters** (the earlier draft of this guide used `<generate: openssl rand -hex 32>` — the `<`/`:`/`>` broke `source` outright with a syntax error before you even got to replacing it). The `CHANGEME_...` style above is deliberately just a plain word: safe to source, and if you genuinely forget to replace one, you'll get an obvious wrong-value/auth failure in the app instead of a cryptic shell error — but don't rely on that, replace all of them.
+- Since Compose's own `.env` parsing is *more* lenient than bash's, a leftover placeholder can silently become the real, live value for something like `POSTGRES_PASSWORD` without any error at all — `docker compose up` won't complain, it'll just quietly secure your database with literal placeholder text. Grep for any you missed: `grep -n CHANGEME_ .env` should return nothing once you're done.
 
 Notes:
 - `POSTGRES_URI` uses host `db` (the Docker service name), not `localhost` — that's how containers reach each other on the compose network.
@@ -399,7 +404,7 @@ docker compose restart app
 
 ## What was fixed before this guide
 
-Six real issues were found and corrected while preparing this:
+Seven real issues were found and corrected while preparing this:
 
 1. **`ALLOWED_ORIGIN` → `ALLOWED_ORIGINS`**: `server/server.js` reads `process.env.ALLOWED_ORIGINS` (plural, comma-separated), but `docker-compose.yml` defined the singular `ALLOWED_ORIGIN`. Left as-is, CORS would have silently fallen back to its `localhost:5173` default in production. Fixed.
 2. **Missing `.dockerignore`**: `Dockerfile`'s builder stage does `COPY . .`, and without a `.dockerignore`, `.env` (real secrets) and `.git` (full history) were being pulled into the build context and baked into intermediate image layers. Added one, and verified the resulting image contains no `.env`.
@@ -407,6 +412,7 @@ Six real issues were found and corrected while preparing this:
 4. **`PUBLIC_BASE_URL` was always derived as `${API_URL}:${PORT}`**, never actually read from an env var of that name, despite being used to build links inside reminder/confirmation emails. In production the app only listens on `127.0.0.1:3000` behind Nginx, so those links would have literally ended in `:3000` — unreachable from outside the VPS. `server/reminderService.js` now reads an explicit `PUBLIC_BASE_URL` override when set (same pattern `FRONTEND_URL` already used), falling back to the old `API_URL:PORT` derivation for local/LAN dev.
 5. **Timezone mismatch**: local dev Postgres runs in `Europe/Athens`, but `docker-compose.yml`'s `db` service explicitly set `TZ: "UTC"`, and the `app` service set no `TZ` at all (defaults to UTC). Appointment scheduling, the staff working-hours/time-off day-of-week logic, and reminder-email timestamps all depend on wall-clock local time, not UTC — this would have silently shifted day-of-week boundaries near midnight in production. Both services now explicitly set `TZ: "Europe/Athens"`, verified to resolve correctly inside the built image.
 6. **Unused `redis` service removed.** Nothing in the codebase does `require("redis")` — it was dead weight in `docker-compose.yml` (an extra container to run, secure, and monitor for zero functional benefit). Removed from the compose file and the `app` service's `REDIS_URL`/`depends_on` entries. Easy to add back if it's ever actually wired up.
+7. **The `.env` template itself broke the backup/restore scripts** — found live, during an actual deployment with this guide. `scripts/backup_db.sh`/`scripts/restore_db.sh` read `.env` via bash's `source`, which is much stricter than Docker Compose's own `.env` parsing: the original placeholder style (`<generate: openssl rand -hex 32>`) contains shell metacharacters (`<`, `:`, `>`) and broke `source` outright with a syntax error, and `APP_NAME=Pure Spa Booking` (unquoted, multi-word) broke it a second way (`Spa: command not found`). Worse, a leftover placeholder that *doesn't* break bash syntax (e.g. `POSTGRES_PASSWORD=<generate a strong password>`) is accepted silently by Compose's more lenient parser — meaning it could become the real, live database password with no error at all. Replaced every placeholder with a shell-safe `CHANGEME_...` token, quoted every value that can contain spaces (`APP_NAME`, `EMAIL_PASS` — Gmail App Passwords are shown as four space-separated groups), and added explicit quoting rules to Section 3.
 
 All of this was verified with a real `docker build` (succeeds, ~10s app-image layer, bcrypt's native module compiles cleanly on Alpine — a common failure point that turned out fine here) and `docker compose config` (validates), plus the shop-scoped migration script in Section 4 was run to completion — commit included — against a disposable full copy of the actual local database (2,377 appointments / 5,411 clients / 18 staff survived for the target shop; zero rows from the other two shops remained; zero orphaned child rows anywhere) before being included in this guide, and a second run with a deliberately wrong shop id confirmed the self-verification step aborts cleanly with nothing committed.
 
