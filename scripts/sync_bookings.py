@@ -121,9 +121,12 @@ def load_existing_key_counts(cur):
 
 
 def create_client(cur, full_name: str) -> str:
+    # The "Πελάτης" export column lists surname first (e.g. "ΓΟΥΡΓΙΩΤΗΣ ΣΤΑΥΡΟΣ"),
+    # so the first token is the surname (-> last_name) and the rest is the given
+    # name (-> first_name) — not the other way around.
     parts = full_name.strip().split(" ", 1)
-    first = parts[0].capitalize()
-    last = parts[1].capitalize() if len(parts) > 1 else ""
+    last = parts[0].capitalize()
+    first = parts[1].capitalize() if len(parts) > 1 else ""
     cid = str(uuid.uuid4())
     cur.execute(
         "INSERT INTO clients (id, first_name, last_name, shop_id) VALUES (%s, %s, %s, %s)",

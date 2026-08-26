@@ -345,7 +345,9 @@ const handleReorderSave = async (newOrder: any[]) => {
 };
 
 // --- Zoom ---
-const slotDurationMinutes = ref(30);
+// Matches calendarOptions' initial slotDuration ("00:15:00") below, so the
+// displayed zoom state and the actual grid start in sync.
+const slotDurationMinutes = ref(15);
 
 const zoomIn = () => {
   if (slotDurationMinutes.value > 10) { slotDurationMinutes.value -= 10; updateSlotDuration(); }
@@ -491,7 +493,7 @@ const calendarEvents = computed(() => {
           group_id: appt.group_id,
           serviceIndex: index,
           fullAppointment: { ...appt, group_id: appt.group_id, products: appt.products || [] },
-          client_name: `${appt.first_name || "Unknown"} ${appt.last_name || ""}`,
+          client_name: `${appt.last_name || ""} ${appt.first_name || "Unknown"}`.trim(),
           service_name: svc.service_name || "Service",
         },
       });
@@ -650,6 +652,12 @@ const isRangeAllowedForResource = (start: Date, end: Date, resource: any) => {
 
 const getDayMinWidth = () => (window.innerWidth < 768 ? 130 : 160);
 
+// eventContent/resourceLabelContent below build raw HTML strings from
+// client/staff/service names, which are user-editable text, not code — always
+// escape before interpolating into either HTML content or an attribute value.
+const escapeHtml = (value: unknown): string =>
+  String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string);
+
 // --- Calendar Options ---
 const calendarOptions = ref({
   schedulerLicenseKey: "CC-Attribution-NonCommercial-NoDerivatives",
@@ -706,13 +714,14 @@ const calendarOptions = ref({
   },
 
   resourceLabelContent: (arg: any) => {
-    const src = arg.resource.extendedProps.imageUrl;
+    const src = escapeHtml(arg.resource.extendedProps.imageUrl);
+    const title = escapeHtml(arg.resource.title);
     return {
       html: `
         <div class="flex flex-col items-center justify-center py-2 w-full h-full">
-          <img src="${src}" alt="${arg.resource.title}" class="w-8 h-8 rounded-full border-2 border-white shadow-sm mb-1.5 object-cover" />
-          <div style="white-space:normal;word-break:break-word;" class="font-bold text-gray-800 text-[10px] md:text-xs leading-tight text-center px-1">
-            ${arg.resource.title}
+          <img src="${src}" alt="${title}" class="w-8 h-8 rounded-full border-2 border-white shadow-sm mb-1.5 object-cover" />
+          <div style="white-space:normal;word-break:break-word;" class="font-bold text-gray-800 text-[11px] md:text-[13px] leading-tight text-center px-1">
+            ${title}
           </div>
         </div>
       `,
@@ -725,10 +734,10 @@ const calendarOptions = ref({
     if (props.isTimeOff) {
       return {
         html: `
-        <div class="relative w-full h-full p-1 flex flex-col leading-tight overflow-hidden">
-          <div class="text-[9px] md:text-[11px] font-bold text-gray-600 break-words whitespace-normal">${props.typeLabel}</div>
-          <div class="text-[9px] md:text-[10px] text-gray-500 break-words whitespace-normal">${props.durationLabel}</div>
-          ${props.reason ? `<div class="text-[9px] md:text-[10px] text-gray-400 italic break-words whitespace-normal">${props.reason}</div>` : ""}
+        <div class="relative w-full h-full p-1.5 flex flex-col leading-tight overflow-hidden">
+          <div class="text-[10px] md:text-[12px] font-bold text-gray-600 break-words whitespace-normal">${escapeHtml(props.typeLabel)}</div>
+          <div class="text-[10px] md:text-[11px] text-gray-500 break-words whitespace-normal">${escapeHtml(props.durationLabel)}</div>
+          ${props.reason ? `<div class="text-[10px] md:text-[11px] text-gray-400 italic break-words whitespace-normal">${escapeHtml(props.reason)}</div>` : ""}
         </div>
       `,
       };
@@ -751,10 +760,13 @@ const calendarOptions = ref({
     const start = arg.event.start;
     const end = arg.event.end;
     const durationMins = end && start ? (end.getTime() - start.getTime()) / 60000 : 60;
-    const isShort = durationMins < 45;
+    // Only genuinely tight (<20 min) boxes drop to the compact, time/service-less
+    // layout — everything 20 min and up gets the full time+name+service layout,
+    // since the default zoom now gives them enough height to show it.
+    const isShort = durationMins < 20;
 
-    const paddingClass = isShort && !isMonthView ? "p-0.5 pl-1" : "p-2";
-    const titleClass = isShort && !isMonthView ? "text-[9px] md:text-[10px] leading-tight" : "text-[10px] md:text-xs leading-tight";
+    const paddingClass = isShort && !isMonthView ? "p-1 pl-1.5" : "p-2";
+    const titleClass = isShort && !isMonthView ? "text-[10px] md:text-[11px] leading-tight" : "text-[11px] md:text-[13px] leading-tight";
 
     const textClass = isCancelled
       ? "line-through opacity-60 text-gray-500"
@@ -778,9 +790,9 @@ const calendarOptions = ref({
       html: `
       <div class="relative w-full ${paddingClass} flex flex-col leading-tight overflow-hidden rounded-md hover:brightness-95 transition-all ${isMonthView ? "" : "h-full"}">
         ${statusBadge}
-        ${!isShort && !isMonthView ? `<div class="text-[9px] md:text-[11px] font-bold opacity-60 mb-0.5 ${timeClass}">${timeText}</div>` : ""}
-        <div class="font-bold ${titleClass} pr-4 break-words whitespace-normal ${textClass}">${props.client_name}</div>
-        ${!isShort || isMonthView ? `<div class="text-[9px] md:text-[11px] font-medium mt-0.5 break-words whitespace-normal ${serviceClass}">${props.service_name}</div>` : ""}
+        ${!isShort && !isMonthView ? `<div class="text-[10px] md:text-[12px] font-bold opacity-60 mb-0.5 ${timeClass}">${timeText}</div>` : ""}
+        <div class="font-bold ${titleClass} pr-4 truncate ${textClass}" title="${escapeHtml(props.client_name)}">${escapeHtml(props.client_name)}</div>
+        ${!isShort || isMonthView ? `<div class="text-[10px] md:text-[12px] font-medium mt-0.5 truncate ${serviceClass}" title="${escapeHtml(props.service_name)}">${escapeHtml(props.service_name)}</div>` : ""}
       </div>
     `,
     };
