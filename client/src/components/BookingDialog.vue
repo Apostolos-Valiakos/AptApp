@@ -601,9 +601,16 @@ watch(totalDueNow, (newVal) => {
 });
 
 // === INITIALIZATION ===
+// Keyed on props.visible too, not just props.appointment — this component
+// instance is never unmounted between opens (see comment below), so two
+// consecutive "New" opens both pass appointment=null with no reference
+// change, and a watch on props.appointment alone would never re-fire,
+// leaving stale form state (including a from-the-last-save form.value.id)
+// in place for the next open.
 watch(
-  () => props.appointment,
-  (val) => {
+  [() => props.appointment, () => props.visible],
+  ([val, visible]) => {
+    if (!visible) return;
     let resolvedStaffId = null;
     if (val?.staff_id && props.staff) {
       const found = props.staff.find((s: any) => s.id == val.staff_id);
@@ -857,7 +864,11 @@ const executeSave = async (close = true, scope = "single") => {
 };
 
 const recordPayment = async (
-  split: { amount2: number; payment_method2: string; gift_card_id2: string | null } | null,
+  split: {
+    amount2: number;
+    payment_method2: string;
+    gift_card_id2: string | null;
+  } | null,
 ) => {
   if (amountToPayNow.value <= 0) return;
   paymentLoading.value = true;
@@ -881,11 +892,13 @@ const recordPayment = async (
         amount: amountToPayNow.value,
         payment_method: selectedPaymentMethod.value,
         gift_card_id: selectedGiftCardId.value,
-        ...(split ? {
-          amount2: split.amount2,
-          payment_method2: split.payment_method2,
-          gift_card_id2: split.gift_card_id2,
-        } : {}),
+        ...(split
+          ? {
+              amount2: split.amount2,
+              payment_method2: split.payment_method2,
+              gift_card_id2: split.gift_card_id2,
+            }
+          : {}),
       }),
     });
 
