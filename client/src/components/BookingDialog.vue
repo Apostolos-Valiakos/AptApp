@@ -492,7 +492,9 @@ const currentProfileId = ref<string | null>(null);
 const notifyClient = ref(true);
 const newClient = ref({ first_name: "", last_name: "", phone: "" });
 const amountToPayNow = ref(0);
-const selectedPaymentMethod = ref<"card" | "cash" | "gift-card" | "membership">("card");
+const selectedPaymentMethod = ref<"card" | "cash" | "gift-card" | "membership">(
+  "card",
+);
 const selectedGiftCardId = ref<string | null>(null);
 const selectedMembershipRedemptions = ref<any[]>([]);
 const bookingPaymentsRef = ref<any>(null);
@@ -675,8 +677,9 @@ watch(totalDueNow, (newVal) => {
 
 // === INITIALIZATION ===
 watch(
-  () => props.appointment,
-  (val) => {
+  [() => props.appointment, () => props.visible],
+  ([val, visible]) => {
+    if (!visible) return;
     let resolvedStaffId = null;
     if (val?.staff_id && props.staff) {
       const found = props.staff.find((s: any) => s.id == val.staff_id);
@@ -884,7 +887,9 @@ const executeSave = async (close = true, scope = "single") => {
     for (const svc of servicesList.value) {
       if (!svc.staff_id || !svc.start_time) continue;
       const start = new Date(svc.start_time);
-      const end = new Date(start.getTime() + (svc.duration_override || 60) * 60000);
+      const end = new Date(
+        start.getTime() + (svc.duration_override || 60) * 60000,
+      );
       const availability = isStaffAvailable({
         staffList: props.staff || [],
         workingHours: props.workingHours || [],
@@ -931,9 +936,10 @@ const executeSave = async (close = true, scope = "single") => {
 
     const result = await fetchOrQueue(url, method, payload, {
       kind: "appointment",
-      label: `${form.value.client_id ? selectedClient.value?.first_name || "" : ""} ${t(
-        "booking.editDialog.title",
-      )}`.trim(),
+      label:
+        `${form.value.client_id ? selectedClient.value?.first_name || "" : ""} ${t(
+          "booking.editDialog.title",
+        )}`.trim(),
     });
 
     if (result.queued) {
@@ -1000,7 +1006,12 @@ const executeSave = async (close = true, scope = "single") => {
 };
 
 const recordPayment = async (
-  split: { amount2: number; payment_method2: string; gift_card_id2: string | null; redemptions2?: any[] } | null,
+  split: {
+    amount2: number;
+    payment_method2: string;
+    gift_card_id2: string | null;
+    redemptions2?: any[];
+  } | null,
 ) => {
   if (amountToPayNow.value <= 0) return;
   paymentLoading.value = true;
@@ -1036,14 +1047,20 @@ const recordPayment = async (
         payment_method: selectedPaymentMethod.value,
         gift_card_id: selectedGiftCardId.value,
         redemptions: selectedMembershipRedemptions.value,
-        ...(split ? {
-          amount2: split.amount2,
-          payment_method2: split.payment_method2,
-          gift_card_id2: split.gift_card_id2,
-          redemptions2: split.redemptions2,
-        } : {}),
+        ...(split
+          ? {
+              amount2: split.amount2,
+              payment_method2: split.payment_method2,
+              gift_card_id2: split.gift_card_id2,
+              redemptions2: split.redemptions2,
+            }
+          : {}),
       },
-      { kind: "payment", label: `${t("payment.title")} — ${selectedClient.value?.first_name || ""}`.trim() },
+      {
+        kind: "payment",
+        label:
+          `${t("payment.title")} — ${selectedClient.value?.first_name || ""}`.trim(),
+      },
     );
 
     if (result.queued) {
@@ -1059,7 +1076,10 @@ const recordPayment = async (
       });
       selectedGiftCardId.value = null;
       selectedMembershipRedemptions.value = [];
-      if (selectedPaymentMethod.value === "gift-card" || selectedPaymentMethod.value === "membership") {
+      if (
+        selectedPaymentMethod.value === "gift-card" ||
+        selectedPaymentMethod.value === "membership"
+      ) {
         selectedPaymentMethod.value = "card";
       }
       bookingPaymentsRef.value?.disableSplit();
@@ -1099,7 +1119,10 @@ const recordPayment = async (
       // and any further payment (e.g. covering a shortfall) needs a fresh pick.
       selectedGiftCardId.value = null;
       selectedMembershipRedemptions.value = [];
-      if (selectedPaymentMethod.value === "gift-card" || selectedPaymentMethod.value === "membership") {
+      if (
+        selectedPaymentMethod.value === "gift-card" ||
+        selectedPaymentMethod.value === "membership"
+      ) {
         selectedPaymentMethod.value = "card";
       }
       bookingPaymentsRef.value?.disableSplit();
