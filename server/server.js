@@ -2429,6 +2429,18 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
         c.phone as client_phone,
         COALESCE(c.outstanding_balance, 0) as client_outstanding_balance,
         COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0) as deposit_amount,
+        -- True only on a client's earliest-ever appointment (by created_at,
+        -- tie-broken by id) — powers the "new client" badge on the
+        -- scheduler's appointment hover card. NULL-safe: a client_id-less
+        -- block/hold naturally yields no match.
+        (
+          a.client_id IS NOT NULL AND a.id = (
+            SELECT a2.id FROM appointments a2
+            WHERE a2.client_id = a.client_id AND a2.shop_id = a.shop_id
+            ORDER BY a2.created_at ASC, a2.id ASC
+            LIMIT 1
+          )
+        ) as is_new_client,
         (SELECT payment_method FROM transactions WHERE appointment_id = a.id ORDER BY created_at DESC LIMIT 1) as payment_method,
         (
           SELECT gc.purchase_payment_method FROM transactions t

@@ -905,4 +905,21 @@ export default {
       failed: "Κάτι πήγε στραβά",
     },
   },
+  scheduler: {
+    hoverCard: {
+      newClient: "ΝΕΟΣ ΠΕΛΑΤΗΣ",
+      appointmentSuffix: "ραντεβού",
+      unknownClient: "Άγνωστος πελάτης",
+      date: "Ημερομηνία",
+      duration: "Διάρκεια",
+      service: "Υπηρεσία",
+      payment: "Πληρωμή",
+      bookedOn: "Κράτηση στις",
+      unpaid: "Απλήρωτο",
+      paid: "Πληρωμένο",
+      hourSingular: "{h} ώρα",
+      hoursPlural: "{h} ώρες",
+      minutesLabel: "{m} λεπτά",
+    },
+  },
 };

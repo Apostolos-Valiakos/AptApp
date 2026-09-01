@@ -890,4 +890,21 @@ export default {
       failed: 'Something went wrong',
     },
   },
+  scheduler: {
+    hoverCard: {
+      newClient: 'NEW CLIENT',
+      appointmentSuffix: 'appointment',
+      unknownClient: 'Unknown client',
+      date: 'Date',
+      duration: 'Duration',
+      service: 'Service',
+      payment: 'Payment',
+      bookedOn: 'Booked on',
+      unpaid: 'Unpaid',
+      paid: 'Paid',
+      hourSingular: '{h} hour',
+      hoursPlural: '{h} hours',
+      minutesLabel: '{m} minutes',
+    },
+  },
 }
