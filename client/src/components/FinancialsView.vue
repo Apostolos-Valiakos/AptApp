@@ -521,6 +521,69 @@
         </DataTable>
       </TabPanel>
 
+      <!-- Tab: Product Usage -->
+      <TabPanel :header="t('analytics.tabs.productUsage')">
+        <div class="flex justify-end mb-4">
+          <router-link to="/app/product-usage" class="text-sm text-[var(--p-primary-600)] hover:underline flex items-center gap-1">
+            <i class="pi pi-cog text-xs"></i>
+            {{ t("analytics.productUsage.manageLink") }}
+          </router-link>
+        </div>
+        <DataTable
+          :value="productUsageReport"
+          responsiveLayout="scroll"
+          :paginator="true"
+          :rows="10"
+          class="p-datatable-sm"
+        >
+          <template #empty>
+            <div class="text-center text-gray-400 py-8">
+              {{ t("analytics.productUsage.empty") }}
+            </div>
+          </template>
+          <Column :header="t('analytics.productUsage.product')">
+            <template #body="slotProps">
+              {{ slotProps.data.product_name }}
+              <span class="text-gray-400 text-xs" v-if="slotProps.data.variation_name">— {{ slotProps.data.variation_name }}</span>
+            </template>
+          </Column>
+          <Column field="unit" :header="t('analytics.productUsage.unit')"></Column>
+          <Column :header="t('analytics.productUsage.expected')">
+            <template #body="slotProps">
+              {{ formatUsageRange(slotProps.data.expected_min, slotProps.data.expected_max) }}
+            </template>
+          </Column>
+          <Column :header="t('analytics.productUsage.actual')">
+            <template #body="slotProps">
+              {{ slotProps.data.actual === null ? "—" : slotProps.data.actual }}
+            </template>
+          </Column>
+          <Column :header="t('analytics.productUsage.usedBy')">
+            <template #body="slotProps">
+              <div class="text-xs text-gray-500">
+                <div v-for="(svc, i) in slotProps.data.services" :key="i">
+                  {{ svc.service_name }} ({{ svc.count }} {{ t("analytics.productUsage.bookings") }})
+                </div>
+              </div>
+            </template>
+          </Column>
+          <Column :header="t('analytics.productUsage.status')">
+            <template #body="slotProps">
+              <Tag
+                :value="usageStatusLabel(slotProps.data.status)"
+                :severity="
+                  slotProps.data.status === 'ok'
+                    ? 'success'
+                    : slotProps.data.status === 'no_data'
+                      ? 'secondary'
+                      : 'warn'
+                "
+              />
+            </template>
+          </Column>
+        </DataTable>
+      </TabPanel>
+
       <!-- Tab: Gift Cards -->
       <TabPanel :header="t('analytics.tabs.giftCards')">
         <div class="grid grid-cols-3 gap-4 mb-6">
@@ -786,6 +849,7 @@ const analytics = ref<any>({
 const salesReport = ref<any[]>([]);
 const productsReport = ref<any[]>([]);
 const productsSummary = ref<any>({ total_revenue: 0, total_units: 0 });
+const productUsageReport = ref<any[]>([]);
 const giftCardsReport = ref<any[]>([]);
 const giftCardsSummary = ref<any>({ total_revenue: 0, total_outstanding: 0, total_cards: 0 });
 const staffReport = ref([]);
@@ -815,6 +879,18 @@ const formatDate = (d: Date | null) => {
     day: "numeric",
     month: "short",
   });
+};
+
+const formatUsageRange = (min: number, max: number) => (min === max ? `${min}` : `${min} - ${max}`);
+
+const usageStatusLabel = (status: string) => {
+  const map: Record<string, string> = {
+    ok: t("analytics.productUsage.statusOk"),
+    over: t("analytics.productUsage.statusOver"),
+    under: t("analytics.productUsage.statusUnder"),
+    no_data: t("analytics.productUsage.statusNoData"),
+  };
+  return map[status] || status;
 };
 
 const clearFilters = () => {
@@ -869,6 +945,7 @@ const fetchAllReports = async () => {
       clientsRes,
       serviceSumRes,
       productsRes,
+      productUsageRes,
       giftCardsRes,
     ] = await Promise.all([
       fetch(`/api/v1/reports/finances${qs}`, { headers }),
@@ -880,6 +957,7 @@ const fetchAllReports = async () => {
       fetch(`/api/v1/reports/clients`, { headers }),
       fetch(`/api/v1/reports/service-summary${qs}`, { headers }),
       fetch(`/api/v1/reports/products${qs}`, { headers }),
+      fetch(`/api/v1/reports/product-usage${qs}`, { headers }),
       fetch(`/api/v1/reports/gift-cards${qs}`, { headers }),
     ]);
 
@@ -915,6 +993,9 @@ const fetchAllReports = async () => {
         total_revenue: 0,
         total_units: 0,
       };
+    }
+    if (productUsageRes.ok) {
+      productUsageReport.value = await productUsageRes.json();
     }
     if (giftCardsRes.ok) {
       const giftCardsData = await giftCardsRes.json();

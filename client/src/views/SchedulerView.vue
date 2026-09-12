@@ -598,6 +598,51 @@ const calendarEvents = computed(() => {
       });
     });
   });
+
+  // Auto-recolor overlapping appointments within the same staff/resource
+  // column — e.g. two bookings sharing a resource like ΣΑΟΥΝΑ/ΧΑΜΜΑΜ often
+  // land on the exact same service-based color (getCategoryColor is keyed by
+  // service name), making the narrow side-by-side slivers FullCalendar
+  // renders for them look like one solid block rather than two distinct
+  // appointments. The earliest-starting event in any overlapping group keeps
+  // its normal service color; each event that overlaps an already-placed one
+  // gets bumped to the next accent color not already in use among the
+  // events it's actually overlapping (a sweep over each resource's events
+  // sorted by start time, tracking which are still "active").
+  const OVERLAP_ACCENT_COLORS = [
+    "#fde68a", // amber-200
+    "#fbcfe8", // pink-200
+    "#bfdbfe", // blue-200
+    "#c7d2fe", // indigo-200
+    "#bbf7d0", // green-200
+    "#fecaca", // red-200
+  ];
+  const eventsByResource: Record<string, any[]> = {};
+  events.forEach((e) => {
+    if (!e.resourceId || !e.start || !e.end) return;
+    (eventsByResource[e.resourceId] ||= []).push(e);
+  });
+  Object.values(eventsByResource).forEach((group) => {
+    group.sort(
+      (a, b) => new Date(a.start).getTime() - new Date(b.start).getTime(),
+    );
+    const active: any[] = [];
+    group.forEach((e) => {
+      const startMs = new Date(e.start).getTime();
+      for (let i = active.length - 1; i >= 0; i--) {
+        if (new Date(active[i].end).getTime() <= startMs) active.splice(i, 1);
+      }
+      if (active.length > 0) {
+        const usedColors = new Set(active.map((a) => a.backgroundColor));
+        const accent =
+          OVERLAP_ACCENT_COLORS.find((c) => !usedColors.has(c)) ||
+          OVERLAP_ACCENT_COLORS[active.length % OVERLAP_ACCENT_COLORS.length];
+        e.backgroundColor = accent;
+      }
+      active.push(e);
+    });
+  });
+
   return events;
 });
 

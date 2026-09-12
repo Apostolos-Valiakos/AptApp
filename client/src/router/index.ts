@@ -20,6 +20,7 @@ const MembershipTiersView = () => import("../views/MembershipTiersView.vue");
 const MembershipReportView = () => import("../views/MembershipReportView.vue");
 const QrScannerView = () => import("../views/QrScannerView.vue");
 const DemoRequestsView = () => import("../views/DemoRequestsView.vue");
+const ProductUsageView = () => import("../views/ProductUsageView.vue");
 
 const routes = [
   {
@@ -56,6 +57,11 @@ const routes = [
           { path: "clients", component: ClientsView },
           { path: "services", component: ServicesView },
           { path: "products", component: ProductsView },
+          {
+            path: "product-usage",
+            component: ProductUsageView,
+            meta: { requiresAnalytics: true },
+          },
           { path: "gift-cards", component: GiftCardsView },
           {
             path: "financials",

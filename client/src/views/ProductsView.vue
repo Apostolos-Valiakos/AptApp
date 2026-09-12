@@ -11,11 +11,21 @@
           <p class="text-sm text-gray-500 mt-0.5">{{ t('products.subtitle') }}</p>
         </div>
       </div>
-      <Button
-        :label="t('products.addNew')"
-        icon="pi pi-plus"
-        @click="openNewProductDialog"
-      />
+      <div class="flex gap-2">
+        <Button
+          v-if="authStore.isAnalyticsAllowed"
+          :label="t('products.usageTracking')"
+          icon="pi pi-chart-line"
+          severity="secondary"
+          outlined
+          @click="router.push('/app/product-usage')"
+        />
+        <Button
+          :label="t('products.addNew')"
+          icon="pi pi-plus"
+          @click="openNewProductDialog"
+        />
+      </div>
     </div>
 
     <DataTable
@@ -240,12 +250,16 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
+import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { useProductStore } from "../stores/products";
+import { useAuthStore } from "../stores/auth";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 
 const { t } = useI18n();
+const router = useRouter();
+const authStore = useAuthStore();
 
 // --- Type Definitions to fix errors ---
 interface Variation {

@@ -2365,6 +2365,268 @@ app.delete("/api/v1/services/:id", authenticateToken, async (req, res) => {
   }
 });
 
+// ==================== PRODUCT USAGE TRACKING ====================
+// Which products every service consumes ("Massage -> 5ml of oil"), admin-only
+// (matches the existing Financials/reports gate — requireAnalyticsAccess).
+
+app.get(
+  "/api/v1/product-usage/recipes",
+  authenticateToken,
+  requireAnalyticsAccess,
+  async (req, res) => {
+    try {
+      const { rows } = await pool.query(
+        `SELECT spr.id, spr.service_id, s.name AS service_name,
+                spr.product_inventory_id, p.name AS product_name, pi.variation_name,
+                spr.amount_type, spr.amount_value, spr.amount_min, spr.amount_max
+         FROM service_product_recipes spr
+         JOIN services s ON s.id = spr.service_id
+         JOIN product_inventory pi ON pi.id = spr.product_inventory_id
+         JOIN products p ON p.id = pi.product_id
+         WHERE spr.shop_id = $1
+         ORDER BY s.name, p.name`,
+        [req.shopId],
+      );
+      res.json(rows);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
+
+// Replaces every recipe row for one service in a single call — the admin
+// page always submits the full current list for that service, same
+// wholesale-replace convention as e.g. staff working-hours saves.
+app.put(
+  "/api/v1/services/:id/recipes",
+  authenticateToken,
+  requireAnalyticsAccess,
+  async (req, res) => {
+    const { id } = req.params;
+    const recipes = Array.isArray(req.body.recipes) ? req.body.recipes : [];
+    for (const r of recipes) {
+      if (!["exact", "range", "bottle"].includes(r.amount_type)) {
+        return res.status(400).json({ error: `Invalid amount_type: ${r.amount_type}` });
+      }
+      if (r.amount_type === "range" && !(r.amount_min < r.amount_max)) {
+        return res.status(400).json({ error: "Range minimum must be less than maximum" });
+      }
+    }
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        `DELETE FROM service_product_recipes WHERE service_id = $1 AND shop_id = $2`,
+        [id, req.shopId],
+      );
+      for (const r of recipes) {
+        await client.query(
+          `INSERT INTO service_product_recipes
+             (service_id, product_inventory_id, shop_id, amount_type, amount_value, amount_min, amount_max)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [
+            id,
+            r.product_inventory_id,
+            req.shopId,
+            r.amount_type,
+            r.amount_type === "range" ? null : r.amount_value,
+            r.amount_type === "range" ? r.amount_min : null,
+            r.amount_type === "range" ? r.amount_max : null,
+          ],
+        );
+      }
+      await client.query("COMMIT");
+      res.json({ success: true });
+    } catch (err) {
+      await client.query("ROLLBACK");
+      console.error(err);
+      res.status(500).json({ error: "Internal server error" });
+    } finally {
+      client.release();
+    }
+  },
+);
+
+app.post(
+  "/api/v1/product-inventory/:id/stocktake",
+  authenticateToken,
+  requireAnalyticsAccess,
+  async (req, res) => {
+    const { remaining_amount_ml, restocked_amount_ml, notes } = req.body;
+    if (remaining_amount_ml == null || Number(remaining_amount_ml) < 0) {
+      return res.status(400).json({ error: "remaining_amount_ml is required and must be >= 0" });
+    }
+    try {
+      const invRow = await pool.query(
+        `SELECT p.shop_id FROM product_inventory pi JOIN products p ON p.id = pi.product_id WHERE pi.id = $1`,
+        [req.params.id],
+      );
+      if (!invRow.rows[0] || invRow.rows[0].shop_id !== req.shopId) {
+        return res.status(404).json({ error: "Product not found" });
+      }
+      await pool.query(
+        `INSERT INTO product_usage_stocktakes
+           (product_inventory_id, shop_id, remaining_amount_ml, restocked_amount_ml, notes, recorded_by_user_id)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [req.params.id, req.shopId, remaining_amount_ml, restocked_amount_ml || 0, notes || null, req.user.userId],
+      );
+      res.json({ success: true });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
+
+app.get(
+  "/api/v1/product-inventory/:id/stocktakes",
+  authenticateToken,
+  requireAnalyticsAccess,
+  async (req, res) => {
+    try {
+      const { rows } = await pool.query(
+        `SELECT id, recorded_at, remaining_amount_ml, restocked_amount_ml, notes
+         FROM product_usage_stocktakes
+         WHERE product_inventory_id = $1 AND shop_id = $2
+         ORDER BY recorded_at DESC LIMIT 50`,
+        [req.params.id, req.shopId],
+      );
+      res.json(rows);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
+
+app.get(
+  "/api/v1/reports/product-usage",
+  authenticateToken,
+  requireAnalyticsAccess,
+  async (req, res) => {
+    try {
+      // Matches every other /api/v1/reports/* endpoint's from/to query-param
+      // convention (see FinancialsView.vue's fetchAllReports), not a
+      // start/end pair of its own.
+      const start = req.query.from || "1970-01-01";
+      const end = req.query.to || "2999-12-31";
+
+      const { rows: recipes } = await pool.query(
+        `SELECT spr.service_id, s.name AS service_name,
+                spr.product_inventory_id, p.name AS product_name, pi.variation_name,
+                spr.amount_type, spr.amount_value, spr.amount_min, spr.amount_max
+         FROM service_product_recipes spr
+         JOIN services s ON s.id = spr.service_id
+         JOIN product_inventory pi ON pi.id = spr.product_inventory_id
+         JOIN products p ON p.id = pi.product_id
+         WHERE spr.shop_id = $1`,
+        [req.shopId],
+      );
+
+      // Booking count per service in the period, one query per distinct service.
+      const serviceIds = [...new Set(recipes.map((r) => r.service_id))];
+      const countsByService = {};
+      for (const serviceId of serviceIds) {
+        const { rows } = await pool.query(
+          `SELECT COUNT(*) AS cnt FROM appointment_services aps
+           JOIN appointments a ON a.id = aps.appointment_id
+           WHERE aps.service_id = $1 AND a.shop_id = $2 AND a.status != 'cancelled'
+             AND aps.start_time BETWEEN $3 AND $4`,
+          [serviceId, req.shopId, start, end],
+        );
+        countsByService[serviceId] = parseInt(rows[0].cnt, 10);
+      }
+
+      // Group recipes by product, accumulating expected totals across every
+      // service that uses this product.
+      const byProduct = {};
+      for (const r of recipes) {
+        const count = countsByService[r.service_id] || 0;
+        if (!byProduct[r.product_inventory_id]) {
+          byProduct[r.product_inventory_id] = {
+            product_inventory_id: r.product_inventory_id,
+            product_name: r.product_name,
+            variation_name: r.variation_name,
+            unit: r.amount_type === "bottle" ? "bottle" : "ml",
+            expected_min: 0,
+            expected_max: 0,
+            services: [],
+          };
+        }
+        const entry = byProduct[r.product_inventory_id];
+        if (r.amount_type === "range") {
+          entry.expected_min += Number(r.amount_min) * count;
+          entry.expected_max += Number(r.amount_max) * count;
+        } else {
+          entry.expected_min += Number(r.amount_value) * count;
+          entry.expected_max += Number(r.amount_value) * count;
+        }
+        entry.services.push({
+          service_name: r.service_name,
+          amount_type: r.amount_type,
+          amount_value: r.amount_value,
+          amount_min: r.amount_min,
+          amount_max: r.amount_max,
+          count,
+        });
+      }
+
+      const results = [];
+      for (const productId of Object.keys(byProduct)) {
+        const entry = byProduct[productId];
+        let actual = null;
+        if (entry.unit === "ml") {
+          const { rows: stocktakes } = await pool.query(
+            `SELECT recorded_at, remaining_amount_ml, restocked_amount_ml
+             FROM product_usage_stocktakes
+             WHERE product_inventory_id = $1 AND shop_id = $2
+             ORDER BY recorded_at ASC`,
+            [productId, req.shopId],
+          );
+          actual = 0;
+          let hasData = false;
+          for (let i = 1; i < stocktakes.length; i++) {
+            const prev = stocktakes[i - 1];
+            const curr = stocktakes[i];
+            if (curr.recorded_at >= new Date(start) && curr.recorded_at <= new Date(end)) {
+              actual +=
+                Number(prev.remaining_amount_ml) +
+                Number(curr.restocked_amount_ml) -
+                Number(curr.remaining_amount_ml);
+              hasData = true;
+            }
+          }
+          if (!hasData) actual = null;
+        } else {
+          const { rows } = await pool.query(
+            `SELECT COALESCE(SUM(-delta), 0) AS used
+             FROM product_stock_adjustments
+             WHERE product_inventory_id = $1 AND shop_id = $2 AND delta < 0
+               AND created_at BETWEEN $3 AND $4`,
+            [productId, req.shopId, start, end],
+          );
+          actual = Number(rows[0].used);
+        }
+
+        let status = "no_data";
+        if (actual !== null) {
+          if (actual < entry.expected_min) status = "under";
+          else if (actual > entry.expected_max) status = "over";
+          else status = "ok";
+        }
+
+        results.push({ ...entry, actual, status });
+      }
+
+      res.json(results);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
+
 // --- APPOINTMENT ROUTES ---
 
 // In server.js
@@ -4928,11 +5190,25 @@ app.patch(
     const { quantity } = req.body; // can be negative to subtract
     try {
       const { rows } = await pool.query(
-        `UPDATE product_inventory 
-       SET stock_quantity = stock_quantity + $1 
-       WHERE id = $2 RETURNING stock_quantity`,
+        `UPDATE product_inventory
+       SET stock_quantity = stock_quantity + $1
+       WHERE id = $2 RETURNING stock_quantity, product_id`,
         [quantity, req.params.id],
       );
+      if (rows[0]) {
+        const invRow = await pool.query(
+          `SELECT p.shop_id FROM products p WHERE p.id = $1`,
+          [rows[0].product_id],
+        );
+        // Logged so bottle-type recipes' "actual usage" report can be computed
+        // from something other than a live, unhistoried number — see the
+        // product_stock_adjustments table comment at startup.
+        await pool.query(
+          `INSERT INTO product_stock_adjustments (product_inventory_id, shop_id, delta, recorded_by_user_id)
+           VALUES ($1, $2, $3, $4)`,
+          [req.params.id, invRow.rows[0]?.shop_id, quantity, req.user.userId],
+        );
+      }
       res.json(rows[0]);
     } catch (err) {
       console.error(err);
@@ -5831,6 +6107,63 @@ app.put("/api/v1/portal/notifications", authenticateToken, async (req, res) => {
       `ALTER TABLE staff_working_hours ADD COLUMN IF NOT EXISTS effective_from DATE NOT NULL DEFAULT CURRENT_DATE`,
     );
 
+    // ==================== PRODUCT USAGE TRACKING ====================
+    // A service can list one or more products it consumes (e.g. "Massage ->
+    // 5ml of oil"), so the business can compare theoretical/expected usage
+    // (recipe amount x appointment count) against what's actually being
+    // consumed, and catch waste/misuse. amount_type is validated in app code
+    // (server/productUsage.js), not via a DB CHECK, so adding a new type
+    // later needs no migration.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS service_product_recipes (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        service_id UUID NOT NULL REFERENCES services(id) ON DELETE CASCADE,
+        product_inventory_id UUID NOT NULL REFERENCES product_inventory(id) ON DELETE CASCADE,
+        shop_id UUID NOT NULL REFERENCES shops(id),
+        amount_type VARCHAR(10) NOT NULL, -- 'exact' | 'range' | 'bottle'
+        amount_value NUMERIC(10,2),        -- 'exact': ml amount. 'bottle': bottle count.
+        amount_min NUMERIC(10,2),          -- 'range': lower bound, ml
+        amount_max NUMERIC(10,2),          -- 'range': upper bound, ml
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        UNIQUE (service_id, product_inventory_id)
+      )
+    `);
+    // Periodic physical stock counts for ml/range-type recipes ("how much is
+    // actually left in the bottle right now"). restocked_amount_ml covers
+    // opening a fresh bottle between counts: actual used since the previous
+    // count = previous.remaining_amount_ml + this.restocked_amount_ml -
+    // this.remaining_amount_ml.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS product_usage_stocktakes (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        product_inventory_id UUID NOT NULL REFERENCES product_inventory(id) ON DELETE CASCADE,
+        shop_id UUID NOT NULL REFERENCES shops(id),
+        recorded_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        remaining_amount_ml NUMERIC(10,2) NOT NULL,
+        restocked_amount_ml NUMERIC(10,2) NOT NULL DEFAULT 0,
+        notes TEXT,
+        recorded_by_user_id UUID,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    // Audit trail behind the existing manual +/- stock stepper (previously a
+    // bare UPDATE with no history) — needed so bottle-type recipes' "actual
+    // usage in period X" is computable from something other than a live,
+    // unhistoried number. Only manual adjustments are logged here, not
+    // sale-driven decrements (those already have their own full record via
+    // product_sales, so aren't duplicated into this log).
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS product_stock_adjustments (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        product_inventory_id UUID NOT NULL REFERENCES product_inventory(id) ON DELETE CASCADE,
+        shop_id UUID NOT NULL REFERENCES shops(id),
+        delta INTEGER NOT NULL,
+        recorded_by_user_id UUID,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+
     // ==================== PERFORMANCE INDEXES ====================
     const startupIndexes = [
       "CREATE INDEX IF NOT EXISTS idx_transactions_appointment_id ON transactions (appointment_id)",
@@ -5850,6 +6183,11 @@ app.put("/api/v1/portal/notifications", authenticateToken, async (req, res) => {
       "CREATE INDEX IF NOT EXISTS idx_staff_working_hours_staff_day ON staff_working_hours (staff_id, day_of_week)",
       "CREATE INDEX IF NOT EXISTS idx_staff_working_hours_shop_id ON staff_working_hours (shop_id)",
       "CREATE INDEX IF NOT EXISTS idx_staff_working_hours_staff_effective ON staff_working_hours (staff_id, effective_from)",
+      "CREATE INDEX IF NOT EXISTS idx_service_product_recipes_service_id ON service_product_recipes (service_id)",
+      "CREATE INDEX IF NOT EXISTS idx_service_product_recipes_shop_id ON service_product_recipes (shop_id)",
+      "CREATE INDEX IF NOT EXISTS idx_product_usage_stocktakes_inventory_id ON product_usage_stocktakes (product_inventory_id, recorded_at)",
+      "CREATE INDEX IF NOT EXISTS idx_product_stock_adjustments_inventory_id ON product_stock_adjustments (product_inventory_id, created_at)",
+      "CREATE INDEX IF NOT EXISTS idx_appointment_services_service_start ON appointment_services (service_id, start_time)",
     ];
     for (const sql of startupIndexes) {
       await pool.query(sql);
