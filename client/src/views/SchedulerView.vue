@@ -1,5 +1,5 @@
 <template>
-  <div class="flex flex-col h-[calc(100vh-64px)] bg-white">
+  <div class="flex flex-col h-[calc(100vh-64px)] bg-white" @click="closeMenus">
     <!-- ===== TOOLBAR ===== -->
     <div
       class="flex flex-wrap items-center justify-between gap-3 px-4 md:px-6 py-3 border-b border-gray-100 bg-white flex-shrink-0"
@@ -27,11 +27,28 @@
         >
           <i class="pi pi-chevron-right text-sm"></i>
         </button>
-        <span
-          class="text-sm md:text-base font-bold text-gray-800 min-w-[120px] md:min-w-[180px] select-none"
-        >
-          {{ currentTitle }}
-        </span>
+        <div class="relative">
+          <button
+            @click.stop="toggleDatePicker"
+            class="flex items-center gap-1 text-sm md:text-base font-bold text-gray-800 min-w-[120px] md:min-w-[180px] select-none hover:text-[var(--p-primary-700)] transition-colors"
+          >
+            {{ currentTitle }}
+            <i class="pi pi-chevron-down text-[10px] text-gray-400"></i>
+          </button>
+          <div
+            v-if="showDatePicker"
+            @click.stop
+            class="absolute top-full left-0 mt-2 z-50 bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden"
+          >
+            <DatePicker
+              inline
+              v-model="pickerDate"
+              dateFormat="dd/mm/yy"
+              :minDate="isStaffRole ? todayDate : undefined"
+              @date-select="onDatePicked"
+            />
+          </div>
+        </div>
       </div>
 
       <!-- RIGHT: Controls -->
@@ -132,95 +149,62 @@
               class="text-sm"
             ></i>
           </button>
-          <button
-            @click="toggleMiniCalendar"
-            :class="
-              showMiniCalendar
-                ? 'bg-[var(--p-primary-50)] border-[var(--p-primary-200)] text-[var(--p-primary-600)]'
-                : 'border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-800'
-            "
-            class="p-2 rounded-lg border transition-colors flex-shrink-0"
-            :title="showMiniCalendar ? 'Hide calendar' : 'Show calendar'"
-          >
-            <i class="pi pi-calendar text-sm"></i>
-          </button>
         </div>
       </div>
     </div>
 
-    <!-- ===== BODY: mini-calendar sidebar + calendar area ===== -->
-    <div class="flex flex-row flex-grow overflow-hidden">
-      <!-- Persistent mini-calendar sidebar — standard left-sidebar date-nav
-           pattern (Google Calendar, Outlook, Fresha) rather than a
-           click-to-open popover, per explicit request. Toggleable/remembered
-           via showMiniCalendar (same localStorage pattern as fitStaff). -->
-      <aside
-        v-if="showMiniCalendar"
-        class="w-[320px] flex-shrink-0 border-r border-gray-100 bg-white overflow-y-auto p-3"
-      >
-        <DatePicker
-          inline
-          v-model="pickerDate"
-          dateFormat="dd/mm/yy"
-          :minDate="isStaffRole ? todayDate : undefined"
-          @date-select="onDatePicked"
-          class="w-full"
-        />
-      </aside>
-
-      <!-- ===== CALENDAR AREA ===== -->
-      <div class="flex-grow overflow-auto relative">
-        <!-- Loading overlay -->
-        <transition name="fade">
-          <div
-            v-if="isFetching"
-            class="absolute inset-0 z-10 bg-white/60 backdrop-blur-[1px] flex items-center justify-center pointer-events-none"
-          >
-            <div
-              class="flex items-center gap-2 bg-white rounded-full px-4 py-2 shadow-md border border-gray-100"
-            >
-              <i
-                class="pi pi-spin pi-spinner text-[var(--p-primary-color)]"
-              ></i>
-              <span class="text-xs font-medium text-gray-500">Loading…</span>
-            </div>
-          </div>
-        </transition>
-
-        <FullCalendar
-          v-if="calendarResources.length > 0"
-          ref="fullCalendar"
-          :options="calendarOptions"
-          class="h-full w-full"
-        />
-
-        <!-- Empty state -->
+    <!-- ===== CALENDAR AREA ===== -->
+    <div class="flex-grow overflow-auto relative">
+      <!-- Loading overlay -->
+      <transition name="fade">
         <div
-          v-else
-          class="h-full flex flex-col items-center justify-center bg-gray-50/50"
+          v-if="isFetching"
+          class="absolute inset-0 z-10 bg-white/60 backdrop-blur-[1px] flex items-center justify-center pointer-events-none"
         >
           <div
-            class="p-10 bg-white rounded-2xl shadow-sm text-center border border-gray-100 max-w-sm"
+            class="flex items-center gap-2 bg-white rounded-full px-4 py-2 shadow-md border border-gray-100"
           >
-            <div
-              class="w-16 h-16 bg-[var(--p-primary-50)] text-[var(--p-primary-600)] rounded-full flex items-center justify-center mx-auto mb-4"
-            >
-              <i class="pi pi-users text-2xl"></i>
-            </div>
-            <h3 class="text-lg font-bold text-gray-900 mb-2">
-              No Team Members
-            </h3>
-            <p class="text-sm text-gray-500 mb-6">
-              Add staff members to start scheduling appointments.
-            </p>
-            <a
-              href="/app/staff"
-              class="inline-flex items-center gap-2 bg-[var(--p-primary-color)] text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:brightness-105 transition-all"
-            >
-              <i class="pi pi-plus text-xs"></i>
-              Add Staff
-            </a>
+            <i
+              class="pi pi-spin pi-spinner text-[var(--p-primary-color)]"
+            ></i>
+            <span class="text-xs font-medium text-gray-500">Loading…</span>
           </div>
+        </div>
+      </transition>
+
+      <FullCalendar
+        v-if="calendarResources.length > 0"
+        ref="fullCalendar"
+        :options="calendarOptions"
+        class="h-full w-full"
+      />
+
+      <!-- Empty state -->
+      <div
+        v-else
+        class="h-full flex flex-col items-center justify-center bg-gray-50/50"
+      >
+        <div
+          class="p-10 bg-white rounded-2xl shadow-sm text-center border border-gray-100 max-w-sm"
+        >
+          <div
+            class="w-16 h-16 bg-[var(--p-primary-50)] text-[var(--p-primary-600)] rounded-full flex items-center justify-center mx-auto mb-4"
+          >
+            <i class="pi pi-users text-2xl"></i>
+          </div>
+          <h3 class="text-lg font-bold text-gray-900 mb-2">
+            No Team Members
+          </h3>
+          <p class="text-sm text-gray-500 mb-6">
+            Add staff members to start scheduling appointments.
+          </p>
+          <a
+            href="/app/staff"
+            class="inline-flex items-center gap-2 bg-[var(--p-primary-color)] text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:brightness-105 transition-all"
+          >
+            <i class="pi pi-plus text-xs"></i>
+            Add Staff
+          </a>
         </div>
       </div>
     </div>
@@ -310,12 +294,8 @@ const isFetching = ref(false);
 // — needed here to compute off-hours gaps within the visible window.
 const shopSlotMinTime = ref("07:00:00");
 const shopSlotMaxTime = ref("23:00:00");
+const showDatePicker = ref(false);
 const pickerDate = ref<Date | null>(null);
-// Persistent mini-calendar sidebar toggle — same localStorage-backed pattern
-// as fitStaff below; defaults to shown.
-const showMiniCalendar = ref(
-  localStorage.getItem("showMiniCalendar") !== "false",
-);
 const todayDate = computed(() => {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
@@ -454,10 +434,14 @@ const changeView = (viewName: string) => {
   }
 };
 
-// --- Mini-calendar sidebar toggle ---
-const toggleMiniCalendar = () => {
-  showMiniCalendar.value = !showMiniCalendar.value;
-  localStorage.setItem("showMiniCalendar", String(showMiniCalendar.value));
+const closeMenus = () => {
+  showDatePicker.value = false;
+};
+
+// --- Date picker popover ---
+const toggleDatePicker = () => {
+  if (!showDatePicker.value) pickerDate.value = calendarApi.value?.getDate() ?? new Date();
+  showDatePicker.value = !showDatePicker.value;
 };
 
 const onDatePicked = (date: Date) => {
@@ -465,12 +449,11 @@ const onDatePicked = (date: Date) => {
   if (api) {
     // Don't read api.view.title synchronously here — when the date range
     // actually changes, FullCalendar hasn't recomputed it yet. Let the
-    // existing datesSet callback update the title (and pickerDate) once it
-    // actually renders. Stay on whatever view (Day/Week/Month) is already
-    // active — the sidebar is a persistent navigator now, not a one-off
-    // "jump to Day view" shortcut, so it shouldn't force a view change.
-    api.changeView(currentView.value, date);
+    // existing datesSet callback update the title once it actually renders.
+    api.changeView("resourceTimeGridDay", date);
+    currentView.value = "resourceTimeGridDay";
   }
+  showDatePicker.value = false;
 };
 
 // --- Color helpers ---
@@ -869,10 +852,6 @@ const calendarOptions = ref({
     currentView.value = arg.view.type;
     currentStart.value = arg.startStr;
     currentEnd.value = arg.endStr;
-    // Keep the persistent mini-calendar's selection/month in sync with
-    // whatever date is actually on screen, including via prev/next/Today —
-    // not just when picked from the sidebar itself.
-    pickerDate.value = arg.view.currentStart;
     if (calendarStore.fetchAppointments) {
       isFetching.value = true;
       try {
