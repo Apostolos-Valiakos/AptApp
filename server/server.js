@@ -70,7 +70,6 @@ const publicActionLimiter = rateLimit({
 
 const { PUBLIC_BASE_URL } = require("./reminderService");
 require("./membershipService");
-const { sendPushToShop, recordNotificationForShop } = require("./pushService");
 
 // ==================== FILE UPLOAD SETUP ====================
 const uploadDir = path.join(__dirname, "uploads");
@@ -6843,65 +6842,6 @@ app.delete(
   },
 );
 
-// Admin-authored broadcast (promos, announcements) — immediately fanned out
-// to every push subscription for the shop. No per-recipient delivery ledger,
-// same "fire and forget" simplicity as the existing email reminder job.
-app.post(
-  "/api/v1/broadcasts",
-  authenticateToken,
-  requireAnalyticsAccess,
-  async (req, res) => {
-    const { title, body } = req.body;
-    if (!title?.trim() || !body?.trim()) {
-      return res.status(400).json({ error: "Title and body are required" });
-    }
-    try {
-      const recipientCount = await sendPushToShop(req.shopId, {
-        title: title.trim(),
-        body: body.trim(),
-        url: "/portal/home",
-      });
-      // Every active client gets the in-app history entry, regardless of
-      // whether they have push enabled — recipientCount above (OS push
-      // delivery) and this (in-app visibility) are intentionally separate.
-      await recordNotificationForShop(req.shopId, {
-        type: "broadcast",
-        title: title.trim(),
-        body: body.trim(),
-        url: "/portal/home",
-      });
-      const { rows } = await pool.query(
-        `INSERT INTO broadcast_messages (shop_id, title, body, sent_by_user_id, recipient_count)
-         VALUES ($1, $2, $3, $4, $5) RETURNING id, created_at`,
-        [req.shopId, title.trim(), body.trim(), req.user.userId, recipientCount],
-      );
-      res.json({ success: true, id: rows[0].id, recipient_count: recipientCount });
-    } catch (err) {
-      console.error("Broadcast send error:", err);
-      res.status(500).json({ error: "Internal server error" });
-    }
-  },
-);
-
-app.get(
-  "/api/v1/broadcasts",
-  authenticateToken,
-  requireAnalyticsAccess,
-  async (req, res) => {
-    try {
-      const { rows } = await pool.query(
-        `SELECT id, title, body, recipient_count, created_at
-         FROM broadcast_messages WHERE shop_id = $1
-         ORDER BY created_at DESC LIMIT 3`,
-        [req.shopId],
-      );
-      res.json(rows);
-    } catch (err) {
-      console.error("Broadcast list error:", err);
-      res.status(500).json({ error: "Internal server error" });
-    }
-  },
-);
 
 // Available start-time slots for one staff member/service/date — used by the
 // client self-booking wizard. Role-agnostic at the route level (staff/admin

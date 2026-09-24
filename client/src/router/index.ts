@@ -13,11 +13,6 @@ const ProductsView = () => import("../views/ProductsView.vue");
 const GiftCardsView = () => import("../views/GiftCardsView.vue");
 const FinancialsView = () => import("../components/FinancialsView.vue");
 const profileView = () => import("../views/profileView.vue");
-const ClientLayout = () => import("../components/ClientLayout.vue");
-const ClientHomeView = () => import("../views/portal/ClientHomeView.vue");
-const ClientAppointmentsView = () =>
-  import("../views/portal/ClientAppointmentsView.vue");
-const ClientMoreView = () => import("../views/portal/ClientMoreView.vue");
 const SignupView = () => import("../views/SignupView.vue");
 const ShopsView = () => import("../views/ShopsView.vue");
 const MembershipTiersView = () => import("../views/MembershipTiersView.vue");
@@ -98,21 +93,6 @@ const routes = [
           { path: "profile", component: profileView },
         ],
       },
-    ],
-  },
-  {
-    path: "/portal",
-    component: ClientLayout,
-    meta: { requiresAuth: true, role: "client" },
-    children: [
-      { path: "", redirect: "/portal/home" },
-      { path: "home", name: "ClientHome", component: ClientHomeView },
-      {
-        path: "appointments",
-        name: "ClientAppointments",
-        component: ClientAppointmentsView,
-      },
-      { path: "more", name: "ClientMore", component: ClientMoreView },
     ],
   },
   // Redirects για να μη σπάνε τα παλιά links - ΠΡΟΣΟΧΗ ΣΤΑ "/"

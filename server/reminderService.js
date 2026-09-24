@@ -7,7 +7,6 @@ const nodemailer = require("nodemailer");
 const pool = require("./db");
 const crypto = require("crypto");
 const path = require("path");
-const { sendPushToClient, recordNotification } = require("./pushService");
 
 const LOGO_PATH = path.join(__dirname, "../client/static/logo for photos-02.png");
 
@@ -514,63 +513,7 @@ const processReminders = async () => {
   }
 };
 
-// Same reminder window as the email job above, gated on its own
-// push_reminder_sent flag (independent of email_reminder_sent — a client can
-// have push enabled with emails off, or vice versa). Runs for every client
-// due a reminder, not just ones with a push subscription: the in-app
-// notification history (recordNotification) should show the reminder either
-// way, and sendPushToClient below is already a safe no-op when there's no
-// subscription to deliver to.
-const processPushReminders = async () => {
-  try {
-    const query = `
-        SELECT DISTINCT
-            a.id AS appointment_id,
-            a.client_id,
-            a.shop_id,
-            s.name AS shop_name,
-            aps.start_time,
-            ser.name AS service_name
-        FROM appointments a
-        JOIN shops s ON a.shop_id = s.id
-        JOIN appointment_services aps ON a.id = aps.appointment_id
-        JOIN services ser ON aps.service_id = ser.id
-        WHERE aps.start_time <= (NOW() + ((s.reminder_hours_before || ' hours')::interval) + INTERVAL '5 minutes')
-            AND aps.start_time >= (NOW() + ((s.reminder_hours_before || ' hours')::interval) - INTERVAL '5 minutes')
-            AND a.push_reminder_sent = false
-            AND a.status != 'cancelled'
-            AND a.is_block = false;
-        `;
-    const { rows } = await pool.query(query);
-
-    for (const appt of rows) {
-      try {
-        const startTimeStr = formatTime(appt.start_time);
-        const title = `Ραντεβού: ${appt.service_name}`;
-        const body = `${appt.shop_name} · ${startTimeStr}`;
-        const url = "/portal/appointments";
-        await recordNotification(appt.client_id, appt.shop_id, {
-          type: "reminder",
-          title,
-          body,
-          url,
-        });
-        await sendPushToClient(appt.client_id, { title, body, url });
-        await pool.query(
-          "UPDATE appointments SET push_reminder_sent = true WHERE id = $1",
-          [appt.appointment_id],
-        );
-      } catch (pushErr) {
-        console.error("Push reminder error:", pushErr);
-      }
-    }
-  } catch (err) {
-    console.error("Push reminder cron DB error:", err);
-  }
-};
-
 // Runs every 1 minute, matching the ±5 minute window used in the queries above
 cron.schedule("*/1 * * * *", processReminders);
-cron.schedule("*/1 * * * *", processPushReminders);
 
-module.exports = { processReminders, processPushReminders, PUBLIC_BASE_URL };
+module.exports = { processReminders, PUBLIC_BASE_URL };
