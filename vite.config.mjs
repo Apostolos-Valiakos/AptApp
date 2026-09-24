@@ -11,6 +11,12 @@ export default defineConfig(({ mode }) => {
     root: "client",
     server: {
       port: 5173,
+      // Vite rejects requests whose Host header it doesn't recognize (a DNS
+      // rebinding protection) — an ngrok tunnel's random *.ngrok-free.app
+      // domain would otherwise get "Blocked request. This host is not
+      // allowed." Wide open here since this is dev-only; never applies to
+      // the production build (that's served by server.js, not Vite).
+      allowedHosts: true,
       proxy: {
         "/api": {
           // Access variables from your .env file
@@ -23,6 +29,11 @@ export default defineConfig(({ mode }) => {
           ws: true,
         },
         "/health": {
+          target: `${env.API_URL}:${env.PORT}`,
+          changeOrigin: true,
+          secure: false,
+        },
+        "/manifest.webmanifest": {
           target: `${env.API_URL}:${env.PORT}`,
           changeOrigin: true,
           secure: false,

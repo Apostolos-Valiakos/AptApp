@@ -61,7 +61,7 @@
 
       <div class="flex gap-6 border-b border-gray-200 mb-6 overflow-x-auto">
         <button
-          v-for="tab in ['Info', 'Αρχεία', 'History', 'Membership']"
+          v-for="tab in ['Info', 'Αρχεία', 'History', 'Membership', 'Packages']"
           :key="tab"
           @click="activeTab = tab"
           class="pb-2 px-1 text-sm font-medium transition-colors border-b-2 whitespace-nowrap"
@@ -239,6 +239,9 @@
             </div>
           </div>
         </div>
+        <div v-if="activeTab === 'Packages'">
+          <ClientPackagesPanel :clientId="clientId" />
+        </div>
         <div v-if="activeTab === 'Membership'" class="space-y-4">
           <div v-if="membershipLoading" class="text-center py-8">
             <i class="pi pi-spin pi-spinner text-2xl text-gray-400"></i>
@@ -404,6 +407,7 @@
 <script setup lang="ts">
 import { ref, watch, computed } from "vue";
 import Exercises from "./Exercises.vue";
+import ClientPackagesPanel from "./ClientPackagesPanel.vue";
 import { useAuthStore } from "../stores/auth";
 import { useSettingsStore } from "../stores/settings";
 import { storeToRefs } from "pinia";
@@ -732,6 +736,7 @@ const getStatusColor = (s: string) => {
     completed: "bg-green-100 text-green-800",
     cancelled: "bg-red-100 text-red-800",
     "no-show": "bg-red-200 text-red-900",
+    "no-response": "bg-amber-100 text-amber-800",
   };
   return map[s] || "bg-gray-100";
 };

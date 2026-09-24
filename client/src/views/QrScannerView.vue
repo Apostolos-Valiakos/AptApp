@@ -56,7 +56,85 @@
         </span>
       </div>
 
-      <Button :label="t('qrScanner.scanNext')" icon="pi pi-refresh" class="w-full" @click="scanNext" />
+      <div v-if="result.outstanding_balance !== null" class="p-3 bg-gray-50 rounded-lg flex justify-between items-center">
+        <span class="text-sm text-gray-600">{{ t("qrScanner.balance") }}</span>
+        <span
+          class="font-bold"
+          :class="result.outstanding_balance > 0 ? 'text-red-600' : 'text-emerald-600'"
+        >
+          €{{ Number(result.outstanding_balance).toFixed(2) }}
+        </span>
+      </div>
+
+      <div v-if="result.packages?.length">
+        <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">
+          {{ t("qrScanner.packages") }}
+        </h3>
+        <div class="space-y-2">
+          <div
+            v-for="p in result.packages"
+            :key="p.id"
+            class="p-3 rounded-lg border border-gray-100"
+            :class="p.state !== 'active' ? 'opacity-60' : ''"
+          >
+            <div class="flex justify-between items-center text-sm">
+              <span class="font-semibold text-gray-800">{{ p.name }}</span>
+              <span class="text-gray-600">
+                {{ t("packages.card.left", { n: p.remaining, total: p.total_visits }) }}
+              </span>
+            </div>
+            <div class="h-1.5 bg-gray-100 rounded-full overflow-hidden mt-1.5">
+              <div
+                class="h-full bg-[var(--p-primary-color)]"
+                :style="{ width: `${p.total_visits ? (p.used / p.total_visits) * 100 : 0}%` }"
+              ></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="result.upcoming_appointments?.length">
+        <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">
+          {{ t("qrScanner.upcoming") }}
+        </h3>
+        <div class="space-y-1.5">
+          <div
+            v-for="a in result.upcoming_appointments"
+            :key="a.id"
+            class="text-sm flex justify-between items-center bg-gray-50 rounded-lg px-3 py-2"
+          >
+            <span class="text-gray-700">{{ formatServices(a.services) }}</span>
+            <span class="text-gray-500 whitespace-nowrap">{{ formatDateTime(a.start_time) }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="result.recent_history?.length">
+        <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">
+          {{ t("qrScanner.history") }}
+        </h3>
+        <div class="space-y-1.5">
+          <div
+            v-for="a in result.recent_history"
+            :key="a.id"
+            class="text-sm flex justify-between items-center px-3"
+          >
+            <span class="text-gray-600">{{ formatServices(a.services) }}</span>
+            <span class="text-gray-400 whitespace-nowrap">{{ formatDate(a.start_time) }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex gap-2">
+        <Button
+          :label="t('qrScanner.openProfile')"
+          icon="pi pi-user"
+          text
+          class="flex-1"
+          @click="openProfile"
+        />
+        <Button :label="t('qrScanner.scanNext')" icon="pi pi-refresh" class="flex-1" @click="scanNext" />
+      </div>
     </div>
   </div>
 </template>
@@ -64,9 +142,11 @@
 <script setup lang="ts">
 import { ref, onUnmounted } from "vue";
 import { useI18n } from "vue-i18n";
+import { useRouter } from "vue-router";
 import { Html5Qrcode } from "html5-qrcode";
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
+const router = useRouter();
 
 const scanning = ref(false);
 const scanError = ref("");
@@ -128,6 +208,18 @@ const scanNext = () => {
   scanError.value = "";
   startScanning();
 };
+
+const openProfile = () => {
+  if (!result.value?.client?.id) return;
+  router.push({ path: "/app/clients", query: { open: result.value.client.id } });
+};
+
+const formatDateTime = (d: string) =>
+  new Date(d).toLocaleString(locale.value, { weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+const formatDate = (d: string) =>
+  new Date(d).toLocaleDateString(locale.value, { day: "2-digit", month: "short", year: "numeric" });
+const formatServices = (services: any[]) =>
+  (services || []).map((s) => s.name).filter(Boolean).join(", ") || "—";
 
 onUnmounted(() => {
   stopScanning();

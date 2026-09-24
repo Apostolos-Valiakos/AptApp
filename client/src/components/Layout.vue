@@ -321,9 +321,24 @@ const navItems = computed(() => [
     icon: "pi pi-id-card",
   },
   {
+    label: t("nav.dailyReport"),
+    path: "/app/daily-report",
+    ownerOnly: true,
+    frontdeskOnly: true,
+    icon: "pi pi-wallet",
+  },
+  {
+    label: t("nav.packages"),
+    path: "/app/packages",
+    ownerOnly: true,
+    financialsOnly: true,
+    icon: "pi pi-clone",
+  },
+  {
     label: t("nav.qrScanner"),
     path: "/app/qr-scanner",
     ownerOnly: false,
+    hideFromAdmin: true,
     icon: "pi pi-qrcode",
   },
   {
@@ -349,7 +364,7 @@ const navItems = computed(() => [
   },
   {
     label: t("nav.myPortal"),
-    path: "/portal",
+    path: "/portal/home",
     ownerOnly: false,
     adminOnly: false,
     clientOnly: true,
@@ -378,6 +393,8 @@ const visibleNavItems = computed(() => {
     if (item.clientOnly) return false;
     if (item.ownerOnly && !isShopAdmin.value) return false;
     if (item.financialsOnly && !isAnalyticsAllowed.value) return false;
+    if (item.frontdeskOnly && authStore.user?.role !== "frontdesk") return false;
+    if (item.hideFromAdmin && isAnalyticsAllowed.value) return false;
     if (item.platformOnly && !authStore.isOwner) return false;
 
     return true;
