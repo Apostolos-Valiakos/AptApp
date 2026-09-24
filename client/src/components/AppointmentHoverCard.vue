@@ -75,6 +75,7 @@ const STATUS_I18N_KEY: Record<string, string> = {
   completed: "completed",
   cancelled: "cancelled",
   "no-show": "noShow",
+  "no-response": "noResponse",
 };
 const STATUS_BAR_COLOR: Record<string, string> = {
   new: "bg-blue-500",
@@ -84,6 +85,7 @@ const STATUS_BAR_COLOR: Record<string, string> = {
   completed: "bg-gray-500",
   cancelled: "bg-red-500",
   "no-show": "bg-red-700",
+  "no-response": "bg-amber-500",
 };
 
 const statusBarClass = computed(() => STATUS_BAR_COLOR[props.appointment.status] || "bg-gray-400");

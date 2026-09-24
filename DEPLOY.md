@@ -103,6 +103,11 @@ OWNER_PASSWORD=CHANGEME_pick_a_strong_password
 
 # --- Backups (Section 8) ---
 BACKUP_ENCRYPTION_KEY=CHANGEME_run_openssl_rand_base64_32
+
+# --- Web Push (client portal "Turn On Notifications") ---
+VAPID_PUBLIC_KEY=CHANGEME_run_node_-e_generateVAPIDKeys
+VAPID_PRIVATE_KEY=CHANGEME_run_node_-e_generateVAPIDKeys
+VAPID_CONTACT_EMAIL=CHANGEME_a_real_support_address
 ```
 
 **Every `CHANGEME_...` value above must be replaced before you're done** — none of them are usable as-is. Two hard-learned rules, since `scripts/backup_db.sh`/`scripts/restore_db.sh` read this file via bash's `source .env` (stricter than Docker Compose's own, more lenient `.env` parsing):
@@ -116,6 +121,7 @@ Notes:
 - `PUBLIC_BASE_URL` and `FRONTEND_URL` must be the real public HTTPS origin with **no port** — Nginx handles 443 externally, and the app only listens on `127.0.0.1:3000` inside the VPS (see Section 6). These build links inside emails (appointment reminders, unsubscribe, confirm-appointment, client-portal invites); getting the port wrong here means those links silently 404/timeout for anyone outside the VPS. This was a real bug fixed as part of writing this guide — see the bottom of this file.
 - `ALLOWED_ORIGINS` is a comma-separated list if you ever serve from more than one origin (e.g. a Capacitor mobile build hitting the API directly). Since the app serves its own frontend from the same origin, this mainly matters for Socket.IO's CORS check and any cross-origin API callers.
 - `EMAIL_PASS` for Gmail must be an **App Password** (16 chars, unrelated to your normal login password) — an actual password will fail with a `535 5.7.8 Username and Password not accepted` auth error.
+- Generate the VAPID pair once with `node -e "console.log(require('web-push').generateVAPIDKeys())"` and paste both values in — **this pair must never change once real clients have subscribed**: every stored subscription is tied to it, and swapping keys silently breaks push delivery for everyone until they re-enable notifications. Treat it like `JWT_SECRET`: generate it, then leave it alone.
 - `BACKUP_ENCRYPTION_KEY` is covered in Section 8 — included here so you generate it once, up front, alongside everything else.
 
 ---
@@ -399,6 +405,27 @@ docker compose restart app
 ./scripts/backup_db.sh
 ./scripts/restore_db.sh ~/pure-backups/pure_<timestamp>.sql.gz.enc
 ```
+
+**Syncing a `bookings.csv` export** (`scripts/sync_bookings.py`) — the `db` container publishes no port to the VPS host, so the script can't just connect over `localhost`. Instead, run it from a throwaway container attached directly to the same Docker network as `db`, so it reaches it by service name (`db:5432`) without ever exposing anything. `.env` at the repo root already points `POSTGRES_URI` at `db:5432`, so no extra config is needed — the container just needs the repo mounted in so it can read that file and the script.
+
+The network name follows Compose's default `<project-directory-name>_default` convention — `pure_default` for a repo cloned into `/opt/pure` per Section 2. If you ever clone it somewhere else, check the real name first with `docker compose ps` (or `docker network ls`) and swap it in below.
+
+```bash
+cd /opt/pure
+
+# 1. Get the CSV onto the VPS, at the repo root
+scp bookings.csv deploy@<VPS_IP>:/opt/pure/future.csv
+
+# 2. Dry-run first (no --commit) — review new clients / unmatched rows before trusting it
+docker run --rm -v "$(pwd)":/work -w /work --network pure_default \
+  python:3.11-slim bash -c "pip install --quiet 'numpy==1.24.4' 'pandas==2.0.3' psycopg2-binary rapidfuzz python-dotenv && python scripts/sync_bookings.py future.csv"
+
+# 3. If it looks right, commit for real
+docker run --rm -v "$(pwd)":/work -w /work --network pure_default \
+  python:3.11-slim bash -c "pip install --quiet 'numpy==1.24.4' 'pandas==2.0.3' psycopg2-binary rapidfuzz python-dotenv && python scripts/sync_bookings.py future.csv --commit"
+```
+
+No cleanup step needed afterward — nothing was ever exposed to the host, and `--rm` deletes the container the moment it exits. The script itself is idempotent (it counts existing matching rows per client/staff/service/start-time and only inserts genuinely new ones), so re-running it against the same file is safe.
 
 ---
 

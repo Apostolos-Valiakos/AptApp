@@ -42,9 +42,13 @@
           }}</label>
           <Dropdown
             v-model="service.service_id"
-            :options="services"
+            :options="groupedServices"
             optionLabel="name"
             optionValue="id"
+            optionGroupLabel="label"
+            optionGroupChildren="items"
+            filter
+            autoFilterFocus
             :placeholder="t('bookingServices.selectService')"
             class="w-full p-inputtext-sm"
             @change="() => updateServiceDetails(index)"
@@ -121,7 +125,9 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from "vue";
 import { useI18n } from "vue-i18n";
+import { groupServicesByCategory } from "../../utils/serviceGroups";
 import { useAuthStore } from "../../stores/auth";
 import { isStaffAvailable } from "../../utils/staffAvailability";
 const { t } = useI18n();
@@ -139,6 +145,10 @@ const props = defineProps({
 });
 
 const emit = defineEmits(["update:modelValue"]);
+
+const groupedServices = computed(() =>
+  groupServicesByCategory(props.services, t("services.table.uncategorized")),
+);
 
 const isStaffUnavailable = (staffId: any, serviceStart: any, durationMinutes: number) => {
   if (!serviceStart) return false;

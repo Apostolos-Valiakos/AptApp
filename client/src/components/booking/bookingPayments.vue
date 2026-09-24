@@ -29,6 +29,15 @@
             >+ €{{ previousDebt.toFixed(2) }}</span
           >
         </div>
+        <div
+          v-if="packagesTotal > 0"
+          class="flex justify-between py-2 border-b border-gray-700/50"
+        >
+          <span>{{ t("payment.newPackages") }}</span>
+          <span class="font-medium text-amber-300"
+            >+ €{{ packagesTotal.toFixed(2) }}</span
+          >
+        </div>
         <div class="flex justify-between pt-2">
           <span>{{ t("payment.paid") }}</span>
           <span>- €{{ depositAmount.toFixed(2) }}</span>
@@ -300,6 +309,7 @@ const props = defineProps({
   totalDueNow: { type: Number, default: 0 },
   currentApptTotal: { type: Number, default: 0 },
   previousDebt: { type: Number, default: 0 },
+  packagesTotal: { type: Number, default: 0 },
   depositAmount: { type: Number, default: 0 },
   amountToPay: { type: Number, default: 0 },
   loading: { type: Boolean, default: false },

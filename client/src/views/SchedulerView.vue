@@ -164,9 +164,7 @@
           <div
             class="flex items-center gap-2 bg-white rounded-full px-4 py-2 shadow-md border border-gray-100"
           >
-            <i
-              class="pi pi-spin pi-spinner text-[var(--p-primary-color)]"
-            ></i>
+            <i class="pi pi-spin pi-spinner text-[var(--p-primary-color)]"></i>
             <span class="text-xs font-medium text-gray-500">Loading…</span>
           </div>
         </div>
@@ -192,9 +190,7 @@
           >
             <i class="pi pi-users text-2xl"></i>
           </div>
-          <h3 class="text-lg font-bold text-gray-900 mb-2">
-            No Team Members
-          </h3>
+          <h3 class="text-lg font-bold text-gray-900 mb-2">No Team Members</h3>
           <p class="text-sm text-gray-500 mb-6">
             Add staff members to start scheduling appointments.
           </p>
@@ -253,6 +249,12 @@ import { useSettingsStore } from "../stores/settings";
 import BookingDialog from "../components/BookingDialog.vue";
 import AppointmentSwapDialog from "../components/AppointmentSwapDialog.vue";
 import { useToast } from "primevue/usetoast";
+import { useConfirm } from "primevue/useconfirm";
+import { useI18n } from "vue-i18n";
+import {
+  snapshotServices,
+  describeServiceChanges,
+} from "../utils/appointmentChanges";
 import ColorModelToggle from "../components/ColorModelToggle.vue";
 import { useAuthStore } from "../stores/auth";
 import elLocale from "@fullcalendar/core/locales/el";
@@ -267,6 +269,50 @@ import {
 const reorderDialogVisible = ref(false);
 const authStore = useAuthStore();
 const toast = useToast();
+const confirm = useConfirm();
+const { t, locale } = useI18n();
+
+// Uses the ConfirmDialog mounted inside BookingDialog. Resolves true on accept.
+const hideHoverCard = () => {
+  if (hoverShowTimer) clearTimeout(hoverShowTimer);
+  hoveredAppointment.value = null;
+  hoverAnchorRect.value = null;
+  clearLinkedHighlight();
+};
+
+const confirmMove = (before: any[], after: any[]): Promise<boolean> => {
+  const lines = describeServiceChanges(
+    snapshotServices(before),
+    snapshotServices(after),
+    {
+      services: calendarStore.services,
+      staff: calendarStore.resources,
+      t,
+      locale: locale.value,
+    },
+  );
+  if (lines.length === 0) return Promise.resolve(true);
+  hideHoverCard();
+  moveConfirmOpen = true;
+  return new Promise((resolve) => {
+    const done = (v: boolean) => {
+      moveConfirmOpen = false;
+      resolve(v);
+    };
+    confirm.require({
+      header: t("booking.changeConfirm.header"),
+      message: `${t("booking.changeConfirm.intro")}\n\n${lines
+        .map((l) => `• ${l}`)
+        .join("\n")}\n\n${t("booking.changeConfirm.question")}`,
+      icon: "pi pi-question-circle",
+      acceptLabel: t("booking.changeConfirm.apply"),
+      rejectLabel: t("booking.changeConfirm.cancel"),
+      accept: () => done(true),
+      reject: () => done(false),
+      onHide: () => done(false),
+    });
+  });
+};
 const calendarStore = useCalendarStore();
 const settings = useSettingsStore();
 
@@ -304,7 +350,18 @@ const todayDate = computed(() => {
 
 // --- Appointment hover card ---
 const hoveredAppointment = ref<any>(null);
-const hoverAnchorRect = ref<{ top: number; left: number; right: number; bottom: number; width: number; height: number } | null>(null);
+// The hover card must never show while dragging/resizing or while the
+// "confirm changes" dialog is open (it would sit on top of the dialog).
+let dragInProgress = false;
+let moveConfirmOpen = false;
+const hoverAnchorRect = ref<{
+  top: number;
+  left: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+} | null>(null);
 let hoverShowTimer: ReturnType<typeof setTimeout> | null = null;
 
 const canGoPrev = computed(() => {
@@ -440,7 +497,8 @@ const closeMenus = () => {
 
 // --- Date picker popover ---
 const toggleDatePicker = () => {
-  if (!showDatePicker.value) pickerDate.value = calendarApi.value?.getDate() ?? new Date();
+  if (!showDatePicker.value)
+    pickerDate.value = calendarApi.value?.getDate() ?? new Date();
   showDatePicker.value = !showDatePicker.value;
 };
 
@@ -593,7 +651,15 @@ const calendarEvents = computed(() => {
           },
           client_name:
             `${appt.last_name || ""} ${appt.first_name || "Unknown"}`.trim(),
+          // Just the surname, for the compact combined-line layout on very
+          // short appointments — leaves more room for the service name
+          // before truncating than the full "Surname Firstname" would.
+          client_surname: appt.last_name || appt.first_name || "Unknown",
           service_name: svc.service_name || "Service",
+          // Same client + same service + same start time = one booking split
+          // across several staff members (shown as separate boxes, one per
+          // staff column); hovering any of them highlights the others.
+          linkKey: `${appt.client_id || `${appt.last_name}|${appt.first_name}`}|${svc.service_id || svc.service_name}|${svc.start_time}`,
         },
       });
     });
@@ -837,6 +903,23 @@ const escapeHtml = (value: unknown): string =>
       ] as string,
   );
 
+// Slightly darkens every other box belonging to the same booking (same client,
+// service and start time across different staff columns) while one of them is
+// hovered — the hovered box already darkens itself via its own hover style.
+const highlightLinkedEvents = (linkKey: string | undefined, hoveredEl: HTMLElement) => {
+  if (!linkKey) return;
+  document.querySelectorAll<HTMLElement>("[data-link-key]").forEach((el) => {
+    if (el !== hoveredEl && el.dataset.linkKey === linkKey) {
+      el.classList.add("fc-linked-hover");
+    }
+  });
+};
+const clearLinkedHighlight = () => {
+  document
+    .querySelectorAll(".fc-linked-hover")
+    .forEach((el) => el.classList.remove("fc-linked-hover"));
+};
+
 // --- Calendar Options ---
 const calendarOptions = ref({
   schedulerLicenseKey: "CC-Attribution-NonCommercial-NoDerivatives",
@@ -865,7 +948,11 @@ const calendarOptions = ref({
   // Compact 24h time on appointment boxes (e.g. "14:00 - 15:30" instead of
   // "10:00 π.μ. - 11:00 π.μ.") — roughly half the characters, same info
   // within a single day view where AM/PM is redundant.
-  eventTimeFormat: { hour: "2-digit", minute: "2-digit", hour12: false } as const,
+  eventTimeFormat: {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  } as const,
   slotDuration: "00:15:00",
   slotLabelInterval: "01:00",
   slotMinTime: "07:00:00",
@@ -966,9 +1053,18 @@ const calendarOptions = ref({
     // Only genuinely tight (<20 min) boxes drop to the compact, time/service-less
     // layout — everything 20 min and up gets the full time+name+service layout,
     // since the default zoom now gives them enough height to show it.
-    const isShort = durationMins < 20;
+    const isShort = durationMins <= 20;
 
-    const paddingClass = isShort && !isMonthView ? "p-1 pl-1.5" : "p-2";
+    const paddingClass =
+      isShort && !isMonthView
+        ? "p-1 pl-1.5"
+        : isMonthView
+          ? "p-2"
+          : // Tighter than the old flat p-2 — with 3 lines now allowed to wrap
+            // (time/name/service), every px of padding is px the text doesn't
+            // get, and this tier (20+ min, day/week view) is exactly the one
+            // tightest on room relative to what it now needs to fit.
+            "px-2 py-1";
     // Hierarchy comes from weight/color, not size — name and service/time
     // stay close in font size (Fresha-style); the name reads first purely
     // because it's bold + near-black against muted-gray secondary lines.
@@ -1004,8 +1100,19 @@ const calendarOptions = ref({
       <div class="relative w-full ${paddingClass} flex flex-col leading-tight overflow-hidden rounded-md hover:brightness-95 transition-all ${isMonthView ? "" : "h-full"}">
         ${statusBadge}
         ${!isShort && !isMonthView ? `<div class="text-[10px] md:text-[12px] font-semibold mb-0.5 truncate ${timeClass}">${timeText}</div>` : ""}
-        <div class="font-bold ${titleClass} pr-4 truncate ${textClass}" title="${escapeHtml(props.client_name)}">${escapeHtml(props.client_name)}</div>
-        ${!isShort || isMonthView ? `<div class="text-[10px] md:text-[12px] font-medium mt-0.5 truncate ${serviceClass}" title="${escapeHtml(props.service_name)}">${escapeHtml(props.service_name)}</div>` : ""}
+        ${
+          isShort && !isMonthView
+            ? `<div class="font-bold ${titleClass} pr-2 truncate ${textClass}" title="${escapeHtml(props.client_name)} — ${escapeHtml(props.service_name)}">${escapeHtml(props.client_surname)}<span class="font-normal ${serviceClass}"> — ${escapeHtml(props.service_name)}</span></div>`
+            : isMonthView
+              ? `<div class="font-bold ${titleClass} pr-4 truncate ${textClass}" title="${escapeHtml(props.client_name)}">${escapeHtml(props.client_name)}</div>
+        <div class="text-[10px] md:text-[12px] font-medium mt-0.5 truncate ${serviceClass}" title="${escapeHtml(props.service_name)}">${escapeHtml(props.service_name)}</div>`
+              : // Enough vertical room at 20+ min for the full name and service
+                // to just wrap onto another line rather than truncate — nothing
+                // gets cut off mid-word (whitespace-normal only, no break-words),
+                // matching the earlier "keep words intact" preference.
+                `<div class="font-bold ${titleClass} pr-4 whitespace-normal ${textClass}" title="${escapeHtml(props.client_name)}">${escapeHtml(props.client_name)}</div>
+        <div class="text-[10px] md:text-[12px] font-medium mt-0.5 whitespace-normal ${serviceClass}" title="${escapeHtml(props.service_name)}">${escapeHtml(props.service_name)}</div>`
+        }
       </div>
     `,
     };
@@ -1014,10 +1121,35 @@ const calendarOptions = ref({
   // Hover card — triggered from anywhere on the box (FullCalendar fires this
   // for the whole event element, not a sub-element), skipping time-off/
   // off-hours background events (only real service events carry isServiceEvent).
+  eventDidMount: (info: any) => {
+    const key = info.event.extendedProps?.linkKey;
+    if (key) info.el.dataset.linkKey = key;
+  },
+
+  eventDragStart: () => {
+    dragInProgress = true;
+    hideHoverCard();
+  },
+  eventDragStop: () => {
+    dragInProgress = false;
+    hideHoverCard();
+  },
+  eventResizeStart: () => {
+    dragInProgress = true;
+    hideHoverCard();
+  },
+  eventResizeStop: () => {
+    dragInProgress = false;
+    hideHoverCard();
+  },
+
   eventMouseEnter: (info: any) => {
     if (!info.event.extendedProps?.isServiceEvent) return;
+    if (dragInProgress || moveConfirmOpen) return;
+    highlightLinkedEvents(info.event.extendedProps.linkKey, info.el);
     if (hoverShowTimer) clearTimeout(hoverShowTimer);
     hoverShowTimer = setTimeout(() => {
+      if (dragInProgress || moveConfirmOpen) return;
       const rect = info.el.getBoundingClientRect();
       hoverAnchorRect.value = {
         top: rect.top,
@@ -1038,9 +1170,8 @@ const calendarOptions = ref({
   },
 
   eventMouseLeave: () => {
-    if (hoverShowTimer) clearTimeout(hoverShowTimer);
-    hoveredAppointment.value = null;
-    hoverAnchorRect.value = null;
+    clearLinkedHighlight();
+    hideHoverCard();
   },
 
   eventClick: (info: any) => {
@@ -1066,6 +1197,10 @@ const calendarOptions = ref({
       services[serviceIndex].duration_override = (end - start) / 60000;
       if (newResourceId) services[serviceIndex].staff_id = newResourceId;
     }
+    if (!(await confirmMove(fullAppointment.services, services))) {
+      info.revert();
+      return;
+    }
     const ok = await updateAppointment(appointmentId, {
       ...fullAppointment,
       services,
@@ -1086,6 +1221,10 @@ const calendarOptions = ref({
       services[serviceIndex].start_time = info.event.start.toISOString();
       services[serviceIndex].duration_minutes = newDuration;
       services[serviceIndex].duration_override = newDuration;
+    }
+    if (!(await confirmMove(fullAppointment.services, services))) {
+      info.revert();
+      return;
     }
     const ok = await updateAppointment(appointmentId, {
       ...fullAppointment,
@@ -1217,6 +1356,26 @@ onMounted(async () => {
 .fc-v-event .fc-event-main {
   padding: 0;
   color: inherit;
+}
+/* Matches the hovered box's own hover:brightness-95 on its inner content. */
+.fc-linked-hover .fc-event-main > div {
+  filter: brightness(0.95);
+}
+
+/* Minimum visual height floor: a 5-10 min appointment renders at only a
+   handful of pixels at this app's normal zoom — nowhere near enough for a
+   legible line of text no matter how the content inside is formatted. This
+   floor is purely visual (FullCalendar still positions the box at the
+   correct start time; only its rendered height is bumped up), so a very
+   short appointment can appear to touch whatever's booked immediately after
+   it even though nothing actually conflicts — an accepted trade-off in
+   favor of always being able to read who/what at a glance. Targets both the
+   positioned harness (which carries the real inline height) and the event
+   box itself, since either can be the actual sizing constraint depending on
+   FullCalendar's internal DOM for a given view. */
+.fc-timegrid-event-harness,
+.fc-v-event {
+  min-height: 20px;
 }
 
 .fade-enter-active,

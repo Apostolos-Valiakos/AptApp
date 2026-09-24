@@ -228,11 +228,26 @@
 
           <!-- PAYMENT TAB -->
           <div v-if="currentTab === 'Payment'">
+            <BookingPackages
+              ref="bookingPackagesRef"
+              :clientId="form.client_id"
+              :appointmentId="form.id"
+              :servicesList="servicesList"
+              v-model:pendingPackages="pendingPackages"
+              :ensureSaved="ensureSavedForPackage"
+              @changed="onPackageChanged"
+            />
+            <BookingDiscount
+              v-model="discount"
+              :codes="discountCodes"
+              :discountAmount="discountAmount"
+            />
             <BookingPayments
               ref="bookingPaymentsRef"
               :totalDueNow="totalDueNow"
               :currentApptTotal="currentApptTotal"
               :previousDebt="previousDebt"
+              :packagesTotal="pendingPackagesTotal"
               :depositAmount="form.deposit_amount"
               :loading="paymentLoading"
               :paidPaymentMethod="form.payment_method"
@@ -421,15 +436,29 @@ import { useI18n } from "vue-i18n";
 import BookingProducts from "./booking/bookingProducts.vue";
 import BookingServices from "./booking/bookingServices.vue";
 import BookingPayments from "./booking/bookingPayments.vue";
+import BookingDiscount from "./booking/BookingDiscount.vue";
+import BookingPackages from "./booking/BookingPackages.vue";
+import {
+  emptyDiscount,
+  computeDiscountAmount,
+  discountFromAppointment,
+  discountPayload,
+  type DiscountState,
+} from "../utils/discount";
 import BookingSidebar from "./booking/bookingSideBar.vue";
 import ClientProfileDialog from "./ClientProfileDialog.vue";
 import { useConfirm } from "primevue/useconfirm";
 import { useToast } from "primevue/usetoast";
 import { fetchOrQueue } from "../offline/queue";
 import { isStaffAvailable } from "../utils/staffAvailability";
+import {
+  snapshotServices,
+  describeServiceChanges,
+  type ServiceSnapshot,
+} from "../utils/appointmentChanges";
 const confirm = useConfirm();
 const toast = useToast();
-const { t } = useI18n();
+const { t, locale } = useI18n();
 
 const props = defineProps([
   "visible",
@@ -506,6 +535,7 @@ const statusOptions = computed(() => [
   { label: t("common.status.started"), value: "started" },
   { label: t("common.status.completed"), value: "completed" },
   { label: t("common.status.noShow"), value: "no-show" },
+  { label: t("common.status.noResponse"), value: "no-response" },
   { label: t("common.status.cancelled"), value: "cancelled" },
 ]);
 
@@ -521,7 +551,15 @@ const toggleMobileSidebar = () => {
   showMobileSidebar.value = !showMobileSidebar.value;
 };
 
-onMounted(() => {
+onMounted(async () => {
+  try {
+    const res = await fetch("/api/v1/discount-codes", {
+      headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+    });
+    if (res.ok) discountCodes.value = (await res.json()).filter((c: any) => c.is_active);
+  } catch {
+    // codes are optional; fixed/percent discounts still work
+  }
   checkMobile();
   window.addEventListener("resize", checkMobile);
 });
@@ -596,18 +634,36 @@ const loadClientById = async (clientId: string, fallback: any) => {
 };
 
 // Financial Calculations
-const currentApptTotal = computed(() => {
-  const servicesTotal = servicesList.value.reduce(
-    (sum, s) => sum + (Number(s.price_override) || 0),
-    0,
-  );
-  const productsTotal = productsList.value.reduce(
+const discount = ref<DiscountState>(emptyDiscount());
+const discountCodes = ref<any[]>([]);
+const originalDiscountAmount = ref(0);
+
+// Packages picked to buy alongside this payment (Payment tab) — sold in
+// full when the payment is submitted, added to the displayed total so
+// staff pay "service + package" as one number. See recordPayment below.
+const pendingPackages = ref<{ package_type_id: string; name: string; price: number }[]>([]);
+const pendingPackagesTotal = computed(() =>
+  pendingPackages.value.reduce((sum, p) => sum + Number(p.price), 0),
+);
+const bookingPackagesRef = ref<any>(null);
+
+const servicesTotal = computed(() =>
+  servicesList.value.reduce((sum, s) => sum + (Number(s.price_override) || 0), 0),
+);
+const productsTotal = computed(() =>
+  productsList.value.reduce(
     (sum, p) => sum + (Number(p.price) || 0) * (p.quantity || 1),
     0,
-  );
-  return servicesTotal + productsTotal;
-});
+  ),
+);
+const discountAmount = computed(() =>
+  computeDiscountAmount(discount.value, servicesTotal.value, productsTotal.value),
+);
+const currentApptTotal = computed(
+  () => servicesTotal.value + productsTotal.value - discountAmount.value,
+);
 
+const originalServices = ref<ServiceSnapshot[]>([]);
 const originalSnapshot = ref({ price: 0, deposit: 0, isPast: false });
 
 const originalDebtContribution = computed(() => {
@@ -662,8 +718,10 @@ const totalDueNow = computed(() => {
     currentApptTotal.value - form.value.deposit_amount,
   );
 
-  // 2. Total Due = (Old Debt) + (Unpaid part of current visit)
-  return previousDebt.value + currentApptUnpaid;
+  // 2. Total Due = (Old Debt) + (Unpaid part of current visit) + any package
+  // being bought alongside this payment (sold in full, not part of the
+  // appointment's own debt — see pendingPackages/recordPayment below).
+  return previousDebt.value + currentApptUnpaid + pendingPackagesTotal.value;
 });
 
 // Only clamp the entered amount when the total due drops below it (e.g. a service is removed).
@@ -771,6 +829,9 @@ watch(
           }))
         : [];
 
+      originalServices.value = snapshotServices(servicesList.value);
+      discount.value = discountFromAppointment(val);
+      originalDiscountAmount.value = discountAmount.value;
       const apptStartTime = val.services?.[0]?.start_time || val.start_time;
       originalSnapshot.value = {
         price: currentApptTotal.value,
@@ -810,6 +871,8 @@ watch(
       ];
 
       productsList.value = [];
+      discount.value = emptyDiscount();
+      originalDiscountAmount.value = 0;
       originalSnapshot.value = { price: 0, deposit: 0, isPast: false };
     }
 
@@ -834,27 +897,87 @@ watch(
 
 // === METHODS ===
 
-const save = async (close = true) => {
+// Package visits attach to a saved appointment: save pending edits first.
+const ensureSavedForPackage = async (): Promise<string | null> => {
+  if (!(await save(false))) return null;
+  return form.value.id || null;
+};
+
+const onPackageChanged = (data: any) => {
+  if (data.new_balance !== undefined && selectedClient.value) {
+    selectedClient.value.outstanding_balance = Number(data.new_balance);
+  }
+  if (data.amount) form.value.deposit_amount += Number(data.amount);
+  if (data.status) form.value.status = data.status;
+  if (data.payment_status) form.value.payment_status = data.payment_status;
+  originalSnapshot.value = { ...originalSnapshot.value, deposit: form.value.deposit_amount };
+  emit("save");
+};
+
+const confirmChanges = (): Promise<boolean> => {
+  if (!form.value.id || form.value.is_block) return Promise.resolve(true);
+  const lines = describeServiceChanges(
+    originalServices.value,
+    snapshotServices(servicesList.value),
+    {
+      services: props.services || [],
+      staff: props.staff || [],
+      t,
+      locale: locale.value,
+    },
+  );
+  if (discountAmount.value !== originalDiscountAmount.value) {
+    lines.push(
+      `${t("discount.line")}: €${originalDiscountAmount.value.toFixed(2)} → €${discountAmount.value.toFixed(2)}`,
+    );
+  }
+  if (lines.length === 0) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    confirm.require({
+      header: t("booking.changeConfirm.header"),
+      message: `${t("booking.changeConfirm.intro")}\n\n${lines
+        .map((l) => `• ${l}`)
+        .join("\n")}\n\n${t("booking.changeConfirm.question")}`,
+      icon: "pi pi-question-circle",
+      acceptLabel: t("booking.changeConfirm.apply"),
+      rejectLabel: t("booking.changeConfirm.cancel"),
+      accept: () => resolve(true),
+      reject: () => resolve(false),
+      onHide: () => resolve(false),
+    });
+  });
+};
+
+// Resolves false only when the user declined the change confirmation.
+const save = async (close = true): Promise<boolean> => {
+  if (!(await confirmChanges())) return false;
+
   // Check if editing an existing recurring appointment
   const isSeriesEdit = form.value.id && props.appointment?.group_id;
   const isConvertingToSeries =
     form.value.id && !props.appointment?.group_id && isRecurring.value;
 
   if (isSeriesEdit) {
-    confirm.require({
-      message: t("booking.editDialog.message"),
-      header: t("booking.editDialog.header"),
-      icon: "pi pi-question-circle",
-      rejectLabel: t("booking.editDialog.thisOnly"),
-      acceptLabel: t("booking.editDialog.thisAndFuture"),
-      accept: () => executeSave(close, "series"),
-      reject: () => executeSave(close, "single"),
+    return new Promise((resolve) => {
+      confirm.require({
+        message: t("booking.editDialog.message"),
+        header: t("booking.editDialog.header"),
+        icon: "pi pi-question-circle",
+        rejectLabel: t("booking.editDialog.thisOnly"),
+        acceptLabel: t("booking.editDialog.thisAndFuture"),
+        accept: async () => {
+          await executeSave(close, "series");
+          resolve(true);
+        },
+        reject: async () => {
+          await executeSave(close, "single");
+          resolve(true);
+        },
+      });
     });
-  } else if (isConvertingToSeries) {
-    executeSave(close, "series");
-  } else {
-    executeSave(close, "single");
   }
+  await executeSave(close, isConvertingToSeries ? "series" : "single");
+  return true;
 };
 
 const executeSave = async (close = true, scope = "single") => {
@@ -932,6 +1055,7 @@ const executeSave = async (close = true, scope = "single") => {
         price_override: Number(s.price_override) || Number(s.price) || 0,
       })),
       products: productsList.value,
+      ...discountPayload(discount.value),
     };
 
     const result = await fetchOrQueue(url, method, payload, {
@@ -982,6 +1106,8 @@ const executeSave = async (close = true, scope = "single") => {
       selectedClient.value.outstanding_balance = Number(data.new_balance);
     }
 
+    originalServices.value = snapshotServices(servicesList.value);
+    originalDiscountAmount.value = discountAmount.value;
     originalSnapshot.value = {
       price: currentApptTotal.value,
       deposit: form.value.deposit_amount,
@@ -1013,13 +1139,23 @@ const recordPayment = async (
     redemptions2?: any[];
   } | null,
 ) => {
-  if (amountToPayNow.value <= 0) return;
+  if (amountToPayNow.value <= 0 && pendingPackagesTotal.value <= 0) return;
   paymentLoading.value = true;
+
+  // The entered amount covers "service + package" together (see totalDueNow),
+  // but only the non-package part goes through the appointment's own debt
+  // logic server-side — the package is sold in full, separately, regardless
+  // of how much of the service itself is actually being paid right now.
+  const packageTotal = pendingPackagesTotal.value;
+  const serviceLegAmount = Math.max(0, amountToPayNow.value - packageTotal);
 
   // Save any pending form changes (services, notes) before processing payment.
   // Do NOT force status='completed' here — the transaction endpoint handles that
   // atomically so a failed payment can't leave the appointment marked complete.
-  await save(false);
+  if (!(await save(false))) {
+    paymentLoading.value = false;
+    return;
+  }
 
   if (!form.value.id) {
     // The appointment itself was just created offline and hasn't synced yet
@@ -1043,10 +1179,17 @@ const recordPayment = async (
       {
         appointment_id: form.value.id,
         client_id: form.value.client_id,
-        amount: amountToPayNow.value,
+        amount: serviceLegAmount,
         payment_method: selectedPaymentMethod.value,
         gift_card_id: selectedGiftCardId.value,
         redemptions: selectedMembershipRedemptions.value,
+        ...(packageTotal > 0
+          ? {
+              package_purchases: pendingPackages.value.map((p) => ({
+                package_type_id: p.package_type_id,
+              })),
+            }
+          : {}),
         ...(split
           ? {
               amount2: split.amount2,
@@ -1064,10 +1207,13 @@ const recordPayment = async (
     );
 
     if (result.queued) {
-      const totalPaidThisVisit = amountToPayNow.value + (split?.amount2 || 0);
+      const totalPaidThisVisit = serviceLegAmount + (split?.amount2 || 0);
       // Reflect the payment locally right away so staff aren't blocked, but
-      // this is optimistic — the server hasn't actually seen it yet.
+      // this is optimistic — the server hasn't actually seen it yet. The
+      // queued request already carries package_purchases, so the package(s)
+      // will be created once it syncs.
       form.value.deposit_amount += totalPaidThisVisit;
+      pendingPackages.value = [];
       toast.add({
         severity: "warn",
         summary: t("booking.toast.savedOffline"),
@@ -1091,14 +1237,26 @@ const recordPayment = async (
 
     if (res.ok) {
       const data = await res.json();
-      const totalPaidThisVisit = amountToPayNow.value + (split?.amount2 || 0);
+      const totalPaidThisVisit = serviceLegAmount + (split?.amount2 || 0);
 
-      // Update local deposit_amount for immediate UI feedback
+      // Update local deposit_amount for immediate UI feedback (package
+      // purchases never touch the appointment's own deposit/payment_status).
       form.value.deposit_amount += totalPaidThisVisit;
 
       // Use the authoritative balance returned by the server instead of guessing by subtraction
       if (data.new_balance !== undefined && selectedClient.value) {
         selectedClient.value.outstanding_balance = Number(data.new_balance);
+      }
+
+      if (data.packages_purchased?.length) {
+        toast.add({
+          severity: "success",
+          summary: t("packages.sell.sold"),
+          detail: data.packages_purchased.map((p: any) => p.name).join(", "),
+          life: 3000,
+        });
+        pendingPackages.value = [];
+        bookingPackagesRef.value?.load();
       }
 
       if (split) {
@@ -1304,6 +1462,7 @@ const getStatusColor = (s: string) => {
     completed: "bg-gray-200 text-gray-800",
     cancelled: "bg-red-100 text-red-800",
     "no-show": "bg-red-200 text-red-900",
+    "no-response": "bg-amber-100 text-amber-800",
   };
   return map[s] || "bg-gray-100";
 };
@@ -1317,12 +1476,17 @@ const getStatusDot = (s: string) => {
     completed: "bg-gray-500",
     cancelled: "bg-red-500",
     "no-show": "bg-red-700",
+    "no-response": "bg-amber-500",
   };
   return map[s] || "bg-gray-400";
 };
 </script>
 
 <style scoped>
+:global(.p-confirmdialog-message) {
+  white-space: pre-line;
+}
+
 .fresha-dialog .p-dialog-header {
   display: none;
 }

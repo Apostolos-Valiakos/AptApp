@@ -13,10 +13,16 @@ const ProductsView = () => import("../views/ProductsView.vue");
 const GiftCardsView = () => import("../views/GiftCardsView.vue");
 const FinancialsView = () => import("../components/FinancialsView.vue");
 const profileView = () => import("../views/profileView.vue");
-const ClientPortalView = () => import("../views/ClientPortalView.vue");
+const ClientLayout = () => import("../components/ClientLayout.vue");
+const ClientHomeView = () => import("../views/portal/ClientHomeView.vue");
+const ClientAppointmentsView = () =>
+  import("../views/portal/ClientAppointmentsView.vue");
+const ClientMoreView = () => import("../views/portal/ClientMoreView.vue");
 const SignupView = () => import("../views/SignupView.vue");
 const ShopsView = () => import("../views/ShopsView.vue");
 const MembershipTiersView = () => import("../views/MembershipTiersView.vue");
+const DailyReportView = () => import("../views/DailyReportView.vue");
+const PackageTypesView = () => import("../views/PackageTypesView.vue");
 const MembershipReportView = () => import("../views/MembershipReportView.vue");
 const QrScannerView = () => import("../views/QrScannerView.vue");
 const DemoRequestsView = () => import("../views/DemoRequestsView.vue");
@@ -43,12 +49,6 @@ const routes = [
         component: SignupView,
       },
       {
-        path: "/portal",
-        name: "ClientPortal",
-        component: ClientPortalView,
-        meta: { requiresAuth: true, role: "client" },
-      },
-      {
         path: "app", // Εσωτερικές σελίδες
         meta: { requiresAuth: true },
         children: [
@@ -73,6 +73,12 @@ const routes = [
             component: MembershipTiersView,
             meta: { requiresAnalytics: true },
           },
+          { path: "daily-report", component: DailyReportView },
+          {
+            path: "packages",
+            component: PackageTypesView,
+            meta: { requiresAnalytics: true },
+          },
           {
             path: "membership-report",
             component: MembershipReportView,
@@ -92,6 +98,21 @@ const routes = [
           { path: "profile", component: profileView },
         ],
       },
+    ],
+  },
+  {
+    path: "/portal",
+    component: ClientLayout,
+    meta: { requiresAuth: true, role: "client" },
+    children: [
+      { path: "", redirect: "/portal/home" },
+      { path: "home", name: "ClientHome", component: ClientHomeView },
+      {
+        path: "appointments",
+        name: "ClientAppointments",
+        component: ClientAppointmentsView,
+      },
+      { path: "more", name: "ClientMore", component: ClientMoreView },
     ],
   },
   // Redirects για να μη σπάνε τα παλιά links - ΠΡΟΣΟΧΗ ΣΤΑ "/"
@@ -117,11 +138,11 @@ router.beforeEach((to, from, next) => {
   }
 
   if (to.path === "/login" && authStore.isAuthenticated) {
-    return authStore.isClient ? next("/portal") : next("/app/scheduler");
+    return authStore.isClient ? next("/portal/home") : next("/app/scheduler");
   }
 
   if (to.path.startsWith("/app") && authStore.isClient) {
-    return next("/portal");
+    return next("/portal/home");
   }
 
   if (to.meta.requiresAnalytics && !authStore.isAnalyticsAllowed) {
@@ -133,7 +154,7 @@ router.beforeEach((to, from, next) => {
   }
 
   if (
-    to.path === "/portal" &&
+    to.path.startsWith("/portal") &&
     !authStore.isClient &&
     authStore.isAuthenticated
   ) {

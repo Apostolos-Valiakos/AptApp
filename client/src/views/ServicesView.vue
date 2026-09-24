@@ -111,6 +111,17 @@
           </template>
         </Column>
 
+        <Column field="bookable_online" :header="t('services.table.bookableOnline')">
+          <template #body="slotProps">
+            <i
+              v-if="slotProps.data.bookable_online"
+              class="pi pi-check-circle text-green-600"
+              v-tooltip.top="t('services.dialog.bookableOnline')"
+            ></i>
+            <i v-else class="pi pi-minus text-gray-300"></i>
+          </template>
+        </Column>
+
         <Column :header="t('common.actions')">
           <template #body="slotProps">
             <div class="flex gap-1.5 items-center">
@@ -157,7 +168,8 @@
             <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('services.dialog.category') }}</label>
             <Dropdown
               v-model="editingService.category"
-              :options="categories"
+              :options="categoryOptions"
+              editable
               :placeholder="t('services.dialog.selectCategory')"
               class="w-full"
             />
@@ -209,6 +221,15 @@
               </div>
             </div>
           </div>
+
+          <!-- Online booking opt-in -->
+          <div class="md:col-span-2 flex items-start gap-3 p-4 bg-gray-50 rounded-xl border border-gray-200">
+            <Checkbox v-model="editingService.bookable_online" :binary="true" inputId="bookableOnline" />
+            <label for="bookableOnline" class="cursor-pointer">
+              <span class="block text-sm font-medium text-gray-700">{{ t('services.dialog.bookableOnline') }}</span>
+              <span class="block text-xs text-gray-500 mt-0.5">{{ t('services.dialog.bookableOnlineNote') }}</span>
+            </label>
+          </div>
         </div>
       </div>
 
@@ -238,6 +259,7 @@ import { ref, onMounted, computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
+import Checkbox from "primevue/checkbox";
 
 const { t } = useI18n();
 
@@ -260,6 +282,7 @@ const editingService = ref<any>({
   duration_minutes: 60,
   price: 0.0,
   color_code: "var(--p-primary-100)",
+  bookable_online: false,
 });
 
 const categories = [
@@ -271,6 +294,12 @@ const categories = [
   "Waxing",
   "Other",
 ];
+
+const categoryOptions = computed(() =>
+  [...new Set([...categories, ...services.value.map((s: any) => (s.category || "").trim()).filter(Boolean)])].sort(
+    (a, b) => a.localeCompare(b),
+  ),
+);
 
 const fetchServices = async () => {
   const token = localStorage.getItem("token");
@@ -310,6 +339,7 @@ const openNew = () => {
     duration_minutes: 60,
     price: 0.0,
     color_code: "var(--p-primary-100)",
+    bookable_online: false,
   };
   dialogVisible.value = true;
 };

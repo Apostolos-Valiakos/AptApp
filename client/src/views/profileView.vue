@@ -586,6 +586,102 @@
           </div>
         </div>
 
+        <!-- Client Self-Booking (admin only) -->
+        <div
+          v-if="isShopAdmin"
+          class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8"
+        >
+          <div class="flex justify-between items-center">
+            <div>
+              <h3 class="text-lg font-bold text-gray-900">
+                Client Self-Booking
+              </h3>
+              <p class="text-sm text-gray-500 max-w-xl">
+                Let clients book an appointment themselves from their client
+                portal, for services you've marked "Bookable online" and with
+                staff assigned to those services.
+              </p>
+            </div>
+            <ToggleSwitch
+              :modelValue="selfBookingEnabled"
+              :disabled="isSavingSelfBooking"
+              @update:modelValue="saveSelfBooking"
+            />
+          </div>
+        </div>
+
+        <DiscountCodesAdmin v-if="isShopAdmin" />
+
+        <!-- Push Broadcast (admin only) -->
+        <div
+          v-if="isShopAdmin"
+          class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8"
+        >
+          <div class="mb-6">
+            <h3 class="text-lg font-bold text-gray-900">
+              Send a Push Notification
+            </h3>
+            <p class="text-sm text-gray-500 max-w-xl">
+              Sent instantly to every client who has notifications enabled on
+              their portal — a promo, an announcement, anything.
+            </p>
+          </div>
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1"
+                >Title</label
+              >
+              <InputText
+                v-model="broadcastForm.title"
+                class="w-full"
+                placeholder="e.g. 20% off this weekend!"
+                maxlength="80"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1"
+                >Message</label
+              >
+              <Textarea
+                v-model="broadcastForm.body"
+                class="w-full"
+                rows="3"
+                autoResize
+                placeholder="Write your message..."
+                maxlength="300"
+              />
+            </div>
+            <div class="flex justify-end">
+              <Button
+                label="Send"
+                icon="pi pi-send"
+                :loading="isSendingBroadcast"
+                :disabled="!broadcastForm.title.trim() || !broadcastForm.body.trim()"
+                @click="sendBroadcast"
+              />
+            </div>
+          </div>
+
+          <div v-if="recentBroadcasts.length" class="mt-6 pt-6 border-t border-gray-100">
+            <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
+              Recently Sent
+            </p>
+            <div
+              v-for="b in recentBroadcasts"
+              :key="b.id"
+              class="flex items-start justify-between gap-3 py-2 text-sm"
+            >
+              <div class="min-w-0">
+                <p class="font-medium text-gray-800 truncate">{{ b.title }}</p>
+                <p class="text-xs text-gray-400 truncate">{{ b.body }}</p>
+              </div>
+              <span class="text-xs text-gray-400 flex-shrink-0"
+                >{{ b.recipient_count }} sent</span
+              >
+            </div>
+          </div>
+        </div>
+
         <!-- Change Password -->
         <div
           class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8"
@@ -892,6 +988,7 @@
 import { ref, onMounted, computed, reactive, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
+import DiscountCodesAdmin from "../components/DiscountCodesAdmin.vue";
 import { useConfirm } from "primevue/useconfirm";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "../stores/auth";
@@ -924,6 +1021,8 @@ const replyEmailForm = ref("");
 const staffPhotoUrl = ref("");
 const isSavingContact = ref(false);
 const isSavingCalSettings = ref(false);
+const isSavingSelfBooking = ref(false);
+const selfBookingEnabled = ref(false);
 const contactForm = reactive({ phone: "", address: "", website: "" });
 const calSettings = reactive({
   slotMinTime: "07:00",
@@ -1037,6 +1136,7 @@ const fetchProfile = async () => {
       calSettings.slotMaxTime = data.slot_max_time || "23:00";
       calSettings.showWeekends = data.show_weekends ?? true;
       calSettings.reminderHoursBefore = data.reminder_hours_before ?? 24;
+      selfBookingEnabled.value = data.self_booking_enabled ?? false;
       staffPhotoUrl.value = data.staff_photo_url || "";
     } else {
       throw new Error("Failed to load profile");
@@ -1297,6 +1397,86 @@ const saveCalendarSettings = async () => {
   }
 };
 
+const saveSelfBooking = async (value: boolean) => {
+  isSavingSelfBooking.value = true;
+  const previous = selfBookingEnabled.value;
+  selfBookingEnabled.value = value;
+  const token = localStorage.getItem("token");
+  try {
+    const res = await fetch("/api/v1/shop/self-booking", {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ self_booking_enabled: value }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error || "Failed");
+    toast.add({
+      severity: "success",
+      summary: "Saved",
+      detail: value
+        ? "Clients can now book appointments themselves from their portal."
+        : "Client self-booking is now disabled.",
+      life: 3000,
+    });
+  } catch (e: any) {
+    selfBookingEnabled.value = previous;
+    toast.add({
+      severity: "error",
+      summary: "Error",
+      detail: e.message,
+      life: 3000,
+    });
+  } finally {
+    isSavingSelfBooking.value = false;
+  }
+};
+
+const isSendingBroadcast = ref(false);
+const broadcastForm = reactive({ title: "", body: "" });
+const recentBroadcasts = ref<any[]>([]);
+
+const fetchRecentBroadcasts = async () => {
+  const token = localStorage.getItem("token");
+  try {
+    const res = await fetch("/api/v1/broadcasts", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.ok) recentBroadcasts.value = await res.json();
+  } catch {}
+};
+
+const sendBroadcast = async () => {
+  isSendingBroadcast.value = true;
+  const token = localStorage.getItem("token");
+  try {
+    const res = await fetch("/api/v1/broadcasts", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(broadcastForm),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed");
+    toast.add({
+      severity: "success",
+      summary: "Sent",
+      detail: `Delivered to ${data.recipient_count} device${data.recipient_count === 1 ? "" : "s"}.`,
+      life: 3000,
+    });
+    broadcastForm.title = "";
+    broadcastForm.body = "";
+    fetchRecentBroadcasts();
+  } catch (e: any) {
+    toast.add({ severity: "error", summary: "Error", detail: e.message, life: 3000 });
+  } finally {
+    isSendingBroadcast.value = false;
+  }
+};
+
 const uploadPhoto = async (e: Event) => {
   const file = (e.target as HTMLInputElement).files?.[0];
   if (!file) return;
@@ -1421,7 +1601,10 @@ onMounted(() => {
   if (themeStore.primaryColor) {
     pickerColor.value = themeStore.primaryColor.replace("#", "");
   }
-  if (isShopAdmin.value) fetchContests();
+  if (isShopAdmin.value) {
+    fetchContests();
+    fetchRecentBroadcasts();
+  }
 });
 
 // ── Contests ──────────────────────────────────────────────

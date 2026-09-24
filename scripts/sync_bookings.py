@@ -203,8 +203,16 @@ def main():
             errors.append(f"Row {i}: service '{service_raw}' not matched (score {svc_score})")
             continue
 
+        # Clients get an EXACT match only (normalize() already handles case/
+        # accent/whitespace differences) — never fuzzy. Unlike staff/services,
+        # which are a small fixed set where a close match is almost always the
+        # same real person and a typo, client names are open-ended: two
+        # different people are routinely one or two characters apart (e.g.
+        # "ΜΑΡΙΑ ΛΙΑΚΟΥ" vs "ΒΑΛΙΑΚΟΥ ΜΑΡΙΑ" scored 92/100 on token_sort_ratio
+        # and got silently merged into the wrong, unrelated client). No match
+        # here means "new client", full stop.
         client_norm = normalize(client_raw)
-        client_id, _ = fuzzy_match(client_norm, cli_map)
+        client_id = cli_map.get(client_norm)
         client_new = False
         if not client_id:
             client_new = True

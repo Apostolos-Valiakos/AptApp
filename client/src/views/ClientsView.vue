@@ -367,6 +367,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
@@ -407,9 +408,19 @@ const editingClient = ref<any>({
   logotherapia: false,
 });
 
+const route = useRoute();
+const router = useRouter();
+
 onMounted(() => {
   fetchClients();
   settingsStore.fetchShopSettings();
+  // Deep link from the QR scanner's "Open full profile" button.
+  if (route.query.open) {
+    selectedClientId.value = String(route.query.open);
+    profileVisible.value = true;
+    const { open, ...rest } = route.query;
+    router.replace({ query: rest });
+  }
 });
 
 // Server-side pagination + search
