@@ -2,34 +2,34 @@
   <Dialog
     v-model:visible="visible"
     modal
-    header="Swap Appointments"
+    :header="t('appointmentSwap.title')"
     :style="{ width: '750px' }"
   >
     <div class="space-y-6 mt-2">
       <!-- Search + Filters -->
       <div class="flex gap-3 items-end flex-wrap">
         <div class="flex-1">
-          <label class="text-sm font-medium">Search</label>
+          <label class="text-sm font-medium">{{ t('common.search') }}</label>
           <InputText
             v-model="filters.search"
-            placeholder="Name or phone..."
+            :placeholder="t('appointmentSwap.searchPlaceholder')"
             class="w-full"
           />
         </div>
 
         <div class="flex-1">
-          <label class="text-sm font-medium">Date</label>
-          <Calendar v-model="filters.date" placeholder="Select date" dateFormat="dd/mm/yy" showIcon />
+          <label class="text-sm font-medium">{{ t('appointmentSwap.date') }}</label>
+          <Calendar v-model="filters.date" :placeholder="t('appointmentSwap.selectDate')" dateFormat="dd/mm/yy" showIcon />
         </div>
 
         <div class="flex-1">
-          <label class="text-sm font-medium">Staff</label>
+          <label class="text-sm font-medium">{{ t('appointmentSwap.staff') }}</label>
           <Dropdown
             v-model="filters.staff"
             :options="normalizedStaff"
             optionLabel="name"
             optionValue="id"
-            placeholder="All"
+            :placeholder="t('appointmentSwap.all')"
             class="w-full"
             showClear
           />
@@ -38,7 +38,7 @@
 
       <!-- FIRST APPOINTMENT -->
       <h3 class="font-semibold text-gray-800 mt-6 mb-2">
-        Select First Appointment
+        {{ t('appointmentSwap.selectFirst') }}
       </h3>
 
       <div
@@ -69,32 +69,32 @@
 
           <div class="text-sm text-gray-700 flex items-center gap-1">
             <i class="pi pi-user text-gray-500 text-xs"></i>
-            Client: {{ appt.first_name }} {{ appt.last_name }}
+            {{ t('appointmentSwap.client') }}: {{ appt.first_name }} {{ appt.last_name }}
           </div>
 
           <!-- Staff + Services -->
           <div class="text-sm text-gray-700 mt-2">
             <!-- Staff -->
             <div class="flex items-center gap-2 mb-1">
-              <span class="font-medium text-gray-900">Staff:</span>
+              <span class="font-medium text-gray-900">{{ t('appointmentSwap.staff') }}:</span>
               <span
                 class="px-2 py-0.5 rounded-xl text-white text-xs shadow"
                 :style="{ background: staffColor(appt.staff_id) }"
               >
-                {{ appt.services?.[0]?.staff_name || "No staff" }}
+                {{ appt.services?.[0]?.staff_name || t('appointmentSwap.noStaff') }}
               </span>
             </div>
 
             <!-- Services -->
             <div>
-              <span class="font-medium text-gray-900">Services:</span>
+              <span class="font-medium text-gray-900">{{ t('appointmentSwap.services') }}:</span>
               <div class="flex flex-wrap gap-2 mt-1">
                 <span
                   v-for="srv in appt.services"
                   :key="srv.service_id"
                   class="px-2 py-0.5 bg-gray-100 text-gray-700 rounded-xl text-xs border border-gray-200"
                 >
-                  {{ srv.service_name }} — {{ srv.duration_minutes }} mins
+                  {{ srv.service_name }} — {{ t('appointmentSwap.minutes', { n: srv.duration_minutes }) }}
                 </span>
               </div>
             </div>
@@ -107,7 +107,7 @@
         v-if="selectedA"
         class="p-3 rounded-xl bg-green-100 border border-green-300 shadow-sm text-sm"
       >
-        <strong class="text-green-800">Selected A:</strong>
+        <strong class="text-green-800">{{ t('appointmentSwap.selectedA') }}:</strong>
         <span class="text-green-900">
           {{ selectedA.first_name }} {{ selectedA.last_name }} —
           {{ formatDate(selectedA.start_time) }}
@@ -116,7 +116,7 @@
 
       <!-- SECOND APPOINTMENT -->
       <h3 class="font-semibold text-gray-800 mt-6 mb-2">
-        Select Second Appointment
+        {{ t('appointmentSwap.selectSecond') }}
       </h3>
 
       <div
@@ -146,32 +146,32 @@
 
           <div class="text-sm text-gray-700 flex items-center gap-1">
             <i class="pi pi-user text-gray-500 text-xs"></i>
-            Client: {{ appt.first_name }} {{ appt.last_name }}
+            {{ t('appointmentSwap.client') }}: {{ appt.first_name }} {{ appt.last_name }}
           </div>
 
           <!-- Staff + Services -->
           <div class="text-sm text-gray-700 mt-2">
             <!-- Staff -->
             <div class="flex items-center gap-2 mb-1">
-              <span class="font-medium text-gray-900">Staff:</span>
+              <span class="font-medium text-gray-900">{{ t('appointmentSwap.staff') }}:</span>
               <span
                 class="px-2 py-0.5 rounded-xl text-white text-xs shadow"
                 :style="{ background: staffColor(appt.staff_id) }"
               >
-                {{ appt.services?.[0]?.staff_name || "No staff" }}
+                {{ appt.services?.[0]?.staff_name || t('appointmentSwap.noStaff') }}
               </span>
             </div>
 
             <!-- Services -->
             <div>
-              <span class="font-medium text-gray-900">Services:</span>
+              <span class="font-medium text-gray-900">{{ t('appointmentSwap.services') }}:</span>
               <div class="flex flex-wrap gap-2 mt-1">
                 <span
                   v-for="srv in appt.services"
                   :key="srv.service_id"
                   class="px-2 py-0.5 bg-gray-100 text-gray-700 rounded-xl text-xs border border-gray-200"
                 >
-                  {{ srv.service_name }} — {{ srv.duration_minutes }} mins
+                  {{ srv.service_name }} — {{ t('appointmentSwap.minutes', { n: srv.duration_minutes }) }}
                 </span>
               </div>
             </div>
@@ -184,7 +184,7 @@
         v-if="selectedB"
         class="p-3 rounded-xl bg-blue-100 border border-blue-300 shadow-sm text-sm"
       >
-        <strong class="text-blue-800">Selected B:</strong>
+        <strong class="text-blue-800">{{ t('appointmentSwap.selectedB') }}:</strong>
         <span class="text-blue-900">
           {{ selectedB.first_name }} {{ selectedB.last_name }} —
           {{ formatDate(selectedB.start_time) }}
@@ -193,7 +193,7 @@
 
       <!-- Swap Button -->
       <Button
-        label="Swap Appointments"
+        :label="t('appointmentSwap.title')"
         class="w-full mt-4 !bg-indigo-600 !hover:bg-indigo-700 !text-white !py-3 !text-base rounded-xl"
         :disabled="!selectedA || !selectedB"
         @click="confirmSwap"
@@ -204,9 +204,12 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import Dialog from "primevue/dialog";
 import InputText from "primevue/inputtext";
 import Button from "primevue/button";
+
+const { t } = useI18n();
 
 interface Appointment {
   id: string;
@@ -319,7 +322,7 @@ const staffColor = (staffId: number | undefined) => {
 };
 
 const formatDate = (dt: string | null) => {
-  if (!dt) return "No time";
+  if (!dt) return t('appointmentSwap.noTime');
 
   const d = new Date(dt);
   const day = String(d.getDate()).padStart(2, "0");

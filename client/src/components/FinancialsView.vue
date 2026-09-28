@@ -764,6 +764,12 @@
           <Column field="payment_method" :header="t('analytics.tables.method')">
             <template #body="slotProps">
               <span
+                v-if="slotProps.data.transaction_type === 'refund'"
+                class="mr-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-red-100 text-red-700"
+              >
+                {{ t('analytics.tables.refund') }}
+              </span>
+              <span
                 :class="[
                   'px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase',
                   getMethodBadge(slotProps.data.payment_method),
@@ -785,15 +791,72 @@
               </span>
             </template>
           </Column>
+          <Column :header="t('analytics.tables.reason')">
+            <template #body="slotProps">
+              <span class="text-xs text-gray-500">{{ slotProps.data.reason || '—' }}</span>
+            </template>
+          </Column>
           <Column
             field="amount"
             :header="t('analytics.tables.amount')"
             sortable
           >
             <template #body="slotProps">
-              <span class="font-bold text-green-700"
-                >+€{{ formatCurrency(slotProps.data.amount) }}</span
+              <span
+                :class="Number(slotProps.data.amount) < 0 ? 'font-bold text-red-700' : 'font-bold text-green-700'"
+                >{{ Number(slotProps.data.amount) < 0 ? '−' : '+' }}€{{ formatCurrency(Math.abs(slotProps.data.amount)) }}</span
               >
+            </template>
+          </Column>
+        </DataTable>
+
+        <!-- Checkout Price Changes -->
+        <h4 class="text-sm font-bold text-gray-600 mt-8 mb-3">
+          {{ t('analytics.tables.priceChangesTitle') }}
+        </h4>
+        <DataTable
+          :value="priceAdjustmentsReport"
+          responsiveLayout="scroll"
+          :paginator="true"
+          :rows="10"
+          class="p-datatable-sm"
+          sortField="created_at"
+          :sortOrder="-1"
+        >
+          <template #empty>
+            <p class="text-sm text-gray-400 py-4">{{ t('analytics.tables.priceChangesEmpty') }}</p>
+          </template>
+          <Column field="created_at" :header="t('analytics.tables.date')" sortable>
+            <template #body="slotProps">
+              {{ new Date(slotProps.data.created_at).toLocaleDateString('el-GR') }}
+              <span class="text-gray-400 text-xs">
+                {{
+                  new Date(slotProps.data.created_at).toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })
+                }}
+              </span>
+            </template>
+          </Column>
+          <Column :header="t('analytics.tables.client')">
+            <template #body="slotProps">
+              <span class="font-medium">{{ slotProps.data.first_name }} {{ slotProps.data.last_name }}</span>
+            </template>
+          </Column>
+          <Column :header="t('analytics.tables.reason')">
+            <template #body="slotProps">
+              <span class="text-xs text-gray-500">{{ slotProps.data.reason }}</span>
+            </template>
+          </Column>
+          <Column :header="t('analytics.tables.oldTotal')">
+            <template #body="slotProps">
+              €{{ formatCurrency(slotProps.data.old_total) }}
+            </template>
+          </Column>
+          <Column :header="t('analytics.tables.newTotal')">
+            <template #body="slotProps">
+              <b>€{{ formatCurrency(slotProps.data.new_total) }}</b>
             </template>
           </Column>
         </DataTable>
@@ -854,6 +917,7 @@ const giftCardsReport = ref<any[]>([]);
 const giftCardsSummary = ref<any>({ total_revenue: 0, total_outstanding: 0, total_cards: 0 });
 const staffReport = ref([]);
 const paymentsReport = ref<any[]>([]);
+const priceAdjustmentsReport = ref<any[]>([]);
 const appointmentsReport = ref([]);
 const clientsReport = ref<any[]>([]);
 const displayGroupDialog = ref(false);
@@ -947,6 +1011,7 @@ const fetchAllReports = async () => {
       productsRes,
       productUsageRes,
       giftCardsRes,
+      priceAdjustmentsRes,
     ] = await Promise.all([
       fetch(`/api/v1/reports/finances${qs}`, { headers }),
       fetch(`/api/v1/reports/sales${qs}`, { headers }),
@@ -959,6 +1024,7 @@ const fetchAllReports = async () => {
       fetch(`/api/v1/reports/products${qs}`, { headers }),
       fetch(`/api/v1/reports/product-usage${qs}`, { headers }),
       fetch(`/api/v1/reports/gift-cards${qs}`, { headers }),
+      fetch(`/api/v1/reports/price-adjustments${qs}`, { headers }),
     ]);
 
     if (finRes.status === 401) throw new Error("unauthorized");
@@ -983,6 +1049,9 @@ const fetchAllReports = async () => {
     analytics.value = anaData;
     staffReport.value = await staffRes.json();
     paymentsReport.value = await payRes.json();
+    if (priceAdjustmentsRes.ok) {
+      priceAdjustmentsReport.value = await priceAdjustmentsRes.json();
+    }
     appointmentsReport.value = await apptRes.json();
     clientsReport.value = await clientsRes.json();
     serviceSummaryReport.value = await serviceSumRes.json();

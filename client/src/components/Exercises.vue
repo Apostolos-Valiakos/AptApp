@@ -1,9 +1,9 @@
 <template>
   <div class="h-full flex flex-col">
     <div class="flex justify-between items-center mb-4 px-1">
-      <h3 class="font-bold text-gray-700">Exercise Progress</h3>
+      <h3 class="font-bold text-gray-700">{{ t('exercises.title') }}</h3>
       <Button
-        label="New Exercise"
+        :label="t('exercises.newExercise')"
         icon="pi pi-plus"
         size="small"
         text
@@ -96,52 +96,52 @@
         v-if="exercises.length === 0"
         class="text-center py-8 text-gray-400 italic"
       >
-        No exercises found. Add one to get started.
+        {{ t('exercises.empty') }}
       </div>
     </div>
 
     <Dialog
       v-model:visible="showAddDialog"
-      header="Add New Exercise"
+      :header="t('exercises.addNewTitle')"
       modal
       class="w-96"
     >
       <div class="space-y-4">
         <div>
-          <label class="block text-sm font-bold text-gray-700 mb-1">Name</label>
+          <label class="block text-sm font-bold text-gray-700 mb-1">{{ t('exercises.name') }}</label>
           <InputText
             v-model="newExercise.name"
             class="w-full"
-            placeholder="e.g. Squat"
+            :placeholder="t('exercises.namePlaceholder')"
           />
         </div>
         <div>
           <label class="block text-sm font-bold text-gray-700 mb-1"
-            >Category</label
+            >{{ t('exercises.category') }}</label
           >
           <Dropdown
             v-model="newExercise.category"
             :options="categoryOptions"
             editable
             class="w-full"
-            placeholder="Select existing or type new..."
+            :placeholder="t('exercises.categoryPlaceholder')"
           />
         </div>
         <div>
           <label class="block text-sm font-bold text-gray-700 mb-1"
-            >Description (Optional)</label
+            >{{ t('exercises.descriptionOptional') }}</label
           >
           <InputText
             v-model="newExercise.description"
             class="w-full"
-            placeholder="Brief instructions..."
+            :placeholder="t('exercises.descriptionPlaceholder')"
           />
         </div>
       </div>
       <template #footer>
-        <Button label="Cancel" text @click="showAddDialog = false" />
+        <Button :label="t('common.cancel')" text @click="showAddDialog = false" />
         <Button
-          label="Save"
+          :label="t('common.save')"
           @click="createExercise"
           :disabled="!newExercise.name"
         />
@@ -158,10 +158,12 @@ import InputText from "primevue/inputtext";
 import Dropdown from "primevue/dropdown";
 import { useAuthStore } from "../stores/auth";
 import { useToast } from "primevue/usetoast";
+import { useI18n } from "vue-i18n";
 
 const props = defineProps(["clientId"]);
 const authStore = useAuthStore();
 const toast = useToast();
+const { t } = useI18n();
 
 const exercises = ref<any[]>([]);
 const completedIds = ref<Set<string>>(new Set());
@@ -282,11 +284,7 @@ const createExercise = async () => {
 };
 
 const deleteExercise = async (id: string) => {
-  if (
-    !confirm(
-      "Are you sure you want to delete this exercise? This will remove it for ALL clients."
-    )
-  ) {
+  if (!confirm(t('exercises.deleteConfirm'))) {
     return;
   }
 
@@ -301,7 +299,7 @@ const deleteExercise = async (id: string) => {
       exercises.value = exercises.value.filter((ex) => ex.id !== id);
       completedIds.value.delete(id);
     } else {
-      toast.add({ severity: "error", summary: "Delete Failed", detail: "Failed to delete exercise", life: 3000 });
+      toast.add({ severity: "error", summary: t('exercises.deleteFailedSummary'), detail: t('exercises.deleteFailedDetail'), life: 3000 });
     }
   } catch (e) {
     console.error("Delete failed", e);

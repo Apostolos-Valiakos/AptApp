@@ -109,13 +109,13 @@
 
         <ColorModelToggle v-if="settings.isStaff" />
 
-        <!-- Add New -->
+        <!-- Client search -->
         <button
-          @click="openNewAppointment"
+          @click="clientSearchVisible = true"
           class="flex items-center gap-1.5 bg-[var(--p-primary-color)] hover:brightness-105 text-white px-3 md:px-4 py-2 rounded-lg text-xs font-bold shadow-sm active:scale-95 transition-all flex-shrink-0"
         >
-          <i class="pi pi-plus text-xs"></i>
-          <span class="hidden sm:inline">New</span>
+          <i class="pi pi-search text-xs"></i>
+          <span class="hidden sm:inline">{{ t("clientSearch.button") }}</span>
         </button>
 
         <!-- Secondary: Swap + Reorder -->
@@ -213,6 +213,8 @@
       :allProducts="calendarStore.products"
       :timeOff="calendarStore.timeOff"
       :workingHours="calendarStore.workingHours"
+      :shopMinTime="shopSlotMinTime"
+      :shopMaxTime="shopSlotMaxTime"
       @save="handleSave"
     />
     <AppointmentSwapDialog
@@ -226,6 +228,23 @@
       v-if="hoveredAppointment && hoverAnchorRect"
       :appointment="hoveredAppointment"
       :anchor-rect="hoverAnchorRect"
+    />
+
+    <ClientSearchDialog
+      v-model:visible="clientSearchVisible"
+      @select="onClientSelected"
+    />
+    <ClientQuickProfileDialog
+      v-model:visible="quickProfileVisible"
+      :clientId="quickProfileClientId"
+      @book="onBookForClient"
+      @openFull="onOpenFullProfile"
+      @changed="handleSave"
+    />
+    <ClientProfileDialog
+      v-model:visible="fullProfileVisible"
+      :clientId="quickProfileClientId"
+      :initialTab="fullProfileTab"
     />
   </div>
 
@@ -248,6 +267,9 @@ import { useCalendarStore } from "../stores/calendar";
 import { useSettingsStore } from "../stores/settings";
 import BookingDialog from "../components/BookingDialog.vue";
 import AppointmentSwapDialog from "../components/AppointmentSwapDialog.vue";
+import ClientSearchDialog from "../components/ClientSearchDialog.vue";
+import ClientQuickProfileDialog from "../components/ClientQuickProfileDialog.vue";
+import ClientProfileDialog from "../components/ClientProfileDialog.vue";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 import { useI18n } from "vue-i18n";
@@ -327,6 +349,11 @@ const todayDateStr = () => {
 
 // UI State
 const dialogVisible = ref(false);
+const clientSearchVisible = ref(false);
+const quickProfileVisible = ref(false);
+const quickProfileClientId = ref<string | null>(null);
+const fullProfileVisible = ref(false);
+const fullProfileTab = ref("Info");
 const swapDialogVisible = ref(false);
 const selectedAppointment = ref<any>(null);
 const fullCalendar = ref<any>(null);
@@ -424,21 +451,21 @@ const handleSwap = async (swapData: {
       throw new Error(err.error || "Swap failed");
     }
     const data = await res.json();
-    if (!data.success) throw new Error("Swap failed");
+    if (!data.success) throw new Error(t("scheduler.toasts.swapFailedError"));
 
     swapDialogVisible.value = false;
     await calendarStore.fetchAppointments(currentStart.value, currentEnd.value);
     toast.add({
       severity: "success",
-      summary: "Swap Complete",
-      detail: "Appointments swapped successfully.",
+      summary: t("scheduler.toasts.swapComplete"),
+      detail: t("scheduler.toasts.swapCompleteDetail"),
       life: 2500,
     });
   } catch (err: any) {
     toast.add({
       severity: "error",
-      summary: "Swap Failed",
-      detail: err.message || "Unable to swap appointments.",
+      summary: t("scheduler.toasts.swapFailed"),
+      detail: err.message || t("scheduler.toasts.swapFailedDetail"),
       life: 3000,
     });
   }
@@ -448,8 +475,8 @@ const handleReorderSave = async (newOrder: any[]) => {
   await calendarStore.updateResourceOrder(newOrder);
   toast.add({
     severity: "success",
-    summary: "Success",
-    detail: "Staff order updated",
+    summary: t("common.success"),
+    detail: t("scheduler.toasts.staffOrderUpdated"),
     life: 3000,
   });
 };
@@ -816,14 +843,35 @@ const workingHoursBackgroundEvents = computed(() => {
 });
 
 // --- Actions ---
-const openNewAppointment = () => {
-  selectedAppointment.value = null;
-  dialogVisible.value = true;
-};
-
 const handleSave = async () => {
   dialogVisible.value = false;
   await calendarStore.fetchAppointments(currentStart.value, currentEnd.value);
+};
+
+const onClientSelected = (client: any) => {
+  quickProfileClientId.value = client.id;
+  quickProfileVisible.value = true;
+};
+
+const onBookForClient = (client: any) => {
+  selectedAppointment.value = {
+    client_id: client.client_id,
+    ...client,
+    start_time: new Date(),
+  };
+  dialogVisible.value = true;
+};
+
+const onOpenFullProfile = ({
+  clientId,
+  tab,
+}: {
+  clientId: string;
+  tab: string;
+}) => {
+  quickProfileClientId.value = clientId;
+  fullProfileTab.value = tab;
+  fullProfileVisible.value = true;
 };
 
 const prepareServicesForUpdate = (services: any[]) =>
@@ -857,15 +905,15 @@ const updateAppointment = async (
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || "Update failed");
+      throw new Error(err.error || t("scheduler.toasts.updateFailedError"));
     }
     await calendarStore.fetchAppointments(currentStart.value, currentEnd.value);
     return true;
   } catch (e: any) {
     toast.add({
       severity: "error",
-      summary: "Update Failed",
-      detail: e.message || "Failed to update appointment",
+      summary: t("scheduler.toasts.updateFailed"),
+      detail: e.message || t("scheduler.toasts.updateFailedDetail"),
       life: 3000,
     });
     return false;
@@ -906,7 +954,10 @@ const escapeHtml = (value: unknown): string =>
 // Slightly darkens every other box belonging to the same booking (same client,
 // service and start time across different staff columns) while one of them is
 // hovered — the hovered box already darkens itself via its own hover style.
-const highlightLinkedEvents = (linkKey: string | undefined, hoveredEl: HTMLElement) => {
+const highlightLinkedEvents = (
+  linkKey: string | undefined,
+  hoveredEl: HTMLElement,
+) => {
   if (!linkKey) return;
   document.querySelectorAll<HTMLElement>("[data-link-key]").forEach((el) => {
     if (el !== hoveredEl && el.dataset.linkKey === linkKey) {
@@ -957,6 +1008,23 @@ const calendarOptions = ref({
   slotLabelInterval: "01:00",
   slotMinTime: "07:00:00",
   slotMaxTime: "23:00:00",
+  // Big bold hour number + small "00", Fresha/Treatwell-style. The half-hour
+  // row gets its own lighter divider purely via slotLaneClassNames below —
+  // no label there, just a visual break between :00 and :30.
+  slotLabelContent: (arg: any) => ({
+    html: `
+      <div class="flex items-baseline justify-end gap-0.5 pr-1 leading-none">
+        <span class="text-lg md:text-xl font-extrabold text-gray-700">${arg.date.getHours()}</span>
+        <span class="text-[9px] md:text-[10px] font-semibold text-gray-400">00</span>
+      </div>
+    `,
+  }),
+  slotLaneClassNames: (arg: any) => {
+    const mins = arg.date?.getMinutes();
+    if (mins === 0) return ["fc-slot-hour"];
+    if (mins === 30) return ["fc-slot-half-hour"];
+    return [];
+  },
   height: "100%",
   expandRows: true,
   dayMinWidth:
@@ -1050,10 +1118,15 @@ const calendarOptions = ref({
     const end = arg.event.end;
     const durationMins =
       end && start ? (end.getTime() - start.getTime()) / 60000 : 60;
-    // Only genuinely tight (<20 min) boxes drop to the compact, time/service-less
-    // layout — everything 20 min and up gets the full time+name+service layout,
-    // since the default zoom now gives them enough height to show it.
+    // Only genuinely tight (<20 min) boxes drop to the compact, single-line
+    // "name — service" layout — everything 20 min and up keeps the full
+    // two-line name/service layout.
     const isShort = durationMins <= 20;
+    // A half-hour-or-shorter appointment never shows its time range (the
+    // box's position/height already says when it is) — matches the
+    // reference calendar's own behavior, independent of the tighter
+    // single-line cutoff above.
+    const hideTime = durationMins <= 30;
 
     const paddingClass =
       isShort && !isMonthView
@@ -1097,9 +1170,9 @@ const calendarOptions = ref({
 
     return {
       html: `
-      <div class="relative w-full ${paddingClass} flex flex-col leading-tight overflow-hidden rounded-md hover:brightness-95 transition-all ${isMonthView ? "" : "h-full"}">
+      <div class="relative w-full ${paddingClass} flex flex-col leading-tight overflow-hidden hover:brightness-95 transition-all ${isMonthView ? "" : "h-full"}">
         ${statusBadge}
-        ${!isShort && !isMonthView ? `<div class="text-[10px] md:text-[12px] font-semibold mb-0.5 truncate ${timeClass}">${timeText}</div>` : ""}
+        ${!hideTime && !isMonthView ? `<div class="text-[10px] md:text-[12px] font-semibold mb-0.5 truncate ${timeClass}">${timeText}</div>` : ""}
         ${
           isShort && !isMonthView
             ? `<div class="font-bold ${titleClass} pr-2 truncate ${textClass}" title="${escapeHtml(props.client_name)} — ${escapeHtml(props.service_name)}">${escapeHtml(props.client_surname)}<span class="font-normal ${serviceClass}"> — ${escapeHtml(props.service_name)}</span></div>`
@@ -1332,26 +1405,34 @@ onMounted(async () => {
 }
 
 .fc-timegrid-axis {
-  border-right: 1px solid #f3f4f6;
-}
-.fc-timegrid-slot-label-cushion {
-  color: #9ca3af;
-  font-size: 11px;
-  font-weight: 600;
+  border-right: 1px solid #e5e7eb;
 }
 
+/* Reference-style time axis: quarter-hour rows get almost no line at all,
+   the half-hour row gets a light-but-visible divider, and the hour row
+   (where the big bold hour number sits) gets a clearly darker line — three
+   distinct weights instead of one flat "minor" shade for everything. */
 .fc-timegrid-slot {
-  border-bottom: 1px solid #f9fafb !important;
+  border-top: 1px solid #f8fafc !important;
 }
 .fc-timegrid-slot-minor {
-  border-color: #f3f4f6 !important;
+  border-color: #f8fafc !important;
+}
+.fc-slot-half-hour {
+  border-top: 1px solid #e5e7eb !important;
+}
+/* The hour gridline marks the START of the hour (e.g. exactly 10:00), which
+   is the TOP edge of the row carrying the "10:00" label — not its bottom
+   edge, which would mark 10:15 instead. */
+.fc-slot-hour {
+  border-top: 2px solid #cbd5e1 !important;
 }
 
 .fc-v-event {
-  border: none;
+  border: 1px solid rgba(100, 116, 139, 0.3);
   background-color: transparent;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-  border-radius: 6px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  border-radius: 0;
 }
 .fc-v-event .fc-event-main {
   padding: 0;

@@ -3,7 +3,7 @@
     <div
       class="w-full lg:w-1/3 bg-gray-50 p-5 rounded-xl border border-gray-200"
     >
-      <h3 class="font-bold text-gray-700 mb-4">Edit Age Ranges</h3>
+      <h3 class="font-bold text-gray-700 mb-4">{{ t('clientDemographics.editRanges') }}</h3>
       <div
         v-for="(range, idx) in ageRanges"
         :key="idx"
@@ -27,7 +27,7 @@
         />
       </div>
       <Button
-        label="Add Range"
+        :label="t('clientDemographics.addRange')"
         icon="pi pi-plus"
         class="p-button-text p-button-sm mt-2"
         @click="ageRanges.push({ min: 0, max: 100 })"
@@ -37,7 +37,7 @@
     <div class="flex-grow">
       <h3 class="font-bold text-gray-700 mb-6 flex items-center gap-2">
         <i class="pi pi-users text-indigo-500"></i>
-        Client Distribution (Click to view list)
+        {{ t('clientDemographics.distribution') }}
       </h3>
       <div class="space-y-6">
         <div
@@ -53,7 +53,7 @@
             >
             <span
               class="text-xs font-bold px-2 py-1 bg-gray-100 rounded text-gray-500"
-              >{{ range.count }} clients</span
+              >{{ t('clientDemographics.clientsCount', { n: range.count }) }}</span
             >
           </div>
           <div class="w-full bg-gray-100 rounded-full h-3 overflow-hidden">
@@ -71,6 +71,9 @@
 
 <script setup lang="ts">
 import { ref, computed } from "vue";
+import { useI18n } from "vue-i18n";
+
+const { t } = useI18n();
 
 const props = defineProps({
   clients: { type: Array, default: () => [] },
@@ -107,7 +110,7 @@ const ageDistribution = computed(() => {
     }).length;
 
     return {
-      label: `${range.min}-${range.max} years`,
+      label: t('clientDemographics.yearsRange', { min: range.min, max: range.max }),
       count,
       percentage: total > 0 ? (count / total) * 100 : 0,
       isUnknown: false,
@@ -121,7 +124,7 @@ const ageDistribution = computed(() => {
   ).length;
   if (unknownCount > 0) {
     distribution.push({
-      label: "Unknown Age",
+      label: t('clientDemographics.unknownAge'),
       count: unknownCount,
       percentage: (unknownCount / total) * 100,
       isUnknown: true,

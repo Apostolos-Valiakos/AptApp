@@ -28,7 +28,14 @@
           v-model="method"
           :options="['cash', 'card', 'bank-transfer']"
           class="w-full"
-        />
+        >
+          <template #value="slotProps">
+            {{ slotProps.value ? t(`common.paymentMethod.${slotProps.value}`) : "" }}
+          </template>
+          <template #option="slotProps">
+            {{ t(`common.paymentMethod.${slotProps.option}`) }}
+          </template>
+        </Dropdown>
       </div>
       <div v-if="selected" class="text-sm text-gray-600 bg-gray-50 rounded-lg p-3">
         {{ selected.visits }} × {{ selected.service_name }} —

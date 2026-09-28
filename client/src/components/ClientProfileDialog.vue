@@ -2,7 +2,7 @@
   <Dialog
     v-model:visible="isVisible"
     modal
-    header="Client Profile"
+    :header="t('clientProfile.header')"
     :style="{ width: '800px', maxWidth: '95vw', maxHeight: '100%' }"
     :draggable="false"
     class="client-profile-dialog"
@@ -31,11 +31,11 @@
           >
             <span
               ><i class="pi pi-phone mr-1"></i>
-              {{ clientData.phone || "No Phone" }}</span
+              {{ clientData.phone || t('clientProfile.noPhone') }}</span
             >
             <span
               ><i class="pi pi-envelope mr-1"></i>
-              {{ clientData.email || "No Email" }}</span
+              {{ clientData.email || t('clientProfile.noEmail') }}</span
             >
           </div>
         </div>
@@ -44,7 +44,7 @@
           v-if="isShopAdmin"
         >
           <div class="text-xs text-gray-500 uppercase tracking-wider font-bold">
-            Balance
+            {{ t('clientProfile.balance') }}
           </div>
           <div
             class="text-2xl font-bold"
@@ -61,7 +61,7 @@
 
       <div class="flex gap-6 border-b border-gray-200 mb-6 overflow-x-auto">
         <button
-          v-for="tab in ['Info', 'Αρχεία', 'History', 'Membership', 'Packages']"
+          v-for="tab in ['Info', 'Files', 'History', 'Membership', 'Packages']"
           :key="tab"
           @click="activeTab = tab"
           class="pb-2 px-1 text-sm font-medium transition-colors border-b-2 whitespace-nowrap"
@@ -71,7 +71,7 @@
               : 'border-transparent text-gray-500 hover:text-gray-700'
           "
         >
-          {{ tab }}
+          {{ t(`clientProfile.tabs.${tab}`) }}
         </button>
       </div>
 
@@ -82,7 +82,7 @@
               <label
                 class="block text-xs font-bold text-gray-500 uppercase mb-1"
               >
-                First Name
+                {{ t('clientProfile.info.firstName') }}
               </label>
               <InputText v-model="editForm.first_name" class="w-full" />
             </div>
@@ -90,7 +90,7 @@
               <label
                 class="block text-xs font-bold text-gray-500 uppercase mb-1"
               >
-                Last Name
+                {{ t('clientProfile.info.lastName') }}
               </label>
               <InputText v-model="editForm.last_name" class="w-full" />
             </div>
@@ -100,7 +100,7 @@
               <label
                 class="block text-xs font-bold text-gray-500 uppercase mb-1"
               >
-                Email
+                {{ t('clientProfile.info.email') }}
               </label>
               <InputText v-model="editForm.email" class="w-full" />
             </div>
@@ -108,7 +108,7 @@
               <label
                 class="block text-xs font-bold text-gray-500 uppercase mb-1"
               >
-                Phone
+                {{ t('clientProfile.info.phone') }}
               </label>
               <InputText v-model="editForm.phone" class="w-full" />
             </div>
@@ -116,7 +116,7 @@
               <label
                 class="block text-xs font-bold text-gray-500 uppercase mb-1"
               >
-                Date of Birth
+                {{ t('clientProfile.info.dateOfBirth') }}
               </label>
               <Calendar
                 v-model="editForm.date_of_birth"
@@ -128,14 +128,14 @@
           </div>
           <div>
             <label class="block text-xs font-bold text-gray-500 uppercase mb-1">
-              Notes
+              {{ t('clientProfile.info.notes') }}
             </label>
             <Textarea v-model="editForm.notes" rows="3" class="w-full" />
           </div>
           <div class="bg-gray-50 p-4 rounded-lg border border-gray-100">
             <div class="flex justify-between items-center mb-2">
               <span class="text-xs font-bold text-gray-500 uppercase"
-                >Additional Details</span
+                >{{ t('clientProfile.info.additionalDetails') }}</span
               >
               <Button
                 icon="pi pi-plus"
@@ -149,7 +149,7 @@
               v-if="editForm.custom_fields.length === 0"
               class="text-center py-4 text-gray-400 text-sm italic"
             >
-              No additional details added.
+              {{ t('clientProfile.info.noAdditionalDetails') }}
             </div>
 
             <div
@@ -160,14 +160,14 @@
               <div class="w-full sm:w-1/3">
                 <InputText
                   v-model="field.title"
-                  placeholder="Label"
+                  :placeholder="t('clientProfile.info.labelPlaceholder')"
                   class="w-full font-bold p-inputtext-sm bg-white"
                 />
               </div>
               <div class="flex-grow flex gap-2">
                 <InputText
                   v-model="field.value"
-                  placeholder="Value"
+                  :placeholder="t('clientProfile.info.valuePlaceholder')"
                   class="w-full p-inputtext-sm"
                 />
                 <Button
@@ -181,7 +181,7 @@
 
           <div class="pt-4 flex justify-end">
             <Button
-              label="Save Changes"
+              :label="t('clientProfile.info.saveChanges')"
               icon="pi pi-check"
               @click="saveClientInfo"
               :loading="saving"
@@ -195,7 +195,7 @@
             v-if="visibleHistory.length === 0"
             class="text-center text-gray-400 py-8"
           >
-            No appointment history found.
+            {{ t('clientProfile.history.empty') }}
           </div>
           <div
             v-for="appt in visibleHistory"
@@ -213,7 +213,7 @@
                 }}</span>
               </div>
               <div class="text-sm text-gray-600 mt-1">
-                {{ appt.service_names || "No Services" }}
+                {{ appt.service_names || t('clientProfile.history.noServices') }}
               </div>
               <div v-if="appt.staff_names" class="text-xs text-gray-400 mt-0.5">
                 {{ appt.staff_names }}
@@ -226,7 +226,7 @@
                 class="text-xs px-2 py-0.5 rounded uppercase font-bold mr-2"
                 :class="getStatusColor(appt.status)"
               >
-                {{ appt.status }}
+                {{ t(`common.status.${statusKey(appt.status)}`) }}
               </span>
               <span class="font-bold">
                 €{{
@@ -256,11 +256,11 @@
                     class="text-xs px-2 py-0.5 rounded uppercase font-bold mt-1 inline-block"
                     :class="membershipStatusClass(membership.status)"
                   >
-                    {{ membership.status }}
+                    {{ t(`clientProfile.membership.status.${membership.status}`) }}
                   </span>
                 </div>
                 <div class="text-right text-sm text-gray-500">
-                  Renews on<br />
+                  {{ t('clientProfile.membership.renewsOn') }}<br />
                   <span class="font-bold text-gray-900">{{ new Date(membership.current_period_end).toLocaleDateString("en-GB") }}</span>
                 </div>
               </div>
@@ -273,35 +273,42 @@
                 >
                   <span class="text-gray-700">{{ u.service_name }}</span>
                   <span class="font-medium text-gray-900">
-                    {{ u.quota_per_month === null ? `${u.used_this_month} used (unlimited)` : `${u.used_this_month} / ${u.quota_per_month} used` }}
+                    {{
+                      u.quota_per_month === null
+                        ? t('clientProfile.membership.usedUnlimited', { used: u.used_this_month })
+                        : t('clientProfile.membership.usedOfQuota', { used: u.used_this_month, quota: u.quota_per_month })
+                    }}
                   </span>
                 </div>
               </div>
 
               <div v-if="isShopAdmin" class="flex flex-wrap gap-2 pt-2">
-                <Button label="Renew" size="small" @click="renewMembership" :loading="membershipActionLoading" />
-                <Button label="Change Tier" size="small" text @click="showAssignMembership = !showAssignMembership" />
-                <Button label="Cancel Membership" size="small" severity="danger" text @click="confirmCancelMembership" />
+                <Button :label="t('clientProfile.membership.renew')" size="small" @click="renewMembership" :loading="membershipActionLoading" />
+                <Button :label="t('clientProfile.membership.changeTier')" size="small" text @click="showAssignMembership = !showAssignMembership" />
+                <Button :label="t('clientProfile.membership.cancelMembership')" size="small" severity="danger" text @click="confirmCancelMembership" />
               </div>
             </div>
 
             <div v-else class="text-center text-gray-400 py-8">
-              No active membership.
+              {{ t('clientProfile.membership.noActive') }}
             </div>
 
             <div v-if="isShopAdmin && (!membership || showAssignMembership)" class="border-t border-gray-100 pt-4 space-y-3">
-              <h4 class="text-sm font-bold text-gray-700">{{ membership ? 'Change Tier' : 'Assign a Membership' }}</h4>
+              <h4 class="text-sm font-bold text-gray-700">{{ membership ? t('clientProfile.membership.changeTier') : t('clientProfile.membership.assignTitle') }}</h4>
               <Dropdown
                 v-model="assignForm.tier_id"
                 :options="allTiers"
                 optionLabel="name"
                 optionValue="id"
-                placeholder="Select tier"
+                :placeholder="t('clientProfile.membership.selectTier')"
                 class="w-full"
               />
               <Dropdown
                 v-model="assignForm.billing_cycle"
-                :options="[{ label: 'Monthly', value: 'monthly' }, { label: 'Yearly', value: 'yearly' }]"
+                :options="[
+                  { label: t('common.billingCycle.monthly'), value: 'monthly' },
+                  { label: t('common.billingCycle.yearly'), value: 'yearly' },
+                ]"
                 optionLabel="label"
                 optionValue="value"
                 class="w-full"
@@ -309,23 +316,30 @@
               <Dropdown
                 v-model="assignForm.payment_method"
                 :options="['cash', 'card', 'bank-transfer']"
-                placeholder="Payment method"
+                :placeholder="t('clientProfile.membership.paymentMethod')"
                 class="w-full"
-              />
+              >
+                <template #value="slotProps">
+                  {{ slotProps.value ? t(`common.paymentMethod.${slotProps.value}`) : "" }}
+                </template>
+                <template #option="slotProps">
+                  {{ t(`common.paymentMethod.${slotProps.option}`) }}
+                </template>
+              </Dropdown>
               <div class="flex gap-2">
                 <Button
-                  label="Confirm"
+                  :label="t('common.confirm')"
                   size="small"
                   @click="assignMembership"
                   :loading="membershipActionLoading"
                   :disabled="!assignForm.tier_id"
                 />
-                <Button v-if="showAssignMembership" label="Cancel" size="small" text @click="showAssignMembership = false" />
+                <Button v-if="showAssignMembership" :label="t('common.cancel')" size="small" text @click="showAssignMembership = false" />
               </div>
             </div>
           </template>
         </div>
-        <div v-if="activeTab === 'Αρχεία'" class="space-y-4">
+        <div v-if="activeTab === 'Files'" class="space-y-4">
           <div
             class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:bg-gray-50 transition-colors cursor-pointer"
             @click="$refs.fileInput.click()"
@@ -339,14 +353,14 @@
             <div v-if="!uploading">
               <i class="pi pi-cloud-upload text-3xl text-gray-400"></i>
               <p class="text-sm text-gray-600 font-medium">
-                Click to upload documents
+                {{ t('clientProfile.files.uploadPrompt') }}
               </p>
-              <p class="text-xs text-gray-400 mt-1">Max 5MB per file</p>
-              <Button label="Select File" size="small" class="mt-1" />
+              <p class="text-xs text-gray-400 mt-1">{{ t('clientProfile.files.maxSize') }}</p>
+              <Button :label="t('clientProfile.files.selectFile')" size="small" class="mt-1" />
             </div>
             <div v-else>
               <i class="pi pi-spin pi-spinner text-2xl text-indigo-600"></i>
-              <p class="text-sm text-indigo-600 mt-2">Uploading...</p>
+              <p class="text-sm text-indigo-600 mt-2">{{ t('clientProfile.files.uploading') }}</p>
             </div>
           </div>
 
@@ -385,7 +399,7 @@
                   icon="pi pi-eye"
                   class="p-button-text p-button-secondary p-button-rounded"
                   @click="viewFile(file)"
-                  v-tooltip="'View in new tab'"
+                  v-tooltip="t('clientProfile.files.viewInNewTab')"
                   :loading="viewingFileId === file.id"
                 />
                 <Button
@@ -413,6 +427,8 @@ import { useSettingsStore } from "../stores/settings";
 import { storeToRefs } from "pinia";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
+import { useI18n } from "vue-i18n";
+const { t } = useI18n();
 const authStore = useAuthStore();
 const toast = useToast();
 const confirm = useConfirm();
@@ -420,7 +436,7 @@ const isShopAdmin = authStore.isShopAdmin;
 const settingsStore = useSettingsStore();
 const { shopSettings } = storeToRefs(settingsStore);
 
-const props = defineProps(["visible", "clientId"]);
+const props = defineProps(["visible", "clientId", "initialTab"]);
 const emit = defineEmits(["update:visible", "refresh"]);
 
 const isVisible = computed({
@@ -566,11 +582,11 @@ const assignMembership = async () => {
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify(assignForm.value),
     });
-    if (!res.ok) throw new Error((await res.json()).error || "Failed to assign membership");
-    toast.add({ severity: "success", summary: "Membership assigned", life: 3000 });
+    if (!res.ok) throw new Error((await res.json()).error || t('clientProfile.membership.toasts.assignFailed'));
+    toast.add({ severity: "success", summary: t('clientProfile.membership.toasts.assigned'), life: 3000 });
     await fetchMembership();
   } catch (e: any) {
-    toast.add({ severity: "error", summary: "Error", detail: e.message, life: 4000 });
+    toast.add({ severity: "error", summary: t('common.error'), detail: e.message, life: 4000 });
   } finally {
     membershipActionLoading.value = false;
   }
@@ -584,11 +600,11 @@ const renewMembership = async () => {
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({ payment_method: "cash" }),
     });
-    if (!res.ok) throw new Error((await res.json()).error || "Failed to renew");
-    toast.add({ severity: "success", summary: "Membership renewed", life: 3000 });
+    if (!res.ok) throw new Error((await res.json()).error || t('clientProfile.membership.toasts.renewFailed'));
+    toast.add({ severity: "success", summary: t('clientProfile.membership.toasts.renewed'), life: 3000 });
     await fetchMembership();
   } catch (e: any) {
-    toast.add({ severity: "error", summary: "Error", detail: e.message, life: 4000 });
+    toast.add({ severity: "error", summary: t('common.error'), detail: e.message, life: 4000 });
   } finally {
     membershipActionLoading.value = false;
   }
@@ -596,8 +612,8 @@ const renewMembership = async () => {
 
 const confirmCancelMembership = () => {
   confirm.require({
-    message: "Cancel this client's membership?",
-    header: "Cancel Membership",
+    message: t('clientProfile.membership.cancelConfirmMessage'),
+    header: t('clientProfile.membership.cancelMembership'),
     icon: "pi pi-exclamation-triangle",
     acceptClass: "p-button-danger",
     accept: async () => {
@@ -606,11 +622,11 @@ const confirmCancelMembership = () => {
           method: "DELETE",
           headers: { Authorization: `Bearer ${token}` },
         });
-        if (!res.ok) throw new Error("Failed to cancel");
-        toast.add({ severity: "success", summary: "Membership cancelled", life: 3000 });
+        if (!res.ok) throw new Error(t('clientProfile.membership.toasts.cancelFailed'));
+        toast.add({ severity: "success", summary: t('clientProfile.membership.toasts.cancelled'), life: 3000 });
         await fetchMembership();
       } catch (e: any) {
-        toast.add({ severity: "error", summary: "Error", detail: e.message, life: 4000 });
+        toast.add({ severity: "error", summary: t('common.error'), detail: e.message, life: 4000 });
       }
     },
   });
@@ -620,7 +636,7 @@ watch(
   () => props.visible,
   (val) => {
     if (val && props.clientId) {
-      activeTab.value = "Info";
+      activeTab.value = props.initialTab || "Info";
       fetchClientData();
       fetchMembership();
       fetchAllTiers();
@@ -679,8 +695,8 @@ const handleFileUpload = async (event: any) => {
     } else {
       toast.add({
         severity: "error",
-        summary: "Upload Failed",
-        detail: "File upload failed. Ensure it is under 5MB.",
+        summary: t('clientProfile.files.uploadFailedSummary'),
+        detail: t('clientProfile.files.uploadFailedDetail'),
         life: 4000,
       });
     }
@@ -693,8 +709,8 @@ const handleFileUpload = async (event: any) => {
 const deleteFile = (fileId: number) => {
   confirm.require({
     group: "clientProfileFile",
-    message: "Delete this file?",
-    header: "Confirm Delete",
+    message: t('clientProfile.files.deleteConfirmMessage'),
+    header: t('clientProfile.files.deleteConfirmHeader'),
     icon: "pi pi-exclamation-triangle",
     acceptClass: "p-button-danger",
     accept: async () => {
@@ -708,8 +724,8 @@ const deleteFile = (fileId: number) => {
       } catch (e) {
         toast.add({
           severity: "error",
-          summary: "Delete Failed",
-          detail: "Could not delete the file. Please try again.",
+          summary: t('clientProfile.files.deleteFailedSummary'),
+          detail: t('clientProfile.files.deleteFailedDetail'),
           life: 4000,
         });
       }
@@ -728,6 +744,12 @@ const getFileIcon = (type: string) => {
   if (type.includes("pdf")) return "pi-file-pdf";
   return "pi-file";
 };
+
+const STATUS_KEYS: Record<string, string> = {
+  new: "new", confirmed: "confirmed", started: "started", arrived: "arrived",
+  completed: "completed", cancelled: "cancelled", "no-show": "noShow", "no-response": "noResponse",
+};
+const statusKey = (s: string) => STATUS_KEYS[s] || s;
 
 const getStatusColor = (s: string) => {
   const map: any = {
@@ -764,8 +786,8 @@ const viewFile = async (file: any) => {
   } catch (err) {
     toast.add({
       severity: "error",
-      summary: "Preview Failed",
-      detail: "Could not open file preview.",
+      summary: t('clientProfile.files.previewFailedSummary'),
+      detail: t('clientProfile.files.previewFailedDetail'),
       life: 3000,
     });
   } finally {

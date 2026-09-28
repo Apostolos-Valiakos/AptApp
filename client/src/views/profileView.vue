@@ -150,11 +150,11 @@
           <div class="flex items-center justify-between mb-4">
             <div class="flex items-center gap-2">
               <i class="pi pi-building text-[var(--p-primary-color)]"></i>
-              <h3 class="font-bold text-gray-900 text-sm">Clinic Info</h3>
+              <h3 class="font-bold text-gray-900 text-sm">{{ t('profile.clinicInfo.title') }}</h3>
             </div>
             <Button
               size="small"
-              label="Save"
+              :label="t('common.save')"
               :loading="isSavingContact"
               @click="saveContact"
             />
@@ -162,7 +162,7 @@
           <div class="space-y-3">
             <div>
               <label class="text-xs font-medium text-gray-500 block mb-1"
-                >Phone</label
+                >{{ t('common.phone') }}</label
               >
               <InputText
                 v-model="contactForm.phone"
@@ -172,17 +172,17 @@
             </div>
             <div>
               <label class="text-xs font-medium text-gray-500 block mb-1"
-                >Address</label
+                >{{ t('profile.clinicInfo.address') }}</label
               >
               <InputText
                 v-model="contactForm.address"
                 class="w-full"
-                placeholder="Street, City"
+                :placeholder="t('profile.clinicInfo.addressPlaceholder')"
               />
             </div>
             <div>
               <label class="text-xs font-medium text-gray-500 block mb-1"
-                >Website</label
+                >{{ t('profile.clinicInfo.website') }}</label
               >
               <InputText
                 v-model="contactForm.website"
@@ -486,13 +486,13 @@
         >
           <div class="flex justify-between items-center mb-6">
             <div>
-              <h3 class="text-lg font-bold text-gray-900">Clinic Settings</h3>
+              <h3 class="text-lg font-bold text-gray-900">{{ t('profile.clinicSettings.title') }}</h3>
               <p class="text-sm text-gray-500">
-                Email address clients see when they reply to booking emails.
+                {{ t('profile.clinicSettings.subtitle') }}
               </p>
             </div>
             <Button
-              label="Save"
+              :label="t('common.save')"
               class="p-button-sm p-button-rounded"
               :loading="isSavingReplyEmail"
               @click="saveReplyEmail"
@@ -500,7 +500,7 @@
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">
-              <i class="pi pi-reply mr-2 text-gray-400"></i>Reply-To Email
+              <i class="pi pi-reply mr-2 text-gray-400"></i>{{ t('profile.clinicSettings.replyToEmail') }}
             </label>
             <InputText
               v-model="replyEmailForm"
@@ -509,9 +509,7 @@
               type="email"
             />
             <p class="text-xs text-gray-400 mt-1.5">
-              When clients reply to appointment reminders or portal invitations,
-              their email will go to this address. Leave blank to use the system
-              default.
+              {{ t('profile.clinicSettings.replyToEmailNote') }}
             </p>
           </div>
         </div>
@@ -523,13 +521,13 @@
         >
           <div class="flex justify-between items-center mb-6">
             <div>
-              <h3 class="text-lg font-bold text-gray-900">Calendar Settings</h3>
+              <h3 class="text-lg font-bold text-gray-900">{{ t('profile.calendarSettings.title') }}</h3>
               <p class="text-sm text-gray-500">
-                Control the scheduler and reminder behaviour.
+                {{ t('profile.calendarSettings.subtitle') }}
               </p>
             </div>
             <Button
-              label="Save"
+              :label="t('common.save')"
               class="p-button-sm p-button-rounded"
               :loading="isSavingCalSettings"
               @click="saveCalendarSettings"
@@ -538,7 +536,7 @@
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1"
-                >Opening Time</label
+                >{{ t('profile.calendarSettings.openingTime') }}</label
               >
               <InputText
                 v-model="calSettings.slotMinTime"
@@ -546,12 +544,12 @@
                 placeholder="07:00"
               />
               <p class="text-xs text-gray-400 mt-1">
-                Format: HH:MM (e.g. 08:00)
+                {{ t('profile.calendarSettings.timeFormat') }}
               </p>
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1"
-                >Closing Time</label
+                >{{ t('profile.calendarSettings.closingTime') }}</label
               >
               <InputText
                 v-model="calSettings.slotMaxTime"
@@ -561,7 +559,7 @@
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1"
-                >Reminder (hours before)</label
+                >{{ t('profile.calendarSettings.reminderHoursBefore') }}</label
               >
               <InputNumber
                 v-model="calSettings.reminderHoursBefore"
@@ -570,15 +568,14 @@
                 :max="72"
               />
               <p class="text-xs text-gray-400 mt-1">
-                How many hours before the appointment to send the email
-                reminder.
+                {{ t('profile.calendarSettings.reminderHoursNote') }}
               </p>
             </div>
             <div class="flex items-center justify-between pt-2">
               <div>
-                <p class="text-sm font-medium text-gray-700">Show Weekends</p>
+                <p class="text-sm font-medium text-gray-700">{{ t('profile.calendarSettings.showWeekends') }}</p>
                 <p class="text-xs text-gray-400">
-                  Display Saturday and Sunday in the calendar.
+                  {{ t('profile.calendarSettings.showWeekendsNote') }}
                 </p>
               </div>
               <ToggleSwitch v-model="calSettings.showWeekends" />
@@ -594,12 +591,10 @@
           <div class="flex justify-between items-center">
             <div>
               <h3 class="text-lg font-bold text-gray-900">
-                Client Self-Booking
+                {{ t('profile.selfBooking.title') }}
               </h3>
               <p class="text-sm text-gray-500 max-w-xl">
-                Let clients book an appointment themselves from their client
-                portal, for services you've marked "Bookable online" and with
-                staff assigned to those services.
+                {{ t('profile.selfBooking.description') }}
               </p>
             </div>
             <ToggleSwitch
@@ -619,41 +614,40 @@
         >
           <div class="mb-6">
             <h3 class="text-lg font-bold text-gray-900">
-              Send a Push Notification
+              {{ t('profile.broadcast.title') }}
             </h3>
             <p class="text-sm text-gray-500 max-w-xl">
-              Sent instantly to every client who has notifications enabled on
-              their portal — a promo, an announcement, anything.
+              {{ t('profile.broadcast.description') }}
             </p>
           </div>
           <div class="space-y-4">
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1"
-                >Title</label
+                >{{ t('profile.broadcast.notificationTitle') }}</label
               >
               <InputText
                 v-model="broadcastForm.title"
                 class="w-full"
-                placeholder="e.g. 20% off this weekend!"
+                :placeholder="t('profile.broadcast.notificationTitlePlaceholder')"
                 maxlength="80"
               />
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1"
-                >Message</label
+                >{{ t('profile.broadcast.message') }}</label
               >
               <Textarea
                 v-model="broadcastForm.body"
                 class="w-full"
                 rows="3"
                 autoResize
-                placeholder="Write your message..."
+                :placeholder="t('profile.broadcast.messagePlaceholder')"
                 maxlength="300"
               />
             </div>
             <div class="flex justify-end">
               <Button
-                label="Send"
+                :label="t('profile.broadcast.send')"
                 icon="pi pi-send"
                 :loading="isSendingBroadcast"
                 :disabled="!broadcastForm.title.trim() || !broadcastForm.body.trim()"
@@ -664,7 +658,7 @@
 
           <div v-if="recentBroadcasts.length" class="mt-6 pt-6 border-t border-gray-100">
             <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
-              Recently Sent
+              {{ t('profile.broadcast.recentlySent') }}
             </p>
             <div
               v-for="b in recentBroadcasts"
@@ -676,7 +670,7 @@
                 <p class="text-xs text-gray-400 truncate">{{ b.body }}</p>
               </div>
               <span class="text-xs text-gray-400 flex-shrink-0"
-                >{{ b.recipient_count }} sent</span
+                >{{ t('profile.broadcast.sentCount', { n: b.recipient_count }) }}</span
               >
             </div>
           </div>
@@ -1261,11 +1255,11 @@ const saveReplyEmail = async () => {
       body: JSON.stringify({ reply_email: replyEmailForm.value || null }),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Failed to save");
+    if (!res.ok) throw new Error(data.error || t("profile.toast.saveFailed"));
     toast.add({
       severity: "success",
       summary: t("common.success"),
-      detail: "Reply-to email saved",
+      detail: t("profile.clinicSettings.replyEmailSaved"),
       life: 3000,
     });
     profile.value.shop_reply_email = replyEmailForm.value || null;
@@ -1342,17 +1336,17 @@ const saveContact = async () => {
         website: contactForm.website,
       }),
     });
-    if (!res.ok) throw new Error((await res.json()).error || "Failed");
+    if (!res.ok) throw new Error((await res.json()).error || t("profile.toast.saveFailed"));
     toast.add({
       severity: "success",
-      summary: "Saved",
-      detail: "Clinic info updated",
+      summary: t("common.success"),
+      detail: t("profile.clinicInfo.updated"),
       life: 3000,
     });
   } catch (e: any) {
     toast.add({
       severity: "error",
-      summary: "Error",
+      summary: t("common.error"),
       detail: e.message,
       life: 3000,
     });
@@ -1378,17 +1372,17 @@ const saveCalendarSettings = async () => {
         reminder_hours_before: calSettings.reminderHoursBefore,
       }),
     });
-    if (!res.ok) throw new Error((await res.json()).error || "Failed");
+    if (!res.ok) throw new Error((await res.json()).error || t("profile.toast.saveFailed"));
     toast.add({
       severity: "success",
-      summary: "Saved",
-      detail: "Calendar settings updated",
+      summary: t("common.success"),
+      detail: t("profile.calendarSettings.updated"),
       life: 3000,
     });
   } catch (e: any) {
     toast.add({
       severity: "error",
-      summary: "Error",
+      summary: t("common.error"),
       detail: e.message,
       life: 3000,
     });
@@ -1411,20 +1405,20 @@ const saveSelfBooking = async (value: boolean) => {
       },
       body: JSON.stringify({ self_booking_enabled: value }),
     });
-    if (!res.ok) throw new Error((await res.json()).error || "Failed");
+    if (!res.ok) throw new Error((await res.json()).error || t("profile.toast.saveFailed"));
     toast.add({
       severity: "success",
-      summary: "Saved",
+      summary: t("common.success"),
       detail: value
-        ? "Clients can now book appointments themselves from their portal."
-        : "Client self-booking is now disabled.",
+        ? t("profile.selfBooking.enabledDetail")
+        : t("profile.selfBooking.disabledDetail"),
       life: 3000,
     });
   } catch (e: any) {
     selfBookingEnabled.value = previous;
     toast.add({
       severity: "error",
-      summary: "Error",
+      summary: t("common.error"),
       detail: e.message,
       life: 3000,
     });
@@ -1460,18 +1454,18 @@ const sendBroadcast = async () => {
       body: JSON.stringify(broadcastForm),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Failed");
+    if (!res.ok) throw new Error(data.error || t("profile.toast.saveFailed"));
     toast.add({
       severity: "success",
-      summary: "Sent",
-      detail: `Delivered to ${data.recipient_count} device${data.recipient_count === 1 ? "" : "s"}.`,
+      summary: t("profile.broadcast.sent"),
+      detail: t("profile.broadcast.deliveredDetail", { n: data.recipient_count }),
       life: 3000,
     });
     broadcastForm.title = "";
     broadcastForm.body = "";
     fetchRecentBroadcasts();
   } catch (e: any) {
-    toast.add({ severity: "error", summary: "Error", detail: e.message, life: 3000 });
+    toast.add({ severity: "error", summary: t("common.error"), detail: e.message, life: 3000 });
   } finally {
     isSendingBroadcast.value = false;
   }
@@ -1491,14 +1485,14 @@ const uploadPhoto = async (e: Event) => {
       headers: { Authorization: `Bearer ${token}` },
       body: formData,
     });
-    if (!res.ok) throw new Error((await res.json()).error || "Upload failed");
+    if (!res.ok) throw new Error((await res.json()).error || t("profile.toast.uploadFailed"));
     const data = await res.json();
     staffPhotoUrl.value = data.photo_url;
-    toast.add({ severity: "success", summary: "Photo updated", life: 2000 });
+    toast.add({ severity: "success", summary: t("profile.toast.photoUpdated"), life: 2000 });
   } catch (e: any) {
     toast.add({
       severity: "error",
-      summary: "Upload failed",
+      summary: t("profile.toast.uploadFailed"),
       detail: e.message,
       life: 3000,
     });

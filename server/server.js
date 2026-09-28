@@ -25,7 +25,7 @@ const fs = require("fs");
 const { Server } = require("socket.io");
 const bcrypt = require("bcrypt");
 const crypto = require("crypto");
-const { applyDiscount } = require("./discounts");
+const { applyDiscount, allocate, round2 } = require("./discounts");
 
 const app = express();
 // The app always sits behind exactly one reverse proxy — Nginx in production
@@ -123,6 +123,23 @@ class StaffUnavailableError extends Error {
     this.staffId = staffId;
   }
 }
+
+// A staff member is required on every service block (each one needs to land
+// on a specific person's calendar column) — doesn't apply to time-off
+// blocks, which never get appointment_services rows at all.
+class MissingStaffError extends Error {
+  constructor() {
+    super("staff_required");
+  }
+}
+
+const assertServicesHaveStaff = (services, isBlock) => {
+  if (isBlock) return;
+  const missing = (services || []).some(
+    (svc) => safeUUID(svc.service_id) && !safeUUID(svc.staff_id),
+  );
+  if (missing) throw new MissingStaffError();
+};
 
 // Hard-blocks booking a staff member during their leave/break (staff_time_off)
 // or, if they've opted into a configured schedule, outside their weekly
@@ -304,6 +321,8 @@ const createAppointmentSeries = async (client, data, shopId) => {
     group_id_override,
   } = data;
 
+  assertServicesHaveStaff(services, is_block);
+
   const crypto = require("crypto");
   const groupId =
     group_id_override || (recurrence ? crypto.randomUUID() : null);
@@ -428,10 +447,20 @@ const createAppointmentSeries = async (client, data, shopId) => {
         const validServiceId = safeUUID(svc.service_id);
         const validStaffId = safeUUID(svc.staff_id);
 
+        // Multi-service bookings (e.g. a combo split into a therapeutic +
+        // sauna block) have each service at its own start_time, laid out
+        // sequentially by the client. Preserve that offset from services[0]
+        // rather than collapsing every block onto the same instanceStartIso.
+        const svcOffsetMs =
+          new Date(svc.start_time).getTime() - originalStart.getTime();
+        const svcInstanceStartIso = new Date(
+          instanceStart.getTime() + svcOffsetMs,
+        ).toISOString();
+
         await assertStaffAvailable(client, {
           staffId: validStaffId,
           shopId,
-          startTime: instanceStartIso,
+          startTime: svcInstanceStartIso,
           durationMinutes: svc.duration_override,
         });
 
@@ -445,7 +474,7 @@ const createAppointmentSeries = async (client, data, shopId) => {
               appointmentId,
               validServiceId,
               validStaffId,
-              instanceStartIso, // Use the calculated ISO time
+              svcInstanceStartIso,
               svc.duration_override,
               svc.price_override,
               shopId,
@@ -510,14 +539,37 @@ const performSingleUpdate = async (client, id, shopId, body) => {
     products = [],
   } = body;
 
+  assertServicesHaveStaff(services, is_block);
+
   const validClientId = safeUUID(client_id);
 
   const existingDiscountRes = await client.query(
-    `SELECT discount_type, discount_value, discount_code_id, discount_code_name
+    `SELECT discount_type, discount_value, discount_code_id, discount_code_name, client_id AS old_client_id
      FROM appointments WHERE id = $1 AND shop_id = $2`,
     [id, shopId],
   );
   const existingRow = existingDiscountRes.rows[0] || null;
+  const oldClientId = existingRow?.old_client_id || null;
+  // Reassigning an appointment to a different client (e.g. attributing a
+  // walk-in booking to the real client after the fact) moves its money with
+  // it — otherwise the payment stays recorded under whoever was picked
+  // first, and neither client's balance/history is accurate afterward.
+  const clientIsChanging =
+    !is_block && oldClientId && validClientId && oldClientId !== validClientId;
+  if (clientIsChanging) {
+    await client.query(
+      "UPDATE transactions SET client_id = $1 WHERE appointment_id = $2",
+      [validClientId, id],
+    );
+    await client.query(
+      "UPDATE product_sales SET client_id = $1 WHERE appointment_id = $2",
+      [validClientId, id],
+    );
+    // The caller recalculates the new client's balance after this function
+    // returns; the old client's balance needs it too, now that this
+    // appointment's money no longer belongs to them.
+    await recalculateClientBalance(client, oldClientId);
+  }
   const discountInput = is_block
     ? null
     : await resolveDiscount(client, shopId, body, existingRow);
@@ -2438,6 +2490,52 @@ app.get("/api/v1/clients", authenticateToken, async (req, res) => {
     }
   }
 });
+// Get-or-create this shop's single walk-in client — used to pre-select a
+// client on a brand-new, blank appointment (save fast, attribute later).
+// Guarded by a row lock on the shop so two concurrent first-uses can't each
+// create their own walk-in client.
+app.get("/api/v1/clients/walk-in", authenticateToken, async (req, res) => {
+  if (req.user.role === "client") return res.status(403).json({ error: "Forbidden" });
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const shopRes = await client.query(
+      "SELECT walk_in_client_id FROM shops WHERE id = $1 FOR UPDATE",
+      [req.shopId],
+    );
+    let walkInId = shopRes.rows[0]?.walk_in_client_id;
+
+    if (walkInId) {
+      const existing = await client.query(
+        "SELECT id, first_name, last_name, phone, email, outstanding_balance FROM clients WHERE id = $1",
+        [walkInId],
+      );
+      if (existing.rows[0]) {
+        await client.query("COMMIT");
+        const c = existing.rows[0];
+        return res.json({ ...c, full_name: `${c.first_name} ${c.last_name}`.trim() });
+      }
+      // Referenced client was deleted — fall through and create a fresh one.
+    }
+
+    const created = await client.query(
+      `INSERT INTO clients (first_name, last_name, shop_id)
+       VALUES ('Walk', 'in', $1) RETURNING id, first_name, last_name, phone, email, outstanding_balance`,
+      [req.shopId],
+    );
+    const c = created.rows[0];
+    await client.query("UPDATE shops SET walk_in_client_id = $1 WHERE id = $2", [c.id, req.shopId]);
+    await client.query("COMMIT");
+    res.json({ ...c, full_name: `${c.first_name} ${c.last_name}`.trim() });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  } finally {
+    client.release();
+  }
+});
+
 app.post("/api/v1/clients", authenticateToken, async (req, res) => {
   const {
     first_name,
@@ -2571,13 +2669,89 @@ app.delete("/api/v1/clients/:id", authenticateToken, async (req, res) => {
 
 // --- SERVICE ROUTES ---
 
+// Replace-all upsert of a combo's component list — keeps combo config a
+// single ordered list of real service ids rather than a diffing dance.
+const setComboComponents = async (dbClient, serviceId, componentIds) => {
+  await dbClient.query(
+    "DELETE FROM service_combo_components WHERE service_id = $1",
+    [serviceId],
+  );
+  const ids = (componentIds || [])
+    .map((cid) => safeUUID(cid))
+    .filter((cid) => cid && cid !== serviceId);
+  for (let i = 0; i < ids.length; i++) {
+    await dbClient.query(
+      `INSERT INTO service_combo_components (service_id, component_service_id, sort_order)
+       VALUES ($1, $2, $3) ON CONFLICT (service_id, component_service_id) DO NOTHING`,
+      [serviceId, ids[i], i],
+    );
+  }
+};
+
+// Replace-all upsert of a service's variation list (e.g. "30 min" / "60
+// min" priced options) — same pattern as combo components.
+const setServiceVariations = async (dbClient, serviceId, variations) => {
+  await dbClient.query("DELETE FROM service_variations WHERE service_id = $1", [
+    serviceId,
+  ]);
+  const list = (variations || []).filter(
+    (v) => v?.name?.trim() && Number(v.duration_minutes) > 0 && Number(v.price) >= 0,
+  );
+  for (let i = 0; i < list.length; i++) {
+    await dbClient.query(
+      `INSERT INTO service_variations (service_id, name, duration_minutes, price, sort_order)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [serviceId, list[i].name.trim(), list[i].duration_minutes, list[i].price, i],
+    );
+  }
+};
+
 app.get("/api/v1/services", authenticateToken, async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT * FROM services WHERE shop_id = $1 AND is_active = true ORDER BY name`,
       [req.shopId],
     );
-    res.json(rows);
+    const { rows: comboRows } = await pool.query(
+      `SELECT scc.service_id, scc.sort_order, s.id, s.name, s.duration_minutes, s.price, s.default_staff_id
+       FROM service_combo_components scc
+       JOIN services s ON s.id = scc.component_service_id
+       WHERE scc.service_id = ANY($1::uuid[])
+       ORDER BY scc.service_id, scc.sort_order`,
+      [rows.map((r) => r.id)],
+    );
+    const byService = {};
+    for (const row of comboRows) {
+      if (!byService[row.service_id]) byService[row.service_id] = [];
+      byService[row.service_id].push({
+        id: row.id,
+        name: row.name,
+        duration_minutes: row.duration_minutes,
+        price: row.price,
+        default_staff_id: row.default_staff_id,
+      });
+    }
+    const { rows: variationRows } = await pool.query(
+      `SELECT * FROM service_variations WHERE service_id = ANY($1::uuid[]) ORDER BY service_id, sort_order`,
+      [rows.map((r) => r.id)],
+    );
+    const variationsByService = {};
+    for (const row of variationRows) {
+      if (!variationsByService[row.service_id]) variationsByService[row.service_id] = [];
+      variationsByService[row.service_id].push({
+        id: row.id,
+        name: row.name,
+        duration_minutes: row.duration_minutes,
+        price: row.price,
+      });
+    }
+    res.json(
+      rows.map((r) => ({
+        ...r,
+        combo_components: byService[r.id] || [],
+        variations: variationsByService[r.id] || [],
+      })),
+    );
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Internal server error" });
@@ -2585,7 +2759,17 @@ app.get("/api/v1/services", authenticateToken, async (req, res) => {
 });
 
 app.post("/api/v1/services", authenticateToken, async (req, res) => {
-  const { name, duration_minutes, price, category, color_code, bookable_online } = req.body;
+  const {
+    name,
+    duration_minutes,
+    price,
+    category,
+    color_code,
+    bookable_online,
+    default_staff_id,
+    combo_component_ids,
+    variations,
+  } = req.body;
 
   if (!name?.trim()) {
     return res.status(400).json({ error: "Service name is required" });
@@ -2602,11 +2786,27 @@ app.post("/api/v1/services", authenticateToken, async (req, res) => {
   }
 
   try {
-    await pool.query(
-      `INSERT INTO services (name, duration_minutes, price, category, color_code, shop_id, bookable_online) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [name, duration_minutes, price, category, color_code, req.shopId, !!bookable_online],
+    const { rows } = await pool.query(
+      `INSERT INTO services (name, duration_minutes, price, category, color_code, shop_id, bookable_online, default_staff_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+      [
+        name,
+        duration_minutes,
+        price,
+        category,
+        color_code,
+        req.shopId,
+        !!bookable_online,
+        safeUUID(default_staff_id),
+      ],
     );
-    res.json({ success: true });
+    if (Array.isArray(combo_component_ids)) {
+      await setComboComponents(pool, rows[0].id, combo_component_ids);
+    }
+    if (Array.isArray(variations)) {
+      await setServiceVariations(pool, rows[0].id, variations);
+    }
+    res.json({ success: true, id: rows[0].id });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Internal server error" });
@@ -2615,12 +2815,38 @@ app.post("/api/v1/services", authenticateToken, async (req, res) => {
 
 app.put("/api/v1/services/:id", authenticateToken, async (req, res) => {
   const { id } = req.params;
-  const { name, duration_minutes, price, category, color_code, bookable_online } = req.body;
+  const {
+    name,
+    duration_minutes,
+    price,
+    category,
+    color_code,
+    bookable_online,
+    default_staff_id,
+    combo_component_ids,
+    variations,
+  } = req.body;
   try {
     await pool.query(
-      `UPDATE services SET name=$1, duration_minutes=$2, price=$3, category=$4, color_code=$5, bookable_online=$6 WHERE id=$7 AND shop_id=$8`,
-      [name, duration_minutes, price, category, color_code, !!bookable_online, id, req.shopId],
+      `UPDATE services SET name=$1, duration_minutes=$2, price=$3, category=$4, color_code=$5, bookable_online=$6, default_staff_id=$7 WHERE id=$8 AND shop_id=$9`,
+      [
+        name,
+        duration_minutes,
+        price,
+        category,
+        color_code,
+        !!bookable_online,
+        safeUUID(default_staff_id),
+        id,
+        req.shopId,
+      ],
     );
+    if (Array.isArray(combo_component_ids)) {
+      await setComboComponents(pool, id, combo_component_ids);
+    }
+    if (Array.isArray(variations)) {
+      await setServiceVariations(pool, id, variations);
+    }
     res.json({ success: true });
   } catch (err) {
     console.error(err);
@@ -3114,6 +3340,9 @@ app.post("/api/v1/appointments", authenticateToken, async (req, res) => {
     if (err instanceof StaffUnavailableError) {
       return res.status(422).json({ error: "staff_unavailable", reason: err.reason, staff_id: err.staffId });
     }
+    if (err instanceof MissingStaffError) {
+      return res.status(422).json({ error: "staff_required" });
+    }
     if (err instanceof SelfBookingNotAllowedError) {
       return res.status(422).json({ error: err.message, reason: err.reason });
     }
@@ -3381,8 +3610,59 @@ app.put("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
     if (err instanceof StaffUnavailableError) {
       return res.status(422).json({ error: "staff_unavailable", reason: err.reason, staff_id: err.staffId });
     }
+    if (err instanceof MissingStaffError) {
+      return res.status(422).json({ error: "staff_required" });
+    }
     console.error("Update Appointment Error:", err);
     res.status(500).json({ error: "Update failed" });
+  } finally {
+    client.release();
+  }
+});
+
+// Staff-side quick cancel (soft — the appointment stays for history/reporting,
+// only its status changes). Deliberately separate from the general PUT
+// endpoint: that one requires resending the full services/products arrays or
+// it wipes them out, which is overkill for a one-click "cancel" action from a
+// summary view that doesn't have that data loaded. Mirrors the client
+// portal's own cancel endpoint, plus releasing any redeemed package visit
+// (the portal one doesn't — a pre-existing gap there, left alone since the
+// client portal is a separate, not-yet-shipped feature).
+app.post("/api/v1/appointments/:id/cancel", authenticateToken, async (req, res) => {
+  if (req.user.role === "client") return res.status(403).json({ error: "Forbidden" });
+  const { id } = req.params;
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const check = await client.query(
+      `SELECT client_id FROM appointments
+       WHERE id = $1 AND shop_id = $2 AND status NOT IN ('cancelled', 'completed')`,
+      [id, req.shopId],
+    );
+    if (check.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Appointment not found or cannot be cancelled" });
+    }
+    const clientId = check.rows[0].client_id;
+
+    await client.query("UPDATE appointments SET status = 'cancelled' WHERE id = $1", [id]);
+    await releasePackageUsage(client, [id]);
+    await client.query(
+      `UPDATE product_inventory pi
+       SET stock_quantity = pi.stock_quantity + ps.quantity
+       FROM product_sales ps
+       WHERE ps.inventory_id = pi.id AND ps.appointment_id = $1`,
+      [id],
+    );
+    await client.query("DELETE FROM product_sales WHERE appointment_id = $1", [id]);
+
+    const newBalance = clientId ? await recalculateClientBalance(client, clientId) : undefined;
+    await client.query("COMMIT");
+    res.json({ success: true, new_balance: newBalance });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Staff appointment cancel error:", err);
+    res.status(500).json({ error: "Internal server error" });
   } finally {
     client.release();
   }
@@ -3649,27 +3929,32 @@ app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
     gift_card_id2,
     redemptions2,
     package_purchases, // [{ package_type_id }] — sold alongside this payment, same leg1 method
+    gift_card_purchases, // [{ card_number, customer_name, initial_amount }] — same idea, for gift cards
   } = req.body;
 
   const hasPackagePurchases =
     Array.isArray(package_purchases) && package_purchases.length > 0;
+  const hasGiftCardPurchases =
+    Array.isArray(gift_card_purchases) && gift_card_purchases.length > 0;
+  const hasExtras = hasPackagePurchases || hasGiftCardPurchases;
 
   // Membership legs derive their own amount server-side from validated
   // quota redemptions — the client never gets to assert an amount for them.
-  // A package-only payment (service already fully paid, or amount = 0) is
-  // valid, so the amount requirement is waived when packages are attached.
+  // An extras-only payment (service already fully paid, or amount = 0) is
+  // valid, so the amount requirement is waived when packages/gift cards are
+  // attached.
   if (
     payment_method !== "membership" &&
-    !hasPackagePurchases &&
+    !hasExtras &&
     (!amount || Number(amount) <= 0)
   ) {
     return res.status(400).json({ error: "Invalid payment amount" });
   }
-  if (hasPackagePurchases && !["cash", "card", "bank-transfer"].includes(payment_method)) {
-    return res.status(400).json({ error: "Packages can only be purchased with cash, card, or bank transfer" });
+  if (hasExtras && !["cash", "card", "bank-transfer"].includes(payment_method)) {
+    return res.status(400).json({ error: "Packages and gift cards can only be purchased with cash, card, or bank transfer" });
   }
-  if (hasPackagePurchases && !canSellPackages(req.user)) {
-    return res.status(403).json({ error: "Not allowed to sell packages" });
+  if (hasExtras && !canSellExtras(req.user)) {
+    return res.status(403).json({ error: "Not allowed to sell packages or gift cards" });
   }
   if (payment_method === "gift-card" && !gift_card_id) {
     return res
@@ -4022,8 +4307,42 @@ app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
       }
     }
 
+    // Gift cards sold alongside this payment — same "own sale, not part of
+    // the appointment's debt" treatment as packages above.
+    let giftCardAmount = 0;
+    const purchasedGiftCards = [];
+    if (hasGiftCardPurchases) {
+      for (const item of gift_card_purchases) {
+        const cardNumber = String(item?.card_number || "").trim();
+        const customerName = String(item?.customer_name || "").trim();
+        const initialAmount = Number(item?.initial_amount);
+        if (!cardNumber || !customerName || !(initialAmount > 0)) {
+          await client.query("ROLLBACK");
+          return res.status(400).json({
+            error: "Each gift card needs a card_number, customer_name and a positive initial_amount",
+          });
+        }
+        const ins = await client.query(
+          `INSERT INTO gift_cards
+             (card_number, client_id, customer_name, initial_amount, remaining_balance,
+              purchase_payment_method, shop_id, issued_at, expires_at, sold_by_staff_id)
+           VALUES ($1, $2, $3, $4, $4, $5, $6, NOW(), NOW() + INTERVAL '3 months', $7)
+           RETURNING id, card_number`,
+          [cardNumber, client_id || null, customerName, initialAmount, payment_method, req.shopId, req.user.staffId || null],
+        );
+        await client.query(
+          `INSERT INTO transactions
+             (appointment_id, client_id, amount, payment_method, transaction_type, shop_id, gift_card_id, created_at)
+           VALUES (NULL, $1, $2, $3, 'gift_card_sale', $4, $5, NOW())`,
+          [client_id || null, initialAmount, payment_method, req.shopId, ins.rows[0].id],
+        );
+        giftCardAmount += initialAmount;
+        purchasedGiftCards.push({ id: ins.rows[0].id, card_number: ins.rows[0].card_number });
+      }
+    }
+
     // The service leg only ever covers the appointment's own debt cap, never
-    // the package price — pass 0 when the caller's "amount" was package-only.
+    // the package/gift-card price — pass 0 when the caller's "amount" was extras-only.
     const serviceLegAmount = Number(amount) || 0;
 
     const leg1Error =
@@ -4064,6 +4383,8 @@ app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
       new_balance: newBalance,
       package_amount: Math.round(packageAmount * 100) / 100,
       packages_purchased: purchasedPackages,
+      gift_card_amount: Math.round(giftCardAmount * 100) / 100,
+      gift_cards_purchased: purchasedGiftCards,
     };
     await saveIdempotency(client, idempotencyKey, req.shopId, 200, responseBody);
 
@@ -7506,6 +7827,112 @@ app.get("/api/v1/availability", authenticateToken, async (req, res) => {
   }
 })();
 
+// One ordinary client per shop, reused for every walk-in booking (a fast
+// "save now, attribute to a real client later" flow) — deliberately just a
+// ref to a plain clients row, not a flagged/hidden pseudo-client: it shows up
+// in the client list/search/reports like anyone else, and its balance only
+// ever holds whatever hasn't been reassigned to a real client yet.
+(async () => {
+  try {
+    await pool.query(
+      `ALTER TABLE shops ADD COLUMN IF NOT EXISTS walk_in_client_id UUID REFERENCES clients(id) ON DELETE SET NULL`,
+    );
+  } catch (err) {
+    console.error("Failed to run walk-in client schema setup:", err);
+  }
+})();
+
+// ==================== SERVICE COMBOS SCHEMA ====================
+// A combo service (e.g. "Sport + Sauna") keeps its own price/duration but
+// lists other real services as "components" that get carved out into their
+// own schedule block when booked (e.g. a Sauna block, auto-assigned to
+// whichever staff member is that service's default). Replaces name-keyword
+// guessing with an explicit, admin-configured combination.
+(async () => {
+  try {
+    await pool.query(
+      `ALTER TABLE services ADD COLUMN IF NOT EXISTS default_staff_id UUID REFERENCES staff(id) ON DELETE SET NULL`,
+    );
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS service_combo_components (
+        id SERIAL PRIMARY KEY,
+        service_id UUID NOT NULL REFERENCES services(id) ON DELETE CASCADE,
+        component_service_id UUID NOT NULL REFERENCES services(id) ON DELETE CASCADE,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        UNIQUE(service_id, component_service_id)
+      )
+    `);
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_service_combo_components_service_id ON service_combo_components(service_id)`,
+    );
+  } catch (err) {
+    console.error("Failed to run service combos schema setup:", err);
+  }
+})();
+
+// ==================== SERVICE VARIATIONS SCHEMA ====================
+// A service can optionally offer several named price/duration options (e.g.
+// "30 minutes" / "60 minutes") instead of one fixed price+duration. The
+// service's own price/duration columns stay as-is and keep working
+// unchanged for services with no variations (the common case); when
+// variations exist, the booking picker offers them instead of the base
+// price, matching Fresha's "expand for options" pattern.
+(async () => {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS service_variations (
+        id SERIAL PRIMARY KEY,
+        service_id UUID NOT NULL REFERENCES services(id) ON DELETE CASCADE,
+        name VARCHAR(100) NOT NULL,
+        duration_minutes INTEGER NOT NULL,
+        price NUMERIC(10,2) NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0
+      )
+    `);
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_service_variations_service_id ON service_variations(service_id)`,
+    );
+  } catch (err) {
+    console.error("Failed to run service variations schema setup:", err);
+  }
+})();
+
+// ==================== REFUNDS & CHECKOUT PRICE CHANGES SCHEMA ====================
+// Refunds are ordinary negative-amount `transactions` rows (transaction_type
+// 'refund') — every revenue/debt/balance query already just SUMs `amount`,
+// so this nets out correctly everywhere for free, with no other query
+// changes needed. `reason` + `created_by_user_id` are new, generic columns
+// (useful for any transaction, not just refunds).
+//
+// Checkout price changes aren't a money movement by themselves (they just
+// change what's owed), so they don't belong in `transactions` — they get
+// their own small audit table instead, purely for the admin report.
+(async () => {
+  try {
+    await pool.query(`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS reason TEXT`);
+    await pool.query(
+      `ALTER TABLE transactions ADD COLUMN IF NOT EXISTS created_by_user_id VARCHAR(255)`,
+    );
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS price_adjustments (
+        id SERIAL PRIMARY KEY,
+        appointment_id UUID NOT NULL REFERENCES appointments(id) ON DELETE CASCADE,
+        shop_id UUID NOT NULL REFERENCES shops(id),
+        old_total NUMERIC(10,2) NOT NULL,
+        new_total NUMERIC(10,2) NOT NULL,
+        reason TEXT NOT NULL,
+        created_by_user_id VARCHAR(255),
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_price_adjustments_shop_created ON price_adjustments(shop_id, created_at)`,
+    );
+  } catch (err) {
+    console.error("Failed to run refunds/price-adjustments schema setup:", err);
+  }
+})();
+
 // ==================== LANDING PAGE / DEMO REQUESTS SCHEMA ====================
 (async () => {
   try {
@@ -7738,8 +8165,8 @@ app.get("/api/v1/gift-cards/search", authenticateToken, async (req, res) => {
 
 // Create (sell) a gift card — admin only
 app.post("/api/v1/gift-cards", authenticateToken, async (req, res) => {
-  if (req.user.role !== "admin" && req.user.role !== "super_admin") {
-    return res.status(403).json({ error: "Admins only" });
+  if (!canSellExtras(req.user)) {
+    return res.status(403).json({ error: "Not allowed" });
   }
   const {
     card_number,
@@ -8203,7 +8630,223 @@ app.delete("/api/v1/clients/:id/membership", authenticateToken, async (req, res)
 
 // ==================== PREPAID PACKAGES ====================
 const isAdminRole = (u) => u.role === "admin" || u.role === "super_admin";
-const canSellPackages = (u) => isAdminRole(u) || u.role === "frontdesk";
+const canSellExtras = (u) => isAdminRole(u) || u.role === "frontdesk";
+
+// ==================== REFUNDS & CHECKOUT PRICE CHANGES ====================
+
+// A refund is an ordinary negative-amount transaction — every revenue/debt/
+// balance query already sums `amount`, so this nets out correctly everywhere
+// (Financials, Daily Report, client balance) with no other changes needed.
+app.post(
+  "/api/v1/appointments/:id/refund",
+  authenticateToken,
+  async (req, res) => {
+    if (!canSellExtras(req.user)) {
+      return res.status(403).json({ error: "Not authorized to issue refunds" });
+    }
+    const { id } = req.params;
+    const { amount, payment_method, reason } = req.body;
+    const refundAmount = round2(Number(amount));
+    if (!refundAmount || refundAmount <= 0) {
+      return res.status(400).json({ error: "amount must be a positive number" });
+    }
+    if (!["cash", "card", "bank-transfer"].includes(payment_method)) {
+      return res.status(400).json({ error: "Invalid payment_method" });
+    }
+    if (!reason?.trim()) {
+      return res.status(400).json({ error: "A reason is required" });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const apptRes = await client.query(
+        `SELECT client_id FROM appointments WHERE id = $1 AND shop_id = $2`,
+        [id, req.shopId],
+      );
+      if (apptRes.rows.length === 0) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ error: "Appointment not found" });
+      }
+      const clientId = apptRes.rows[0].client_id;
+
+      // Cap at what's currently net-collected on this appointment (already
+      // nets out any prior refunds, since those are negative rows too).
+      const netPaidRes = await client.query(
+        `SELECT COALESCE(SUM(amount), 0) AS net_paid FROM transactions WHERE appointment_id = $1`,
+        [id],
+      );
+      const netPaid = Number(netPaidRes.rows[0].net_paid);
+      if (refundAmount > netPaid + 0.001) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: "exceeds_amount_paid", net_paid: round2(netPaid) });
+      }
+
+      await client.query(
+        `INSERT INTO transactions
+          (appointment_id, client_id, amount, payment_method, transaction_type, reason, created_by_user_id, shop_id, created_at)
+         VALUES ($1, $2, $3, $4, 'refund', $5, $6, $7, NOW())`,
+        [id, clientId, -refundAmount, payment_method, reason.trim(), req.user.username, req.shopId],
+      );
+
+      let newBalance = 0;
+      if (clientId) newBalance = await recalculateClientBalance(client, clientId);
+
+      await client.query("COMMIT");
+      res.json({ success: true, new_balance: newBalance });
+    } catch (err) {
+      await client.query("ROLLBACK");
+      console.error(err);
+      res.status(500).json({ error: "Internal server error" });
+    } finally {
+      client.release();
+    }
+  },
+);
+
+// A manual checkout price change re-derives each service's price_override
+// from the new total, proportionally to what it currently carries (reusing
+// the same largest-remainder split the discount engine uses), and logs the
+// before/after + reason for the admin report — it isn't a money movement by
+// itself, so it doesn't create a transaction, only an audit row.
+app.post(
+  "/api/v1/appointments/:id/price-change",
+  authenticateToken,
+  async (req, res) => {
+    if (!canSellExtras(req.user)) {
+      return res.status(403).json({ error: "Not authorized to change prices" });
+    }
+    const { id } = req.params;
+    const { new_total, reason } = req.body;
+    const newTotal = round2(Number(new_total));
+    if (new_total == null || Number.isNaN(newTotal) || newTotal < 0) {
+      return res.status(400).json({ error: "new_total must be a non-negative number" });
+    }
+    if (!reason?.trim()) {
+      return res.status(400).json({ error: "A reason is required" });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const apptRes = await client.query(
+        `SELECT client_id FROM appointments WHERE id = $1 AND shop_id = $2`,
+        [id, req.shopId],
+      );
+      if (apptRes.rows.length === 0) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ error: "Appointment not found" });
+      }
+      const clientId = apptRes.rows[0].client_id;
+
+      const svcRes = await client.query(
+        `SELECT id, COALESCE(price_override, 0) AS price
+         FROM appointment_services WHERE appointment_id = $1 ORDER BY start_time`,
+        [id],
+      );
+      if (svcRes.rows.length === 0) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: "no_services_to_adjust" });
+      }
+
+      const amounts = svcRes.rows.map((r) => Number(r.price));
+      const oldTotal = round2(amounts.reduce((a, b) => a + b, 0));
+      const delta = round2(newTotal - oldTotal);
+
+      if (delta !== 0) {
+        // No existing price to proportion an increase against (e.g. a comped
+        // €0 visit) — put the entire new total on the last block rather than
+        // silently doing nothing.
+        if (oldTotal <= 0 && delta > 0) {
+          const lastIdx = svcRes.rows.length - 1;
+          await client.query(
+            `UPDATE appointment_services SET price_override = $1 WHERE id = $2`,
+            [newTotal, svcRes.rows[lastIdx].id],
+          );
+        } else {
+          const allocs = allocate(amounts, Math.abs(delta));
+          for (let i = 0; i < svcRes.rows.length; i++) {
+            const newPrice = round2(amounts[i] + (delta > 0 ? allocs[i] : -allocs[i]));
+            await client.query(
+              `UPDATE appointment_services SET price_override = $1 WHERE id = $2`,
+              [newPrice, svcRes.rows[i].id],
+            );
+          }
+        }
+      }
+
+      await client.query(
+        `INSERT INTO price_adjustments
+          (appointment_id, shop_id, old_total, new_total, reason, created_by_user_id, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+        [id, req.shopId, oldTotal, newTotal, reason.trim(), req.user.username],
+      );
+
+      let newBalance = 0;
+      if (clientId) newBalance = await recalculateClientBalance(client, clientId);
+
+      // Returned so the client can display the new per-service prices
+      // exactly as computed here, instead of re-deriving the same split
+      // client-side and risking drift from this endpoint's rounding.
+      const updatedServices = await client.query(
+        `SELECT service_id, staff_id, start_time, duration_override, price_override
+         FROM appointment_services WHERE appointment_id = $1 ORDER BY start_time`,
+        [id],
+      );
+
+      await client.query("COMMIT");
+      res.json({
+        success: true,
+        new_balance: newBalance,
+        old_total: oldTotal,
+        new_total: newTotal,
+        services: updatedServices.rows,
+      });
+    } catch (err) {
+      await client.query("ROLLBACK");
+      console.error(err);
+      res.status(500).json({ error: "Internal server error" });
+    } finally {
+      client.release();
+    }
+  },
+);
+
+// Backing report for the admin Financials "Payments Log" tab's new
+// Refunds & Price Changes section.
+app.get(
+  "/api/v1/reports/price-adjustments",
+  authenticateToken,
+  requireAnalyticsAccess,
+  async (req, res) => {
+    const { from, to } = req.query;
+    const params = [req.shopId];
+    let whereClause = "WHERE pa.shop_id = $1";
+    if (from) {
+      params.push(from);
+      whereClause += ` AND pa.created_at >= $${params.length}`;
+    }
+    if (to) {
+      params.push(to);
+      whereClause += ` AND pa.created_at <= $${params.length}`;
+    }
+    try {
+      const { rows } = await pool.query(
+        `SELECT pa.*, c.first_name, c.last_name
+         FROM price_adjustments pa
+         JOIN appointments a ON a.id = pa.appointment_id
+         LEFT JOIN clients c ON c.id = a.client_id
+         ${whereClause}
+         ORDER BY pa.created_at DESC`,
+        params,
+      );
+      res.json(rows);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
 
 // Deletes package visits (and their $0-revenue 'package' transactions) for the
 // given appointments, returning the visits to their packages. Called when an
@@ -8356,7 +8999,7 @@ app.get("/api/v1/clients/:id/packages", authenticateToken, async (req, res) => {
 // Sell a package to a client: records the package plus one 'package_sale'
 // transaction (revenue counted today; later visits are $0 'package' payments).
 app.post("/api/v1/clients/:id/packages", authenticateToken, async (req, res) => {
-  if (!canSellPackages(req.user)) return res.status(403).json({ error: "Not allowed" });
+  if (!canSellExtras(req.user)) return res.status(403).json({ error: "Not allowed" });
   const { package_type_id, payment_method = "cash", note } = req.body;
   if (!safeUUID(package_type_id)) return res.status(400).json({ error: "package_type_id is required" });
   if (!["cash", "card", "bank-transfer"].includes(payment_method)) {
