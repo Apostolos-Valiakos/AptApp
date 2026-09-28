@@ -225,11 +225,11 @@ const cardDialog = ref(false);
 const isEdit = ref(false);
 const editingId = ref<string | null>(null);
 
-const paymentMethodOptions = [
-  { label: "Cash", value: "cash" },
-  { label: "Card", value: "card" },
-  { label: "Bank Transfer", value: "bank-transfer" },
-];
+const paymentMethodOptions = computed(() => [
+  { label: t("common.paymentMethod.cash"), value: "cash" },
+  { label: t("common.paymentMethod.card"), value: "card" },
+  { label: t("common.paymentMethod.bank-transfer"), value: "bank-transfer" },
+]);
 
 const form = ref<any>({
   card_number: "",

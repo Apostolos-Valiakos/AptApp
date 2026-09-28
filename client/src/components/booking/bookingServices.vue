@@ -40,49 +40,64 @@
           <label class="text-xs text-gray-500 block mb-1">{{
             t("bookingServices.service")
           }}</label>
-          <Dropdown
-            v-model="service.service_id"
-            :options="groupedServices"
-            optionLabel="name"
-            optionValue="id"
-            optionGroupLabel="label"
-            optionGroupChildren="items"
-            filter
-            autoFilterFocus
-            :placeholder="t('bookingServices.selectService')"
-            class="w-full p-inputtext-sm"
-            @change="() => updateServiceDetails(index)"
-          />
+          <button
+            type="button"
+            class="h-[54px] w-full flex items-center justify-between gap-2 px-3 text-sm border border-gray-300 rounded-md bg-white hover:border-gray-400 transition-colors"
+            @click="openPicker(index)"
+          >
+            <span :class="displayName(service) ? 'text-gray-900' : 'text-gray-400'">
+              {{ displayName(service) || t('bookingServices.selectService') }}
+            </span>
+            <i class="pi pi-chevron-down text-gray-400 text-xs"></i>
+          </button>
         </div>
 
         <div class="w-full sm:w-1/3">
-          <label class="text-xs text-gray-500 block mb-1">{{
-            t("bookingServices.staff")
-          }}</label>
+          <label class="text-xs text-gray-500 block mb-1">
+            {{ t("bookingServices.staff") }}
+            <span v-if="requireStaff" class="text-red-500">*</span>
+          </label>
           <Dropdown
             v-model="service.staff_id"
             :options="getFilteredStaff(service)"
             optionLabel="name"
             optionValue="id"
             class="w-full p-inputtext-sm"
-            :placeholder="t('bookingServices.anyStaff')"
+            :class="{ 'p-invalid': isStaffMissing(service) }"
+            :placeholder="requireStaff ? t('bookingServices.selectStaff') : t('bookingServices.anyStaff')"
           />
+          <p v-if="isStaffMissing(service)" class="text-xs text-red-500 mt-1">
+            {{ t("bookingServices.staffRequired") }}
+          </p>
         </div>
       </div>
 
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div class="col-span-2 min-w-0">
-          <label class="text-xs text-gray-500 block mb-1">{{
-            t("bookingServices.time")
-          }}</label>
-          <Calendar
-            v-model="service.start_time"
-            showTime
-            hourFormat="24"
-            dateFormat="dd/mm/yy"
-            class="w-full p-inputtext-sm"
-            @hide="recalcTimes"
-          />
+          <div class="grid grid-cols-2 gap-2">
+            <div class="min-w-0">
+              <label class="text-xs text-gray-500 block mb-1">{{
+                t("bookingServices.date")
+              }}</label>
+              <Calendar
+                :modelValue="service.start_time"
+                dateFormat="dd/mm/yy"
+                class="w-full p-inputtext-sm"
+                @update:modelValue="(d: Date) => onDateChange(service, d)"
+              />
+            </div>
+            <div class="min-w-0">
+              <label class="text-xs text-gray-500 block mb-1">{{
+                t("bookingServices.startTime")
+              }}</label>
+              <TimeDropdown
+                :modelValue="formatTime(service.start_time)"
+                :minTime="shopMinTime"
+                :maxTime="shopMaxTime"
+                @update:modelValue="(t: string) => onTimeChange(service, t)"
+              />
+            </div>
+          </div>
         </div>
 
         <div class="col-span-1 min-w-0">
@@ -121,15 +136,24 @@
       ></i>
       <span>{{ t("bookingServices.addService") }}</span>
     </button>
+
+    <ServicePickerDialog
+      v-model:visible="pickerVisible"
+      :services="services"
+      :staff="staff"
+      :currentStaffId="pickerIndex !== null ? modelValue[pickerIndex]?.staff_id : null"
+      @picked="onServicePicked"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { ref, computed } from "vue";
 import { useI18n } from "vue-i18n";
-import { groupServicesByCategory } from "../../utils/serviceGroups";
 import { useAuthStore } from "../../stores/auth";
 import { isStaffAvailable } from "../../utils/staffAvailability";
+import ServicePickerDialog from "./ServicePickerDialog.vue";
+import TimeDropdown from "./TimeDropdown.vue";
 const { t } = useI18n();
 const authStore = useAuthStore();
 const isShopAdmin = authStore.isShopAdmin;
@@ -142,13 +166,12 @@ const props = defineProps({
   defaultStaffId: { type: [Number, String], default: null },
   timeOff: { type: Array as () => any[], default: () => [] },
   workingHours: { type: Array as () => any[], default: () => [] },
+  requireStaff: { type: Boolean, default: true },
+  shopMinTime: { type: String, default: "00:00" },
+  shopMaxTime: { type: String, default: "23:45" },
 });
 
 const emit = defineEmits(["update:modelValue"]);
-
-const groupedServices = computed(() =>
-  groupServicesByCategory(props.services, t("services.table.uncategorized")),
-);
 
 const isStaffUnavailable = (staffId: any, serviceStart: any, durationMinutes: number) => {
   if (!serviceStart) return false;
@@ -162,6 +185,33 @@ const isStaffUnavailable = (staffId: any, serviceStart: any, durationMinutes: nu
     start,
     end,
   }).available;
+};
+
+const isStaffMissing = (service: any) =>
+  props.requireStaff && !!service.service_id && !service.staff_id;
+
+// Date and time are edited as two separate widgets (a plain date picker +
+// the 15-min TimeDropdown) but both write back into the same underlying
+// start_time Date — everything else (recalcTimes, combo splitting, save)
+// keeps working off that single field unchanged.
+const formatTime = (d: Date) => {
+  const date = new Date(d);
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+};
+
+const onDateChange = (service: any, newDate: Date) => {
+  const merged = new Date(service.start_time);
+  merged.setFullYear(newDate.getFullYear(), newDate.getMonth(), newDate.getDate());
+  service.start_time = merged;
+  recalcTimes();
+};
+
+const onTimeChange = (service: any, time: string) => {
+  const [hours, minutes] = time.split(":").map(Number);
+  const merged = new Date(service.start_time);
+  merged.setHours(hours, minutes, 0, 0);
+  service.start_time = merged;
+  recalcTimes();
 };
 
 const getFilteredStaff = (service: any) => {
@@ -212,21 +262,99 @@ const removeService = (index: number) => {
   recalcTimes(list);
 };
 
-const updateServiceDetails = (index: number) => {
+// `pickedOverride` comes from ServicePickerDialog when a variation (rather
+// than the service's own flat price) was chosen — its price/duration wins
+// over the base service's, everything else (combo splitting, etc.) is
+// unaffected since that's keyed off the service itself, not the variation.
+const updateServiceDetails = (
+  index: number,
+  pickedOverride?: { duration_minutes: number; price: number },
+) => {
   const list = [...props.modelValue];
   const svc = list[index];
   const found = props.services.find((s: any) => s.id === svc.service_id);
 
+  // Rows immediately after this one that were auto-generated from its
+  // previous combo components — drop them before recomputing, so switching
+  // the service (combo -> plain, or to a different combo) never stacks
+  // stale blocks. They're re-inserted fresh below if still applicable.
+  let removeCount = 0;
+  while (list[index + 1 + removeCount]?._autoGenFor) {
+    removeCount++;
+  }
+  list.splice(index + 1, removeCount);
+
   if (found) {
-    svc.price_override = Number(found.price);
-    svc.duration_override = found.duration_minutes || 60;
-    const staffMember = props.staff.find((s) => s.id === svc.staff_id);
-    if (staffMember && staffMember.service_ids?.length > 0) {
-      if (!staffMember.service_ids.includes(svc.service_id)) {
-      }
+    svc.price_override = Number(pickedOverride ? pickedOverride.price : found.price);
+    svc.duration_override = pickedOverride
+      ? pickedOverride.duration_minutes
+      : found.duration_minutes || 60;
+
+    const components = found.combo_components || [];
+    if (components.length > 0) {
+      // The combo keeps its own listed price/duration; each component is
+      // carved out of it rather than added on top, so the original total
+      // stays what was priced/listed for the combo.
+      const componentMinutes = components.reduce(
+        (sum: number, c: any) => sum + (c.duration_minutes || 0),
+        0,
+      );
+      const componentPrice = components.reduce(
+        (sum: number, c: any) => sum + Number(c.price || 0),
+        0,
+      );
+      svc.duration_override = Math.max(5, svc.duration_override - componentMinutes);
+      svc.price_override = Math.max(0, svc.price_override - componentPrice);
+
+      const newBlocks = components.map((c: any) => {
+        return {
+          service_id: c.id,
+          staff_id: c.default_staff_id || null,
+          start_time: svc.start_time,
+          duration_override: c.duration_minutes || 30,
+          price_override: Number(c.price || 0),
+          _autoGenFor: svc.service_id,
+        };
+      });
+      list.splice(index + 1, 0, ...newBlocks);
     }
   }
   recalcTimes(list);
+};
+
+// --- Service picker modal (replaces the old inline dropdown) ---
+const pickerIndex = ref<number | null>(null);
+const pickerVisible = computed({
+  get: () => pickerIndex.value !== null,
+  set: (v: boolean) => {
+    if (!v) pickerIndex.value = null;
+  },
+});
+
+const openPicker = (index: number) => {
+  pickerIndex.value = index;
+};
+
+const displayName = (service: any) => {
+  if (service._label) return service._label;
+  const found = props.services.find((s: any) => s.id === service.service_id);
+  return found?.name || "";
+};
+
+const onServicePicked = (picked: {
+  service_id: string;
+  name: string;
+  duration_minutes: number;
+  price: number;
+}) => {
+  if (pickerIndex.value === null) return;
+  const svc = props.modelValue[pickerIndex.value];
+  svc.service_id = picked.service_id;
+  svc._label = picked.name;
+  updateServiceDetails(pickerIndex.value, {
+    duration_minutes: picked.duration_minutes,
+    price: picked.price,
+  });
 };
 
 const recalcTimes = (existingList?: any[]) => {

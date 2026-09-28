@@ -5,16 +5,16 @@
     <div class="max-w-md w-full space-y-8 bg-white p-8 rounded-xl shadow-lg">
       <div v-if="!tokenError">
         <div class="text-center mb-8">
-          <h2 class="text-3xl font-extrabold text-gray-900">Complete Setup</h2>
+          <h2 class="text-3xl font-extrabold text-gray-900">{{ t('signup.title') }}</h2>
           <p class="mt-2 text-sm text-gray-600">
-            Set a password to access your portal
+            {{ t('signup.subtitle') }}
           </p>
         </div>
 
         <form class="space-y-6" @submit.prevent="handleSignup">
           <div>
             <label class="block text-sm font-medium text-gray-700"
-              >Password</label
+              >{{ t('signup.password') }}</label
             >
             <Password
               v-model="password"
@@ -25,7 +25,7 @@
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700"
-              >Confirm Password</label
+              >{{ t('signup.confirmPassword') }}</label
             >
             <Password
               v-model="confirmPassword"
@@ -37,12 +37,12 @@
             <small
               v-if="password !== confirmPassword && confirmPassword"
               class="text-red-500"
-              >Passwords do not match.</small
+              >{{ t('signup.passwordMismatch') }}</small
             >
           </div>
           <Button
             type="submit"
-            label="Create Account"
+            :label="t('signup.createAccount')"
             class="w-full"
             :loading="loading"
             :disabled="!isFormValid"
@@ -52,9 +52,9 @@
 
       <div v-else class="text-center">
         <i class="pi pi-times-circle text-red-500 text-5xl mb-4"></i>
-        <h3 class="text-xl font-bold text-gray-900">Invalid Link</h3>
+        <h3 class="text-xl font-bold text-gray-900">{{ t('signup.invalidLink') }}</h3>
         <p class="text-gray-600 mt-2">
-          This invitation link is invalid or has expired.
+          {{ t('signup.invalidLinkDetail') }}
         </p>
       </div>
     </div>
@@ -65,12 +65,14 @@
 import { ref, computed, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useToast } from "primevue/usetoast";
+import { useI18n } from "vue-i18n";
 import Password from "primevue/password";
 import Button from "primevue/button";
 
 const route = useRoute();
 const router = useRouter();
 const toast = useToast();
+const { t } = useI18n();
 
 const password = ref("");
 const confirmPassword = ref("");
@@ -96,19 +98,19 @@ const handleSignup = async () => {
     });
 
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Failed to create account");
+    if (!res.ok) throw new Error(data.error || t('signup.createFailed'));
 
     toast.add({
       severity: "success",
-      summary: "Account Created",
-      detail: "You can now log in!",
+      summary: t('signup.accountCreated'),
+      detail: t('signup.canLogInNow'),
       life: 3000,
     });
     router.push("/login");
   } catch (err: any) {
     toast.add({
       severity: "error",
-      summary: "Error",
+      summary: t('common.error'),
       detail: err.message,
       life: 3000,
     });

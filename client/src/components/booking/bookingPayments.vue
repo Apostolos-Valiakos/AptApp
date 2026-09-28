@@ -38,6 +38,15 @@
             >+ €{{ packagesTotal.toFixed(2) }}</span
           >
         </div>
+        <div
+          v-if="giftCardsTotal > 0"
+          class="flex justify-between py-2 border-b border-gray-700/50"
+        >
+          <span>{{ t("payment.newGiftCards") }}</span>
+          <span class="font-medium text-amber-300"
+            >+ €{{ giftCardsTotal.toFixed(2) }}</span
+          >
+        </div>
         <div class="flex justify-between pt-2">
           <span>{{ t("payment.paid") }}</span>
           <span>- €{{ depositAmount.toFixed(2) }}</span>
@@ -99,8 +108,11 @@
           <template #value="slotProps">
             <div class="flex items-center gap-2">
               <i class="pi pi-credit-card text-gray-400"></i>
-              <span>{{ slotProps.value }}</span>
+              <span>{{ t(`common.paymentMethod.${slotProps.value}`) }}</span>
             </div>
+          </template>
+          <template #option="slotProps">
+            {{ t(`common.paymentMethod.${slotProps.option}`) }}
           </template>
         </Dropdown>
       </div>
@@ -214,7 +226,14 @@
             @update:modelValue="onPaymentMethod2Change"
             :options="method2Options"
             class="w-full"
-          />
+          >
+            <template #value="slotProps">
+              {{ slotProps.value ? t(`common.paymentMethod.${slotProps.value}`) : "" }}
+            </template>
+            <template #option="slotProps">
+              {{ t(`common.paymentMethod.${slotProps.option}`) }}
+            </template>
+          </Dropdown>
 
           <GiftCardPicker
             v-if="paymentMethod2 === 'gift-card'"
@@ -310,6 +329,7 @@ const props = defineProps({
   currentApptTotal: { type: Number, default: 0 },
   previousDebt: { type: Number, default: 0 },
   packagesTotal: { type: Number, default: 0 },
+  giftCardsTotal: { type: Number, default: 0 },
   depositAmount: { type: Number, default: 0 },
   amountToPay: { type: Number, default: 0 },
   loading: { type: Boolean, default: false },

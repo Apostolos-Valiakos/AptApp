@@ -61,6 +61,13 @@
                 :style="{ backgroundColor: slotProps.data.color_code || 'var(--p-primary-300)' }"
               ></div>
               <span class="font-semibold text-gray-900">{{ slotProps.data.name }}</span>
+              <span
+                v-if="slotProps.data.combo_components?.length"
+                class="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-[var(--p-primary-50)] text-[var(--p-primary-600)]"
+                v-tooltip.top="slotProps.data.combo_components.map((c: any) => c.name).join(' + ')"
+              >
+                {{ t('services.table.combo') }}
+              </span>
             </div>
           </template>
         </Column>
@@ -230,6 +237,96 @@
               <span class="block text-xs text-gray-500 mt-0.5">{{ t('services.dialog.bookableOnlineNote') }}</span>
             </label>
           </div>
+
+          <!-- Default staff for this service (used when this service appears as a combo component block) -->
+          <div class="md:col-span-2">
+            <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('services.dialog.defaultStaff') }}</label>
+            <Dropdown
+              v-model="editingService.default_staff_id"
+              :options="staffList"
+              optionLabel="name"
+              optionValue="id"
+              showClear
+              filter
+              :placeholder="t('services.dialog.defaultStaffPlaceholder')"
+              class="w-full"
+            />
+            <p class="text-xs text-gray-400 mt-1">{{ t('services.dialog.defaultStaffNote') }}</p>
+          </div>
+
+          <!-- Combination of services -->
+          <div class="md:col-span-2 p-4 bg-gray-50 rounded-xl border border-gray-200">
+            <div class="flex items-start gap-3">
+              <Checkbox v-model="isCombo" :binary="true" inputId="isCombo" />
+              <label for="isCombo" class="cursor-pointer">
+                <span class="block text-sm font-medium text-gray-700">{{ t('services.dialog.isCombo') }}</span>
+                <span class="block text-xs text-gray-500 mt-0.5">{{ t('services.dialog.isComboNote') }}</span>
+              </label>
+            </div>
+            <div v-if="isCombo" class="mt-3">
+              <MultiSelect
+                v-model="editingService.combo_component_ids"
+                :options="comboComponentOptions"
+                optionLabel="name"
+                optionValue="id"
+                filter
+                display="chip"
+                :placeholder="t('services.dialog.comboComponentsPlaceholder')"
+                class="w-full"
+              />
+              <p class="text-xs text-gray-400 mt-2" v-if="comboSummary">{{ comboSummary }}</p>
+            </div>
+          </div>
+
+          <!-- Multiple variations (e.g. "30 min" / "60 min", each its own price) -->
+          <div class="md:col-span-2 p-4 bg-gray-50 rounded-xl border border-gray-200">
+            <div class="flex items-start gap-3">
+              <Checkbox v-model="hasVariations" :binary="true" inputId="hasVariations" />
+              <label for="hasVariations" class="cursor-pointer">
+                <span class="block text-sm font-medium text-gray-700">{{ t('services.dialog.hasVariations') }}</span>
+                <span class="block text-xs text-gray-500 mt-0.5">{{ t('services.dialog.hasVariationsNote') }}</span>
+              </label>
+            </div>
+            <div v-if="hasVariations" class="mt-3 space-y-2">
+              <div
+                v-for="(variation, idx) in editingService.variations"
+                :key="idx"
+                class="flex flex-wrap items-center gap-2 bg-white p-2 rounded-lg border border-gray-200"
+              >
+                <InputText
+                  v-model="variation.name"
+                  :placeholder="t('services.dialog.variationNamePlaceholder')"
+                  class="p-inputtext-sm flex-1 min-w-[10rem]"
+                />
+                <InputNumber
+                  v-model="variation.duration_minutes"
+                  :placeholder="t('services.dialog.duration')"
+                  suffix=" min"
+                  class="p-inputtext-sm w-32"
+                />
+                <InputNumber
+                  v-model="variation.price"
+                  mode="currency"
+                  currency="EUR"
+                  class="p-inputtext-sm w-32"
+                />
+                <Button
+                  icon="pi pi-trash"
+                  severity="danger"
+                  text
+                  size="small"
+                  @click="editingService.variations.splice(idx, 1)"
+                />
+              </div>
+              <Button
+                :label="t('services.dialog.addVariation')"
+                icon="pi pi-plus"
+                text
+                size="small"
+                @click="editingService.variations.push({ name: '', duration_minutes: 30, price: 0 })"
+              />
+            </div>
+          </div>
         </div>
       </div>
 
@@ -255,25 +352,30 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from "vue";
+import { ref, onMounted, computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 import Checkbox from "primevue/checkbox";
+import MultiSelect from "primevue/multiselect";
 
 const { t } = useI18n();
 
 onMounted(() => {
   fetchServices();
+  fetchStaff();
 });
 
 const toast = useToast();
 const confirm = useConfirm();
 
 const services = ref<any[]>([]);
+const staffList = ref<any[]>([]);
 const loading = ref(true);
 const dialogVisible = ref(false);
 const search = ref("");
+const isCombo = ref(false);
+const hasVariations = ref(false);
 
 const editingService = ref<any>({
   id: null,
@@ -283,7 +385,52 @@ const editingService = ref<any>({
   price: 0.0,
   color_code: "var(--p-primary-100)",
   bookable_online: false,
+  default_staff_id: null,
+  combo_component_ids: [],
+  variations: [],
 });
+
+// Services this one could list as combo components — everything except
+// itself (a combo can't include itself as a part of itself).
+const comboComponentOptions = computed(() =>
+  services.value.filter((s: any) => s.id !== editingService.value.id),
+);
+
+const comboSummary = computed(() => {
+  if (!isCombo.value || !editingService.value.combo_component_ids?.length) return "";
+  const picked = comboComponentOptions.value.filter((s: any) =>
+    editingService.value.combo_component_ids.includes(s.id),
+  );
+  const minutes = picked.reduce((sum: number, s: any) => sum + (s.duration_minutes || 0), 0);
+  const price = picked.reduce((sum: number, s: any) => sum + Number(s.price || 0), 0);
+  return t("services.dialog.comboComponentsSummary", {
+    minutes,
+    price: price.toFixed(2),
+  });
+});
+
+watch(isCombo, (val) => {
+  if (!val) editingService.value.combo_component_ids = [];
+});
+
+watch(hasVariations, (val) => {
+  if (!val) editingService.value.variations = [];
+  else if (!editingService.value.variations?.length) {
+    editingService.value.variations = [{ name: "", duration_minutes: 30, price: 0 }];
+  }
+});
+
+const fetchStaff = async () => {
+  const token = localStorage.getItem("token");
+  try {
+    const res = await fetch("/api/v1/staff", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.ok) staffList.value = await res.json();
+  } catch (err) {
+    // Non-critical — the default-staff dropdown just stays empty.
+  }
+};
 
 const categories = [
   "Hair",
@@ -340,12 +487,23 @@ const openNew = () => {
     price: 0.0,
     color_code: "var(--p-primary-100)",
     bookable_online: false,
+    default_staff_id: null,
+    combo_component_ids: [],
+    variations: [],
   };
+  isCombo.value = false;
+  hasVariations.value = false;
   dialogVisible.value = true;
 };
 
 const editService = (service: any) => {
-  editingService.value = { ...service };
+  editingService.value = {
+    ...service,
+    combo_component_ids: (service.combo_components || []).map((c: any) => c.id),
+    variations: (service.variations || []).map((v: any) => ({ ...v, price: Number(v.price) })),
+  };
+  isCombo.value = (service.combo_components || []).length > 0;
+  hasVariations.value = (service.variations || []).length > 0;
   dialogVisible.value = true;
 };
 
@@ -361,6 +519,9 @@ const saveService = async () => {
   }
 
   const payload = { ...editingService.value };
+  delete payload.combo_components;
+  if (!isCombo.value) payload.combo_component_ids = [];
+  if (!hasVariations.value) payload.variations = [];
 
   if (payload.color_code && !payload.color_code.startsWith("#")) {
     payload.color_code = `#${payload.color_code}`;

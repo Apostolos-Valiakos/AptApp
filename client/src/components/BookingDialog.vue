@@ -88,7 +88,7 @@
 
               <div v-if="!form.client_id" class="flex gap-2">
                 <AutoComplete
-                  v-model="selectedClient"
+                  :modelValue="selectedClient"
                   :suggestions="clientSuggestions"
                   optionLabel="full_name"
                   :placeholder="t('booking.searchClient')"
@@ -158,6 +158,9 @@
               :default-staff-id="currentStaffId"
               :timeOff="props.timeOff || []"
               :workingHours="props.workingHours || []"
+              :requireStaff="!form.is_block"
+              :shopMinTime="props.shopMinTime"
+              :shopMaxTime="props.shopMaxTime"
             />
 
             <!-- Status + Block time -->
@@ -237,17 +240,58 @@
               :ensureSaved="ensureSavedForPackage"
               @changed="onPackageChanged"
             />
+            <BookingGiftCards
+              :clientId="form.client_id"
+              :defaultCustomerName="selectedClient?.full_name"
+              v-model:pendingGiftCards="pendingGiftCards"
+            />
             <BookingDiscount
               v-model="discount"
               :codes="discountCodes"
               :discountAmount="discountAmount"
             />
+
+            <div v-if="canChangePriceOrRefund" class="flex gap-2 mb-6">
+              <Button
+                :label="t('priceChange.button')"
+                icon="pi pi-pencil"
+                severity="secondary"
+                outlined
+                size="small"
+                @click="priceChangeVisible = true"
+              />
+              <Button
+                :label="t('refund.button')"
+                icon="pi pi-replay"
+                severity="secondary"
+                outlined
+                size="small"
+                :disabled="form.deposit_amount <= 0"
+                @click="refundVisible = true"
+              />
+            </div>
+            <PriceChangeDialog
+              v-model:visible="priceChangeVisible"
+              :appointmentId="form.id"
+              :currentTotal="currentApptTotal"
+              :ensureSaved="ensureSavedForPackage"
+              @changed="onPriceChanged"
+            />
+            <RefundDialog
+              v-model:visible="refundVisible"
+              :appointmentId="form.id"
+              :maxRefundable="form.deposit_amount"
+              :ensureSaved="ensureSavedForPackage"
+              @refunded="onRefunded"
+            />
+
             <BookingPayments
               ref="bookingPaymentsRef"
               :totalDueNow="totalDueNow"
               :currentApptTotal="currentApptTotal"
               :previousDebt="previousDebt"
               :packagesTotal="pendingPackagesTotal"
+              :giftCardsTotal="pendingGiftCardsTotal"
               :depositAmount="form.deposit_amount"
               :loading="paymentLoading"
               :paidPaymentMethod="form.payment_method"
@@ -316,7 +360,7 @@
               <label for="notify" class="text-sm text-gray-600">
                 {{ t("booking.emailClient") }}
               </label> -->
-              <Checkbox
+              <!-- <Checkbox
                 v-model="form.save_receipt"
                 binary
                 inputId="saveReceipt"
@@ -326,12 +370,20 @@
                 class="text-sm font-medium text-gray-700 cursor-pointer"
               >
                 Save Receipt
-              </label>
+              </label> -->
+              <Button
+                v-if="currentTab !== 'Payment'"
+                label="Πληρωμή"
+                @click="currentTab = 'Payment'"
+                severity="success"
+              />
             </div>
             <Button
               :label="t('booking.save')"
               @click="save()"
               :loading="loading"
+              :disabled="!canSaveBooking"
+              v-tooltip.top="!canSaveBooking ? t('booking.validation.staffRequired') : null"
               class="w-full sm:w-auto px-8"
             />
             <!-- <div class="flex flex-col justify-end gap-3 pb-2">
@@ -438,6 +490,9 @@ import BookingServices from "./booking/bookingServices.vue";
 import BookingPayments from "./booking/bookingPayments.vue";
 import BookingDiscount from "./booking/BookingDiscount.vue";
 import BookingPackages from "./booking/BookingPackages.vue";
+import BookingGiftCards from "./booking/BookingGiftCards.vue";
+import PriceChangeDialog from "./booking/PriceChangeDialog.vue";
+import RefundDialog from "./booking/RefundDialog.vue";
 import {
   emptyDiscount,
   computeDiscountAmount,
@@ -456,9 +511,14 @@ import {
   describeServiceChanges,
   type ServiceSnapshot,
 } from "../utils/appointmentChanges";
+import { useAuthStore } from "../stores/auth";
 const confirm = useConfirm();
 const toast = useToast();
 const { t, locale } = useI18n();
+const authStore = useAuthStore();
+const canChangePriceOrRefund = computed(() => authStore.isShopAdmin);
+const priceChangeVisible = ref(false);
+const refundVisible = ref(false);
 
 const props = defineProps([
   "visible",
@@ -468,6 +528,8 @@ const props = defineProps([
   "allProducts",
   "timeOff",
   "workingHours",
+  "shopMinTime",
+  "shopMaxTime",
 ]);
 
 const emit = defineEmits(["update:visible", "save"]);
@@ -503,6 +565,18 @@ const form = ref<any>({
 // State lifted from children
 const servicesList = ref<Array<any>>([]);
 const productsList = ref<Array<any>>([]);
+
+// A staff member is required per service row — every block needs to land on
+// a specific person's calendar column. Doesn't apply to time-off blocks,
+// which don't carry appointment_services rows at all (see performSingleUpdate).
+const missingStaffService = computed(() =>
+  form.value.is_block
+    ? false
+    : servicesList.value.some((s: any) => s.service_id && !s.staff_id),
+);
+const canSaveBooking = computed(
+  () => servicesList.value.length > 0 && !missingStaffService.value,
+);
 
 // UI State
 const currentTab = ref("Booking");
@@ -556,7 +630,8 @@ onMounted(async () => {
     const res = await fetch("/api/v1/discount-codes", {
       headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
     });
-    if (res.ok) discountCodes.value = (await res.json()).filter((c: any) => c.is_active);
+    if (res.ok)
+      discountCodes.value = (await res.json()).filter((c: any) => c.is_active);
   } catch {
     // codes are optional; fixed/percent discounts still work
   }
@@ -633,6 +708,26 @@ const loadClientById = async (clientId: string, fallback: any) => {
   }
 };
 
+// Pre-selects the shop's single walk-in client on a brand-new, blank
+// appointment — lets staff save fast and attribute it to a real client
+// later via the same "×" clear-and-search flow used for any appointment.
+// Silently does nothing if it fails; staff can still pick a client by hand.
+const loadWalkInClient = async () => {
+  try {
+    const token = localStorage.getItem("token");
+    const res = await fetch("/api/v1/clients/walk-in", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.ok) {
+      const walkIn = await res.json();
+      selectedClient.value = walkIn;
+      form.value.client_id = walkIn.id;
+    }
+  } catch {
+    // leave the client picker blank if this fails
+  }
+};
+
 // Financial Calculations
 const discount = ref<DiscountState>(emptyDiscount());
 const discountCodes = ref<any[]>([]);
@@ -641,14 +736,26 @@ const originalDiscountAmount = ref(0);
 // Packages picked to buy alongside this payment (Payment tab) — sold in
 // full when the payment is submitted, added to the displayed total so
 // staff pay "service + package" as one number. See recordPayment below.
-const pendingPackages = ref<{ package_type_id: string; name: string; price: number }[]>([]);
+const pendingPackages = ref<
+  { package_type_id: string; name: string; price: number }[]
+>([]);
 const pendingPackagesTotal = computed(() =>
   pendingPackages.value.reduce((sum, p) => sum + Number(p.price), 0),
 );
 const bookingPackagesRef = ref<any>(null);
 
+const pendingGiftCards = ref<
+  { card_number: string; customer_name: string; initial_amount: number }[]
+>([]);
+const pendingGiftCardsTotal = computed(() =>
+  pendingGiftCards.value.reduce((sum, g) => sum + Number(g.initial_amount), 0),
+);
+
 const servicesTotal = computed(() =>
-  servicesList.value.reduce((sum, s) => sum + (Number(s.price_override) || 0), 0),
+  servicesList.value.reduce(
+    (sum, s) => sum + (Number(s.price_override) || 0),
+    0,
+  ),
 );
 const productsTotal = computed(() =>
   productsList.value.reduce(
@@ -657,7 +764,11 @@ const productsTotal = computed(() =>
   ),
 );
 const discountAmount = computed(() =>
-  computeDiscountAmount(discount.value, servicesTotal.value, productsTotal.value),
+  computeDiscountAmount(
+    discount.value,
+    servicesTotal.value,
+    productsTotal.value,
+  ),
 );
 const currentApptTotal = computed(
   () => servicesTotal.value + productsTotal.value - discountAmount.value,
@@ -720,8 +831,13 @@ const totalDueNow = computed(() => {
 
   // 2. Total Due = (Old Debt) + (Unpaid part of current visit) + any package
   // being bought alongside this payment (sold in full, not part of the
-  // appointment's own debt — see pendingPackages/recordPayment below).
-  return previousDebt.value + currentApptUnpaid + pendingPackagesTotal.value;
+  // appointment's own debt — see pendingPackages/pendingGiftCards/recordPayment below).
+  return (
+    previousDebt.value +
+    currentApptUnpaid +
+    pendingPackagesTotal.value +
+    pendingGiftCardsTotal.value
+  );
 });
 
 // Only clamp the entered amount when the total due drops below it (e.g. a service is removed).
@@ -842,12 +958,29 @@ watch(
       // === NEW MODE ===
       const newStart = val?.start_time ? new Date(val.start_time) : new Date();
 
-      selectedClient.value = null;
       clientSuggestions.value = [];
+      // A caller (e.g. the client search's "Book an appointment" button) can
+      // pre-select a client for a brand-new booking — everything else below
+      // still behaves exactly like starting from a blank slot. Otherwise,
+      // pre-select the shop's walk-in client so a booking can be saved fast
+      // and attributed to a real client later (see loadWalkInClient below).
+      if (val?.client_id) {
+        loadClientById(val.client_id, {
+          id: val.client_id,
+          first_name: val.first_name,
+          last_name: val.last_name,
+          full_name: `${val.first_name || ""} ${val.last_name || ""}`.trim(),
+          phone: val.phone,
+          outstanding_balance: Number(val.outstanding_balance || 0),
+        });
+      } else {
+        selectedClient.value = null;
+        loadWalkInClient();
+      }
 
       form.value = {
         id: null,
-        client_id: null,
+        client_id: val?.client_id || null,
         start_time: newStart,
         status: "new",
         deposit_amount: 0,
@@ -910,7 +1043,49 @@ const onPackageChanged = (data: any) => {
   if (data.amount) form.value.deposit_amount += Number(data.amount);
   if (data.status) form.value.status = data.status;
   if (data.payment_status) form.value.payment_status = data.payment_status;
-  originalSnapshot.value = { ...originalSnapshot.value, deposit: form.value.deposit_amount };
+  originalSnapshot.value = {
+    ...originalSnapshot.value,
+    deposit: form.value.deposit_amount,
+  };
+  emit("save");
+};
+
+// A manual checkout price change re-derives each service's price_override
+// server-side (see /api/v1/appointments/:id/price-change) — the server is
+// the sole authority on the split, so servicesList is replaced verbatim from
+// its response rather than re-deriving the same math client-side too.
+const onPriceChanged = (data: any) => {
+  if (Array.isArray(data.services)) {
+    servicesList.value = data.services.map((s: any) => ({
+      service_id: s.service_id,
+      staff_id: s.staff_id,
+      start_time: new Date(s.start_time),
+      duration_override: s.duration_override,
+      price_override: Number(s.price_override),
+    }));
+    originalServices.value = snapshotServices(servicesList.value);
+  }
+  if (data.new_balance !== undefined && selectedClient.value) {
+    selectedClient.value.outstanding_balance = Number(data.new_balance);
+  }
+  emit("save");
+};
+
+const onRefunded = (data: any) => {
+  if (data.new_balance !== undefined && selectedClient.value) {
+    selectedClient.value.outstanding_balance = Number(data.new_balance);
+  }
+  // deposit_amount tracks "amount paid so far" for this dialog's own display
+  // (max refundable, balance summary) — a refund reduces net-collected, so
+  // it needs to shrink the same way a payment grows it.
+  form.value.deposit_amount = Math.max(
+    0,
+    form.value.deposit_amount - Number(data.amount || 0),
+  );
+  originalSnapshot.value = {
+    ...originalSnapshot.value,
+    deposit: form.value.deposit_amount,
+  };
   emit("save");
 };
 
@@ -995,6 +1170,15 @@ const executeSave = async (close = true, scope = "single") => {
       severity: "warn",
       summary: t("common.error"),
       detail: t("booking.validation.addService"),
+      life: 3000,
+    });
+    return;
+  }
+  if (missingStaffService.value) {
+    toast.add({
+      severity: "warn",
+      summary: t("common.error"),
+      detail: t("booking.validation.staffRequired"),
       life: 3000,
     });
     return;
@@ -1139,7 +1323,12 @@ const recordPayment = async (
     redemptions2?: any[];
   } | null,
 ) => {
-  if (amountToPayNow.value <= 0 && pendingPackagesTotal.value <= 0) return;
+  if (
+    amountToPayNow.value <= 0 &&
+    pendingPackagesTotal.value <= 0 &&
+    pendingGiftCardsTotal.value <= 0
+  )
+    return;
   paymentLoading.value = true;
 
   // The entered amount covers "service + package" together (see totalDueNow),
@@ -1147,7 +1336,11 @@ const recordPayment = async (
   // logic server-side — the package is sold in full, separately, regardless
   // of how much of the service itself is actually being paid right now.
   const packageTotal = pendingPackagesTotal.value;
-  const serviceLegAmount = Math.max(0, amountToPayNow.value - packageTotal);
+  const giftCardTotal = pendingGiftCardsTotal.value;
+  const serviceLegAmount = Math.max(
+    0,
+    amountToPayNow.value - packageTotal - giftCardTotal,
+  );
 
   // Save any pending form changes (services, notes) before processing payment.
   // Do NOT force status='completed' here — the transaction endpoint handles that
@@ -1190,6 +1383,9 @@ const recordPayment = async (
               })),
             }
           : {}),
+        ...(giftCardTotal > 0
+          ? { gift_card_purchases: pendingGiftCards.value }
+          : {}),
         ...(split
           ? {
               amount2: split.amount2,
@@ -1214,6 +1410,7 @@ const recordPayment = async (
       // will be created once it syncs.
       form.value.deposit_amount += totalPaidThisVisit;
       pendingPackages.value = [];
+      pendingGiftCards.value = [];
       toast.add({
         severity: "warn",
         summary: t("booking.toast.savedOffline"),
@@ -1257,6 +1454,18 @@ const recordPayment = async (
         });
         pendingPackages.value = [];
         bookingPackagesRef.value?.load();
+      }
+
+      if (data.gift_cards_purchased?.length) {
+        toast.add({
+          severity: "success",
+          summary: t("giftCards.quickSell.sold"),
+          detail: data.gift_cards_purchased
+            .map((g: any) => g.card_number)
+            .join(", "),
+          life: 3000,
+        });
+        pendingGiftCards.value = [];
       }
 
       if (split) {
