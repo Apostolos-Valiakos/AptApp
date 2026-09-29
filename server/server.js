@@ -2710,9 +2710,29 @@ const setServiceVariations = async (dbClient, serviceId, variations) => {
 app.get("/api/v1/services", authenticateToken, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT * FROM services WHERE shop_id = $1 AND is_active = true ORDER BY name`,
+      `SELECT s.*, COALESCE(sc.sort_order, 999999) AS category_sort_order
+       FROM services s
+       LEFT JOIN service_categories sc ON sc.shop_id = s.shop_id AND sc.name = s.category
+       WHERE s.shop_id = $1 AND s.is_active = true
+       ORDER BY category_sort_order, s.sort_order, s.name`,
       [req.shopId],
     );
+    const { rows: eligibilityRows } = await pool.query(
+      `SELECT st.id AS staff_id, s.id AS service_id
+       FROM staff st
+       CROSS JOIN services s
+       WHERE st.shop_id = $1 AND s.shop_id = $1 AND st.is_active = true
+       AND (
+         NOT EXISTS (SELECT 1 FROM staff_services ss WHERE ss.staff_id = st.id)
+         OR EXISTS (SELECT 1 FROM staff_services ss WHERE ss.staff_id = st.id AND ss.service_id = s.id)
+       )`,
+      [req.shopId],
+    );
+    const eligibleStaffByService = {};
+    for (const row of eligibilityRows) {
+      if (!eligibleStaffByService[row.service_id]) eligibleStaffByService[row.service_id] = [];
+      eligibleStaffByService[row.service_id].push(row.staff_id);
+    }
     const { rows: comboRows } = await pool.query(
       `SELECT scc.service_id, scc.sort_order, s.id, s.name, s.duration_minutes, s.price, s.default_staff_id
        FROM service_combo_components scc
@@ -2751,11 +2771,94 @@ app.get("/api/v1/services", authenticateToken, async (req, res) => {
         ...r,
         combo_components: byService[r.id] || [],
         variations: variationsByService[r.id] || [],
+        eligible_staff_ids: eligibleStaffByService[r.id] || [],
       })),
     );
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Ensures `category` has a row in service_categories (appending it to the
+// end of the shop's category order the first time it's used), so a
+// brand-new category typed into the edit dialog is immediately draggable.
+const ensureCategoryExists = async (dbClient, shopId, category) => {
+  if (!category?.trim()) return;
+  const { rows } = await dbClient.query(
+    "SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM service_categories WHERE shop_id = $1",
+    [shopId],
+  );
+  await dbClient.query(
+    `INSERT INTO service_categories (shop_id, name, sort_order) VALUES ($1, $2, $3)
+     ON CONFLICT (shop_id, name) DO NOTHING`,
+    [shopId, category, rows[0].next],
+  );
+};
+
+app.get("/api/v1/service-categories", authenticateToken, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      "SELECT id, name, sort_order FROM service_categories WHERE shop_id = $1 ORDER BY sort_order",
+      [req.shopId],
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.put("/api/v1/service-categories/reorder", authenticateToken, async (req, res) => {
+  const { order } = req.body;
+  if (!Array.isArray(order)) {
+    return res.status(400).json({ error: "order must be an array of category names" });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    for (let i = 0; i < order.length; i++) {
+      await client.query(
+        `INSERT INTO service_categories (shop_id, name, sort_order) VALUES ($1, $2, $3)
+         ON CONFLICT (shop_id, name) DO UPDATE SET sort_order = $3`,
+        [req.shopId, order[i], i],
+      );
+    }
+    await client.query("COMMIT");
+    res.json({ success: true });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error(err);
+    res.status(500).json({ error: "Reorder failed" });
+  } finally {
+    client.release();
+  }
+});
+
+app.put("/api/v1/services/reorder", authenticateToken, async (req, res) => {
+  const { order } = req.body;
+  if (!Array.isArray(order)) {
+    return res.status(400).json({ error: "order must be an array of service ids" });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    for (let i = 0; i < order.length; i++) {
+      const svcId = safeUUID(order[i]);
+      if (!svcId) continue;
+      await client.query(
+        "UPDATE services SET sort_order = $1 WHERE id = $2 AND shop_id = $3",
+        [i, svcId, req.shopId],
+      );
+    }
+    await client.query("COMMIT");
+    res.json({ success: true });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error(err);
+    res.status(500).json({ error: "Reorder failed" });
+  } finally {
+    client.release();
   }
 });
 
@@ -2770,6 +2873,7 @@ app.post("/api/v1/services", authenticateToken, async (req, res) => {
     default_staff_id,
     combo_component_ids,
     variations,
+    staff_ids,
   } = req.body;
 
   if (!name?.trim()) {
@@ -2787,9 +2891,14 @@ app.post("/api/v1/services", authenticateToken, async (req, res) => {
   }
 
   try {
+    await ensureCategoryExists(pool, req.shopId, category);
+    const { rows: sortRows } = await pool.query(
+      "SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM services WHERE shop_id = $1 AND category = $2",
+      [req.shopId, category],
+    );
     const { rows } = await pool.query(
-      `INSERT INTO services (name, duration_minutes, price, category, color_code, shop_id, bookable_online, default_staff_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+      `INSERT INTO services (name, duration_minutes, price, category, color_code, shop_id, bookable_online, default_staff_id, sort_order)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
       [
         name,
         duration_minutes,
@@ -2799,6 +2908,7 @@ app.post("/api/v1/services", authenticateToken, async (req, res) => {
         req.shopId,
         !!bookable_online,
         safeUUID(default_staff_id),
+        sortRows[0].next,
       ],
     );
     if (Array.isArray(combo_component_ids)) {
@@ -2806,6 +2916,9 @@ app.post("/api/v1/services", authenticateToken, async (req, res) => {
     }
     if (Array.isArray(variations)) {
       await setServiceVariations(pool, rows[0].id, variations);
+    }
+    if (Array.isArray(staff_ids)) {
+      await setServiceStaffEligibility(pool, req.shopId, rows[0].id, staff_ids);
     }
     res.json({ success: true, id: rows[0].id });
   } catch (err) {
@@ -2826,8 +2939,10 @@ app.put("/api/v1/services/:id", authenticateToken, async (req, res) => {
     default_staff_id,
     combo_component_ids,
     variations,
+    staff_ids,
   } = req.body;
   try {
+    await ensureCategoryExists(pool, req.shopId, category);
     await pool.query(
       `UPDATE services SET name=$1, duration_minutes=$2, price=$3, category=$4, color_code=$5, bookable_online=$6, default_staff_id=$7 WHERE id=$8 AND shop_id=$9`,
       [
@@ -2847,6 +2962,9 @@ app.put("/api/v1/services/:id", authenticateToken, async (req, res) => {
     }
     if (Array.isArray(variations)) {
       await setServiceVariations(pool, id, variations);
+    }
+    if (Array.isArray(staff_ids)) {
+      await setServiceStaffEligibility(pool, req.shopId, id, staff_ids);
     }
     res.json({ success: true });
   } catch (err) {
@@ -6973,10 +7091,11 @@ app.get("/api/v1/portal/services", authenticateToken, async (req, res) => {
       return res.status(404).json({ error: "self_booking_disabled" });
     }
     const { rows } = await pool.query(
-      `SELECT id, name, duration_minutes, price, category, color_code
-       FROM services
-       WHERE shop_id = $1 AND is_active = true AND bookable_online = true
-       ORDER BY category, name`,
+      `SELECT s.id, s.name, s.duration_minutes, s.price, s.category, s.color_code
+       FROM services s
+       LEFT JOIN service_categories sc ON sc.shop_id = s.shop_id AND sc.name = s.category
+       WHERE s.shop_id = $1 AND s.is_active = true AND s.bookable_online = true
+       ORDER BY COALESCE(sc.sort_order, 999999), s.sort_order, s.name`,
       [req.shopId],
     );
     res.json(rows);
@@ -7956,6 +8075,109 @@ app.get("/api/v1/availability", authenticateToken, async (req, res) => {
     console.error("Failed to run service variations schema setup:", err);
   }
 })();
+
+// ==================== SERVICE CATEGORIES / MANUAL ORDERING SCHEMA ====================
+// `services.category` stays free text (unchanged everywhere it's already
+// read/written) — this table just gives each distinct category name within a
+// shop a place to store a drag-reorderable position, without a sweeping
+// refactor to a hard foreign key. `services.sort_order` is the equivalent for
+// ordering services within their own category.
+(async () => {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS service_categories (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+        name VARCHAR(100) NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        UNIQUE(shop_id, name)
+      )
+    `);
+    await pool.query(
+      `ALTER TABLE services ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0`,
+    );
+
+    // One-time backfill per shop: seed service_categories from whatever
+    // category names already exist, and give every service a deterministic
+    // initial sort_order (alphabetical within its category) — but only for a
+    // shop that has never had any service manually reordered yet (sort_order
+    // still 0 everywhere). The moment a single service in a shop gets a real
+    // position, this becomes permanently inert for that shop.
+    await pool.query(`
+      INSERT INTO service_categories (shop_id, name, sort_order)
+      SELECT shop_id, category, ROW_NUMBER() OVER (PARTITION BY shop_id ORDER BY category) - 1
+      FROM (SELECT DISTINCT shop_id, category FROM services WHERE category IS NOT NULL AND category != '') sub
+      ON CONFLICT (shop_id, name) DO NOTHING
+    `);
+    await pool.query(`
+      UPDATE services s
+      SET sort_order = sub.rn - 1
+      FROM (
+        SELECT id, ROW_NUMBER() OVER (PARTITION BY shop_id, category ORDER BY name) AS rn
+        FROM services
+      ) sub
+      WHERE s.id = sub.id
+      AND NOT EXISTS (SELECT 1 FROM services s2 WHERE s2.shop_id = s.shop_id AND s2.sort_order != 0)
+    `);
+  } catch (err) {
+    console.error("Failed to run service categories schema setup:", err);
+  }
+})();
+
+// Sets exactly which staff are eligible for `serviceId`, safely preserving
+// each staff member's existing eligibility for every OTHER service.
+// staff_services' only convention (see assertStaffAvailable / self-booking
+// eligibility checks) is "a staff member with zero rows at all is eligible
+// for everything" — a GLOBAL per-staff flag, not decomposable per-service.
+// So a staff member who is currently unrestricted and is being EXCLUDED from
+// this one service must first have their eligibility for every OTHER active
+// service materialized into explicit rows — otherwise simply not inserting a
+// row for this service would flip them to "restricted" and silently make
+// them ineligible for every other service too.
+const setServiceStaffEligibility = async (dbClient, shopId, serviceId, staffIds) => {
+  const allStaffRes = await dbClient.query(
+    "SELECT id FROM staff WHERE shop_id = $1 AND is_active = true",
+    [shopId],
+  );
+  const checkedSet = new Set(staffIds);
+
+  const otherServicesRes = await dbClient.query(
+    "SELECT id FROM services WHERE shop_id = $1 AND id != $2",
+    [shopId, serviceId],
+  );
+  const otherServiceIds = otherServicesRes.rows.map((r) => r.id);
+
+  for (const { id: staffId } of allStaffRes.rows) {
+    const isChecked = checkedSet.has(staffId);
+    const existingRes = await dbClient.query(
+      "SELECT 1 FROM staff_services WHERE staff_id = $1 LIMIT 1",
+      [staffId],
+    );
+    const isCurrentlyUnrestricted = existingRes.rows.length === 0;
+
+    if (!isChecked) {
+      if (isCurrentlyUnrestricted && otherServiceIds.length > 0) {
+        for (const otherId of otherServiceIds) {
+          await dbClient.query(
+            `INSERT INTO staff_services (staff_id, service_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+            [staffId, otherId],
+          );
+        }
+      }
+      await dbClient.query(
+        "DELETE FROM staff_services WHERE staff_id = $1 AND service_id = $2",
+        [staffId, serviceId],
+      );
+    } else if (!isCurrentlyUnrestricted) {
+      await dbClient.query(
+        `INSERT INTO staff_services (staff_id, service_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+        [staffId, serviceId],
+      );
+    }
+    // else: checked and already unrestricted -> already implicitly eligible, no row needed.
+  }
+};
 
 // ==================== REFUNDS & CHECKOUT PRICE CHANGES SCHEMA ====================
 // Refunds are ordinary negative-amount `transactions` rows (transaction_type

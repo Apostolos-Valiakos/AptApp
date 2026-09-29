@@ -403,6 +403,8 @@ export default {
     subtitle: '{count} services',
     addNew: 'Add New Service',
     search: 'Search services...',
+    dragHint: 'Drag a category or service by its handle to change the order it appears in throughout the app.',
+    noSearchResults: 'No services match your search',
     table: {
       name: 'Service Name',
       category: 'Category',
@@ -412,6 +414,7 @@ export default {
       uncategorized: 'Uncategorized',
       bookableOnline: 'Online booking',
       combo: 'Combo',
+      hasOptions: '{count} options',
     },
     dialog: {
       editService: 'Edit Service',
@@ -429,6 +432,10 @@ export default {
       defaultStaff: 'Default staff for this service',
       defaultStaffPlaceholder: 'No default — pick manually each time',
       defaultStaffNote: 'Auto-assigned whenever this service appears as a combo’s component block (e.g. the Sauna staff member).',
+      staffEligibility: 'Who can perform this service',
+      staffEligibilityNote: 'Unchecking someone removes them from this service only — their eligibility for every other service stays the same.',
+      selectAllStaff: 'Select all',
+      deselectAllStaff: 'Deselect all',
       isCombo: 'This is a combination of services',
       isComboNote: 'When booked, this splits into a schedule block for each service below, right after this one — each with its own default staff if set.',
       comboComponentsPlaceholder: 'Select the services included in this combo',
@@ -449,6 +456,7 @@ export default {
       loadFailed: 'Failed to load services',
       saveFailed: 'Failed to save service',
       deleteFailed: 'Failed to delete',
+      reorderFailed: 'Could not save the new order, reloading…',
     },
     confirmDelete: 'Delete "{name}" permanently?',
     duration: {
