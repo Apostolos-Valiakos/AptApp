@@ -18,140 +18,105 @@
           @click="openNew"
         />
       </div>
+      <div class="mt-4">
+        <span class="p-input-icon-left">
+          <i class="pi pi-search mr-3" />
+          <InputText
+            v-model="search"
+            :placeholder="t('services.search')"
+            class="w-64"
+          />
+        </span>
+      </div>
     </div>
 
-    <!-- Data Table Card -->
-    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-      <DataTable
-        :value="filteredServices"
-        :paginator="true"
-        :rows="10"
-        :rowsPerPageOptions="[10, 25, 50]"
-        responsiveLayout="scroll"
-        class="p-datatable-sm"
-        :loading="loading"
+    <div v-if="loading" class="bg-white rounded-2xl shadow-sm border border-gray-100 p-16 text-center">
+      <i class="pi pi-spin pi-spinner text-3xl text-gray-300"></i>
+    </div>
+
+    <div v-else-if="!services.length" class="bg-white rounded-2xl shadow-sm border border-gray-100 py-16 text-center">
+      <i class="pi pi-list text-5xl text-gray-200 mb-4"></i>
+      <p class="text-gray-500 font-semibold text-lg">{{ t('services.empty.title') }}</p>
+      <p class="text-gray-400 text-sm mt-1">{{ t('services.empty.subtitle') }}</p>
+    </div>
+
+    <!-- Search results: flat, non-draggable -->
+    <div v-else-if="search" class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      <div v-if="!searchResults.length" class="py-16 text-center">
+        <i class="pi pi-search text-4xl text-gray-200 mb-3"></i>
+        <p class="text-gray-400 text-sm">{{ t('services.noSearchResults') }}</p>
+      </div>
+      <div
+        v-for="service in searchResults"
+        :key="service.id"
+        class="flex items-center gap-3 px-5 py-3 border-b border-gray-50 last:border-b-0 hover:bg-gray-50"
       >
-        <template #header>
-          <div class="flex justify-between">
-            <span class="p-input-icon-left">
-              <i class="pi pi-search mr-3" />
-              <InputText
-                v-model="search"
-                :placeholder="t('services.search')"
-                class="w-64"
-              />
-            </span>
-          </div>
-        </template>
-
-        <template #empty>
-          <div class="flex flex-col items-center justify-center py-16 text-center">
-            <i class="pi pi-list text-5xl text-gray-200 mb-4"></i>
-            <p class="text-gray-500 font-semibold text-lg">{{ t('services.empty.title') }}</p>
-            <p class="text-gray-400 text-sm mt-1">{{ t('services.empty.subtitle') }}</p>
-          </div>
-        </template>
-
-        <!-- Service Name with color accent bar -->
-        <Column field="name" :header="t('services.table.name')" sortable>
-          <template #body="slotProps">
-            <div class="flex items-center gap-3">
-              <div
-                class="w-1 h-8 rounded-full flex-shrink-0"
-                :style="{ backgroundColor: slotProps.data.color_code || 'var(--p-primary-300)' }"
-              ></div>
-              <span class="font-semibold text-gray-900">{{ slotProps.data.name }}</span>
-              <span
-                v-if="slotProps.data.combo_components?.length"
-                class="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-[var(--p-primary-50)] text-[var(--p-primary-600)]"
-                v-tooltip.top="slotProps.data.combo_components.map((c: any) => c.name).join(' + ')"
-              >
-                {{ t('services.table.combo') }}
-              </span>
-            </div>
-          </template>
-        </Column>
-
-        <Column field="category" :header="t('services.table.category')" sortable>
-          <template #body="slotProps">
-            <span
-              class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border"
-              :style="{
-                backgroundColor: (slotProps.data.color_code || 'var(--p-primary-100)') + '20',
-                color: slotProps.data.color_code || 'var(--p-primary-700)',
-                borderColor: slotProps.data.color_code || 'var(--p-primary-200)',
-              }"
-            >
-              {{ slotProps.data.category || t('services.table.uncategorized') }}
-            </span>
-          </template>
-        </Column>
-
-        <Column field="duration_minutes" :header="t('services.table.duration')" sortable>
-          <template #body="slotProps">
-            <span class="inline-flex items-center gap-1.5 text-sm text-gray-700">
-              <i class="pi pi-clock text-gray-400 text-xs"></i>
-              {{ formatDuration(slotProps.data.duration_minutes) }}
-            </span>
-          </template>
-        </Column>
-
-        <Column field="price" :header="t('services.table.price')" sortable>
-          <template #body="slotProps">
-            <span class="inline-flex items-center gap-1 text-sm font-medium text-gray-800">
-              <i class="pi pi-euro text-gray-400 text-xs"></i>
-              {{ Number(slotProps.data.price).toFixed(2) }}
-            </span>
-          </template>
-        </Column>
-
-        <!-- Enlarged color swatch with hex code -->
-        <Column field="color_code" :header="t('services.table.color')">
-          <template #body="slotProps">
-            <div class="flex items-center gap-2">
-              <div
-                class="w-8 h-8 rounded-lg border border-gray-200 shadow-sm flex-shrink-0"
-                :style="{ backgroundColor: slotProps.data.color_code || '#e5e7eb' }"
-              ></div>
-              <span class="text-xs text-gray-500 font-mono">{{ slotProps.data.color_code || '—' }}</span>
-            </div>
-          </template>
-        </Column>
-
-        <Column field="bookable_online" :header="t('services.table.bookableOnline')">
-          <template #body="slotProps">
-            <i
-              v-if="slotProps.data.bookable_online"
-              class="pi pi-check-circle text-green-600"
-              v-tooltip.top="t('services.dialog.bookableOnline')"
-            ></i>
-            <i v-else class="pi pi-minus text-gray-300"></i>
-          </template>
-        </Column>
-
-        <Column :header="t('common.actions')">
-          <template #body="slotProps">
-            <div class="flex gap-1.5 items-center">
-              <Button
-                icon="pi pi-pencil"
-                class="p-button-rounded p-button-text p-button-sm"
-                v-tooltip.top="t('common.edit')"
-                :aria-label="t('common.edit')"
-                @click="editService(slotProps.data)"
-              />
-              <Button
-                icon="pi pi-trash"
-                class="p-button-rounded p-button-text p-button-sm"
-                severity="danger"
-                v-tooltip.top="t('common.delete')"
-                :aria-label="t('common.delete')"
-                @click="confirmDelete(slotProps.data)"
-              />
-            </div>
-          </template>
-        </Column>
-      </DataTable>
+        <ServiceRowBody :service="service" @edit="editService(service)" @delete="confirmDelete(service)" />
+      </div>
     </div>
+
+    <!-- Grouped, draggable view -->
+    <template v-else>
+      <p class="text-xs text-gray-400 flex items-center gap-1.5 px-1">
+        <i class="pi pi-info-circle"></i>
+        {{ t('services.dragHint') }}
+      </p>
+
+      <draggable
+        v-model="groupedServices"
+        item-key="label"
+        handle=".category-drag-handle"
+        class="space-y-4"
+        ghost-class="drag-ghost"
+        @end="onCategoryDragEnd"
+      >
+        <template #item="{ element: group }">
+          <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="flex items-center gap-3 px-5 py-4 border-b border-gray-100 bg-gray-50/60">
+              <i class="pi pi-bars category-drag-handle cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500"></i>
+              <h3 class="font-bold text-gray-900">{{ group.label }}</h3>
+              <span class="text-xs text-gray-400">({{ group.items.length }})</span>
+            </div>
+            <draggable
+              v-model="group.items"
+              item-key="id"
+              handle=".service-drag-handle"
+              ghost-class="drag-ghost"
+              @end="onServiceDragEnd(group)"
+            >
+              <template #item="{ element: service }">
+                <div class="flex items-center gap-3 px-5 py-3 border-b border-gray-50 last:border-b-0 hover:bg-gray-50">
+                  <i class="pi pi-bars service-drag-handle cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 text-sm"></i>
+                  <ServiceRowBody :service="service" @edit="editService(service)" @delete="confirmDelete(service)" />
+                </div>
+              </template>
+            </draggable>
+          </div>
+        </template>
+      </draggable>
+
+      <!-- Uncategorized — always last, service-level drag only (no category to reposition) -->
+      <div v-if="uncategorizedGroup.items.length" class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mt-4">
+        <div class="flex items-center gap-3 px-5 py-4 border-b border-gray-100 bg-gray-50/60">
+          <h3 class="font-bold text-gray-900">{{ uncategorizedGroup.label }}</h3>
+          <span class="text-xs text-gray-400">({{ uncategorizedGroup.items.length }})</span>
+        </div>
+        <draggable
+          v-model="uncategorizedGroup.items"
+          item-key="id"
+          handle=".service-drag-handle"
+          ghost-class="drag-ghost"
+          @end="onServiceDragEnd(uncategorizedGroup)"
+        >
+          <template #item="{ element: service }">
+            <div class="flex items-center gap-3 px-5 py-3 border-b border-gray-50 last:border-b-0 hover:bg-gray-50">
+              <i class="pi pi-bars service-drag-handle cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 text-sm"></i>
+              <ServiceRowBody :service="service" @edit="editService(service)" @delete="confirmDelete(service)" />
+            </div>
+          </template>
+        </draggable>
+      </div>
+    </template>
 
     <!-- Edit / Add Dialog -->
     <Dialog
@@ -254,6 +219,33 @@
             <p class="text-xs text-gray-400 mt-1">{{ t('services.dialog.defaultStaffNote') }}</p>
           </div>
 
+          <!-- Staff eligibility -->
+          <div class="md:col-span-2 p-4 bg-gray-50 rounded-xl border border-gray-200">
+            <div class="flex items-center justify-between mb-3 gap-3">
+              <div>
+                <span class="block text-sm font-medium text-gray-700">{{ t('services.dialog.staffEligibility') }}</span>
+                <span class="block text-xs text-gray-500 mt-0.5">{{ t('services.dialog.staffEligibilityNote') }}</span>
+              </div>
+              <button
+                type="button"
+                class="text-xs font-medium text-[var(--p-primary-600)] hover:underline whitespace-nowrap"
+                @click="toggleAllStaff"
+              >
+                {{ allStaffChecked ? t('services.dialog.deselectAllStaff') : t('services.dialog.selectAllStaff') }}
+              </button>
+            </div>
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              <label
+                v-for="staff in staffList"
+                :key="staff.id"
+                class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer"
+              >
+                <Checkbox v-model="editingService.staff_ids" :value="staff.id" />
+                {{ staff.name }}
+              </label>
+            </div>
+          </div>
+
           <!-- Combination of services -->
           <div class="md:col-span-2 p-4 bg-gray-50 rounded-xl border border-gray-200">
             <div class="flex items-start gap-3">
@@ -352,14 +344,92 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from "vue";
+import { ref, onMounted, computed, watch, h } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 import Checkbox from "primevue/checkbox";
 import MultiSelect from "primevue/multiselect";
+import draggable from "vuedraggable";
+import { groupServicesByCategory } from "../utils/serviceGroups";
 
 const { t } = useI18n();
+
+// Small reusable row body (name/duration/price/badges/actions), shared by the
+// search-results list, each category group, and the uncategorized group —
+// defined inline via the render function so it stays in this one file rather
+// than a whole extra component just for a ~15-line row.
+const ServiceRowBody = (props: { service: any }, { emit }: any) =>
+  h("div", { class: "flex items-center gap-3 flex-1 min-w-0" }, [
+    h("div", {
+      class: "w-1 h-8 rounded-full flex-shrink-0",
+      style: { backgroundColor: props.service.color_code || "var(--p-primary-300)" },
+    }),
+    h("div", { class: "flex-1 min-w-0" }, [
+      h("div", { class: "flex items-center gap-2 flex-wrap" }, [
+        h("span", { class: "font-semibold text-gray-900" }, props.service.name),
+        props.service.combo_components?.length
+          ? h(
+              "span",
+              {
+                class:
+                  "text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-[var(--p-primary-50)] text-[var(--p-primary-600)]",
+                title: props.service.combo_components.map((c: any) => c.name).join(" + "),
+              },
+              t("services.table.combo"),
+            )
+          : null,
+        props.service.variations?.length
+          ? h(
+              "span",
+              {
+                class:
+                  "text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-purple-50 text-purple-600",
+              },
+              t("services.table.hasOptions", { count: props.service.variations.length }),
+            )
+          : null,
+      ]),
+    ]),
+    h("span", { class: "inline-flex items-center gap-1.5 text-sm text-gray-700 flex-shrink-0 w-24" }, [
+      h("i", { class: "pi pi-clock text-gray-400 text-xs" }),
+      formatDurationLabel(props.service.duration_minutes),
+    ]),
+    h("span", { class: "inline-flex items-center gap-1 text-sm font-medium text-gray-800 flex-shrink-0 w-20" }, [
+      h("i", { class: "pi pi-euro text-gray-400 text-xs" }),
+      Number(props.service.price).toFixed(2),
+    ]),
+    h("i", {
+      class: props.service.bookable_online
+        ? "pi pi-check-circle text-green-600 flex-shrink-0"
+        : "pi pi-minus text-gray-300 flex-shrink-0",
+      title: t("services.dialog.bookableOnline"),
+    }),
+    h("div", { class: "flex gap-1 items-center flex-shrink-0" }, [
+      h(
+        "button",
+        {
+          type: "button",
+          class: "p-2 rounded-full hover:bg-gray-100 text-gray-500",
+          title: t("common.edit"),
+          onClick: () => emit("edit"),
+        },
+        h("i", { class: "pi pi-pencil text-sm" }),
+      ),
+      h(
+        "button",
+        {
+          type: "button",
+          class: "p-2 rounded-full hover:bg-red-50 text-red-500",
+          title: t("common.delete"),
+          onClick: () => emit("delete"),
+        },
+        h("i", { class: "pi pi-trash text-sm" }),
+      ),
+    ]),
+  ]);
+ServiceRowBody.props = ["service"];
+ServiceRowBody.emits = ["edit", "delete"];
 
 onMounted(() => {
   fetchServices();
@@ -377,6 +447,27 @@ const search = ref("");
 const isCombo = ref(false);
 const hasVariations = ref(false);
 
+const groupedServices = ref<{ label: string; items: any[] }[]>([]);
+const uncategorizedGroup = ref<{ label: string; items: any[] }>({ label: "", items: [] });
+
+const rebuildGroups = () => {
+  const uncategorizedLabel = t("services.table.uncategorized");
+  const grouped = groupServicesByCategory(services.value, uncategorizedLabel);
+  groupedServices.value = grouped.filter((g) => g.label !== uncategorizedLabel);
+  uncategorizedGroup.value = grouped.find((g) => g.label === uncategorizedLabel) || {
+    label: uncategorizedLabel,
+    items: [],
+  };
+};
+
+const searchResults = computed(() => {
+  if (!search.value) return [];
+  const q = search.value.toLowerCase();
+  return services.value.filter(
+    (s) => s.name.toLowerCase().includes(q) || s.category?.toLowerCase().includes(q),
+  );
+});
+
 const editingService = ref<any>({
   id: null,
   name: "",
@@ -388,7 +479,16 @@ const editingService = ref<any>({
   default_staff_id: null,
   combo_component_ids: [],
   variations: [],
+  staff_ids: [],
 });
+
+const allStaffChecked = computed(
+  () => staffList.value.length > 0 && editingService.value.staff_ids?.length === staffList.value.length,
+);
+
+const toggleAllStaff = () => {
+  editingService.value.staff_ids = allStaffChecked.value ? [] : staffList.value.map((s: any) => s.id);
+};
 
 // Services this one could list as combo components — everything except
 // itself (a combo can't include itself as a part of itself).
@@ -428,7 +528,7 @@ const fetchStaff = async () => {
     });
     if (res.ok) staffList.value = await res.json();
   } catch (err) {
-    // Non-critical — the default-staff dropdown just stays empty.
+    // Non-critical — the default-staff dropdown and eligibility grid just stay empty.
   }
 };
 
@@ -456,6 +556,7 @@ const fetchServices = async () => {
     });
     if (res.ok) {
       services.value = await res.json();
+      rebuildGroups();
     } else if (res.status === 401) {
       console.error("Unauthorized");
     }
@@ -470,14 +571,35 @@ const fetchServices = async () => {
   }
 };
 
-const filteredServices = computed(() => {
-  if (!search.value) return services.value;
-  return services.value.filter(
-    (s) =>
-      s.name.toLowerCase().includes(search.value.toLowerCase()) ||
-      s.category?.toLowerCase().includes(search.value.toLowerCase())
-  );
-});
+const token = () => localStorage.getItem("token");
+
+const onCategoryDragEnd = async () => {
+  try {
+    const res = await fetch("/api/v1/service-categories/reorder", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
+      body: JSON.stringify({ order: groupedServices.value.map((g) => g.label) }),
+    });
+    if (!res.ok) throw new Error();
+  } catch (err) {
+    toast.add({ severity: "error", summary: t("common.error"), detail: t("services.toast.reorderFailed"), life: 3000 });
+    fetchServices();
+  }
+};
+
+const onServiceDragEnd = async (group: { items: any[] }) => {
+  try {
+    const res = await fetch("/api/v1/services/reorder", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
+      body: JSON.stringify({ order: group.items.map((s) => s.id) }),
+    });
+    if (!res.ok) throw new Error();
+  } catch (err) {
+    toast.add({ severity: "error", summary: t("common.error"), detail: t("services.toast.reorderFailed"), life: 3000 });
+    fetchServices();
+  }
+};
 
 const openNew = () => {
   editingService.value = {
@@ -490,6 +612,7 @@ const openNew = () => {
     default_staff_id: null,
     combo_component_ids: [],
     variations: [],
+    staff_ids: staffList.value.map((s: any) => s.id),
   };
   isCombo.value = false;
   hasVariations.value = false;
@@ -501,6 +624,7 @@ const editService = (service: any) => {
     ...service,
     combo_component_ids: (service.combo_components || []).map((c: any) => c.id),
     variations: (service.variations || []).map((v: any) => ({ ...v, price: Number(v.price) })),
+    staff_ids: [...(service.eligible_staff_ids || [])],
   };
   isCombo.value = (service.combo_components || []).length > 0;
   hasVariations.value = (service.variations || []).length > 0;
@@ -520,6 +644,7 @@ const saveService = async () => {
 
   const payload = { ...editingService.value };
   delete payload.combo_components;
+  delete payload.eligible_staff_ids;
   if (!isCombo.value) payload.combo_component_ids = [];
   if (!hasVariations.value) payload.variations = [];
 
@@ -527,7 +652,6 @@ const saveService = async () => {
     payload.color_code = `#${payload.color_code}`;
   }
 
-  const token = localStorage.getItem("token");
   const url = editingService.value.id
     ? `/api/v1/services/${editingService.value.id}`
     : "/api/v1/services";
@@ -539,7 +663,7 @@ const saveService = async () => {
       method,
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${token()}`,
       },
       body: JSON.stringify(payload),
     });
@@ -572,11 +696,10 @@ const confirmDelete = (service: any) => {
 };
 
 const deleteService = async (service: any) => {
-  const token = localStorage.getItem("token");
   try {
     await fetch(`/api/v1/services/${service.id}`, {
       method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { Authorization: `Bearer ${token()}` },
     });
     toast.add({
       severity: "success",
@@ -595,7 +718,7 @@ const deleteService = async (service: any) => {
   }
 };
 
-const formatDuration = (minutes: number) => {
+const formatDurationLabel = (minutes: number) => {
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
   return h > 0
@@ -605,7 +728,8 @@ const formatDuration = (minutes: number) => {
 </script>
 
 <style scoped>
-:deep(.p-datatable .p-datatable-tbody > tr > td) {
-  padding: 1rem;
+.drag-ghost {
+  opacity: 0.4;
+  background: var(--p-primary-50);
 }
 </style>
