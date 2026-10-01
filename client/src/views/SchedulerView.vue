@@ -482,19 +482,29 @@ const handleReorderSave = async (newOrder: any[]) => {
 };
 
 // --- Zoom ---
+// Every level here divides evenly into 60 (or, for 120, is an even multiple
+// of it) — guaranteeing a slot boundary lands exactly on every hour (and,
+// for 5/10/15/20/30/60, often on the half/quarter marks too) at every zoom
+// level. An arbitrary step (the old version incremented by a flat 10
+// starting from 15, producing 25/35/45/...) would drift off those
+// boundaries after the first hour of the day, breaking slotLaneClassNames'
+// hour/half/quarter line detection and the big hour-number label below.
+const ZOOM_LEVELS = [5, 10, 15, 20, 30, 60, 120];
 // Matches calendarOptions' initial slotDuration ("00:15:00") below, so the
 // displayed zoom state and the actual grid start in sync.
 const slotDurationMinutes = ref(15);
 
 const zoomIn = () => {
-  if (slotDurationMinutes.value > 10) {
-    slotDurationMinutes.value -= 10;
+  const idx = ZOOM_LEVELS.indexOf(slotDurationMinutes.value);
+  if (idx > 0) {
+    slotDurationMinutes.value = ZOOM_LEVELS[idx - 1];
     updateSlotDuration();
   }
 };
 const zoomOut = () => {
-  if (slotDurationMinutes.value < 120) {
-    slotDurationMinutes.value += 10;
+  const idx = ZOOM_LEVELS.indexOf(slotDurationMinutes.value);
+  if (idx !== -1 && idx < ZOOM_LEVELS.length - 1) {
+    slotDurationMinutes.value = ZOOM_LEVELS[idx + 1];
     updateSlotDuration();
   }
 };
@@ -739,22 +749,21 @@ const calendarEvents = computed(() => {
   return events;
 });
 
+// Multi-day leave only — still a non-interactive background tint, since a
+// leave period isn't a single clickable slot the way a break block is.
 const timeOffBackgroundEvents = computed(() => {
   const entries = calendarStore.timeOff;
   if (!Array.isArray(entries)) return [];
 
-  return entries.map((entry: any) => {
-    const isLeave = entry.type === "leave";
-    const startDateStr = toLocalDateStr(entry.start_date);
-
-    const endDateExclusive = (dateStr: any) => {
-      const d = new Date(`${toLocalDateStr(dateStr)}T00:00:00`);
-      d.setDate(d.getDate() + 1);
-      return toLocalDateStr(d);
-    };
-
-    let durationLabel = "";
-    if (isLeave) {
+  return entries
+    .filter((entry: any) => entry.type === "leave")
+    .map((entry: any) => {
+      const startDateStr = toLocalDateStr(entry.start_date);
+      const endDateExclusive = (dateStr: any) => {
+        const d = new Date(`${toLocalDateStr(dateStr)}T00:00:00`);
+        d.setDate(d.getDate() + 1);
+        return toLocalDateStr(d);
+      };
       const endDateStr = toLocalDateStr(entry.end_date);
       const days =
         Math.round(
@@ -762,37 +771,69 @@ const timeOffBackgroundEvents = computed(() => {
             new Date(`${startDateStr}T00:00:00`).getTime()) /
             86400000,
         ) + 1;
-      durationLabel = days === 1 ? "1 ημέρα" : `${days} ημέρες`;
-    } else {
+      const durationLabel = days === 1 ? "1 ημέρα" : `${days} ημέρες`;
+
+      return {
+        id: `timeoff_${entry.id}`,
+        resourceId: entry.staff_id?.toString(),
+        display: "background",
+        backgroundColor: "rgba(239, 68, 68, 0.15)",
+        start: startDateStr,
+        end: endDateExclusive(entry.end_date),
+        title: `Άδεια (${durationLabel})`,
+        extendedProps: {
+          isTimeOff: true,
+          timeOffType: "leave",
+          reason: entry.reason,
+          durationLabel,
+          typeLabel: "Άδεια",
+        },
+      };
+    });
+});
+
+// Single-day "break" entries (both the Staff page's own time-off dialog and
+// the scheduler's "Αποκλεισμός Ωραρίου" button save through this same type)
+// render as a normal, clickable, gray foreground event — not a background
+// tint — so staff can click one to unblock it or change its duration the
+// same way they'd edit any appointment. See eventClick below.
+const breakBlockEvents = computed(() => {
+  const entries = calendarStore.timeOff;
+  if (!Array.isArray(entries)) return [];
+
+  return entries
+    .filter((entry: any) => entry.type === "break")
+    .map((entry: any) => {
+      const startDateStr = toLocalDateStr(entry.start_date);
       const [sh, sm] = (entry.start_time || "0:0").split(":").map(Number);
       const [eh, em] = (entry.end_time || "0:0").split(":").map(Number);
       const minutes = eh * 60 + em - (sh * 60 + sm);
-      durationLabel = `${minutes} λεπτά`;
-    }
 
-    const typeLabel = isLeave ? "Άδεια" : "Διάλειμμα";
-
-    return {
-      id: `timeoff_${entry.id}`,
-      resourceId: entry.staff_id?.toString(),
-      display: "background",
-      backgroundColor: isLeave
-        ? "rgba(239, 68, 68, 0.15)"
-        : "rgba(107, 114, 128, 0.2)",
-      start: isLeave ? startDateStr : `${startDateStr}T${entry.start_time}`,
-      end: isLeave
-        ? endDateExclusive(entry.end_date)
-        : `${startDateStr}T${entry.end_time}`,
-      title: `${typeLabel} (${durationLabel})`,
-      extendedProps: {
-        isTimeOff: true,
-        timeOffType: entry.type,
-        reason: entry.reason,
-        durationLabel,
-        typeLabel,
-      },
-    };
-  });
+      return {
+        id: `timeoff_${entry.id}`,
+        resourceId: entry.staff_id?.toString(),
+        title: `Αποκλεισμός (${minutes} λεπτά)`,
+        start: `${startDateStr}T${entry.start_time}`,
+        end: `${startDateStr}T${entry.end_time}`,
+        backgroundColor: "#9ca3af",
+        borderColor: "transparent",
+        textColor: "#1f2937",
+        // Edited only via the dialog (click → toggle/duration → Save), never
+        // by dragging/resizing on the grid — eventDrop/eventResize below
+        // assume a real appointment's fullAppointment/serviceIndex shape and
+        // would fail for a time-off block.
+        editable: false,
+        startEditable: false,
+        durationEditable: false,
+        classNames: ["fresha-event", "fc-timeoff-block"],
+        extendedProps: {
+          isTimeOffBlock: true,
+          timeOffId: entry.id,
+          staffId: entry.staff_id,
+          reason: entry.reason,
+        },
+      };
+    });
 });
 
 // Day view only, mirrors timeOffBackgroundEvents — shades the complement of
@@ -845,7 +886,10 @@ const workingHoursBackgroundEvents = computed(() => {
 // --- Actions ---
 const handleSave = async () => {
   dialogVisible.value = false;
-  await calendarStore.fetchAppointments(currentStart.value, currentEnd.value);
+  await Promise.all([
+    calendarStore.fetchAppointments(currentStart.value, currentEnd.value),
+    calendarStore.refreshTimeOff(),
+  ]);
 };
 
 const onClientSelected = (client: any) => {
@@ -1009,8 +1053,9 @@ const calendarOptions = ref({
   slotMinTime: "07:00:00",
   slotMaxTime: "23:00:00",
   // Big bold hour number + small "00", Fresha/Treatwell-style. The half-hour
-  // row gets its own lighter divider purely via slotLaneClassNames below —
-  // no label there, just a visual break between :00 and :30.
+  // row shares the hour row's bold divider (see slotLaneClassNames below);
+  // only the quarter marks (:15/:45) get the lighter one — no label on any
+  // of these, just a visual break.
   slotLabelContent: (arg: any) => ({
     html: `
       <div class="flex items-baseline justify-end gap-0.5 pr-1 leading-none">
@@ -1021,8 +1066,12 @@ const calendarOptions = ref({
   }),
   slotLaneClassNames: (arg: any) => {
     const mins = arg.date?.getMinutes();
+    // Half-hour gets the same 2px weight as the hour line but a lighter
+    // shade (fc-slot-half-hour-bold), so the two stay visually distinct
+    // while both clearly outrank the quarter marks' 1px divider.
     if (mins === 0) return ["fc-slot-hour"];
-    if (mins === 30) return ["fc-slot-half-hour"];
+    if (mins === 30) return ["fc-slot-half-hour-bold"];
+    if (mins === 15 || mins === 45) return ["fc-slot-half-hour"];
     return [];
   },
   height: "100%",
@@ -1102,6 +1151,19 @@ const calendarOptions = ref({
     // with no label — just the diagonal-stripe CSS class, nothing to render.
     if (props.isOffHours) {
       return { html: "" };
+    }
+
+    // A "break" time-off block — clickable like a real appointment (see
+    // eventClick/isTimeOffBlock), but with no client/service to show.
+    if (props.isTimeOffBlock) {
+      return {
+        html: `
+        <div class="relative w-full h-full p-1.5 flex flex-col leading-tight overflow-hidden">
+          <div class="text-[10px] md:text-[12px] font-bold text-gray-700 flex items-center gap-1"><i class="pi pi-ban text-[9px]"></i> ${escapeHtml(arg.event.title)}</div>
+          ${props.reason ? `<div class="text-[10px] md:text-[11px] text-gray-500 italic whitespace-normal">${escapeHtml(props.reason)}</div>` : ""}
+        </div>
+      `,
+      };
     }
 
     const timeText = arg.timeText;
@@ -1252,6 +1314,18 @@ const calendarOptions = ref({
     if (fullAppt) {
       selectedAppointment.value = fullAppt;
       dialogVisible.value = true;
+      return;
+    }
+    if (info.event.extendedProps.isTimeOffBlock) {
+      const p = info.event.extendedProps;
+      selectedAppointment.value = {
+        time_off_id: p.timeOffId,
+        staff_id: p.staffId,
+        start_time: info.event.start,
+        end_time: info.event.end,
+        reason: p.reason,
+      };
+      dialogVisible.value = true;
     }
   },
 
@@ -1322,15 +1396,23 @@ watch(
     calendarResources,
     calendarEvents,
     timeOffBackgroundEvents,
+    breakBlockEvents,
     workingHoursBackgroundEvents,
   ],
-  ([newResources, newEvents, newTimeOffEvents, newWorkingHoursEvents]) => {
+  ([
+    newResources,
+    newEvents,
+    newTimeOffEvents,
+    newBreakBlockEvents,
+    newWorkingHoursEvents,
+  ]) => {
     if (!fullCalendar.value) return;
     const api = fullCalendar.value.getApi();
     api.setOption("resources", newResources);
     api.setOption("events", [
       ...newEvents,
       ...newTimeOffEvents,
+      ...newBreakBlockEvents,
       ...newWorkingHoursEvents,
     ]);
   },
@@ -1419,7 +1501,15 @@ onMounted(async () => {
   border-color: #f8fafc !important;
 }
 .fc-slot-half-hour {
-  border-top: 1px solid #e5e7eb !important;
+  border-top: 1px solid #e7e8eb !important;
+}
+/* Same 2px weight as the true hour line, one shade lighter — distinct at a
+   glance from :00 while still clearly bolder than the 1px quarter marks
+   above. Sits roughly halfway between fc-slot-hour's #cbd5e1 and
+   fc-slot-half-hour's #e7e8eb; nudge this value alone to tune how close it
+   reads to one or the other. */
+.fc-slot-half-hour-bold {
+  border-top: 2px solid #dde3e9 !important;
 }
 /* The hour gridline marks the START of the hour (e.g. exactly 10:00), which
    is the TOP edge of the row carrying the "10:00" label — not its bottom
