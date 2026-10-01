@@ -302,6 +302,25 @@ export default {
       },
     },
   },
+  staffSchedule: {
+    title: 'Staff Schedule',
+    shopHours: 'Shop Hours',
+    editShopHours: 'Edit Shop Hours',
+    closed: 'Closed',
+    notSet: 'Not set',
+    hoursPerWeek: 'hrs/week',
+    scheduleType: 'Schedule type',
+    weekly: 'Weekly',
+    from: 'From',
+    editDay: 'Edit day',
+    changeSchedule: 'Change schedule',
+    pastWeekReadOnly: 'Past weeks cannot be edited.',
+    editShiftTitle: 'Edit shift',
+    changeScheduleTitle: "Change this week's schedule",
+    useDefault: 'Use default schedule',
+    useDefaultWeek: 'Use default schedule for this week',
+    customHours: 'Custom hours',
+  },
   offline: {
     pending: '{count} change(s) waiting to sync',
     conflicts: '{count} change(s) need attention',
@@ -1128,6 +1147,7 @@ export default {
   booking: {
     newAppointment: 'New Appointment',
     editAppointment: 'Edit Appointment',
+    editBlock: 'Edit Blocked Time',
     tabs: {
       booking: 'Booking',
       notes: 'Notes',
@@ -1144,7 +1164,8 @@ export default {
     eoppy: 'EOPPY Registered',
     eoppyRecurringNote: 'Applies only to the first appointment in a recurring series',
     statusLabel: 'Status',
-    blockTime: 'Block time off (Unavailable)',
+    blockTime: 'Block time off',
+    blockTimeNote: 'Marks this staff member unavailable for this exact time and duration — saved the same way as the time off/day off dialog on the staff page.',
     retailProducts: {
       title: 'Retail Products',
       note: 'Add products to this appointment. Stock will be deducted automatically upon saving.',

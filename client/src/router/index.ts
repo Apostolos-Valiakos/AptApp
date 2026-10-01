@@ -7,6 +7,7 @@ import IndexView from "../views/IndexView.vue";
 import LoginView from "../views/LoginView.vue";
 const SchedulerView = () => import("../views/SchedulerView.vue");
 const StaffView = () => import("../views/StaffView.vue");
+const StaffScheduleView = () => import("../views/StaffScheduleView.vue");
 const ClientsView = () => import("../views/ClientsView.vue");
 const ServicesView = () => import("../views/ServicesView.vue");
 const ProductsView = () => import("../views/ProductsView.vue");
@@ -54,6 +55,7 @@ const routes = [
         children: [
           { path: "scheduler", component: SchedulerView },
           { path: "staff", component: StaffView },
+          { path: "staff-schedule", component: StaffScheduleView },
           { path: "clients", component: ClientsView },
           { path: "services", component: ServicesView },
           { path: "products", component: ProductsView },

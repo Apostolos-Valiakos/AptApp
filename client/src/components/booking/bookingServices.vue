@@ -109,7 +109,7 @@
             suffix=" min"
             class="w-full p-inputtext-sm"
             inputClass="w-full"
-            @update:modelValue="recalcTimes"
+            @update:modelValue="() => recalcTimes()"
           />
         </div>
         <div class="col-span-1 min-w-0" v-if="isShopAdmin">

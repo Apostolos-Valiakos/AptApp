@@ -1568,52 +1568,6 @@ app.get("/api/v1/working-hours", authenticateToken, async (req, res) => {
   }
 });
 
-// "current" = the version active as of today (MAX effective_from <= today);
-// "upcoming" = a staged future version (MIN effective_from > today), if any —
-// by construction of the POST handler below, at most one distinct future
-// effective_from ever exists per staff, so this is safely a single version.
-app.get("/api/v1/staff/:id/working-hours", authenticateToken, async (req, res) => {
-  try {
-    const staff = await pool.query(
-      `SELECT working_hours_enabled FROM staff WHERE id = $1 AND shop_id = $2`,
-      [req.params.id, req.shopId],
-    );
-    if (staff.rows.length === 0) {
-      return res.status(404).json({ error: "Staff member not found" });
-    }
-
-    const current = await pool.query(
-      `SELECT day_of_week, start_time, end_time, effective_from::text AS effective_from
-       FROM staff_working_hours
-       WHERE staff_id = $1 AND shop_id = $2
-         AND effective_from = (
-           SELECT MAX(effective_from) FROM staff_working_hours
-           WHERE staff_id = $1 AND shop_id = $2 AND effective_from <= CURRENT_DATE)
-       ORDER BY day_of_week, start_time`,
-      [req.params.id, req.shopId],
-    );
-    const upcoming = await pool.query(
-      `SELECT day_of_week, start_time, end_time, effective_from::text AS effective_from
-       FROM staff_working_hours
-       WHERE staff_id = $1 AND shop_id = $2
-         AND effective_from = (
-           SELECT MIN(effective_from) FROM staff_working_hours
-           WHERE staff_id = $1 AND shop_id = $2 AND effective_from > CURRENT_DATE)
-       ORDER BY day_of_week, start_time`,
-      [req.params.id, req.shopId],
-    );
-
-    res.json({
-      enabled: staff.rows[0].working_hours_enabled,
-      current: current.rows.length > 0 ? { effective_from: current.rows[0].effective_from, ranges: current.rows } : null,
-      upcoming: upcoming.rows.length > 0 ? { effective_from: upcoming.rows[0].effective_from, ranges: upcoming.rows } : null,
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
 const TIME_HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 const DATE_YYYYMMDD = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -1681,33 +1635,35 @@ app.post("/api/v1/staff/:id/working-hours", authenticateToken, async (req, res) 
       return res.status(404).json({ error: "Staff member not found" });
     }
 
-    let isCurrentSlot = false;
     if (enabled) {
       // Server's CURRENT_DATE (not Node's clock) is authoritative — matches
       // the timezone convention every other date/time check in this guard uses.
-      const todayRow = await pool.query(`SELECT CURRENT_DATE::text AS today`);
-      const today = todayRow.rows[0].today;
-      if (effective_from < today) {
-        return res.status(400).json({ error: "effective_from cannot be in the past" });
+      // The floor is the Monday of the CURRENT week, not today — the week
+      // containing today straddles past and future days whenever today isn't
+      // itself a Monday, and that week must stay editable (see
+      // client/src/utils/staffAvailability.ts's mondayOf for the same
+      // computation on the client).
+      const mondayRow = await pool.query(
+        `SELECT (CURRENT_DATE - ((EXTRACT(DOW FROM CURRENT_DATE)::int + 6) % 7))::text AS monday`,
+      );
+      const currentWeekMonday = mondayRow.rows[0].monday;
+      if (effective_from < currentWeekMonday) {
+        return res.status(400).json({ error: "effective_from cannot be before the current week" });
       }
-      isCurrentSlot = effective_from === today;
     }
 
     if (enabled && force !== true) {
-      // Asymmetric bound: saving "current" while an upcoming version is
-      // already staged must not flag appointments on/after that staged
-      // version's effective_from — those are its concern, not this save's.
-      // Saving "upcoming" has no upper bound (nothing can exist beyond the
-      // single staged slot).
-      let upperBound = null;
-      if (isCurrentSlot) {
-        const upcomingRow = await pool.query(
-          `SELECT MIN(effective_from)::text AS ef FROM staff_working_hours
-           WHERE staff_id = $1 AND effective_from > CURRENT_DATE`,
-          [id],
-        );
-        upperBound = upcomingRow.rows[0]?.ef || null;
-      }
+      // Each effective_from is its own independent version now (any number of
+      // past/future weeks can each have their own saved pattern) — the only
+      // relevant bound is whichever version comes immediately after the one
+      // being saved, regardless of whether that's today, this week, or any
+      // future week.
+      const upcomingRow = await pool.query(
+        `SELECT MIN(effective_from)::text AS ef FROM staff_working_hours
+         WHERE staff_id = $1 AND effective_from > $2::date`,
+        [id, effective_from],
+      );
+      const upperBound = upcomingRow.rows[0]?.ef || null;
 
       const conflicts = await pool.query(
         `
@@ -1722,7 +1678,7 @@ app.post("/api/v1/staff/:id/working-hours", authenticateToken, async (req, res) 
         LEFT JOIN clients c ON c.id = a.client_id
         WHERE aps.staff_id = $1 AND a.shop_id = $2
           AND a.status != 'cancelled' AND COALESCE(a.is_block, false) = false
-          AND aps.start_time >= $3::date
+          AND aps.start_time >= GREATEST($3::date, CURRENT_DATE)
           AND ($5::date IS NULL OR aps.start_time < $5::date)
           AND NOT EXISTS (
             SELECT 1 FROM proposed p
@@ -1743,21 +1699,15 @@ app.post("/api/v1/staff/:id/working-hours", authenticateToken, async (req, res) 
     try {
       await client.query("BEGIN");
       if (!enabled) {
-        // Disabling wipes everything — current and any staged upcoming version.
+        // Disabling wipes every version this staff member has, past and future.
         await client.query(`DELETE FROM staff_working_hours WHERE staff_id = $1`, [id]);
-      } else if (isCurrentSlot) {
-        // Only today's slot — never touches superseded (past) versions, which
-        // must persist as the historical record the calendar's Day view relies on.
-        await client.query(
-          `DELETE FROM staff_working_hours WHERE staff_id = $1 AND effective_from = CURRENT_DATE`,
-          [id],
-        );
       } else {
-        // Removes any previously-staged version regardless of its exact date —
-        // this is what enforces "at most one staged upcoming version."
+        // Upsert-by-exact-effective_from — only the one version being saved
+        // is touched. Every other past/future version (each its own
+        // independently-saved week) is left alone.
         await client.query(
-          `DELETE FROM staff_working_hours WHERE staff_id = $1 AND effective_from > CURRENT_DATE`,
-          [id],
+          `DELETE FROM staff_working_hours WHERE staff_id = $1 AND effective_from = $2::date`,
+          [id, effective_from],
         );
       }
       if (enabled) {
@@ -1789,16 +1739,26 @@ app.post("/api/v1/staff/:id/working-hours", authenticateToken, async (req, res) 
   }
 });
 
-// Cancels a staged upcoming version, leaving "current" to govern indefinitely.
-// Not the same as saving an empty schedule for it (which would mean "day off
-// every day starting then") — this removes the staged change entirely. No
-// conflict check needed: canceling only ever loosens a not-yet-active
-// restriction, same reasoning as enabled=false.
-app.delete("/api/v1/staff/:id/working-hours/upcoming", authenticateToken, async (req, res) => {
+// Deletes one specific week's version outright, falling through to whichever
+// version precedes it (not the same as saving an empty schedule for it, which
+// would mean "day off every day starting then"). No conflict check needed:
+// clearing a version only ever loosens a restriction, same reasoning as
+// enabled=false above.
+app.delete("/api/v1/staff/:id/working-hours/:effective_from", authenticateToken, async (req, res) => {
+  const { effective_from } = req.params;
+  if (!DATE_YYYYMMDD.test(effective_from)) {
+    return res.status(400).json({ error: "effective_from must be YYYY-MM-DD" });
+  }
   try {
+    const mondayRow = await pool.query(
+      `SELECT (CURRENT_DATE - ((EXTRACT(DOW FROM CURRENT_DATE)::int + 6) % 7))::text AS monday`,
+    );
+    if (effective_from < mondayRow.rows[0].monday) {
+      return res.status(400).json({ error: "effective_from cannot be before the current week" });
+    }
     const { rowCount } = await pool.query(
-      `DELETE FROM staff_working_hours WHERE staff_id = $1 AND shop_id = $2 AND effective_from > CURRENT_DATE`,
-      [req.params.id, req.shopId],
+      `DELETE FROM staff_working_hours WHERE staff_id = $1 AND shop_id = $2 AND effective_from = $3::date`,
+      [req.params.id, req.shopId, effective_from],
     );
     res.json({ success: true, cleared: rowCount });
   } catch (err) {
@@ -2670,6 +2630,60 @@ app.delete("/api/v1/clients/:id", authenticateToken, async (req, res) => {
 
 // --- SERVICE ROUTES ---
 
+// Services whose name IS the sauna/hamam resource itself (the "...ΣΕ
+// ΥΠΗΡΕΣΙΑ" ones used as the carve-out component below, plus the plain
+// standalone room-booking services) — these must never auto-split
+// themselves even though their own name matches the keyword pattern.
+const SAUNA_HAMAM_BASE_NAMES = new Set([
+  "σαουνα", "σαουνα σε υπηρεσια", "χαμαμ", "χαμμαμ", "ηαμαμ σε υπηρεσια",
+]);
+const SAUNA_HAMAM_PATTERN = /σαουνα|sauna|χαμ[αά]μ|χαμμαμ|hamam/i;
+
+const stripAccentsLower = (s) =>
+  (s || "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .trim();
+
+// Fallback combo-splitting for services with Σάουνα/Χαμάμ hardcoded into
+// their own name instead of an explicit combo configured (e.g. a Treatwell
+// import like "ΘΕΡΑΠΕΥΤΙΚΟ+SAUNA+SCRUB+ALOE"). Mutates `byService` in place,
+// adding a synthesized single-component entry — the real sauna/hamam "...ΣΕ
+// ΥΠΗΡΕΣΙΑ" service's own current price/duration/default_staff_id, so it
+// always reflects whatever that service is configured as, same as the
+// explicit combos already use. Only applies when the service has zero real
+// configured components, so an explicit combo always takes precedence, and
+// never applies to the sauna/hamam resource services themselves.
+const attachSaunaHamamFallback = (allServices, byService) => {
+  const saunaBase = allServices.find(
+    (s) => stripAccentsLower(s.name) === "σαουνα σε υπηρεσια",
+  );
+  const hamamBase = allServices.find(
+    (s) => stripAccentsLower(s.name) === "ηαμαμ σε υπηρεσια",
+  );
+  const toComponent = (base) => ({
+    id: base.id,
+    name: base.name,
+    duration_minutes: base.duration_minutes,
+    price: base.price,
+    default_staff_id: base.default_staff_id,
+  });
+
+  for (const service of allServices) {
+    if (byService[service.id]?.length) continue; // explicit combo wins
+    const normName = stripAccentsLower(service.name);
+    if (SAUNA_HAMAM_BASE_NAMES.has(normName)) continue; // the resource itself
+    if (!SAUNA_HAMAM_PATTERN.test(service.name)) continue;
+
+    const isHamam = /χαμ[αά]μ|χαμμαμ|hamam/i.test(service.name);
+    const base = isHamam ? hamamBase : saunaBase;
+    if (!base || base.id === service.id) continue;
+
+    byService[service.id] = [toComponent(base)];
+  }
+};
+
 // Replace-all upsert of a combo's component list — keeps combo config a
 // single ordered list of real service ids rather than a diffing dance.
 const setComboComponents = async (dbClient, serviceId, componentIds) => {
@@ -2752,6 +2766,15 @@ app.get("/api/v1/services", authenticateToken, async (req, res) => {
         default_staff_id: row.default_staff_id,
       });
     }
+
+    // Fallback auto-split for services that bake "Σάουνα"/"Χαμάμ" straight
+    // into their own name (e.g. "ΘΕΡΑΠΕΥΤΙΚΟ+SAUNA+SCRUB+ALOE") instead of
+    // having an explicit combo configured — only applies when NO real
+    // components exist for that service, so any explicitly-configured combo
+    // always wins. Carves out the real "...ΣΕ ΥΠΗΡΕΣΙΑ" sauna/hamam service's
+    // own price/duration (same figures the 3 already-explicit combos use),
+    // assigned to that resource's dedicated staff member.
+    attachSaunaHamamFallback(rows, byService);
     const { rows: variationRows } = await pool.query(
       `SELECT * FROM service_variations WHERE service_id = ANY($1::uuid[]) ORDER BY service_id, sort_order`,
       [rows.map((r) => r.id)],
@@ -6129,6 +6152,68 @@ app.put(
   },
 );
 
+// Per-day-of-week shop operating hours — a small, deliberately unversioned
+// reference table (unlike staff_working_hours, the shop's own hours aren't
+// expected to need a historical record). Distinct from shops.slot_min_time/
+// slot_max_time, which stay the calendar's fixed rendering viewport bounds
+// (one flat range FullCalendar needs regardless of day) and are untouched by
+// this. A day with no row here means the shop is closed that day.
+app.get("/api/v1/shop-hours", authenticateToken, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT day_of_week, start_time, end_time FROM shop_hours WHERE shop_id = $1 ORDER BY day_of_week`,
+      [req.shopId],
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.put("/api/v1/shop-hours", authenticateToken, requireAnalyticsAccess, async (req, res) => {
+  const { days } = req.body;
+  if (!Array.isArray(days)) {
+    return res.status(400).json({ error: "days must be an array" });
+  }
+  const seenDays = new Set();
+  for (const day of days) {
+    const dow = day?.day_of_week;
+    if (!Number.isInteger(dow) || dow < 0 || dow > 6) {
+      return res.status(400).json({ error: "day_of_week must be an integer between 0 and 6" });
+    }
+    if (seenDays.has(dow)) {
+      return res.status(400).json({ error: "duplicate day_of_week", day_of_week: dow });
+    }
+    seenDays.add(dow);
+    if (!TIME_HHMM.test(day.start_time) || !TIME_HHMM.test(day.end_time)) {
+      return res.status(400).json({ error: "start_time/end_time must be HH:MM", day_of_week: dow });
+    }
+    if (day.end_time <= day.start_time) {
+      return res.status(400).json({ error: "end_time must be after start_time", day_of_week: dow });
+    }
+  }
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(`DELETE FROM shop_hours WHERE shop_id = $1`, [req.shopId]);
+    for (const day of days) {
+      await client.query(
+        `INSERT INTO shop_hours (shop_id, day_of_week, start_time, end_time) VALUES ($1, $2, $3, $4)`,
+        [req.shopId, day.day_of_week, day.start_time, day.end_time],
+      );
+    }
+    await client.query("COMMIT");
+    res.json({ success: true, days });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  } finally {
+    client.release();
+  }
+});
+
 app.post(
   "/api/v1/staff/:id/photo",
   authenticateToken,
@@ -7589,6 +7674,22 @@ app.get("/api/v1/availability", authenticateToken, async (req, res) => {
     await pool.query(
       `ALTER TABLE staff_working_hours ADD COLUMN IF NOT EXISTS effective_from DATE NOT NULL DEFAULT CURRENT_DATE`,
     );
+
+    // Per-day-of-week shop operating hours — unlike staff_working_hours,
+    // deliberately NOT effective-dated (the shop's own hours aren't expected
+    // to need a historical record the way staff schedules do). A day with no
+    // row means the shop is closed that day. Separate from shops.slot_min_time/
+    // slot_max_time, which remain the calendar's fixed rendering bounds.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS shop_hours (
+        shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+        day_of_week SMALLINT NOT NULL CHECK (day_of_week BETWEEN 0 AND 6),
+        start_time TIME NOT NULL,
+        end_time TIME NOT NULL,
+        PRIMARY KEY (shop_id, day_of_week),
+        CHECK (end_time > start_time)
+      )
+    `);
 
     // ==================== PRODUCT USAGE TRACKING ====================
     // A service can list one or more products it consumes (e.g. "Massage ->

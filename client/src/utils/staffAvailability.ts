@@ -142,3 +142,87 @@ export const isStaffAvailable = (params: {
   }
   return { available: true };
 };
+
+// --- Per-week schedule editing (StaffScheduleView.vue) ---
+// Each week can be its own independently-saved version (effective_from =
+// that week's Monday). Building the editable 7-day set for a given week is
+// the entire "copy-on-write" mechanism: if the week already has its own
+// version, edit it directly; otherwise clone whatever version currently
+// governs each of its 7 days — so saving the result (even with only one day
+// changed) correctly carries forward the rest of the inherited pattern
+// instead of silently reverting it.
+
+export interface WeekDaySchedule {
+  day_of_week: number; // 0=Sunday..6=Saturday
+  ranges: { start_time: string; end_time: string }[]; // [] = day off
+}
+
+// Server TIME columns round-trip as "HH:MM:SS"; the working-hours save
+// endpoint's TIME_HHMM validation requires exactly "HH:MM" — trim before any
+// existing row's start_time/end_time is resubmitted in a save payload.
+const toHHMM = (s: string): string => (s || "").slice(0, 5);
+
+export const mondayOf = (date: Date | string): Date => {
+  const d = date instanceof Date ? new Date(date) : new Date(`${date}T00:00:00`);
+  d.setHours(0, 0, 0, 0);
+  const diff = (d.getDay() + 6) % 7; // JS getDay(): 0=Sun..6=Sat -> 0=Mon..6=Sun
+  d.setDate(d.getDate() - diff);
+  return d;
+};
+
+// The actual calendar date for a given day_of_week within the week starting
+// at weekMonday — day_of_week 0 (Sunday) is the last day of that week, not
+// the first.
+export const dateForDowInWeek = (weekMonday: Date, dayOfWeek: number): Date => {
+  const offset = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+  const d = new Date(weekMonday);
+  d.setDate(d.getDate() + offset);
+  return d;
+};
+
+export const buildWeekSchedule = (
+  workingHours: WorkingHourRange[],
+  staffId: any,
+  weekMonday: Date,
+): WeekDaySchedule[] => {
+  const mondayStr = toLocalDateStr(weekMonday);
+  const all = workingHours || [];
+  const ownRows = all.filter(
+    (w) => String(w.staff_id) === String(staffId) && w.effective_from === mondayStr,
+  );
+
+  if (ownRows.length > 0) {
+    return Array.from({ length: 7 }, (_, dow) => ({
+      day_of_week: dow,
+      ranges: ownRows
+        .filter((w) => w.day_of_week === dow)
+        .map((w) => ({ start_time: toHHMM(w.start_time), end_time: toHHMM(w.end_time) }))
+        .sort((a, b) => (a.start_time > b.start_time ? 1 : -1)),
+    }));
+  }
+
+  return Array.from({ length: 7 }, (_, dow) => {
+    const ranges = getWorkingRangesForDate(all, staffId, dateForDowInWeek(weekMonday, dow));
+    return {
+      day_of_week: dow,
+      ranges: (ranges || []).map((r) => ({ start_time: toHHMM(r.start), end_time: toHHMM(r.end) })),
+    };
+  });
+};
+
+// Used by the single-day "use default schedule" action: what this one day
+// would resolve to if this week never had its own version at all — i.e. the
+// next-older version's pattern, not a bare delete (which would instead
+// resolve to "day off" once this week already has its own version, per the
+// resolution rule above).
+export const dayScheduleExcludingWeek = (
+  workingHours: WorkingHourRange[],
+  staffId: any,
+  weekMonday: Date,
+  dayOfWeek: number,
+): { start_time: string; end_time: string }[] => {
+  const mondayStr = toLocalDateStr(weekMonday);
+  const filtered = (workingHours || []).filter((w) => w.effective_from !== mondayStr);
+  const ranges = getWorkingRangesForDate(filtered, staffId, dateForDowInWeek(weekMonday, dayOfWeek));
+  return (ranges || []).map((r) => ({ start_time: toHHMM(r.start), end_time: toHHMM(r.end) }));
+};

@@ -67,6 +67,21 @@ def normalize(s) -> str:
     return "".join(c for c in s if unicodedata.category(c) != "Mn")
 
 
+def normalize_name(s) -> str:
+    # Order-insensitive client-name key: the raw export mixes surname-first
+    # ("ΓΟΥΡΓΙΩΤΗΣ ΣΤΑΥΡΟΣ") and given-name-first ("Frida Karvouni") entries
+    # inconsistently, while the DB always stores first_name+last_name in one
+    # fixed order — comparing "first last" text against raw "however it was
+    # typed" text by plain string equality silently failed for any two-word
+    # name whose raw order didn't match the DB's, creating a fresh duplicate
+    # client (and a fresh duplicate appointment) every time that same real
+    # client reappeared in a later sync. Sorting tokens before joining fixes
+    # this while staying an EXACT match (same words, any order) — never
+    # fuzzy, since two different real clients are routinely one or two
+    # characters apart (see the client-matching comment below).
+    return " ".join(sorted(normalize(s).split()))
+
+
 def fuzzy_match(query: str, norm_to_id: dict, threshold=FUZZY_THRESHOLD):
     if not query or not norm_to_id:
         return None, 0
@@ -89,7 +104,7 @@ def load_lookups(cur):
 
     cur.execute("SELECT id, first_name, last_name FROM clients WHERE shop_id=%s", (SHOP_ID,))
     rows = cur.fetchall()
-    cli_map = {normalize(f"{r['first_name']} {r['last_name']}"): str(r["id"]) for r in rows}
+    cli_map = {normalize_name(f"{r['first_name']} {r['last_name']}"): str(r["id"]) for r in rows}
 
     return staff_map, svc_map, svc_price, svc_duration, cli_map
 
@@ -111,7 +126,7 @@ def load_existing_key_counts(cur):
     counts = Counter()
     for r in cur.fetchall():
         key = (
-            normalize(r["client_name"]),
+            normalize_name(r["client_name"]),
             normalize(r["staff_name"]),
             normalize(r["service_name"]),
             r["start_time"].strftime("%Y-%m-%d %H:%M"),
@@ -184,7 +199,7 @@ def main():
             continue
         service_raw = SERVICE_NAME_ALIASES.get(normalize(service_raw), service_raw)
 
-        key = (normalize(client_raw), normalize(staff_raw), normalize(service_raw),
+        key = (normalize_name(client_raw), normalize(staff_raw), normalize(service_raw),
                start_time.strftime("%Y-%m-%d %H:%M"))
         seen_in_file[key] += 1
 
@@ -211,7 +226,7 @@ def main():
         # "ΜΑΡΙΑ ΛΙΑΚΟΥ" vs "ΒΑΛΙΑΚΟΥ ΜΑΡΙΑ" scored 92/100 on token_sort_ratio
         # and got silently merged into the wrong, unrelated client). No match
         # here means "new client", full stop.
-        client_norm = normalize(client_raw)
+        client_norm = normalize_name(client_raw)
         client_id = cli_map.get(client_norm)
         client_new = False
         if not client_id:

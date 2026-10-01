@@ -33,7 +33,9 @@
               {{
                 isEditMode
                   ? t("booking.editAppointment")
-                  : t("booking.newAppointment")
+                  : isBlockEdit
+                    ? t("booking.editBlock")
+                    : t("booking.newAppointment")
               }}
             </h2>
             <div class="text-sm text-gray-500 mt-1 flex items-center gap-2">
@@ -158,7 +160,7 @@
               :default-staff-id="currentStaffId"
               :timeOff="props.timeOff || []"
               :workingHours="props.workingHours || []"
-              :requireStaff="!form.is_block"
+              :requireStaff="true"
               :shopMinTime="props.shopMinTime"
               :shopMaxTime="props.shopMaxTime"
             />
@@ -192,17 +194,15 @@
               </div>
 
               <div class="flex flex-col justify-end pb-2">
-                <div
-                  class="p-3 bg-gray-50 rounded-lg border border-gray-100 flex items-center gap-2"
-                >
-                  <Checkbox v-model="form.is_block" binary inputId="isBlock" />
-                  <label
-                    for="isBlock"
-                    class="text-sm text-gray-700 cursor-pointer"
-                  >
-                    {{ t("booking.blockTime") }}
-                  </label>
-                </div>
+                <Button
+                  type="button"
+                  :label="t('booking.blockTime')"
+                  icon="pi pi-ban"
+                  :class="form.is_block ? '' : 'p-button-outlined'"
+                  :severity="form.is_block ? 'warning' : 'secondary'"
+                  v-tooltip.top="t('booking.blockTimeNote')"
+                  @click="form.is_block = !form.is_block"
+                />
               </div>
             </div>
           </div>
@@ -567,11 +567,12 @@ const servicesList = ref<Array<any>>([]);
 const productsList = ref<Array<any>>([]);
 
 // A staff member is required per service row — every block needs to land on
-// a specific person's calendar column. Doesn't apply to time-off blocks,
-// which don't carry appointment_services rows at all (see performSingleUpdate).
+// a specific person's calendar column. A time-off block still needs exactly
+// one staff member picked on its single row (see saveAsTimeOff below), even
+// though it has no real service selected.
 const missingStaffService = computed(() =>
   form.value.is_block
-    ? false
+    ? !servicesList.value[0]?.staff_id
     : servicesList.value.some((s: any) => s.service_id && !s.staff_id),
 );
 const canSaveBooking = computed(
@@ -645,6 +646,7 @@ onUnmounted(() => {
 
 // === COMPUTED ===
 const isEditMode = computed(() => !!form.value.id);
+const isBlockEdit = computed(() => !!form.value.time_off_id);
 
 // --- Client selection (server-side search — with 5000+ clients we never load
 // the full list, see calendar.ts) ---
@@ -957,6 +959,17 @@ watch(
     } else {
       // === NEW MODE ===
       const newStart = val?.start_time ? new Date(val.start_time) : new Date();
+      // A drag-select on the calendar carries both ends of the selected span
+      // (SchedulerView's `select` handler passes end_time through) — use that
+      // as the new service's duration instead of always defaulting to 60.
+      const draggedDurationMinutes = val?.end_time
+        ? Math.max(
+            5,
+            Math.round(
+              (new Date(val.end_time).getTime() - newStart.getTime()) / 60000,
+            ),
+          )
+        : 60;
 
       clientSuggestions.value = [];
       // A caller (e.g. the client search's "Book an appointment" button) can
@@ -978,14 +991,25 @@ watch(
         loadWalkInClient();
       }
 
+      // Clicking an existing "break" block on the scheduler reopens this same
+      // dialog in NEW MODE (no appointment id exists for a time-off row) but
+      // pre-filled as an edit: is_block starts true, and time_off_id/
+      // time_off_staff_id are kept so Save can replace (or, if the block
+      // toggle is clicked off, delete) the right staff_time_off row. See
+      // saveAsTimeOff/unblockTimeOff below.
       form.value = {
         id: null,
         client_id: val?.client_id || null,
         start_time: newStart,
         status: "new",
+        internal_notes: val?.time_off_id ? val.reason || "" : "",
         deposit_amount: 0,
         payment_status: "unpaid",
-        is_block: false,
+        is_block: !!val?.time_off_id,
+        time_off_id: val?.time_off_id || null,
+        time_off_staff_id: val?.time_off_id
+          ? val.staff_id || resolvedStaffId
+          : null,
         save_receipt: true,
         is_eoppy: false,
       };
@@ -998,7 +1022,7 @@ watch(
           service_id: null,
           staff_id: resolvedStaffId,
           start_time: newStart,
-          duration_override: 60,
+          duration_override: draggedDurationMinutes,
           price_override: 0,
         },
       ];
@@ -1123,6 +1147,133 @@ const confirmChanges = (): Promise<boolean> => {
   });
 };
 
+// A "block time" dialog has no client or real service — it just needs one
+// staff member + a time span, which already live on servicesList's single
+// row (see missingStaffService above). Saves through the exact same
+// staff_time_off mechanism as the Staff page's own time-off dialog (type
+// "break", same conflict/force pattern), rather than creating a blocked
+// `appointments` row.
+const saveAsTimeOff = async (force = false): Promise<boolean> => {
+  const svc = servicesList.value[0];
+  const staffId = svc?.staff_id;
+  if (!staffId || !svc?.start_time) return false;
+
+  const start = new Date(svc.start_time);
+  const end = new Date(start.getTime() + (svc.duration_override || 60) * 60000);
+  const toDateStr = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const toTimeStr = (d: Date) =>
+    `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+
+  const token = localStorage.getItem("token");
+  try {
+    const res = await fetch(`/api/v1/staff/${staffId}/time-off`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        type: "break",
+        start_date: toDateStr(start),
+        end_date: toDateStr(start),
+        start_time: toTimeStr(start),
+        end_time: toTimeStr(end),
+        reason: form.value.internal_notes || null,
+        force,
+      }),
+    });
+
+    if (res.status === 409) {
+      const data = await res.json();
+      const list = (data.conflicts || [])
+        .map(
+          (c: any) =>
+            `• ${c.client_name || "—"} — ${c.service_name || ""} (${formatDate(c.start_time)})`,
+        )
+        .join("\n");
+      return new Promise((resolve) => {
+        confirm.require({
+          message: t("staff.timeOff.conflictMessage", {
+            count: data.conflicts.length,
+            list,
+          }),
+          header: t("staff.timeOff.conflictHeader"),
+          icon: "pi pi-exclamation-triangle",
+          acceptClass: "p-button-warning",
+          accept: async () => resolve(await saveAsTimeOff(true)),
+          reject: () => resolve(false),
+          onHide: () => resolve(false),
+        });
+      });
+    }
+
+    if (!res.ok) throw new Error("Failed");
+
+    // Editing an existing block: the replacement above is already safely
+    // created (and conflict-checked only against real appointments, never
+    // against this old row), so it's now safe to remove the original —
+    // using its original staff id, which may differ if the block was moved
+    // to another staff member in this edit.
+    if (form.value.time_off_id && form.value.time_off_staff_id) {
+      await fetch(
+        `/api/v1/staff/${form.value.time_off_staff_id}/time-off/${form.value.time_off_id}`,
+        { method: "DELETE", headers: { Authorization: `Bearer ${token}` } },
+      ).catch(() => {});
+    }
+
+    toast.add({
+      severity: "success",
+      summary: t("common.success"),
+      detail: t("staff.timeOff.saved"),
+      life: 3000,
+    });
+    emit("save");
+    emit("update:visible", false);
+    return true;
+  } catch (err) {
+    toast.add({
+      severity: "error",
+      summary: t("common.error"),
+      detail: t("staff.timeOff.saveFailed"),
+      life: 4000,
+    });
+    return false;
+  }
+};
+
+// Toggling the block button off while editing an existing block ("unclick")
+// just removes the staff_time_off row — the time becomes available again,
+// with no appointment created in its place.
+const unblockTimeOff = async (): Promise<boolean> => {
+  if (!form.value.time_off_id || !form.value.time_off_staff_id) return false;
+  const token = localStorage.getItem("token");
+  try {
+    const res = await fetch(
+      `/api/v1/staff/${form.value.time_off_staff_id}/time-off/${form.value.time_off_id}`,
+      { method: "DELETE", headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!res.ok) throw new Error("Failed");
+    toast.add({
+      severity: "success",
+      summary: t("common.success"),
+      detail: t("staff.timeOff.deleted"),
+      life: 3000,
+    });
+    emit("save");
+    emit("update:visible", false);
+    return true;
+  } catch (err) {
+    toast.add({
+      severity: "error",
+      summary: t("common.error"),
+      detail: t("staff.timeOff.saveFailed"),
+      life: 4000,
+    });
+    return false;
+  }
+};
+
 // Resolves false only when the user declined the change confirmation.
 const save = async (close = true): Promise<boolean> => {
   if (!(await confirmChanges())) return false;
@@ -1156,7 +1307,11 @@ const save = async (close = true): Promise<boolean> => {
 };
 
 const executeSave = async (close = true, scope = "single") => {
-  if (!form.value.client_id && !form.value.is_block) {
+  // Unblocking (toggling an existing block's button off) and editing a
+  // block's time/duration are both time-off-only flows with no client/
+  // service involved — skip the normal booking validations entirely.
+  const isTimeOffFlow = form.value.is_block || !!form.value.time_off_id;
+  if (!form.value.client_id && !isTimeOffFlow) {
     toast.add({
       severity: "warn",
       summary: t("common.error"),
@@ -1182,6 +1337,20 @@ const executeSave = async (close = true, scope = "single") => {
       life: 3000,
     });
     return;
+  }
+
+  if (form.value.time_off_id && !form.value.is_block) {
+    loading.value = true;
+    const ok = await unblockTimeOff();
+    loading.value = false;
+    return ok;
+  }
+
+  if (form.value.is_block) {
+    loading.value = true;
+    const ok = await saveAsTimeOff();
+    loading.value = false;
+    return ok;
   }
 
   // Hard pre-save check — the staff dropdown in BookingServices already
