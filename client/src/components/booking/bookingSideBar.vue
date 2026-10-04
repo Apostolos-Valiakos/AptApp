@@ -74,6 +74,26 @@
         </div>
       </div>
 
+      <!-- Appointment notes — same field a client can set when self-booking
+           through the portal, edited here by staff; staff-only screen, so
+           this is never shown to any client. -->
+      <div
+        class="text-left bg-white p-4 rounded-xl shadow-sm border border-gray-100 mt-3"
+      >
+        <h4
+          class="text-xs font-bold text-gray-400 uppercase mb-3 border-l-2 border-[var(--p-primary-300)] pl-2"
+        >
+          {{ t("bookingSidebar.appointmentNotes") }}
+        </h4>
+        <Textarea
+          :modelValue="bookingNotes"
+          @update:modelValue="emit('update:bookingNotes', $event)"
+          rows="3"
+          class="w-full text-sm"
+          :placeholder="t('booking.notes.bookingPlaceholder')"
+        />
+      </div>
+
       <!-- Past appointments card -->
       <div
         v-if="pastAppointments.length"
@@ -143,7 +163,12 @@ const props = defineProps({
     type: Number,
     default: 0,
   },
+  bookingNotes: {
+    type: String,
+    default: "",
+  },
 });
+const emit = defineEmits(["update:bookingNotes"]);
 
 // --- Past appointments ---
 const pastAppointments = ref<any[]>([]);

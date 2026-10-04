@@ -167,20 +167,14 @@
         />
       </div>
       <div v-if="editDayMode === 'custom'" class="flex items-center gap-2">
-        <DatePicker
-          v-model="editDayStart"
-          timeOnly
-          hourFormat="24"
-          class="w-full"
-          inputClass="w-full"
+        <TimeDropdown
+          :modelValue="toTimeStr(editDayStart)"
+          @update:modelValue="(t: string) => (editDayStart = parseTimeToDate(t))"
         />
         <span class="text-gray-400 flex-shrink-0">—</span>
-        <DatePicker
-          v-model="editDayEnd"
-          timeOnly
-          hourFormat="24"
-          class="w-full"
-          inputClass="w-full"
+        <TimeDropdown
+          :modelValue="toTimeStr(editDayEnd)"
+          @update:modelValue="(t: string) => (editDayEnd = parseTimeToDate(t))"
         />
       </div>
       <template #footer>
@@ -218,9 +212,15 @@
                 :key="idx"
                 class="flex items-center gap-2"
               >
-                <DatePicker v-model="range.start_time" timeOnly hourFormat="24" class="w-full" inputClass="w-full" />
+                <TimeDropdown
+                  :modelValue="toTimeStr(range.start_time)"
+                  @update:modelValue="(t: string) => (range.start_time = parseTimeToDate(t))"
+                />
                 <span class="text-gray-400 text-sm flex-shrink-0">—</span>
-                <DatePicker v-model="range.end_time" timeOnly hourFormat="24" class="w-full" inputClass="w-full" />
+                <TimeDropdown
+                  :modelValue="toTimeStr(range.end_time)"
+                  @update:modelValue="(t: string) => (range.end_time = parseTimeToDate(t))"
+                />
                 <Button
                   icon="pi pi-trash"
                   class="p-button-rounded p-button-text p-button-sm p-button-danger flex-shrink-0"
@@ -275,9 +275,15 @@
               {{ t(`staff.workingHours.days.${day.day_of_week}`) }}
             </span>
             <div v-if="day.open" class="flex-1 flex items-center gap-2 min-w-0">
-              <DatePicker v-model="day.start_time" timeOnly hourFormat="24" class="w-full" inputClass="w-full" />
+              <TimeDropdown
+                :modelValue="toTimeStr(day.start_time)"
+                @update:modelValue="(t: string) => (day.start_time = parseTimeToDate(t))"
+              />
               <span class="text-gray-400 text-sm flex-shrink-0">—</span>
-              <DatePicker v-model="day.end_time" timeOnly hourFormat="24" class="w-full" inputClass="w-full" />
+              <TimeDropdown
+                :modelValue="toTimeStr(day.end_time)"
+                @update:modelValue="(t: string) => (day.end_time = parseTimeToDate(t))"
+              />
             </div>
             <span v-else class="text-xs text-gray-400">{{ t("staffSchedule.closed") }}</span>
           </div>
@@ -304,6 +310,7 @@ import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 import { useCalendarStore } from "../stores/calendar";
 import { useAuthStore } from "../stores/auth";
+import TimeDropdown from "../components/booking/TimeDropdown.vue";
 import {
   mondayOf,
   buildWeekSchedule,

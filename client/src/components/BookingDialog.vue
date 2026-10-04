@@ -245,6 +245,45 @@
               :defaultCustomerName="selectedClient?.full_name"
               v-model:pendingGiftCards="pendingGiftCards"
             />
+
+            <!-- Same-day appointments (different staff) — visible to any
+                 role so staff can see the client's full day at a glance;
+                 only admin/frontdesk/super_admin can select siblings to
+                 combine into one payment (canCombineDayPayment). -->
+            <div
+              v-if="siblingAppointments.length"
+              class="mb-6 p-4 bg-gray-50 rounded-xl border border-gray-100"
+            >
+              <h4 class="text-sm font-bold text-gray-700 mb-3">
+                {{ t("payment.sameDayAppointments") }}
+              </h4>
+              <div
+                v-for="sib in siblingAppointments"
+                :key="sib.id"
+                class="flex items-center gap-3 py-1.5"
+              >
+                <Checkbox
+                  v-model="selectedSiblingIds"
+                  :value="sib.id"
+                  :disabled="!canCombineDayPayment || sib.owed <= 0"
+                />
+                <div class="flex-1 min-w-0 text-sm text-gray-700 truncate">
+                  {{ sib.services.map((s: any) => s.service_name).join(", ") }}
+                  <span class="text-gray-400">
+                    — {{ sib.services[0]?.staff_name }}</span
+                  >
+                </div>
+                <div class="text-sm font-semibold text-gray-800 flex-shrink-0">
+                  €{{ sib.owed.toFixed(2) }}
+                  <span
+                    v-if="sib.payment_status === 'paid'"
+                    class="text-xs font-normal text-green-600"
+                    >({{ t("payment.paid") }})</span
+                  >
+                </div>
+              </div>
+            </div>
+
             <BookingDiscount
               v-model="discount"
               :codes="discountCodes"
@@ -287,12 +326,13 @@
 
             <BookingPayments
               ref="bookingPaymentsRef"
-              :totalDueNow="totalDueNow"
+              :totalDueNow="combinedTotalDueNow"
               :currentApptTotal="currentApptTotal"
               :previousDebt="previousDebt"
               :packagesTotal="pendingPackagesTotal"
               :giftCardsTotal="pendingGiftCardsTotal"
-              :depositAmount="form.deposit_amount"
+              :sameDayAppointmentsTotal="selectedSiblingsOwedTotal"
+              :depositAmount="form.deposit_amount + selectedSiblingsDepositTotal"
               :loading="paymentLoading"
               :paidPaymentMethod="form.payment_method"
               :clientId="form.client_id"
@@ -308,19 +348,6 @@
 
           <!-- NOTES TAB -->
           <div v-if="currentTab === 'Notes'" class="space-y-4">
-            <div>
-              <label
-                class="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-2"
-              >
-                {{ t("booking.notes.bookingNote") }}
-              </label>
-              <Textarea
-                v-model="form.booking_notes"
-                rows="3"
-                class="w-full"
-                :placeholder="t('booking.notes.bookingPlaceholder')"
-              />
-            </div>
             <div>
               <label
                 class="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-2"
@@ -423,6 +450,7 @@
             class="w-full bg-gray-50 h-full"
             :client="selectedClient"
             :calculated-balance="previousDebt"
+            v-model:bookingNotes="form.booking_notes"
           />
         </div>
       </div>
@@ -505,7 +533,8 @@ import ClientProfileDialog from "./ClientProfileDialog.vue";
 import { useConfirm } from "primevue/useconfirm";
 import { useToast } from "primevue/usetoast";
 import { fetchOrQueue } from "../offline/queue";
-import { isStaffAvailable } from "../utils/staffAvailability";
+import { isStaffAvailable, toLocalDateStr } from "../utils/staffAvailability";
+import { matchVariationName } from "../utils/serviceVariations";
 import {
   snapshotServices,
   describeServiceChanges,
@@ -517,6 +546,12 @@ const toast = useToast();
 const { t, locale } = useI18n();
 const authStore = useAuthStore();
 const canChangePriceOrRefund = computed(() => authStore.isShopAdmin);
+// Combining several of a client's same-day appointments into one payment
+// crosses staff ownership (a plain "staff" role normally only ever sees/acts
+// on their own bookings) — gated the same way canSellExtras already gates
+// packages/gift cards server-side. The read (siblingAppointments fetch) stays
+// open to every role so a plain staff member can still see the day's total.
+const canCombineDayPayment = computed(() => authStore.isShopAdmin);
 const priceChangeVisible = ref(false);
 const refundVisible = ref(false);
 
@@ -710,6 +745,33 @@ const loadClientById = async (clientId: string, fallback: any) => {
   }
 };
 
+// This client's other active appointments the same calendar day, across
+// every staff member — powers the Payment tab's combined-day checklist.
+// Fetched regardless of role (so a plain staff member still sees the full
+// day read-only); only the checkbox interaction is gated client-side by
+// canCombineDayPayment.
+const loadSiblingAppointments = async (clientId: string, startTime: Date) => {
+  siblingsLoading.value = true;
+  try {
+    const token = localStorage.getItem("token");
+    const dateStr = toLocalDateStr(startTime);
+    const res = await fetch(
+      `/api/v1/clients/${clientId}/appointments-on-date?date=${dateStr}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (res.ok) {
+      const all = await res.json();
+      siblingAppointments.value = all.filter(
+        (a: any) => a.id !== form.value.id,
+      );
+    }
+  } catch {
+    // leave the list empty if this fails — not critical to saving/paying
+  } finally {
+    siblingsLoading.value = false;
+  }
+};
+
 // Pre-selects the shop's single walk-in client on a brand-new, blank
 // appointment — lets staff save fast and attribute it to a real client
 // later via the same "×" clear-and-search flow used for any appointment.
@@ -751,6 +813,25 @@ const pendingGiftCards = ref<
 >([]);
 const pendingGiftCardsTotal = computed(() =>
   pendingGiftCards.value.reduce((sum, g) => sum + Number(g.initial_amount), 0),
+);
+
+// This client's other active appointments the same calendar day (any staff
+// member), fetched fresh per-dialog-open — see the watch init below. Lets
+// an admin/frontdesk/super_admin fold several same-day appointments into
+// one combined payment (canCombineDayPayment); a plain staff member still
+// sees the list and the combined total read-only.
+const siblingAppointments = ref<any[]>([]);
+const selectedSiblingIds = ref<string[]>([]);
+const siblingsLoading = ref(false);
+const selectedSiblingsOwedTotal = computed(() =>
+  siblingAppointments.value
+    .filter((s) => selectedSiblingIds.value.includes(s.id))
+    .reduce((sum, s) => sum + Number(s.owed), 0),
+);
+const selectedSiblingsDepositTotal = computed(() =>
+  siblingAppointments.value
+    .filter((s) => selectedSiblingIds.value.includes(s.id))
+    .reduce((sum, s) => sum + Number(s.deposit_amount), 0),
 );
 
 const servicesTotal = computed(() =>
@@ -804,24 +885,52 @@ const isApptInDatabaseBalance = computed(() => {
 
 // Replace your existing previousDebt and totalDueNow with this:
 
+// Mirrors isApptInDatabaseBalance above, per selected sibling — a sibling
+// appointment later today (start_time > now) isn't yet folded into
+// selectedClient.outstanding_balance (recalculateClientBalance only counts
+// appointments <= NOW), so it must not be subtracted out of previousDebt
+// below, only one already elapsed today should be.
+const isSiblingInDatabaseBalance = (sibling: any) => {
+  const start = sibling?.services?.[0]?.start_time;
+  if (!start) return false;
+  const apptDate = new Date(start);
+  if (apptDate < new Date("2026-03-01T00:00:00")) return false;
+  return apptDate <= new Date();
+};
+
 const previousDebt = computed(() => {
   if (!selectedClient.value) return 0;
+  if (!isEditMode.value) return Number(selectedClient.value.outstanding_balance || 0);
 
-  const totalBalance = Number(selectedClient.value.outstanding_balance || 0);
+  // The DB balance contains: other_debt + (currentApptTotal - alreadyPaid)
+  // for the primary appointment, if IT is already elapsed, PLUS the same for
+  // any selected sibling that is independently already elapsed — these are
+  // two separate conditions, not one shared gate: a future primary can still
+  // have an already-elapsed sibling whose debt is already folded into
+  // outstanding_balance, and vice versa. Subtract only whichever of these
+  // genuinely contributed to the DB balance, so we isolate other_debt
+  // without double-counting (once via outstanding_balance, once via
+  // selectedSiblingsOwedTotal in combinedTotalDueNow below).
+  let adjusted = Number(selectedClient.value.outstanding_balance || 0);
 
-  // If we are editing an appointment that is already "Past" (and thus included in the DB balance)
-  if (isEditMode.value && isApptInDatabaseBalance.value) {
-    // The DB balance contains: other_debt + (currentApptTotal - alreadyPaid).
-    // Subtract only the unpaid portion of this appointment so we isolate other_debt.
+  if (isApptInDatabaseBalance.value) {
     const currentApptUnpaid = Math.max(
       0,
       currentApptTotal.value - form.value.deposit_amount,
     );
-    return Math.max(0, totalBalance - currentApptUnpaid);
+    adjusted -= currentApptUnpaid;
   }
 
-  // For NEW or FUTURE appointments, the database balance IS the previous debt
-  return totalBalance;
+  const selectedSiblingsUnpaid = siblingAppointments.value
+    .filter(
+      (s) =>
+        selectedSiblingIds.value.includes(s.id) &&
+        isSiblingInDatabaseBalance(s),
+    )
+    .reduce((sum, s) => sum + Number(s.owed), 0);
+  adjusted -= selectedSiblingsUnpaid;
+
+  return Math.max(0, adjusted);
 });
 
 const totalDueNow = computed(() => {
@@ -842,10 +951,40 @@ const totalDueNow = computed(() => {
   );
 });
 
-// Only clamp the entered amount when the total due drops below it (e.g. a service is removed).
-// The initial suggestion is set by the appointment watcher via nextTick so a user's
-// custom partial-payment amount is never silently overwritten by a service-price change.
-watch(totalDueNow, (newVal) => {
+// What BookingPayments actually renders/collects against — totalDueNow plus
+// whichever same-day siblings are currently checked. See recordPayment below
+// for how this flows into appointment_ids on save.
+const combinedTotalDueNow = computed(
+  () => totalDueNow.value + selectedSiblingsOwedTotal.value,
+);
+
+// Suggests a sensible default amount: pay off whatever's explicitly owed for
+// this appointment plus any currently-checked same-day siblings, falling
+// back to the full combined total (incl. old debt) only once there's
+// nothing left owed on the selected set. Called once on dialog open (via
+// nextTick below, so currentApptTotal/totalDueNow have settled) and again
+// whenever the sibling selection itself changes — selecting a sibling is a
+// deliberate "include this in the payment" action, so the suggested amount
+// must track it upward too, not just clamp down (see the clamp watch below,
+// which only ever handles decreases).
+const suggestAmountToPay = () => {
+  const currentApptUnpaid = Math.max(
+    0,
+    currentApptTotal.value - form.value.deposit_amount,
+  );
+  const selectedUnpaid = currentApptUnpaid + selectedSiblingsOwedTotal.value;
+  amountToPayNow.value =
+    selectedUnpaid > 0 ? selectedUnpaid : Math.max(0, combinedTotalDueNow.value);
+};
+
+watch(selectedSiblingIds, () => nextTick(suggestAmountToPay), { deep: true });
+
+// Only clamp the entered amount when the total due drops below it (e.g. a
+// service is removed). suggestAmountToPay above handles increases (initial
+// suggestion + sibling selection); this only ever needs to handle decreases
+// so a user's custom partial-payment amount is never silently overwritten by
+// an unrelated service-price change.
+watch(combinedTotalDueNow, (newVal) => {
   if (amountToPayNow.value > newVal) {
     amountToPayNow.value = newVal;
   }
@@ -856,6 +995,12 @@ watch(
   [() => props.appointment, () => props.visible],
   ([val, visible]) => {
     if (!visible) return;
+    // Never carry a stale same-day-payment selection into a new dialog
+    // instance — EDIT MODE below repopulates siblingAppointments if this
+    // appointment has a client + start_time; NEW MODE (a brand-new,
+    // unsaved appointment) never has siblings to show.
+    selectedSiblingIds.value = [];
+    siblingAppointments.value = [];
     let resolvedStaffId = null;
     if (val?.staff_id && props.staff) {
       const found = props.staff.find((s: any) => s.id == val.staff_id);
@@ -918,15 +1063,40 @@ watch(
       }
 
       if (val.services?.length > 0) {
-        servicesList.value = val.services.map((s: any) => ({
-          service_id: s.service_id,
-          staff_id: s.staff_id,
-          start_time: s.start_time
-            ? new Date(s.start_time)
-            : new Date(val.start_time),
-          duration_override: s.duration_minutes || 60,
-          price_override: Number(s.price || 0),
-        }));
+        servicesList.value = val.services.map((s: any) => {
+          // Which variation this row was is now persisted server-side
+          // (appointment_services.variation_name — s.variation_name here),
+          // independent of price/duration, so it survives later edits to
+          // either (e.g. extending the duration). s.variation_name is only
+          // absent for appointments saved before that column existed; for
+          // those, fall back once here to reverse-matching the saved price/
+          // duration against the service's current variation list — same as
+          // before, still breaks if price/duration are edited afterward,
+          // but that's now limited to pre-migration data only.
+          const catalogService = props.services?.find(
+            (cs: any) => cs.id === s.service_id,
+          );
+          const resolvedVariationName =
+            s.variation_name ||
+            matchVariationName(
+              catalogService,
+              Number(s.price || 0),
+              s.duration_minutes || 60,
+            );
+          return {
+            service_id: s.service_id,
+            staff_id: s.staff_id,
+            start_time: s.start_time
+              ? new Date(s.start_time)
+              : new Date(val.start_time),
+            duration_override: s.duration_minutes || 60,
+            price_override: Number(s.price || 0),
+            variation_name: resolvedVariationName || null,
+            _label: resolvedVariationName
+              ? `${catalogService?.name || s.service_name || ""} — ${resolvedVariationName}`
+              : catalogService?.name || s.service_name || "",
+          };
+        });
       } else {
         servicesList.value = [
           {
@@ -956,6 +1126,10 @@ watch(
         deposit: form.value.deposit_amount,
         isPast: apptStartTime ? new Date(apptStartTime) < new Date() : false,
       };
+
+      if (form.value.client_id && form.value.start_time) {
+        loadSiblingAppointments(form.value.client_id, form.value.start_time);
+      }
     } else {
       // === NEW MODE ===
       const newStart = val?.start_time ? new Date(val.start_time) : new Date();
@@ -1035,17 +1209,7 @@ watch(
 
     // Suggest a sensible default amount after the form (and computed values) have settled.
     // Using nextTick so computed properties (currentApptTotal, totalDueNow) read the new form state.
-    nextTick(() => {
-      const currentApptUnpaid = Math.max(
-        0,
-        currentApptTotal.value - form.value.deposit_amount,
-      );
-      if (currentApptUnpaid > 0) {
-        amountToPayNow.value = currentApptUnpaid;
-      } else {
-        amountToPayNow.value = Math.max(0, totalDueNow.value);
-      }
-    });
+    nextTick(suggestAmountToPay);
     currentTab.value = "Booking";
     showMobileSidebar.value = false;
   },
@@ -1540,6 +1704,9 @@ const recordPayment = async (
       "POST",
       {
         appointment_id: form.value.id,
+        ...(selectedSiblingIds.value.length > 0
+          ? { appointment_ids: [form.value.id, ...selectedSiblingIds.value] }
+          : {}),
         client_id: form.value.client_id,
         amount: serviceLegAmount,
         payment_method: selectedPaymentMethod.value,
@@ -1580,6 +1747,11 @@ const recordPayment = async (
       form.value.deposit_amount += totalPaidThisVisit;
       pendingPackages.value = [];
       pendingGiftCards.value = [];
+      // Any selected siblings' owed/payment_status are about to change once
+      // the queue flushes server-side — clear rather than show stale figures
+      // while offline.
+      selectedSiblingIds.value = [];
+      siblingAppointments.value = [];
       toast.add({
         severity: "warn",
         summary: t("booking.toast.savedOffline"),
@@ -1608,6 +1780,12 @@ const recordPayment = async (
       // Update local deposit_amount for immediate UI feedback (package
       // purchases never touch the appointment's own deposit/payment_status).
       form.value.deposit_amount += totalPaidThisVisit;
+
+      // Any paid siblings' owed/payment_status are now stale (the server
+      // already updated them) — clear rather than show outdated figures;
+      // re-opening the dialog refetches fresh state.
+      selectedSiblingIds.value = [];
+      siblingAppointments.value = [];
 
       // Use the authoritative balance returned by the server instead of guessing by subtraction
       if (data.new_balance !== undefined && selectedClient.value) {

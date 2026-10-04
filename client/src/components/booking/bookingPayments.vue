@@ -21,6 +21,15 @@
           <span class="font-medium">€{{ currentApptTotal.toFixed(2) }}</span>
         </div>
         <div
+          v-if="sameDayAppointmentsTotal > 0"
+          class="flex justify-between py-2 border-b border-gray-700/50"
+        >
+          <span>{{ t("payment.sameDayAppointments") }}</span>
+          <span class="font-medium text-amber-300"
+            >+ €{{ sameDayAppointmentsTotal.toFixed(2) }}</span
+          >
+        </div>
+        <div
           v-if="previousDebt > 0"
           class="flex justify-between py-2 border-b border-gray-700/50"
         >
@@ -330,6 +339,7 @@ const props = defineProps({
   previousDebt: { type: Number, default: 0 },
   packagesTotal: { type: Number, default: 0 },
   giftCardsTotal: { type: Number, default: 0 },
+  sameDayAppointmentsTotal: { type: Number, default: 0 },
   depositAmount: { type: Number, default: 0 },
   amountToPay: { type: Number, default: 0 },
   loading: { type: Boolean, default: false },
