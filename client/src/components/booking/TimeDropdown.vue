@@ -43,8 +43,8 @@ const props = withDefaults(
   }>(),
   {
     minTime: "00:00",
-    maxTime: "23:45",
-    step: 15,
+    maxTime: "23:55",
+    step: 5,
   },
 );
 

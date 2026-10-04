@@ -287,6 +287,7 @@ import {
   toLocalDateStr,
   getWorkingRangesForDate,
 } from "../utils/staffAvailability";
+import { displayServiceName } from "../utils/serviceVariations";
 
 const reorderDialogVisible = ref(false);
 const authStore = useAuthStore();
@@ -665,11 +666,32 @@ const calendarEvents = computed(() => {
             new Date(svc.start_time).getTime() + duration * 60000,
           ).toISOString()
         : null;
+      // Which variation this row was is persisted server-side
+      // (appointment_services.variation_name → svc.variation_name here),
+      // independent of price/duration, so it survives later edits to either
+      // (e.g. extending the duration) — see utils/serviceVariations.ts.
+      // svc.variation_name is only absent for appointments saved before that
+      // column existed, for which this falls back once to reverse-matching
+      // price/duration against the service's current variation list (same
+      // legacy-only limitation as BookingDialog's EDIT MODE load). Category
+      // color stays keyed on the plain base name above; only the DISPLAYED
+      // name (box title + the service line under the client name) gets the
+      // "Service — Variation" treatment.
+      const catalogService = calendarStore.services.find(
+        (s: any) => s.id === svc.service_id,
+      );
+      const displayedServiceName =
+        (svc.variation_name && svc.service_name
+          ? `${svc.service_name} — ${svc.variation_name}`
+          : null) ||
+        displayServiceName(catalogService, svc.price, svc.duration_minutes) ||
+        svc.service_name ||
+        "Service";
 
       events.push({
         id: `${appt.id}_${index}`,
         resourceId: svc.staff_id?.toString(),
-        title: `${appt.first_name} - ${svc.service_name}`,
+        title: `${appt.first_name} - ${displayedServiceName}`,
         start: svc.start_time,
         end: endTime,
         backgroundColor: bgColor,
@@ -692,11 +714,25 @@ const calendarEvents = computed(() => {
           // short appointments — leaves more room for the service name
           // before truncating than the full "Surname Firstname" would.
           client_surname: appt.last_name || appt.first_name || "Unknown",
-          service_name: svc.service_name || "Service",
+          service_name: displayedServiceName,
           // Same client + same service + same start time = one booking split
           // across several staff members (shown as separate boxes, one per
           // staff column); hovering any of them highlights the others.
           linkKey: `${appt.client_id || `${appt.last_name}|${appt.first_name}`}|${svc.service_id || svc.service_name}|${svc.start_time}`,
+          // Same client, same calendar day, ANY staff/service/time — a
+          // broader, separate grouping from linkKey above (e.g. two
+          // different appointments with different staff later the same
+          // day). Only active appointments group this way (not cancelled/
+          // no-show — note the hyphenated "no-show", the DB's actual
+          // stored value); no walk-in-name fallback like linkKey has, since
+          // grouping two different same-named walk-ins would be a false
+          // positive — simply absent when there's no real client_id.
+          dayClientKey:
+            appt.client_id &&
+            appt.status !== "cancelled" &&
+            appt.status !== "no-show"
+              ? `${appt.client_id}|${toLocalDateStr(svc.start_time)}`
+              : undefined,
         },
       });
     });
@@ -995,24 +1031,44 @@ const escapeHtml = (value: unknown): string =>
       ] as string,
   );
 
-// Slightly darkens every other box belonging to the same booking (same client,
-// service and start time across different staff columns) while one of them is
-// hovered — the hovered box already darkens itself via its own hover style.
+// Two independent hover-grouping keys, each toggling its own CSS class:
+// linkKey (same client+service+exact start time, split across staff — a
+// subtle darken) and dayClientKey (same client, same calendar day, any
+// staff/service/time — a themed colored highlight). Dictionary-driven since
+// both comparisons are structurally identical; an event can match both
+// simultaneously with no conflict (two classes on one element).
+const HOVER_LINK_CONFIGS = [
+  { attr: "linkKey", dataAttr: "linkKey", cssClass: "fc-linked-hover" },
+  {
+    attr: "dayClientKey",
+    dataAttr: "dayClientKey",
+    cssClass: "fc-day-client-hover",
+  },
+] as const;
+
 const highlightLinkedEvents = (
-  linkKey: string | undefined,
+  extendedProps: Record<string, any> | undefined,
   hoveredEl: HTMLElement,
 ) => {
-  if (!linkKey) return;
-  document.querySelectorAll<HTMLElement>("[data-link-key]").forEach((el) => {
-    if (el !== hoveredEl && el.dataset.linkKey === linkKey) {
-      el.classList.add("fc-linked-hover");
-    }
-  });
+  if (!extendedProps) return;
+  for (const { attr, cssClass } of HOVER_LINK_CONFIGS) {
+    const key = extendedProps[attr];
+    if (!key) continue;
+    document
+      .querySelectorAll<HTMLElement>(`[data-${attr === "linkKey" ? "link-key" : "day-client-key"}]`)
+      .forEach((el) => {
+        if (el !== hoveredEl && (el.dataset as any)[attr] === key) {
+          el.classList.add(cssClass);
+        }
+      });
+  }
 };
 const clearLinkedHighlight = () => {
-  document
-    .querySelectorAll(".fc-linked-hover")
-    .forEach((el) => el.classList.remove("fc-linked-hover"));
+  for (const { cssClass } of HOVER_LINK_CONFIGS) {
+    document
+      .querySelectorAll(`.${cssClass}`)
+      .forEach((el) => el.classList.remove(cssClass));
+  }
 };
 
 // --- Calendar Options ---
@@ -1259,6 +1315,8 @@ const calendarOptions = ref({
   eventDidMount: (info: any) => {
     const key = info.event.extendedProps?.linkKey;
     if (key) info.el.dataset.linkKey = key;
+    const dayKey = info.event.extendedProps?.dayClientKey;
+    if (dayKey) info.el.dataset.dayClientKey = dayKey;
   },
 
   eventDragStart: () => {
@@ -1281,7 +1339,7 @@ const calendarOptions = ref({
   eventMouseEnter: (info: any) => {
     if (!info.event.extendedProps?.isServiceEvent) return;
     if (dragInProgress || moveConfirmOpen) return;
-    highlightLinkedEvents(info.event.extendedProps.linkKey, info.el);
+    highlightLinkedEvents(info.event.extendedProps, info.el);
     if (hoverShowTimer) clearTimeout(hoverShowTimer);
     hoverShowTimer = setTimeout(() => {
       if (dragInProgress || moveConfirmOpen) return;
@@ -1467,12 +1525,8 @@ onMounted(async () => {
    shorthand (color + image together), which otherwise wins the cascade by
    source order and silently resets background-image back to none. */
 .fc-off-hours-bg {
-  background-image: repeating-linear-gradient(
-    45deg,
-    rgba(100, 116, 139, 0.16) 0 6px,
-    transparent 6px 12px
-  ) !important;
-  background-color: transparent !important;
+  background-image: none !important;
+  background-color: rgba(100, 116, 139, 0.16) !important;
   opacity: 1 !important;
 }
 
@@ -1531,6 +1585,15 @@ onMounted(async () => {
 /* Matches the hovered box's own hover:brightness-95 on its inner content. */
 .fc-linked-hover .fc-event-main > div {
   filter: brightness(0.95);
+}
+/* Same client, same calendar day, any staff — a colored highlight (not just
+   a brightness tweak) so it reads as a distinct grouping from the
+   same-moment .fc-linked-hover above. Inset so it composes with
+   .fc-v-event's own border/box-shadow instead of drawing a second,
+   concentric rectangle the way an outline would. Can coexist with
+   fc-linked-hover on the same box. */
+.fc-day-client-hover {
+  box-shadow: 0 0 0 2px var(--p-primary-color) inset !important;
 }
 
 /* Minimum visual height floor: a 5-10 min appointment renders at only a

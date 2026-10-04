@@ -469,8 +469,8 @@ const createAppointmentSeries = async (client, data, shopId) => {
           await client.query(
             `INSERT INTO appointment_services (
               appointment_id, service_id, staff_id, start_time,
-              duration_override, price_override, shop_id, list_price
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+              duration_override, price_override, shop_id, list_price, variation_name
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
             [
               appointmentId,
               validServiceId,
@@ -480,6 +480,7 @@ const createAppointmentSeries = async (client, data, shopId) => {
               svc.price_override,
               shopId,
               disc ? svc.list_price : null,
+              svc.variation_name || null,
             ],
           );
         }
@@ -623,8 +624,8 @@ const performSingleUpdate = async (client, id, shopId, body) => {
       if (safeUUID(svc.service_id)) {
         await client.query(
           `INSERT INTO appointment_services (
-            appointment_id, service_id, staff_id, start_time, duration_override, price_override, shop_id, list_price
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+            appointment_id, service_id, staff_id, start_time, duration_override, price_override, shop_id, list_price, variation_name
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
           [
             id,
             safeUUID(svc.service_id),
@@ -634,6 +635,7 @@ const performSingleUpdate = async (client, id, shopId, body) => {
             svc.price_override,
             shopId,
             disc ? svc.list_price : null,
+            svc.variation_name || null,
           ],
         );
       }
@@ -3382,6 +3384,7 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
           SELECT json_agg(json_build_object(
             'service_id', s.id,
             'service_name', s.name,
+            'variation_name', aps.variation_name,
             'price', COALESCE(aps.list_price, aps.price_override, s.price),
             'duration_minutes', COALESCE(aps.duration_override, s.duration_minutes),
             'staff_id', aps.staff_id,
@@ -3907,8 +3910,12 @@ app.post("/api/v1/appointments/swap", authenticateToken, async (req, res) => {
     const s2 = q2.rows;
 
     for (let i = 0; i < s1.length && i < s2.length; i++) {
+      // variation_name travels with the rest of the swapped bundle (same
+      // reasoning as list_price/price_override/duration_override above) —
+      // service_id doesn't change, only which appointment this row's
+      // time/price/duration/variation is now attached to.
       await client.query(
-        `UPDATE appointment_services SET start_time=$1, staff_id=$2, duration_override=$3, price_override=$4, list_price=$6 WHERE id=$5`,
+        `UPDATE appointment_services SET start_time=$1, staff_id=$2, duration_override=$3, price_override=$4, list_price=$6, variation_name=$7 WHERE id=$5`,
         [
           s2[i].start_time,
           s2[i].staff_id,
@@ -3916,10 +3923,11 @@ app.post("/api/v1/appointments/swap", authenticateToken, async (req, res) => {
           s2[i].price_override,
           s1[i].id,
           s2[i].list_price,
+          s2[i].variation_name,
         ],
       );
       await client.query(
-        `UPDATE appointment_services SET start_time=$1, staff_id=$2, duration_override=$3, price_override=$4, list_price=$6 WHERE id=$5`,
+        `UPDATE appointment_services SET start_time=$1, staff_id=$2, duration_override=$3, price_override=$4, list_price=$6, variation_name=$7 WHERE id=$5`,
         [
           s1[i].start_time,
           s1[i].staff_id,
@@ -3927,6 +3935,7 @@ app.post("/api/v1/appointments/swap", authenticateToken, async (req, res) => {
           s1[i].price_override,
           s2[i].id,
           s1[i].list_price,
+          s1[i].variation_name,
         ],
       );
     }
@@ -4061,6 +4070,7 @@ app.get("/api/v1/discounts/usage", authenticateToken, requireAnalyticsAccess, as
 app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
   const {
     appointment_id,
+    appointment_ids, // string[] | undefined — explicit ordered list for a combined same-day payment; appointment_id must be one of its entries
     client_id,
     amount,
     payment_method = "card",
@@ -4125,6 +4135,34 @@ app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
     if (payment_method2 === "membership" && (!redemptions2 || !redemptions2.length)) {
       return res.status(400).json({ error: "redemptions2 is required for a membership second payment" });
     }
+  }
+
+  // A combined same-day payment: explicit, caller-ordered list of every
+  // appointment this one payment covers (the primary appointment_id plus
+  // any selected same-day siblings). Validated up front — every id must be
+  // real, belong to this client+shop, and be active — so a bad id rejects
+  // the whole request before any DB write, rather than silently applying a
+  // partial payment. appointment_id (singular) is still always required and
+  // must be one of the list's entries, since membership redemption (below)
+  // only ever targets it specifically, never the rest of the list.
+  let validatedApptIds = null;
+  if (Array.isArray(appointment_ids) && appointment_ids.length > 0) {
+    const ids = appointment_ids.map(safeUUID);
+    if (ids.some((id) => !id)) {
+      return res.status(400).json({ error: "Invalid appointment_ids" });
+    }
+    if (!ids.includes(appointment_id)) {
+      return res.status(400).json({ error: "appointment_id must be included in appointment_ids" });
+    }
+    const checkRes = await pool.query(
+      `SELECT id FROM appointments WHERE id = ANY($1::uuid[]) AND client_id = $2 AND shop_id = $3
+         AND status NOT IN ('cancelled', 'no-show')`,
+      [ids, client_id, req.shopId],
+    );
+    if (checkRes.rows.length !== ids.length) {
+      return res.status(400).json({ error: "One or more appointments are invalid, cancelled, or belong to a different client" });
+    }
+    validatedApptIds = ids;
   }
 
   const idempotencyKey = req.headers["idempotency-key"] || null;
@@ -4202,27 +4240,47 @@ app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
       );
     };
 
-    const currentPriceRes = await client.query(
+    // Explicit list this payment is clearly for — the single appointment_id
+    // when no combined-day list was given (degenerates to exactly today's
+    // single-row lookup), or appointment_id + its selected same-day siblings
+    // in caller-supplied order. Either way, paid down first before any
+    // remainder falls through to the old-debt FIFO loop below.
+    const explicitIds = validatedApptIds && validatedApptIds.length
+      ? validatedApptIds
+      : [appointment_id];
+
+    const explicitRowsRes = await client.query(
       `SELECT
-         COALESCE((SELECT SUM(price_override) FROM appointment_services WHERE appointment_id = $1), 0)
-         + COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = $1), 0) as total_price`,
-      [appointment_id],
+         a.id,
+         COALESCE(SUM(aps.price_override), 0)
+           + COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = a.id), 0) as total_cost,
+         COALESCE((SELECT SUM(t2.amount) FROM transactions t2 WHERE t2.appointment_id = a.id), 0) as total_paid
+       FROM appointments a
+       JOIN appointment_services aps ON aps.appointment_id = a.id
+       WHERE a.id = ANY($1::uuid[]) AND a.shop_id = $2
+       GROUP BY a.id`,
+      [explicitIds, req.shopId],
     );
-    const currentApptCost = Number(currentPriceRes.rows[0].total_price);
+    // SQL's ANY() doesn't preserve array order — re-sort to match explicitIds
+    // so allocation happens in the caller-supplied order (primary first).
+    const explicitRowsById = new Map(
+      explicitRowsRes.rows.map((row) => [row.id, row]),
+    );
+    const explicitRows = explicitIds
+      .map((id) => explicitRowsById.get(id))
+      .filter(Boolean);
 
-    const currentPaidRes = await client.query(
-      `SELECT COALESCE(SUM(amount), 0) as paid FROM transactions WHERE appointment_id = $1`,
-      [appointment_id],
-    );
-    const currentApptAlreadyPaid = Number(currentPaidRes.rows[0].paid);
-    const currentApptOwed = Math.max(
+    const explicitOwedTotal = explicitRows.reduce(
+      (sum, row) =>
+        sum + Math.max(0, Number(row.total_cost) - Number(row.total_paid)),
       0,
-      currentApptCost - currentApptAlreadyPaid,
     );
 
-    // Other unpaid appointments (oldest first, March 1 2026+). Completed
-    // appointments are included: marking one completed must not make its
-    // debt uncollectable (the balance formula counts it too).
+    // Other unpaid appointments (oldest first, March 1 2026+), excluding
+    // whatever's already covered by explicitRows above so nothing is ever
+    // double-paid. Completed appointments are included: marking one
+    // completed must not make its debt uncollectable (the balance formula
+    // counts it too).
     const oldAppts = await client.query(
       `SELECT
          a.id,
@@ -4232,13 +4290,13 @@ app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
        FROM appointments a
        JOIN appointment_services aps ON aps.appointment_id = a.id
        WHERE a.client_id = $1
-         AND a.id != $2
+         AND a.id != ALL($2::uuid[])
          AND a.shop_id = $3
          AND a.status != 'cancelled'
          AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) >= '2026-03-01 00:00:00'
        GROUP BY a.id
        ORDER BY (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) ASC`,
-      [client_id, appointment_id, req.shopId],
+      [client_id, explicitIds, req.shopId],
     );
 
     const oldOwedTotal = oldAppts.rows.reduce(
@@ -4246,18 +4304,22 @@ app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
         sum + Math.max(0, Number(row.total_cost) - Number(row.total_paid)),
       0,
     );
-    const totalOwed = currentApptOwed + oldOwedTotal;
+    const totalOwed = explicitOwedTotal + oldOwedTotal;
     if (Number(legAmount) > totalOwed + 0.01) {
       return `Amount exceeds total owed (€${totalOwed.toFixed(2)}). Refresh and try again.`;
     }
 
-    // Allocate: pay current appointment first, then apply the remainder to old debt (FIFO)
+    // Allocate: pay the explicit list first (caller-supplied order), then
+    // apply any remainder to old debt (FIFO).
     let remaining = Number(legAmount);
 
-    const forCurrentAppt = Math.min(remaining, currentApptOwed);
-    if (forCurrentAppt > 0.009) {
-      await applyPaymentToAppointment(appointment_id, forCurrentAppt);
-      remaining -= forCurrentAppt;
+    for (const row of explicitRows) {
+      if (remaining <= 0.009) break;
+      const owed = Math.max(0, Number(row.total_cost) - Number(row.total_paid));
+      if (owed <= 0.009) continue;
+      const forThisAppt = Math.min(remaining, owed);
+      await applyPaymentToAppointment(row.id, forThisAppt);
+      remaining -= forThisAppt;
     }
 
     for (const row of oldAppts.rows) {
@@ -6597,6 +6659,73 @@ app.get("/api/v1/clients/:id/full", authenticateToken, async (req, res) => {
   }
 });
 
+// A client's active appointments on one specific date, across every staff
+// member — not gated by the "staff" role's own-appointments-only visibility
+// on GET /api/v1/appointments (that restriction exists for the scheduler's
+// own general listing and is unrelated to this: checking a client out needs
+// to see their whole day even when it spans several staff members). Used by
+// the Payment tab's combined-day-payment checklist; the read is open to any
+// authenticated shop role, only the client-side "select + pay" action is
+// gated to admin/frontdesk/super_admin.
+app.get(
+  "/api/v1/clients/:clientId/appointments-on-date",
+  authenticateToken,
+  async (req, res) => {
+    const { clientId } = req.params;
+    const { date } = req.query; // YYYY-MM-DD, required
+    if (!safeUUID(clientId)) {
+      return res.status(400).json({ error: "Invalid clientId" });
+    }
+    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({ error: "date (YYYY-MM-DD) is required" });
+    }
+    try {
+      const { rows } = await pool.query(
+        `SELECT
+           a.id, a.status, a.payment_status,
+           COALESCE((SELECT SUM(t.amount) FROM transactions t WHERE t.appointment_id = a.id), 0) as deposit_amount,
+           (
+             COALESCE((SELECT SUM(COALESCE(aps.price_override, s.price)) FROM appointment_services aps
+                       JOIN services s ON aps.service_id = s.id WHERE aps.appointment_id = a.id), 0)
+             + COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = a.id), 0)
+           ) as total_cost,
+           COALESCE((
+             SELECT json_agg(json_build_object(
+               'service_name', s.name,
+               'staff_name', st.name,
+               'start_time', aps.start_time
+             ) ORDER BY aps.start_time ASC)
+             FROM appointment_services aps
+             LEFT JOIN services s ON aps.service_id = s.id
+             LEFT JOIN staff st ON aps.staff_id = st.id
+             WHERE aps.appointment_id = a.id
+           ), '[]') as services
+         FROM appointments a
+         WHERE a.client_id = $1
+           AND a.shop_id = $2
+           AND a.status NOT IN ('cancelled', 'no-show')
+           AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id)::date = $3::date
+         ORDER BY (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) ASC`,
+        [clientId, req.shopId, date],
+      );
+      res.json(
+        rows.map((r) => ({
+          id: r.id,
+          status: r.status,
+          payment_status: r.payment_status,
+          deposit_amount: Number(r.deposit_amount),
+          total_cost: Number(r.total_cost),
+          owed: Math.max(0, Number(r.total_cost) - Number(r.deposit_amount)),
+          services: r.services,
+        })),
+      );
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
+
 // UPLOAD CLIENT FILE (Saved as BLOB)
 app.post(
   "/api/v1/clients/:id/files",
@@ -7854,6 +7983,18 @@ app.get("/api/v1/availability", authenticateToken, async (req, res) => {
       "ALTER TABLE appointments ADD COLUMN IF NOT EXISTS discount_code_name VARCHAR(100)",
       "ALTER TABLE appointments ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(10,2) NOT NULL DEFAULT 0",
       "ALTER TABLE appointment_services ADD COLUMN IF NOT EXISTS list_price NUMERIC(10,2)",
+      // Picking a variation (ServicePickerDialog.vue) never changes
+      // service_id — every variation of a service shares it, only
+      // price/duration differ (service_variations table). Without this,
+      // which variation a row was is only recoverable by matching its
+      // price/duration back against the service's current variation list —
+      // which breaks the instant either is edited afterward (e.g.
+      // lengthening the duration). This snapshots just the variation's own
+      // name at save time, same convention as price_override/
+      // duration_override/list_price above; the base service name itself
+      // still stays live-joined via services.name, only the variation
+      // suffix is frozen.
+      "ALTER TABLE appointment_services ADD COLUMN IF NOT EXISTS variation_name VARCHAR(255)",
       "ALTER TABLE product_sales ADD COLUMN IF NOT EXISTS list_total NUMERIC(10,2)",
       "CREATE INDEX IF NOT EXISTS idx_appointments_discount ON appointments (shop_id) WHERE discount_amount > 0",
     ]) {

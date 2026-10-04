@@ -208,6 +208,10 @@ const pick = (svc: any, variation: any | null) => {
   emit("picked", {
     service_id: svc.id,
     name: variation ? `${svc.name} — ${variation.name}` : svc.name,
+    // Persisted separately (appointment_services.variation_name) so which
+    // variation this row is stays known even after its price/duration are
+    // later edited — see utils/serviceVariations.ts.
+    variation_name: variation ? variation.name : null,
     duration_minutes: variation ? variation.duration_minutes : svc.duration_minutes,
     price: Number(variation ? variation.price : svc.price),
   });

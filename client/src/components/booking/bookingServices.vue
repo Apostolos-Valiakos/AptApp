@@ -152,6 +152,7 @@ import { ref, computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { useAuthStore } from "../../stores/auth";
 import { isStaffAvailable } from "../../utils/staffAvailability";
+import { displayServiceName } from "../../utils/serviceVariations";
 import ServicePickerDialog from "./ServicePickerDialog.vue";
 import TimeDropdown from "./TimeDropdown.vue";
 const { t } = useI18n();
@@ -191,7 +192,7 @@ const isStaffMissing = (service: any) =>
   props.requireStaff && !!service.service_id && !service.staff_id;
 
 // Date and time are edited as two separate widgets (a plain date picker +
-// the 15-min TimeDropdown) but both write back into the same underlying
+// the 5-min TimeDropdown) but both write back into the same underlying
 // start_time Date — everything else (recalcTimes, combo splitting, save)
 // keeps working off that single field unchanged.
 const formatTime = (d: Date) => {
@@ -303,8 +304,8 @@ const updateServiceDetails = (
         (sum: number, c: any) => sum + Number(c.price || 0),
         0,
       );
-      svc.duration_override = Math.max(5, svc.duration_override - componentMinutes);
-      svc.price_override = Math.max(0, svc.price_override - componentPrice);
+      const remainingMinutes = svc.duration_override - componentMinutes;
+      const remainingPrice = svc.price_override - componentPrice;
 
       const newBlocks = components.map((c: any) => {
         return {
@@ -316,7 +317,22 @@ const updateServiceDetails = (
           _autoGenFor: svc.service_id,
         };
       });
-      list.splice(index + 1, 0, ...newBlocks);
+
+      if (remainingMinutes <= 0 && remainingPrice <= 0) {
+        // The configured components already account for the combo's entire
+        // own price/duration (e.g. Sport + Χαμαμ: both halves are explicit
+        // components) — there's no real leftover treatment to keep a block
+        // for, so replace the combo row itself with just its components
+        // instead of leaving a degenerate near-zero third block behind.
+        list.splice(index, 1, ...newBlocks);
+      } else {
+        // A genuine remainder is left (e.g. Sport + Sauna: only the sauna
+        // add-on is an explicit component, the base massage stays as this
+        // row's own carved-down price/duration) — keep the combo row for it.
+        svc.duration_override = Math.max(5, remainingMinutes);
+        svc.price_override = Math.max(0, remainingPrice);
+        list.splice(index + 1, 0, ...newBlocks);
+      }
     }
   }
   recalcTimes(list);
@@ -338,12 +354,24 @@ const openPicker = (index: number) => {
 const displayName = (service: any) => {
   if (service._label) return service._label;
   const found = props.services.find((s: any) => s.id === service.service_id);
-  return found?.name || "";
+  // variation_name is now persisted (appointment_services.variation_name)
+  // independently of price/duration, so it stays correct even after either
+  // is edited later — see utils/serviceVariations.ts and BookingDialog's
+  // EDIT MODE load, which sets _label from this same field on open.
+  if (service.variation_name) {
+    return found ? `${found.name} — ${service.variation_name}` : service.variation_name;
+  }
+  // Legacy fallback, for appointments saved before variation_name existed:
+  // reverse-match the saved price/duration against the service's current
+  // variation list. Breaks the moment either is edited afterward, which is
+  // exactly why new saves no longer rely on this.
+  return displayServiceName(found, service.price_override, service.duration_override);
 };
 
 const onServicePicked = (picked: {
   service_id: string;
   name: string;
+  variation_name: string | null;
   duration_minutes: number;
   price: number;
 }) => {
@@ -351,6 +379,11 @@ const onServicePicked = (picked: {
   const svc = props.modelValue[pickerIndex.value];
   svc.service_id = picked.service_id;
   svc._label = picked.name;
+  // Saved alongside price/duration so which variation this row is survives
+  // later edits to either (see utils/serviceVariations.ts) — always
+  // overwritten here, including to null, since switching services/
+  // variations must never leave a stale variation_name from a previous pick.
+  svc.variation_name = picked.variation_name;
   updateServiceDetails(pickerIndex.value, {
     duration_minutes: picked.duration_minutes,
     price: picked.price,
