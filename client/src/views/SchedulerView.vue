@@ -216,6 +216,7 @@
       :shopMinTime="shopSlotMinTime"
       :shopMaxTime="shopSlotMaxTime"
       @save="handleSave"
+      @refresh="handleRefresh"
     />
     <AppointmentSwapDialog
       v-model:visible="swapDialogVisible"
@@ -278,6 +279,7 @@ import {
   describeServiceChanges,
 } from "../utils/appointmentChanges";
 import ColorModelToggle from "../components/ColorModelToggle.vue";
+import { resolveServiceColor } from "../utils/serviceColors";
 import { useAuthStore } from "../stores/auth";
 import elLocale from "@fullcalendar/core/locales/el";
 import StaffReorderDialog from "../components/StaffReorderDialog.vue";
@@ -552,29 +554,6 @@ const onDatePicked = (date: Date) => {
   showDatePicker.value = false;
 };
 
-// --- Color helpers ---
-const stringToPastelColor = (str: string) => {
-  if (!str) return "#e5e7eb";
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = str.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return `hsl(${Math.abs(hash) % 360}, 70%, 90%)`;
-};
-
-const getCategoryColor = (category: string) => {
-  const map: Record<string, string> = {
-    Hair: "#bae6fd",
-    Nails: "#fde047",
-    Massage: "#99f6e4",
-    Face: "#fbcfe8",
-    Body: "#fed7aa",
-    Barber: "#bfdbfe",
-    Spa: "#a5f3fc",
-  };
-  return map[category] || stringToPastelColor(category);
-};
-
 // Still used by the unrelated staff-role navigation restriction below
 // (canGoPrev/validRange) — not by the working-hours display logic anymore,
 // now that schedule versions carry their own effective_from and can be
@@ -582,6 +561,34 @@ const getCategoryColor = (category: string) => {
 const isPastDay = (dateStr: string) => dateStr.slice(0, 10) < todayDateStr();
 
 // --- Computed data ---
+const isNotWorkingOnDay = (r: any) => {
+  if (!r.working_hours_enabled || !currentStart.value) return false;
+  const ranges = getWorkingRangesForDate(
+    calendarStore.workingHours,
+    r.id,
+    currentStart.value,
+  );
+  return ranges !== null && ranges.length === 0;
+};
+
+// Staff with a live (not cancelled / no-show) appointment on the displayed
+// day, so a day-off staff member still gets a greyed column when they're
+// needed to see that booking.
+const staffWithAppointmentsOnDay = computed(() => {
+  const ids = new Set<string>();
+  if (!currentStart.value) return ids;
+  const dateStr = toLocalDateStr(currentStart.value);
+  for (const appt of calendarStore.events || []) {
+    if (appt.status === "cancelled" || appt.status === "no-show") continue;
+    for (const svc of appt.services || []) {
+      if (svc.staff_id && toLocalDateStr(svc.start_time) === dateStr) {
+        ids.add(String(svc.staff_id));
+      }
+    }
+  }
+  return ids;
+});
+
 const calendarResources = computed(() => {
   const res = calendarStore.resources;
   if (!Array.isArray(res)) return [];
@@ -601,15 +608,11 @@ const calendarResources = computed(() => {
   // column set for the whole visible range — there's no way to show
   // different staff per day there.
   if (currentView.value === "resourceTimeGridDay" && currentStart.value) {
-    filtered = filtered.filter((r: any) => {
-      if (!r.working_hours_enabled) return true;
-      const ranges = getWorkingRangesForDate(
-        calendarStore.workingHours,
-        r.id,
-        currentStart.value,
-      );
-      return ranges === null || ranges.length > 0;
-    });
+    filtered = filtered.filter(
+      (r: any) =>
+        !isNotWorkingOnDay(r) ||
+        staffWithAppointmentsOnDay.value.has(String(r.id)),
+    );
   }
 
   return filtered.map((r: any) => ({
@@ -617,6 +620,7 @@ const calendarResources = computed(() => {
     title: r.name,
     eventBackgroundColor: "#f3f4f6",
     imageUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(r.name)}&background=random&color=fff&rounded=true&bold=true`,
+    notWorking: currentView.value === "resourceTimeGridDay" && isNotWorkingOnDay(r),
   }));
 });
 
@@ -659,7 +663,7 @@ const calendarEvents = computed(() => {
       return;
 
     appt.services.forEach((svc: any, index: number) => {
-      const bgColor = getCategoryColor(svc.service_name || "General");
+      const bgColor = resolveServiceColor(svc.service_color, svc.category_color);
       const duration = svc.duration_minutes || 60;
       const endTime = svc.start_time
         ? new Date(
@@ -715,6 +719,7 @@ const calendarEvents = computed(() => {
           // before truncating than the full "Surname Firstname" would.
           client_surname: appt.last_name || appt.first_name || "Unknown",
           service_name: displayedServiceName,
+          serviceArchived: !!svc.service_archived,
           // Same client + same service + same start time = one booking split
           // across several staff members (shown as separate boxes, one per
           // staff column); hovering any of them highlights the others.
@@ -740,8 +745,8 @@ const calendarEvents = computed(() => {
 
   // Auto-recolor overlapping appointments within the same staff/resource
   // column — e.g. two bookings sharing a resource like ΣΑΟΥΝΑ/ΧΑΜΜΑΜ often
-  // land on the exact same service-based color (getCategoryColor is keyed by
-  // service name), making the narrow side-by-side slivers FullCalendar
+  // land on the exact same category color (most categories share the default),
+  // making the narrow side-by-side slivers FullCalendar
   // renders for them look like one solid block rather than two distinct
   // appointments. The earliest-starting event in any overlapping group keeps
   // its normal service color; each event that overlaps an already-placed one
@@ -922,11 +927,14 @@ const workingHoursBackgroundEvents = computed(() => {
 // --- Actions ---
 const handleSave = async () => {
   dialogVisible.value = false;
-  await Promise.all([
+  await handleRefresh();
+};
+
+const handleRefresh = () =>
+  Promise.all([
     calendarStore.fetchAppointments(currentStart.value, currentEnd.value),
     calendarStore.refreshTimeOff(),
   ]);
-};
 
 const onClientSelected = (client: any) => {
   quickProfileClientId.value = client.id;
@@ -1176,13 +1184,15 @@ const calendarOptions = ref({
   resourceLabelContent: (arg: any) => {
     const src = escapeHtml(arg.resource.extendedProps.imageUrl);
     const title = escapeHtml(arg.resource.title);
+    const notWorking = !!arg.resource.extendedProps.notWorking;
     return {
       html: `
-        <div class="flex flex-col items-center justify-center py-2 w-full h-full">
-          <img src="${src}" alt="${title}" class="w-8 h-8 rounded-full border-2 border-white shadow-sm mb-1.5 object-cover" />
-          <div style="white-space:normal;word-break:break-word;" class="font-bold text-gray-800 text-[11px] md:text-[13px] leading-tight text-center px-1">
+        <div class="flex flex-col items-center justify-center py-2 w-full h-full ${notWorking ? "opacity-60" : ""}">
+          <img src="${src}" alt="${title}" class="w-8 h-8 rounded-full border-2 border-white shadow-sm mb-1.5 object-cover ${notWorking ? "grayscale" : ""}" />
+          <div style="white-space:normal;word-break:break-word;" class="font-bold ${notWorking ? "text-gray-400" : "text-gray-800"} text-[11px] md:text-[13px] leading-tight text-center px-1">
             ${title}
           </div>
+          ${notWorking ? `<div class="text-[10px] text-gray-400 uppercase tracking-wide mt-0.5">${escapeHtml(t("staff.workingHours.dayOff"))}</div>` : ""}
         </div>
       `,
     };
@@ -1286,10 +1296,15 @@ const calendarOptions = ref({
         ? `<span class="absolute top-1 right-1 text-green-600"><i class="pi pi-check-circle text-[9px]"></i></span>`
         : "";
 
+    const archivedBadge = props.serviceArchived
+      ? `<span class="absolute top-1 right-6 text-gray-500" title="${escapeHtml(t("services.archivedTooltip"))}"><i class="pi pi-box text-[9px]"></i></span>`
+      : "";
+
     return {
       html: `
       <div class="relative w-full ${paddingClass} flex flex-col leading-tight overflow-hidden hover:brightness-95 transition-all ${isMonthView ? "" : "h-full"}">
         ${statusBadge}
+        ${archivedBadge}
         ${!hideTime && !isMonthView ? `<div class="text-[10px] md:text-[12px] font-semibold mb-0.5 truncate ${timeClass}">${timeText}</div>` : ""}
         ${
           isShort && !isMonthView

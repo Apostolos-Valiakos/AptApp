@@ -135,22 +135,27 @@
             {{ t('membershipTiers.dialog.noServices') }}
           </div>
 
-          <div v-for="(row, i) in form.services" :key="i" class="flex items-center gap-2 mb-2">
-            <Dropdown
-              v-model="row.service_id"
-              :options="allServices"
-              optionLabel="name"
-              optionValue="id"
-              :placeholder="t('membershipTiers.dialog.selectService')"
-              class="flex-grow"
-            />
-            <InputNumber
-              v-model="row.quota_per_month"
-              class="w-32"
-              :placeholder="t('membershipTiers.unlimited')"
-              :min="1"
-            />
-            <Button icon="pi pi-times" text severity="danger" @click="form.services.splice(i, 1)" />
+          <div class="max-h-64 overflow-y-auto overflow-x-hidden pr-1 min-w-0">
+            <div v-for="(row, i) in form.services" :key="i" class="flex items-center gap-2 mb-2 min-w-0">
+              <div class="flex-1 min-w-0">
+                <Dropdown
+                  v-model="row.service_id"
+                  :options="allServices"
+                  optionLabel="name"
+                  optionValue="id"
+                  :placeholder="t('membershipTiers.dialog.selectService')"
+                  class="w-full"
+                />
+              </div>
+              <InputNumber
+                v-model="row.quota_per_month"
+                class="w-24 flex-shrink-0"
+                inputClass="w-full"
+                :placeholder="t('membershipTiers.unlimited')"
+                :min="1"
+              />
+              <Button icon="pi pi-times" text severity="danger" class="flex-shrink-0" @click="form.services.splice(i, 1)" />
+            </div>
           </div>
         </div>
       </div>

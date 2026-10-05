@@ -128,25 +128,16 @@
         </div>
 
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('giftCards.dialog.existingClient') }}</label>
-          <AutoComplete
-            v-model="selectedClient"
-            :suggestions="clientSuggestions"
-            optionLabel="full_name"
-            :placeholder="t('giftCards.dialog.existingClientPlaceholder')"
-            :loading="searchingClients"
-            forceSelection
-            showClear
-            class="w-full"
-            inputClass="w-full"
-            @complete="searchClients"
-            @update:modelValue="onClientPicked"
-          />
-        </div>
-
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('giftCards.dialog.customerName') }}</label>
-          <InputText v-model="form.customer_name" class="w-full" />
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('giftCards.dialog.client') }}</label>
+          <ClientSelector v-if="!form.client_id" allow-walk-in @select="onClientPicked" />
+          <div
+            v-else
+            class="flex justify-between items-center p-3 border border-gray-200 rounded-xl bg-gray-50 hover:bg-red-50 hover:border-red-200 transition-colors cursor-pointer"
+            @click="clearClient"
+          >
+            <span class="font-bold text-gray-900 text-sm">{{ selectedClient?.full_name }}</span>
+            <i class="pi pi-times text-gray-400 text-xs"></i>
+          </div>
         </div>
 
         <div>
@@ -191,7 +182,7 @@
           icon="pi pi-check"
           @click="saveCard"
           :loading="saving"
-          :disabled="!form.card_number || !form.customer_name || !form.initial_amount"
+          :disabled="!form.card_number || !form.client_id || !form.initial_amount"
         />
       </template>
     </Dialog>
@@ -206,6 +197,7 @@ import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 import { useSettingsStore } from "../stores/settings";
+import ClientSelector from "../components/ClientSelector.vue";
 
 const { t } = useI18n();
 const toast = useToast();
@@ -280,47 +272,24 @@ onMounted(() => {
   fetchStaff();
 });
 
-// --- Client autocomplete (server-side search, no upfront full-list load) ---
 const selectedClient = ref<any>(null);
-const clientSuggestions = ref<any[]>([]);
-const searchingClients = ref(false);
-let clientSearchTimeout: ReturnType<typeof setTimeout> | null = null;
-
-const searchClients = (event: { query: string }) => {
-  const q = event.query.trim();
-  if (clientSearchTimeout) clearTimeout(clientSearchTimeout);
-  if (!q) {
-    clientSuggestions.value = [];
-    return;
-  }
-  searchingClients.value = true;
-  clientSearchTimeout = setTimeout(async () => {
-    try {
-      const res = await fetch(
-        `/api/v1/clients?slim=true&search=${encodeURIComponent(q)}&limit=10`,
-        { headers: { Authorization: `Bearer ${token()}` } },
-      );
-      clientSuggestions.value = res.ok ? await res.json() : [];
-    } finally {
-      searchingClients.value = false;
-    }
-  }, 300);
-};
 
 const onClientPicked = (client: any) => {
-  if (client && typeof client === "object") {
-    form.value.client_id = client.id;
-    form.value.customer_name = client.full_name;
-  } else {
-    form.value.client_id = null;
-  }
+  selectedClient.value = client;
+  form.value.client_id = client.id;
+  form.value.customer_name = client.full_name;
+};
+
+const clearClient = () => {
+  selectedClient.value = null;
+  form.value.client_id = null;
+  form.value.customer_name = "";
 };
 
 const openNewDialog = () => {
   isEdit.value = false;
   editingId.value = null;
   selectedClient.value = null;
-  clientSuggestions.value = [];
   form.value = {
     card_number: "",
     client_id: null,
@@ -339,7 +308,6 @@ const editCard = (card: any) => {
   selectedClient.value = card.client_id
     ? { id: card.client_id, full_name: card.customer_name }
     : null;
-  clientSuggestions.value = [];
   form.value = {
     card_number: card.card_number,
     client_id: card.client_id,

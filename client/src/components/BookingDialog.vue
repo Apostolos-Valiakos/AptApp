@@ -88,26 +88,10 @@
                 >{{ t("booking.clientLabel") }}</label
               >
 
-              <div v-if="!form.client_id" class="flex gap-2">
-                <AutoComplete
-                  :modelValue="selectedClient"
-                  :suggestions="clientSuggestions"
-                  optionLabel="full_name"
-                  :placeholder="t('booking.searchClient')"
-                  :loading="searchingClients"
-                  forceSelection
-                  class="w-full"
-                  inputClass="w-full"
-                  @complete="searchClients"
-                  @update:modelValue="onClientPicked"
-                />
-                <Button
-                  icon="pi pi-plus"
-                  class="p-button-outlined"
-                  v-tooltip="t('booking.newClientBtn')"
-                  @click="showQuickAddClient = true"
-                />
-              </div>
+              <ClientSelector
+                v-if="!form.client_id"
+                @select="onClientPicked"
+              />
 
               <div v-else class="flex gap-2">
                 <div
@@ -328,6 +312,9 @@
               ref="bookingPaymentsRef"
               :totalDueNow="combinedTotalDueNow"
               :currentApptTotal="currentApptTotal"
+              :servicesTotal="servicesTotal"
+              :productsTotal="productsTotal"
+              :discountAmount="discountAmount"
               :previousDebt="previousDebt"
               :packagesTotal="pendingPackagesTotal"
               :giftCardsTotal="pendingGiftCardsTotal"
@@ -406,6 +393,15 @@
               />
             </div>
             <Button
+              v-if="!form.is_block"
+              :label="t('booking.repeat.button')"
+              icon="pi pi-copy"
+              outlined
+              :disabled="!canRepeatBooking"
+              v-tooltip.top="!canRepeatBooking ? t('booking.repeat.needClientAndStaff') : null"
+              @click="showRepeatDialog = true"
+            />
+            <Button
               :label="t('booking.save')"
               @click="save()"
               :loading="loading"
@@ -456,50 +452,15 @@
       </div>
     </div>
 
-    <!-- Quick-add client dialog -->
-    <Dialog
-      v-model:visible="showQuickAddClient"
-      :header="t('booking.quickAdd.title')"
-      modal
-      :style="{ width: '400px', maxWidth: '90vw' }"
-    >
-      <div class="space-y-4 pt-2">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{
-            t("booking.quickAdd.firstName")
-          }}</label>
-          <InputText
-            id="qa_first"
-            v-model="newClient.first_name"
-            class="w-full"
-          />
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{
-            t("booking.quickAdd.lastName")
-          }}</label>
-          <InputText
-            id="qa_last"
-            v-model="newClient.last_name"
-            class="w-full"
-          />
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{
-            t("booking.quickAdd.mobile")
-          }}</label>
-          <InputText id="qa_phone" v-model="newClient.phone" class="w-full" />
-        </div>
-      </div>
-      <template #footer>
-        <Button
-          :label="t('booking.quickAdd.saveClient')"
-          @click="saveNewClient"
-          :loading="savingNewClient"
-          class="w-full"
-        />
-      </template>
-    </Dialog>
+    <RepeatBookingDialog
+      v-model:visible="showRepeatDialog"
+      :services="servicesList"
+      :clientId="form.client_id"
+      :staff="props.staff || []"
+      :workingHours="props.workingHours || []"
+      :timeOff="props.timeOff || []"
+      @created="emit('refresh')"
+    />
 
     <ClientProfileDialog
       v-model:visible="showClientProfile"
@@ -529,12 +490,15 @@ import {
   type DiscountState,
 } from "../utils/discount";
 import BookingSidebar from "./booking/bookingSideBar.vue";
+import ClientSelector from "./ClientSelector.vue";
+import RepeatBookingDialog from "./booking/RepeatBookingDialog.vue";
 import ClientProfileDialog from "./ClientProfileDialog.vue";
 import { useConfirm } from "primevue/useconfirm";
 import { useToast } from "primevue/usetoast";
 import { fetchOrQueue } from "../offline/queue";
 import { isStaffAvailable, toLocalDateStr } from "../utils/staffAvailability";
 import { matchVariationName } from "../utils/serviceVariations";
+import { markManualStarts } from "../utils/serviceSequence";
 import {
   snapshotServices,
   describeServiceChanges,
@@ -567,7 +531,14 @@ const props = defineProps([
   "shopMaxTime",
 ]);
 
-const emit = defineEmits(["update:visible", "save"]);
+const emit = defineEmits(["update:visible", "save", "refresh"]);
+const showRepeatDialog = ref(false);
+const canRepeatBooking = computed(
+  () =>
+    !!form.value.client_id &&
+    servicesList.value.length > 0 &&
+    servicesList.value.every((s) => s.service_id && s.staff_id),
+);
 const currentStaffId = ref<number | string | null>(null);
 
 const isRecurring = ref(false);
@@ -625,11 +596,9 @@ const tabs = [
 
 const loading = ref(false);
 const paymentLoading = ref(false);
-const showQuickAddClient = ref(false);
 const showClientProfile = ref(false);
 const currentProfileId = ref<string | null>(null);
 const notifyClient = ref(true);
-const newClient = ref({ first_name: "", last_name: "", phone: "" });
 const amountToPayNow = ref(0);
 const selectedPaymentMethod = ref<"card" | "cash" | "gift-card" | "membership">(
   "card",
@@ -686,43 +655,14 @@ const isBlockEdit = computed(() => !!form.value.time_off_id);
 // --- Client selection (server-side search — with 5000+ clients we never load
 // the full list, see calendar.ts) ---
 const selectedClient = ref<any>(null);
-const clientSuggestions = ref<any[]>([]);
-const searchingClients = ref(false);
-let clientSearchTimeout: ReturnType<typeof setTimeout> | null = null;
-
-const searchClients = (event: { query: string }) => {
-  const q = event.query.trim();
-  if (clientSearchTimeout) clearTimeout(clientSearchTimeout);
-  if (!q) {
-    clientSuggestions.value = [];
-    return;
-  }
-  searchingClients.value = true;
-  clientSearchTimeout = setTimeout(async () => {
-    try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(
-        `/api/v1/clients?slim=true&search=${encodeURIComponent(q)}&limit=10`,
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
-      clientSuggestions.value = res.ok ? await res.json() : [];
-    } finally {
-      searchingClients.value = false;
-    }
-  }, 300);
-};
-
 const onClientPicked = (client: any) => {
-  if (client && typeof client === "object") {
-    selectedClient.value = client;
-    form.value.client_id = client.id;
-  }
+  selectedClient.value = client;
+  form.value.client_id = client.id;
 };
 
 const clearSelectedClient = () => {
   form.value.client_id = null;
   selectedClient.value = null;
-  clientSuggestions.value = [];
 };
 
 // Re-hydrates selectedClient for an existing appointment without ever loading
@@ -1063,7 +1003,7 @@ watch(
       }
 
       if (val.services?.length > 0) {
-        servicesList.value = val.services.map((s: any) => {
+        servicesList.value = markManualStarts(val.services.map((s: any) => {
           // Which variation this row was is now persisted server-side
           // (appointment_services.variation_name — s.variation_name here),
           // independent of price/duration, so it survives later edits to
@@ -1092,11 +1032,12 @@ watch(
             duration_override: s.duration_minutes || 60,
             price_override: Number(s.price || 0),
             variation_name: resolvedVariationName || null,
+            service_archived: !!s.service_archived,
             _label: resolvedVariationName
               ? `${catalogService?.name || s.service_name || ""} — ${resolvedVariationName}`
               : catalogService?.name || s.service_name || "",
           };
-        });
+        }));
       } else {
         servicesList.value = [
           {
@@ -1145,7 +1086,6 @@ watch(
           )
         : 60;
 
-      clientSuggestions.value = [];
       // A caller (e.g. the client search's "Book an appointment" button) can
       // pre-select a client for a brand-new booking — everything else below
       // still behaves exactly like starting from a blank slot. Otherwise,
@@ -1244,13 +1184,13 @@ const onPackageChanged = (data: any) => {
 // its response rather than re-deriving the same math client-side too.
 const onPriceChanged = (data: any) => {
   if (Array.isArray(data.services)) {
-    servicesList.value = data.services.map((s: any) => ({
+    servicesList.value = markManualStarts(data.services.map((s: any) => ({
       service_id: s.service_id,
       staff_id: s.staff_id,
       start_time: new Date(s.start_time),
       duration_override: s.duration_override,
       price_override: Number(s.price_override),
-    }));
+    })));
     originalServices.value = snapshotServices(servicesList.value);
   }
   if (data.new_balance !== undefined && selectedClient.value) {
@@ -1931,53 +1871,6 @@ const executeDelete = async (scope: string) => {
 };
 
 // --- Client Helpers ---
-const savingNewClient = ref(false);
-const saveNewClient = async () => {
-  savingNewClient.value = true;
-  try {
-    const token = localStorage.getItem("token");
-    const res = await fetch("/api/v1/clients", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(newClient.value),
-    });
-    const data = await res.json();
-
-    if (!res.ok || !(data.success || data.client)) {
-      throw new Error("Request failed");
-    }
-
-    const client = data.client || data;
-
-    // 1. Format the name
-    client.full_name = `${client.first_name} ${client.last_name}`;
-
-    // 2. ADD THE MISSING STRUCTURES HERE so the sidebar doesn't crash
-    client.eoppy_breakdown = { total: 0, services: {} };
-    client.non_eoppy_breakdown = { total: 0, services: {} };
-    client.outstanding_balance = 0; // Good practice to default this too
-
-    // 3. Select it directly (no shared client list to push into anymore)
-    selectedClient.value = client;
-    form.value.client_id = client.id;
-    showQuickAddClient.value = false;
-    newClient.value = { first_name: "", last_name: "", phone: "" };
-  } catch (e) {
-    console.error(e);
-    toast.add({
-      severity: "error",
-      summary: t("booking.toast.saveFailed"),
-      detail: t("booking.toast.quickAddFailedDetail"),
-      life: 4000,
-    });
-  } finally {
-    savingNewClient.value = false;
-  }
-};
-
 const openClientProfile = () => {
   if (!form.value.client_id) return;
   currentProfileId.value = form.value.client_id;

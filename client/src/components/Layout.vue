@@ -331,7 +331,6 @@ const navItems = computed(() => [
     label: t("nav.packages"),
     path: "/app/packages",
     ownerOnly: true,
-    financialsOnly: true,
     icon: "pi pi-clone",
   },
   {

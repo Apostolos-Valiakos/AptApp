@@ -76,6 +76,23 @@
               <i class="pi pi-bars category-drag-handle cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500"></i>
               <h3 class="font-bold text-gray-900">{{ group.label }}</h3>
               <span class="text-xs text-gray-400">({{ group.items.length }})</span>
+              <div class="ml-auto flex items-center gap-2">
+                <ColorPicker
+                  :modelValue="resolveServiceColor(null, group.items[0]?.category_color_code).replace('#', '')"
+                  format="hex"
+                  v-tooltip="t('services.categoryColorTooltip')"
+                  @change="(e: any) => saveCategoryColor(group.label, e.value)"
+                />
+                <button
+                  v-if="group.items[0]?.category_color_code"
+                  type="button"
+                  class="text-gray-400 hover:text-gray-700"
+                  v-tooltip="t('services.clearCategoryColor')"
+                  @click="saveCategoryColor(group.label, null)"
+                >
+                  <i class="pi pi-times text-xs"></i>
+                </button>
+              </div>
             </div>
             <draggable
               v-model="group.items"
@@ -283,24 +300,26 @@
               <div
                 v-for="(variation, idx) in editingService.variations"
                 :key="idx"
-                class="flex flex-wrap items-center gap-2 bg-white p-2 rounded-lg border border-gray-200"
+                class="grid grid-cols-[minmax(0,1fr)_minmax(0,7rem)_minmax(0,7rem)_auto] items-center gap-2 bg-white p-2 rounded-lg border border-gray-200"
               >
                 <InputText
                   v-model="variation.name"
                   :placeholder="t('services.dialog.variationNamePlaceholder')"
-                  class="p-inputtext-sm flex-1 min-w-[10rem]"
+                  class="p-inputtext-sm w-full min-w-0"
                 />
                 <InputNumber
                   v-model="variation.duration_minutes"
                   :placeholder="t('services.dialog.duration')"
                   suffix=" min"
-                  class="p-inputtext-sm w-32"
+                  class="w-full min-w-0"
+                  inputClass="p-inputtext-sm w-full"
                 />
                 <InputNumber
                   v-model="variation.price"
                   mode="currency"
                   currency="EUR"
-                  class="p-inputtext-sm w-32"
+                  class="w-full min-w-0"
+                  inputClass="p-inputtext-sm w-full"
                 />
                 <Button
                   icon="pi pi-trash"
@@ -352,6 +371,7 @@ import Checkbox from "primevue/checkbox";
 import MultiSelect from "primevue/multiselect";
 import draggable from "vuedraggable";
 import { groupServicesByCategory } from "../utils/serviceGroups";
+import { resolveServiceColor } from "../utils/serviceColors";
 
 const { t } = useI18n();
 
@@ -363,7 +383,9 @@ const ServiceRowBody = (props: { service: any }, { emit }: any) =>
   h("div", { class: "flex items-center gap-3 flex-1 min-w-0" }, [
     h("div", {
       class: "w-1 h-8 rounded-full flex-shrink-0",
-      style: { backgroundColor: props.service.color_code || "var(--p-primary-300)" },
+      style: {
+        backgroundColor: resolveServiceColor(props.service.color_code, props.service.category_color_code),
+      },
     }),
     h("div", { class: "flex-1 min-w-0" }, [
       h("div", { class: "flex items-center gap-2 flex-wrap" }, [
@@ -573,6 +595,23 @@ const fetchServices = async () => {
 
 const token = () => localStorage.getItem("token");
 
+const saveCategoryColor = async (name: string, color: string | null) => {
+  try {
+    const res = await fetch("/api/v1/service-categories/color", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
+      body: JSON.stringify({
+        name,
+        color_code: color ? `#${color.replace(/^#/, "")}` : null,
+      }),
+    });
+    if (!res.ok) throw new Error();
+    fetchServices();
+  } catch {
+    toast.add({ severity: "error", summary: t("common.error"), detail: t("services.toast.saveFailed"), life: 3000 });
+  }
+};
+
 const onCategoryDragEnd = async () => {
   try {
     const res = await fetch("/api/v1/service-categories/reorder", {
@@ -697,15 +736,19 @@ const confirmDelete = (service: any) => {
 
 const deleteService = async (service: any) => {
   try {
-    await fetch(`/api/v1/services/${service.id}`, {
+    const res = await fetch(`/api/v1/services/${service.id}`, {
       method: "DELETE",
       headers: { Authorization: `Bearer ${token()}` },
     });
+    if (!res.ok) throw new Error("Delete failed");
+    const { archived } = await res.json();
     toast.add({
       severity: "success",
       summary: t('common.success'),
-      detail: t('services.toast.deleted', { name: service.name }),
-      life: 3000,
+      detail: archived
+        ? t('services.toast.archived', { name: service.name })
+        : t('services.toast.deleted', { name: service.name }),
+      life: 4000,
     });
     fetchServices();
   } catch (err) {
