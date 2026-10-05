@@ -18,7 +18,25 @@
       <div class="space-y-0 border-t border-gray-700 pt-4 text-sm opacity-90">
         <div class="flex justify-between py-2 border-b border-gray-700/50">
           <span>{{ t("payment.appointmentCost") }}</span>
-          <span class="font-medium">€{{ currentApptTotal.toFixed(2) }}</span>
+          <span class="font-medium">€{{ servicesTotal.toFixed(2) }}</span>
+        </div>
+        <div
+          v-if="productsTotal > 0"
+          class="flex justify-between py-2 border-b border-gray-700/50"
+        >
+          <span>{{ t("payment.products") }}</span>
+          <span class="font-medium text-amber-300"
+            >+ €{{ productsTotal.toFixed(2) }}</span
+          >
+        </div>
+        <div
+          v-if="discountAmount > 0"
+          class="flex justify-between py-2 border-b border-gray-700/50"
+        >
+          <span>{{ t("payment.discount") }}</span>
+          <span class="font-medium text-green-300"
+            >- €{{ discountAmount.toFixed(2) }}</span
+          >
         </div>
         <div
           v-if="sameDayAppointmentsTotal > 0"
@@ -336,6 +354,9 @@ const { t } = useI18n();
 const props = defineProps({
   totalDueNow: { type: Number, default: 0 },
   currentApptTotal: { type: Number, default: 0 },
+  servicesTotal: { type: Number, default: 0 },
+  productsTotal: { type: Number, default: 0 },
+  discountAmount: { type: Number, default: 0 },
   previousDebt: { type: Number, default: 0 },
   packagesTotal: { type: Number, default: 0 },
   giftCardsTotal: { type: Number, default: 0 },

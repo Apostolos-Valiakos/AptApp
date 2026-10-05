@@ -69,14 +69,14 @@
             class="w-full"
           />
         </div>
-        <div class="grid grid-cols-2 gap-4">
-          <div>
+        <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-4">
+          <div class="min-w-0">
             <label class="block text-sm font-medium text-gray-700 mb-1">{{ t("packages.visits") }}</label>
-            <InputNumber v-model="form.visits" :min="1" class="w-full" />
+            <InputNumber v-model="form.visits" :min="1" class="w-full" inputClass="w-full" />
           </div>
-          <div>
+          <div class="min-w-0">
             <label class="block text-sm font-medium text-gray-700 mb-1">{{ t("packages.price") }}</label>
-            <InputNumber v-model="form.price" mode="currency" currency="EUR" locale="el-GR" :min="0" class="w-full" />
+            <InputNumber v-model="form.price" mode="currency" currency="EUR" locale="el-GR" :min="0" class="w-full" inputClass="w-full" />
           </div>
         </div>
         <div>

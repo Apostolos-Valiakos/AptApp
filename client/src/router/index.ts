@@ -73,13 +73,13 @@ const routes = [
           {
             path: "membership-tiers",
             component: MembershipTiersView,
-            meta: { requiresAnalytics: true },
+            meta: { requiresShopAdmin: true },
           },
           { path: "daily-report", component: DailyReportView },
           {
             path: "packages",
             component: PackageTypesView,
-            meta: { requiresAnalytics: true },
+            meta: { requiresShopAdmin: true },
           },
           {
             path: "membership-report",
@@ -148,6 +148,10 @@ router.beforeEach((to, from, next) => {
   }
 
   if (to.meta.requiresAnalytics && !authStore.isAnalyticsAllowed) {
+    return next("/app/scheduler");
+  }
+
+  if (to.meta.requiresShopAdmin && !authStore.isShopAdmin) {
     return next("/app/scheduler");
   }
 

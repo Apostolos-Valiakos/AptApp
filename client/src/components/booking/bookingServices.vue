@@ -45,8 +45,15 @@
             class="h-[54px] w-full flex items-center justify-between gap-2 px-3 text-sm border border-gray-300 rounded-md bg-white hover:border-gray-400 transition-colors"
             @click="openPicker(index)"
           >
-            <span :class="displayName(service) ? 'text-gray-900' : 'text-gray-400'">
-              {{ displayName(service) || t('bookingServices.selectService') }}
+            <span class="flex items-center gap-2 min-w-0">
+              <span :class="displayName(service) ? 'text-gray-900' : 'text-gray-400'" class="truncate">
+                {{ displayName(service) || t('bookingServices.selectService') }}
+              </span>
+              <i
+                v-if="service.service_archived"
+                class="pi pi-box text-gray-400 text-xs flex-shrink-0"
+                :title="t('services.archivedTooltip')"
+              ></i>
             </span>
             <i class="pi pi-chevron-down text-gray-400 text-xs"></i>
           </button>
@@ -74,7 +81,7 @@
 
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div class="col-span-2 min-w-0">
-          <div class="grid grid-cols-2 gap-2">
+          <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
             <div class="min-w-0">
               <label class="text-xs text-gray-500 block mb-1">{{
                 t("bookingServices.date")
@@ -82,7 +89,8 @@
               <Calendar
                 :modelValue="service.start_time"
                 dateFormat="dd/mm/yy"
-                class="w-full p-inputtext-sm"
+                class="w-full min-w-0 p-inputtext-sm"
+                inputClass="w-full"
                 @update:modelValue="(d: Date) => onDateChange(service, d)"
               />
             </div>
@@ -155,6 +163,7 @@ import { isStaffAvailable } from "../../utils/staffAvailability";
 import { displayServiceName } from "../../utils/serviceVariations";
 import ServicePickerDialog from "./ServicePickerDialog.vue";
 import TimeDropdown from "./TimeDropdown.vue";
+import { pinStartTimes } from "../../utils/serviceSequence";
 const { t } = useI18n();
 const authStore = useAuthStore();
 const isShopAdmin = authStore.isShopAdmin;
@@ -204,6 +213,7 @@ const onDateChange = (service: any, newDate: Date) => {
   const merged = new Date(service.start_time);
   merged.setFullYear(newDate.getFullYear(), newDate.getMonth(), newDate.getDate());
   service.start_time = merged;
+  pinStartTimes(props.modelValue, props.modelValue.indexOf(service));
   recalcTimes();
 };
 
@@ -212,6 +222,7 @@ const onTimeChange = (service: any, time: string) => {
   const merged = new Date(service.start_time);
   merged.setHours(hours, minutes, 0, 0);
   service.start_time = merged;
+  pinStartTimes(props.modelValue, props.modelValue.indexOf(service));
   recalcTimes();
 };
 
@@ -384,6 +395,7 @@ const onServicePicked = (picked: {
   // overwritten here, including to null, since switching services/
   // variations must never leave a stale variation_name from a previous pick.
   svc.variation_name = picked.variation_name;
+  svc.service_archived = false;
   updateServiceDetails(pickerIndex.value, {
     duration_minutes: picked.duration_minutes,
     price: picked.price,
@@ -401,7 +413,11 @@ const recalcTimes = (existingList?: any[]) => {
   let currentStart = new Date(list[0].start_time);
 
   for (let i = 0; i < list.length; i++) {
-    list[i].start_time = new Date(currentStart);
+    if (i > 0 && list[i]._manualStart) {
+      currentStart = new Date(list[i].start_time);
+    } else {
+      list[i].start_time = new Date(currentStart);
+    }
     currentStart = new Date(
       currentStart.getTime() + (list[i].duration_override || 60) * 60000,
     );

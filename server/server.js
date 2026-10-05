@@ -320,6 +320,8 @@ const createAppointmentSeries = async (client, data, shopId) => {
     products = [],
     recurrence,
     group_id_override,
+    instance_starts,
+    allow_unavailable,
   } = data;
 
   assertServicesHaveStaff(services, is_block);
@@ -333,9 +335,12 @@ const createAppointmentSeries = async (client, data, shopId) => {
     ? null
     : await resolveDiscount(client, shopId, data);
 
-  let datesToBook = [new Date(services[0]?.start_time || new Date())];
+  const hasExplicitStarts = Array.isArray(instance_starts) && instance_starts.length > 0;
+  let datesToBook = hasExplicitStarts
+    ? instance_starts.map((s) => new Date(s))
+    : [new Date(services[0]?.start_time || new Date())];
 
-  if (recurrence && recurrence.end_date) {
+  if (!hasExplicitStarts && recurrence && recurrence.end_date) {
     let nextDate = addRecurrenceInterval(datesToBook[0], recurrence.freq);
     const endDate = new Date(recurrence.end_date);
 
@@ -378,12 +383,14 @@ const createAppointmentSeries = async (client, data, shopId) => {
     // Calculate the start time for this instance to check for collisions
     const originalStart = new Date(services[0]?.start_time);
     const instanceStart = new Date(currentDate);
-    instanceStart.setHours(
-      originalStart.getHours(),
-      originalStart.getMinutes(),
-      0,
-      0,
-    );
+    if (!hasExplicitStarts) {
+      instanceStart.setHours(
+        originalStart.getHours(),
+        originalStart.getMinutes(),
+        0,
+        0,
+      );
+    }
     const instanceStartIso = instanceStart.toISOString();
 
     // === DUPLICATE CHECK ===
@@ -458,12 +465,14 @@ const createAppointmentSeries = async (client, data, shopId) => {
           instanceStart.getTime() + svcOffsetMs,
         ).toISOString();
 
-        await assertStaffAvailable(client, {
-          staffId: validStaffId,
-          shopId,
-          startTime: svcInstanceStartIso,
-          durationMinutes: svc.duration_override,
-        });
+        if (!allow_unavailable) {
+          await assertStaffAvailable(client, {
+            staffId: validStaffId,
+            shopId,
+            startTime: svcInstanceStartIso,
+            durationMinutes: svc.duration_override,
+          });
+        }
 
         if (validServiceId) {
           await client.query(
@@ -1056,6 +1065,13 @@ const canUnlockCashFilter = (userRole, lockedBy) => {
 // Analytics/financials/reports are admin-only — frontdesk has admin access everywhere else.
 const requireAnalyticsAccess = (req, res, next) => {
   if (req.user.role !== "admin" && req.user.role !== "super_admin") {
+    return res.status(403).json({ error: "Admins only" });
+  }
+  next();
+};
+
+const requireShopAdminAccess = (req, res, next) => {
+  if (!["admin", "super_admin", "frontdesk"].includes(req.user.role)) {
     return res.status(403).json({ error: "Admins only" });
   }
   next();
@@ -2726,7 +2742,7 @@ const setServiceVariations = async (dbClient, serviceId, variations) => {
 app.get("/api/v1/services", authenticateToken, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT s.*, COALESCE(sc.sort_order, 999999) AS category_sort_order
+      `SELECT s.*, COALESCE(sc.sort_order, 999999) AS category_sort_order, sc.color_code AS category_color_code
        FROM services s
        LEFT JOIN service_categories sc ON sc.shop_id = s.shop_id AND sc.name = s.category
        WHERE s.shop_id = $1 AND s.is_active = true
@@ -2824,10 +2840,30 @@ const ensureCategoryExists = async (dbClient, shopId, category) => {
 app.get("/api/v1/service-categories", authenticateToken, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      "SELECT id, name, sort_order FROM service_categories WHERE shop_id = $1 ORDER BY sort_order",
+      "SELECT id, name, sort_order, color_code FROM service_categories WHERE shop_id = $1 ORDER BY sort_order",
       [req.shopId],
     );
     res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.put("/api/v1/service-categories/color", authenticateToken, async (req, res) => {
+  const { name, color_code } = req.body;
+  if (!name?.trim()) return res.status(400).json({ error: "name is required" });
+  if (color_code !== null && !/^#[0-9a-f]{6}$/i.test(color_code || "")) {
+    return res.status(400).json({ error: "color_code must be a #rrggbb hex color or null" });
+  }
+  try {
+    await pool.query(
+      `INSERT INTO service_categories (shop_id, name, sort_order, color_code)
+       VALUES ($1, $2, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM service_categories WHERE shop_id = $1), $3)
+       ON CONFLICT (shop_id, name) DO UPDATE SET color_code = $3`,
+      [req.shopId, name.trim(), color_code],
+    );
+    res.json({ success: true });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Internal server error" });
@@ -3004,10 +3040,19 @@ app.delete("/api/v1/services/:id", authenticateToken, async (req, res) => {
       req.params.id,
       req.shopId,
     ]);
-    res.json({ success: true });
+    res.json({ success: true, archived: false });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal server error" });
+    if (err.code !== "23503") {
+      console.error(err);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+    // Referenced by past bookings/packages/memberships (NO ACTION FKs) — keep
+    // the row and hide it via is_active instead of breaking that history.
+    await pool.query("UPDATE services SET is_active = false WHERE id = $1 AND shop_id = $2", [
+      req.params.id,
+      req.shopId,
+    ]);
+    res.json({ success: true, archived: true });
   }
 });
 
@@ -3384,6 +3429,9 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
           SELECT json_agg(json_build_object(
             'service_id', s.id,
             'service_name', s.name,
+            'service_archived', COALESCE(s.is_active = false, false),
+            'service_color', s.color_code,
+            'category_color', sc.color_code,
             'variation_name', aps.variation_name,
             'price', COALESCE(aps.list_price, aps.price_override, s.price),
             'duration_minutes', COALESCE(aps.duration_override, s.duration_minutes),
@@ -3393,6 +3441,7 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
           ) ORDER BY aps.start_time ASC)
           FROM appointment_services aps
           LEFT JOIN services s ON aps.service_id = s.id
+          LEFT JOIN service_categories sc ON sc.shop_id = s.shop_id AND sc.name = s.category
           LEFT JOIN staff st ON aps.staff_id = st.id
           WHERE aps.appointment_id = a.id
         ), '[]') as services,
@@ -3445,6 +3494,9 @@ app.post("/api/v1/appointments", authenticateToken, async (req, res) => {
     }
 
     let bookingPayload = req.body;
+    if (!["admin", "super_admin", "frontdesk"].includes(req.user.role)) {
+      delete bookingPayload.allow_unavailable;
+    }
     if (req.user.role === "client") {
       if (!req.user.clientId) {
         throw new SelfBookingNotAllowedError("no_client_id");
@@ -8339,6 +8391,9 @@ app.get("/api/v1/availability", authenticateToken, async (req, res) => {
     await pool.query(
       `ALTER TABLE services ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0`,
     );
+    await pool.query(
+      `ALTER TABLE service_categories ADD COLUMN IF NOT EXISTS color_code VARCHAR(20)`,
+    );
 
     // One-time backfill per shop: seed service_categories from whatever
     // category names already exist, and give every service a deterministic
@@ -8640,8 +8695,8 @@ const giftCardStatus = (card) => {
 
 // List all gift cards for the shop (admin)
 app.get("/api/v1/gift-cards", authenticateToken, async (req, res) => {
-  if (req.user.role !== "admin" && req.user.role !== "super_admin") {
-    return res.status(403).json({ error: "Admins only" });
+  if (!canSellExtras(req.user)) {
+    return res.status(403).json({ error: "Not allowed" });
   }
   try {
     const { rows } = await pool.query(
@@ -8848,7 +8903,7 @@ app.get("/api/v1/membership-tiers", authenticateToken, async (req, res) => {
 // Create a tier — admin only. Body: { name, monthly_price, yearly_price,
 // color, grace_period_days, services: [{ service_id, quota_per_month }] }
 app.post("/api/v1/membership-tiers", authenticateToken, async (req, res) => {
-  if (req.user.role !== "admin" && req.user.role !== "super_admin") {
+  if (!["admin", "super_admin", "frontdesk"].includes(req.user.role)) {
     return res.status(403).json({ error: "Admins only" });
   }
   const { name, monthly_price, yearly_price, color, grace_period_days, services } = req.body;
@@ -8892,7 +8947,7 @@ app.post("/api/v1/membership-tiers", authenticateToken, async (req, res) => {
 // Update a tier — admin only. Replaces the covered-services list wholesale
 // (delete-then-reinsert), same pattern as staff_services.
 app.put("/api/v1/membership-tiers/:id", authenticateToken, async (req, res) => {
-  if (req.user.role !== "admin" && req.user.role !== "super_admin") {
+  if (!["admin", "super_admin", "frontdesk"].includes(req.user.role)) {
     return res.status(403).json({ error: "Admins only" });
   }
   const { name, monthly_price, yearly_price, color, grace_period_days, is_active, services } = req.body;
@@ -8946,7 +9001,7 @@ app.put("/api/v1/membership-tiers/:id", authenticateToken, async (req, res) => {
 // historical membership/usage/revenue records or violate the FK outright),
 // so a tier that's ever been used can only be deactivated, never removed.
 app.delete("/api/v1/membership-tiers/:id", authenticateToken, async (req, res) => {
-  if (req.user.role !== "admin" && req.user.role !== "super_admin") {
+  if (!["admin", "super_admin", "frontdesk"].includes(req.user.role)) {
     return res.status(403).json({ error: "Admins only" });
   }
   try {
@@ -9451,7 +9506,7 @@ const parsePackageTypeBody = (b) => {
   return { value: { name, service_id: safeUUID(b.service_id), visits, price, validity_days: validity } };
 };
 
-app.post("/api/v1/package-types", authenticateToken, requireAnalyticsAccess, async (req, res) => {
+app.post("/api/v1/package-types", authenticateToken, requireShopAdminAccess, async (req, res) => {
   const parsed = parsePackageTypeBody(req.body);
   if (parsed.error) return res.status(400).json({ error: parsed.error });
   const v = parsed.value;
@@ -9471,7 +9526,7 @@ app.post("/api/v1/package-types", authenticateToken, requireAnalyticsAccess, asy
 });
 
 // Editing a type never changes packages already sold (they snapshot name/visits/price).
-app.put("/api/v1/package-types/:id", authenticateToken, requireAnalyticsAccess, async (req, res) => {
+app.put("/api/v1/package-types/:id", authenticateToken, requireShopAdminAccess, async (req, res) => {
   const parsed = parsePackageTypeBody(req.body);
   if (parsed.error) return res.status(400).json({ error: parsed.error });
   const v = parsed.value;
@@ -9493,7 +9548,7 @@ app.put("/api/v1/package-types/:id", authenticateToken, requireAnalyticsAccess, 
   }
 });
 
-app.delete("/api/v1/package-types/:id", authenticateToken, requireAnalyticsAccess, async (req, res) => {
+app.delete("/api/v1/package-types/:id", authenticateToken, requireShopAdminAccess, async (req, res) => {
   try {
     const { rowCount } = await pool.query("DELETE FROM package_types WHERE id = $1 AND shop_id = $2", [req.params.id, req.shopId]);
     if (!rowCount) return res.status(404).json({ error: "Not found" });
