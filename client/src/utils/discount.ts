@@ -1,5 +1,5 @@
 export type DiscountType = "fixed" | "percent" | "code" | null;
-export type DiscountScope = "services" | "total";
+export type DiscountScope = "services" | "products" | "total";
 
 export interface DiscountState {
   type: DiscountType;
@@ -26,7 +26,9 @@ export const computeDiscountAmount = (
   productsTotal: number,
 ): number => {
   if (!d.type || !(d.value > 0)) return 0;
-  const base = servicesTotal + (d.scope === "total" ? productsTotal : 0);
+  const base =
+    (d.scope === "products" ? 0 : servicesTotal) +
+    (d.scope === "services" ? 0 : productsTotal);
   if (base <= 0) return 0;
   const raw = d.type === "fixed" ? d.value : (base * d.value) / 100;
   return round2(Math.min(raw, base));
@@ -37,7 +39,9 @@ export const discountFromAppointment = (val: any): DiscountState =>
     ? {
         type: val.discount_type,
         value: Number(val.discount_value) || 0,
-        scope: val.discount_scope === "total" ? "total" : "services",
+        scope: ["services", "products", "total"].includes(val.discount_scope)
+          ? val.discount_scope
+          : "services",
         code_id: val.discount_code_id || null,
         code_name: val.discount_code_name || null,
       }

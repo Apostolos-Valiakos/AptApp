@@ -274,7 +274,9 @@ class DiscountError extends Error {
 const resolveDiscount = async (client, shopId, body, existing = null) => {
   const type = body.discount_type;
   if (!["fixed", "percent", "code"].includes(type)) return null;
-  const scope = body.discount_scope === "total" ? "total" : "services";
+  const scope = ["services", "products", "total"].includes(body.discount_scope)
+    ? body.discount_scope
+    : "services";
   let value = Number(body.discount_value);
   let codeId = null;
   let codeName = null;
