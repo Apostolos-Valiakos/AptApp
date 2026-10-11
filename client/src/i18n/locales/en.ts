@@ -1340,6 +1340,7 @@ export default {
     noCodes: 'No active discount codes',
     appliesTo: 'Applies to',
     scopeServices: 'Services only',
+    scopeProducts: 'Products only',
     scopeTotal: 'Services + products',
     line: 'Discount',
     admin: {

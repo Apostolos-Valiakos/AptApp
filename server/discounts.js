@@ -31,25 +31,25 @@ const allocate = (amounts, total) => {
   return base.map((c) => c / 100);
 };
 
-// Applies a discount to service prices (and product lines when scope === "total").
-// Returns discounted copies plus the list prices, so reports keep working off
-// price_override / total_price while list prices stay recoverable for editing.
+// Applies a discount to service prices and/or product lines, per scope:
+// "services" (default), "products", or "total" (both). Returns discounted
+// copies plus the list prices, so reports keep working off price_override /
+// total_price while list prices stay recoverable for editing.
 const applyDiscount = ({ type, value, scope }, services, products, { includeProducts = true } = {}) => {
   const svcAmounts = services.map((s) => Number(s.price_override) || 0);
   const prodAmounts = products.map(
     (p) => (Number(p.price) || 0) * (Number(p.quantity) || 1),
   );
-  const useProducts = scope === "total" && includeProducts;
+  const useServices = scope !== "products";
+  const useProducts = scope !== "services" && includeProducts;
+  const svcBase = useServices ? svcAmounts : svcAmounts.map(() => 0);
+  const prodBase = useProducts ? prodAmounts : prodAmounts.map(() => 0);
   const base =
-    svcAmounts.reduce((a, b) => a + b, 0) +
-    (useProducts ? prodAmounts.reduce((a, b) => a + b, 0) : 0);
+    svcBase.reduce((a, b) => a + b, 0) + prodBase.reduce((a, b) => a + b, 0);
   const total = discountTotal(type, value, base);
-  const allocs = allocate(
-    [...svcAmounts, ...(useProducts ? prodAmounts : [])],
-    total,
-  );
+  const allocs = allocate([...svcBase, ...prodBase], total);
   const svcAlloc = allocs.slice(0, services.length);
-  const prodAlloc = useProducts ? allocs.slice(services.length) : prodAmounts.map(() => 0);
+  const prodAlloc = allocs.slice(services.length);
 
   return {
     services: services.map((s, i) => ({

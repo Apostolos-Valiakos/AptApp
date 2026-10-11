@@ -111,6 +111,7 @@ const typeOptions = computed(() => [
 ]);
 const scopeOptions = computed(() => [
   { value: "services" as DiscountScope, label: t("discount.scopeServices") },
+  { value: "products" as DiscountScope, label: t("discount.scopeProducts") },
   { value: "total" as DiscountScope, label: t("discount.scopeTotal") },
 ]);
 

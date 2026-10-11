@@ -1391,6 +1391,7 @@ export default {
     noCodes: "Δεν υπάρχουν ενεργοί κωδικοί",
     appliesTo: "Εφαρμογή σε",
     scopeServices: "Μόνο υπηρεσίες",
+    scopeProducts: "Μόνο προϊόντα",
     scopeTotal: "Υπηρεσίες + προϊόντα",
     line: "Έκπτωση",
     admin: {
