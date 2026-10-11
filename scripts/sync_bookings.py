@@ -52,6 +52,21 @@ SERVICE_NAME_ALIASES = {
     "holistic-sauna-leave on": "HOLISTIC-SAUNA SCRUB-LEAVE ON",
 }
 
+# Services whose rows pick a variation even when the file's price matches
+# none of them (or is empty): the fallback variation to use. For any other
+# service with variations, a variation is only used on an exact price match.
+DEFAULT_VARIATION = {
+    "νεα προσφορα αποτριχωση full body": "Full body",
+    "holistic": "1 ώρα",
+    "5 pure": "1o pure",
+}
+
+# A completed booking of this (service, variation) is a package purchase:
+# it also creates a client package of the given package type.
+PACKAGE_PURCHASES = {
+    ("5 pure", "ΑΓΟΡΑ ΠΑΚΕΤΟΥ"): "5 PURE",
+}
+
 # Rows whose service name is too generic to safely attribute to any specific
 # service — skipped outright rather than fuzzy-matched or auto-created.
 SKIP_SERVICE_NAMES = {
@@ -102,37 +117,65 @@ def load_lookups(cur):
     svc_price = {str(r["id"]): float(r["price"]) for r in rows}
     svc_duration = {str(r["id"]): int(r["duration_minutes"]) for r in rows}
 
+    cur.execute(
+        """SELECT v.service_id, v.name, v.duration_minutes, v.price
+           FROM service_variations v JOIN services s ON s.id = v.service_id
+           WHERE s.shop_id=%s ORDER BY v.sort_order, v.id""",
+        (SHOP_ID,),
+    )
+    svc_variations = {}
+    for r in cur.fetchall():
+        svc_variations.setdefault(str(r["service_id"]), []).append(
+            {"name": r["name"], "duration": int(r["duration_minutes"]), "price": float(r["price"])}
+        )
+    svc_name = {str(r["id"]): normalize(r["name"]) for r in rows}
+
     cur.execute("SELECT id, first_name, last_name FROM clients WHERE shop_id=%s", (SHOP_ID,))
     rows = cur.fetchall()
     cli_map = {normalize_name(f"{r['first_name']} {r['last_name']}"): str(r["id"]) for r in rows}
 
-    return staff_map, svc_map, svc_price, svc_duration, cli_map
+    return staff_map, svc_map, svc_price, svc_duration, svc_variations, svc_name, cli_map
+
+
+def pick_variation(variations, file_price, default_name):
+    """Variation whose price equals the file's price, else the default (if any)."""
+    if file_price is not None:
+        for v in variations:
+            if abs(v["price"] - file_price) < 0.005:
+                return v
+    if default_name:
+        return next((v for v in variations if v["name"] == default_name), None)
+    return None
 
 
 def load_existing_key_counts(cur):
     cur.execute(
         """
         SELECT c.first_name || ' ' || c.last_name as client_name,
-               st.name as staff_name, s.name as service_name, aps.start_time
+               aps.staff_id, aps.service_id, aps.start_time
         FROM appointments a
         JOIN clients c ON a.client_id = c.id
         JOIN appointment_services aps ON aps.appointment_id = a.id
-        LEFT JOIN staff st ON aps.staff_id = st.id
-        LEFT JOIN services s ON aps.service_id = s.id
         WHERE a.shop_id = %s
         """,
         (SHOP_ID,),
     )
     counts = Counter()
+    slots = Counter()
     for r in cur.fetchall():
+        # Keyed by the matched staff/service ids, not their names: the export
+        # often names a service slightly differently from the catalogue (it is
+        # fuzzy-matched below), and a name-based key never recognised those
+        # bookings as already imported, re-inserting them on every run.
         key = (
             normalize_name(r["client_name"]),
-            normalize(r["staff_name"]),
-            normalize(r["service_name"]),
+            str(r["staff_id"]),
+            str(r["service_id"]),
             r["start_time"].strftime("%Y-%m-%d %H:%M"),
         )
         counts[key] += 1
-    return counts
+        slots[key[:2] + key[3:]] += 1
+    return counts, slots
 
 
 def create_client(cur, full_name: str) -> str:
@@ -164,10 +207,11 @@ def main():
     psycopg2.extras.register_uuid()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-    staff_map, svc_map, svc_price, svc_duration, cli_map = load_lookups(cur)
+    staff_map, svc_map, svc_price, svc_duration, svc_variations, svc_name, cli_map = load_lookups(cur)
     staff_display = {k: k for k in staff_map}  # not needed for display precision here
-    existing_counts = load_existing_key_counts(cur)
+    existing_counts, existing_slots = load_existing_key_counts(cur)
     seen_in_file = Counter()
+    seen_slots = Counter()
 
     new_rows = []
     skipped_existing = 0
@@ -199,15 +243,6 @@ def main():
             continue
         service_raw = SERVICE_NAME_ALIASES.get(normalize(service_raw), service_raw)
 
-        key = (normalize_name(client_raw), normalize(staff_raw), normalize(service_raw),
-               start_time.strftime("%Y-%m-%d %H:%M"))
-        seen_in_file[key] += 1
-
-        if seen_in_file[key] <= existing_counts.get(key, 0):
-            skipped_existing += 1
-            continue  # this occurrence already exists in the DB
-
-        # --- Resolve staff/service/client for a genuinely new row ---
         staff_id, staff_score = fuzzy_match(normalize(staff_raw), staff_map)
         if not staff_id:
             errors.append(f"Row {i}: staff '{staff_raw}' not matched (score {staff_score})")
@@ -217,6 +252,23 @@ def main():
         if not svc_id:
             errors.append(f"Row {i}: service '{service_raw}' not matched (score {svc_score})")
             continue
+
+        key = (normalize_name(client_raw), staff_id, svc_id, start_time.strftime("%Y-%m-%d %H:%M"))
+        seen_in_file[key] += 1
+
+        if seen_in_file[key] <= existing_counts.get(key, 0):
+            skipped_existing += 1
+            continue  # this occurrence already exists in the DB
+
+        # Same client, staff and start time already booked under another
+        # service: staff changed it in the app, so the app's version stands.
+        slot = key[:2] + key[3:]
+        seen_slots[slot] += 1
+        if seen_slots[slot] <= existing_slots.get(slot, 0) - existing_counts.get(key, 0):
+            skipped_existing += 1
+            continue
+
+        # --- Resolve the client for a genuinely new row ---
 
         # Clients get an EXACT match only (normalize() already handles case/
         # accent/whitespace differences) — never fuzzy. Unlike staff/services,
@@ -236,17 +288,32 @@ def main():
                 cli_map[client_norm] = client_id
 
         raw_price = row.get("Αξία", None)
+        file_price = None
         if pd.notna(raw_price) and str(raw_price).strip() not in ("", "nan"):
             try:
-                price = float(str(raw_price).replace(",", ".").replace("€", "").strip())
+                file_price = float(str(raw_price).replace(",", ".").replace("€", "").strip())
             except ValueError:
-                price = svc_price.get(svc_id, 0)
+                file_price = None
+
+        duration = svc_duration.get(svc_id, 60)
+        variation = pick_variation(
+            svc_variations.get(svc_id, []), file_price, DEFAULT_VARIATION.get(svc_name[svc_id])
+        )
+        if variation:
+            duration = variation["duration"]
+        if file_price is not None:
+            price = file_price
+        elif variation:
+            price = variation["price"]
         else:
             price = svc_price.get(svc_id, 0)
 
         status_norm = normalize(row.get("Status", ""))
         db_status, db_payment = STATUS_MAP.get(status_norm, ("new", "unpaid"))
         deposit = price if db_status == "completed" else 0.0
+        package_type = None
+        if variation and db_status == "completed":
+            package_type = PACKAGE_PURCHASES.get((svc_name[svc_id], variation["name"]))
 
         new_rows.append({
             "row": i,
@@ -260,7 +327,9 @@ def main():
             "service_id": svc_id,
             "service_display": service_raw,
             "price": price,
-            "duration": svc_duration.get(svc_id, 60),
+            "duration": duration,
+            "variation": variation["name"] if variation else None,
+            "package_type": package_type,
             "status": db_status,
             "payment_status": db_payment,
             "deposit": deposit,
@@ -282,6 +351,10 @@ def main():
         for n in sorted(new_clients):
             print(f"  • {n}")
 
+    with_variation = sum(1 for r in new_rows if r["variation"])
+    packages = sum(1 for r in new_rows if r["package_type"])
+    print(f"\nWith a variation: {with_variation} | package purchases (create a client package): {packages}")
+
     print(f"\n{'Row':<6} {'Date':<17} {'Staff':<20} {'Client':<22} {'Service':<38} {'€':>7} {'Status'}")
     print("─" * 130)
     for r in new_rows[:200]:
@@ -290,6 +363,8 @@ def main():
             f"{r['row']:<6} {str(r['start_time'])[:16]:<17} {r['staff_display'][:19]:<20} "
             f"{(r['client_display'][:20] + client_flag):<22} {r['service_display'][:37]:<38} "
             f"{r['price']:>7.2f} {r['status']}"
+            + (f"  [{r['variation']}]" if r["variation"] else "")
+            + (" +package" if r["package_type"] else "")
         )
     if len(new_rows) > 200:
         print(f"  ... and {len(new_rows) - 200} more rows")
@@ -313,13 +388,29 @@ def main():
             )
             cur.execute(
                 """INSERT INTO appointment_services
-                     (appointment_id, service_id, staff_id, start_time, duration_override, price_override, shop_id)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-                (appt_id, r["service_id"], r["staff_id"], r["start_time"], r["duration"], r["price"], SHOP_ID),
+                     (appointment_id, service_id, staff_id, start_time, duration_override, price_override, shop_id, variation_name)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+                (appt_id, r["service_id"], r["staff_id"], r["start_time"], r["duration"], r["price"], SHOP_ID,
+                 r["variation"]),
             )
+            if r["package_type"]:
+                cur.execute(
+                    """INSERT INTO client_packages
+                         (shop_id, client_id, package_type_id, name, service_id, total_visits, price_paid,
+                          purchased_at, expires_at, note)
+                       SELECT pt.shop_id, %s, pt.id, pt.name, pt.service_id, pt.visits, %s, %s,
+                              CASE WHEN pt.validity_days IS NULL THEN NULL
+                                   ELSE %s + pt.validity_days * INTERVAL '1 day' END,
+                              'Imported from bookings export'
+                       FROM package_types pt WHERE pt.shop_id = %s AND pt.name = %s""",
+                    (r["client_id"], r["price"], r["start_time"], r["start_time"], SHOP_ID, r["package_type"]),
+                )
+                if cur.rowcount != 1:
+                    raise RuntimeError(f"package type {r['package_type']!r} not found")
             inserted += 1
         conn.commit()
-        print(f"Done. {inserted} appointments inserted.\n")
+        print(f"Done. {inserted} appointments inserted, "
+              f"{sum(1 for r in new_rows if r['package_type'])} client packages created.\n")
     except Exception as e:
         conn.rollback()
         print(f"\nERROR — rolled back all changes: {e}\n")

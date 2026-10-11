@@ -6,7 +6,19 @@
 # and the follow-up cleanup steps a direct CSV import bypasses.
 #
 # Usage:
-#   ./scripts/import_future_bookings.sh <path-to-bookings_future.csv>
+#   ./scripts/import_future_bookings.sh [--clients <clients.xlsx>] <bookings.csv> [<more.csv> ...]
+#
+#   e.g. ./scripts/import_future_bookings.sh --clients pelates.xlsx bookings.csv future_bookings.csv
+#
+# Booking files are imported in the order given; rows already in the
+# database are skipped, so overlapping exports are fine.
+#
+# Before the steps below, two always-run preparation steps:
+#   0a. Services — scripts/add_offer_services_2026-10.sql adds services that
+#       appear in the export but not in the catalogue (idempotent).
+#   0b. Clients  — scripts/import_clients.py (only with --clients): adds new
+#       clients and fills missing phones/emails, so bookings match existing
+#       clients instead of creating phoneless ones.
 #
 # Pipeline (confirmed with the user before this script was written):
 #   1. Preview  — read-only: how many future appointments would be cleared
@@ -18,14 +30,15 @@
 #   2. Confirm  — single y/N prompt covering the whole sequence below.
 #   3. Clear    — scripts/clear_future_window_for_reimport.sql (for real)
 #   4. Import   — scripts/sync_bookings.py <csv> --commit
-#   5. Dedupe   — scripts/dedupe_appointments.sql
-#                 (same client + staff + start_time + duration)
-#   6. Split    — scripts/retroactive_sauna_hamam_split_2026-10-01.sql
+#   5. Split    — scripts/retroactive_sauna_hamam_split_2026-10-01.sql
 #                 (the live booking UI splits the 6 sauna/hamam-combo
 #                 services into a separate staff block; a direct CSV import
 #                 bypasses that client-side logic, so this re-applies it to
 #                 whatever was just imported — idempotent, a no-op for
 #                 anything already split)
+#   6. Dedupe   — scripts/dedupe_appointments.sql
+#                 (same client + staff + start_time + duration; never deletes
+#                 an appointment that also holds other, non-duplicate blocks)
 #
 # Deliberately NOT included (confirmed with the user):
 #   - reset_stale_appointment_durations_2026-10-01.sql: sync_bookings.py
@@ -46,15 +59,22 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
-CSV_PATH="${1:-}"
-if [ -z "$CSV_PATH" ]; then
-  echo "Usage: $0 <path-to-bookings_future.csv>" >&2
+CLIENTS_XLSX=""
+if [ "${1:-}" = "--clients" ]; then
+  CLIENTS_XLSX="${2:-}"
+  shift 2 || true
+fi
+CSV_PATHS=("$@")
+if [ ${#CSV_PATHS[@]} -eq 0 ]; then
+  echo "Usage: $0 [--clients <clients.xlsx>] <bookings.csv> [<more.csv> ...]" >&2
   exit 1
 fi
-if [ ! -f "$CSV_PATH" ]; then
-  echo "ERROR: file not found: $CSV_PATH" >&2
-  exit 1
-fi
+for f in "${CSV_PATHS[@]}" ${CLIENTS_XLSX:+"$CLIENTS_XLSX"}; do
+  if [ ! -f "$f" ]; then
+    echo "ERROR: file not found: $f" >&2
+    exit 1
+  fi
+done
 
 # Loaded via python-dotenv (sync_bookings.py's own dependency, so nothing
 # extra is required beyond what this script already needs) rather than a raw
@@ -75,8 +95,15 @@ fi
 
 echo "=================================================================="
 echo " Future bookings import — $(date '+%Y-%m-%d %H:%M')"
-echo " CSV: $CSV_PATH"
+echo " Bookings: ${CSV_PATHS[*]}"
+echo " Clients:  ${CLIENTS_XLSX:-(not given)}"
 echo "=================================================================="
+
+if [ -n "$CLIENTS_XLSX" ]; then
+  echo
+  echo "--- Preview (clients): $CLIENTS_XLSX dry run ---"
+  python3 scripts/import_clients.py "$CLIENTS_XLSX" | tail -8
+fi
 
 echo
 echo "--- Preview (1/2): future appointments that would be cleared ---"
@@ -105,17 +132,30 @@ WHERE a.shop_id = :'target'
 SQL
 
 echo
-echo "--- Preview (2/2): sync_bookings.py dry run against the CSV ---"
-echo "(reflects the CURRENT, not-yet-cleared database — after the real"
-echo " clear step below, rows not already excluded above will show as new)"
-echo
-python3 scripts/sync_bookings.py "$CSV_PATH"
+echo "--- Preview (2/2): sync_bookings.py dry run against each CSV ---"
+echo "(reflects the CURRENT database: not yet cleared, services and clients not"
+echo " yet added — rows using the new services show as unmatched here)"
+for f in "${CSV_PATHS[@]}"; do
+  echo
+  echo ">> $f"
+  python3 scripts/sync_bookings.py "$f" | sed -n '1,12p'
+done
 
 echo
-read -r -p "Proceed with clearing the future window, importing, and running cleanup? [y/N] " CONFIRM
+read -r -p "Proceed with adding services${CLIENTS_XLSX:+ and clients}, clearing the future window, importing, and running cleanup? [y/N] " CONFIRM
 if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
   echo "Aborted — nothing changed."
   exit 0
+fi
+
+echo
+echo "--- Step 0a: adding missing services ---"
+psql "$POSTGRES_URI" -v ON_ERROR_STOP=1 -f scripts/add_offer_services_2026-10.sql
+
+if [ -n "$CLIENTS_XLSX" ]; then
+  echo
+  echo "--- Step 0b: importing clients from $CLIENTS_XLSX ---"
+  python3 scripts/import_clients.py "$CLIENTS_XLSX" --commit | tail -7
 fi
 
 echo
@@ -123,16 +163,21 @@ echo "--- Step 1/4: clearing future appointment window ---"
 psql "$POSTGRES_URI" -v ON_ERROR_STOP=1 -f scripts/clear_future_window_for_reimport.sql
 
 echo
-echo "--- Step 2/4: importing $CSV_PATH ---"
-python3 scripts/sync_bookings.py "$CSV_PATH" --commit
+for f in "${CSV_PATHS[@]}"; do
+  echo "--- Step 2/4: importing $f ---"
+  python3 scripts/sync_bookings.py "$f" --commit | tail -3
+done
 
+# Split before dedupe: a freshly imported combo row only becomes identical to
+# its already-split copy once it is split too, so dedupe can then catch it in
+# the same run instead of on the next one.
 echo
-echo "--- Step 3/4: deduping appointments ---"
-psql "$POSTGRES_URI" -v ON_ERROR_STOP=1 -f scripts/dedupe_appointments.sql
-
-echo
-echo "--- Step 4/4: retroactive sauna/hamam split ---"
+echo "--- Step 3/4: retroactive sauna/hamam split ---"
 psql "$POSTGRES_URI" -v ON_ERROR_STOP=1 -f scripts/retroactive_sauna_hamam_split_2026-10-01.sql
+
+echo
+echo "--- Step 4/4: deduping appointments ---"
+psql "$POSTGRES_URI" -v ON_ERROR_STOP=1 -f scripts/dedupe_appointments.sql
 
 echo
 echo "=================================================================="
