@@ -2655,9 +2655,9 @@ app.delete("/api/v1/clients/:id", authenticateToken, async (req, res) => {
 // standalone room-booking services) — these must never auto-split
 // themselves even though their own name matches the keyword pattern.
 const SAUNA_HAMAM_BASE_NAMES = new Set([
-  "σαουνα", "σαουνα σε υπηρεσια", "χαμαμ", "χαμμαμ", "ηαμαμ σε υπηρεσια",
+  "σαουνα", "σαουνα σε υπηρεσια", "χαμαμ", "χαμμαμ", "ηαμαμ σε υπηρεσια", "hammam", "hamam",
 ]);
-const SAUNA_HAMAM_PATTERN = /σαουνα|sauna|χαμ[αά]μ|χαμμαμ|hamam/i;
+const SAUNA_HAMAM_PATTERN = /σαουνα|sauna|χαμ[αά]μ|χαμμαμ|ham+am/i;
 
 const stripAccentsLower = (s) =>
   (s || "")
@@ -2696,7 +2696,7 @@ const attachSaunaHamamFallback = (allServices, byService) => {
     if (SAUNA_HAMAM_BASE_NAMES.has(normName)) continue; // the resource itself
     if (!SAUNA_HAMAM_PATTERN.test(service.name)) continue;
 
-    const isHamam = /χαμ[αά]μ|χαμμαμ|hamam/i.test(service.name);
+    const isHamam = /χαμ[αά]μ|χαμμαμ|ham+am/i.test(service.name);
     const base = isHamam ? hamamBase : saunaBase;
     if (!base || base.id === service.id) continue;
 
