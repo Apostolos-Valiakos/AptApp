@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+httpx
+anthropic
+pydantic
+python-multipart
+chromadb
+fastembed
+pypdf
+python-docx

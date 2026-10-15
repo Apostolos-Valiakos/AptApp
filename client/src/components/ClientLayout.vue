@@ -77,18 +77,18 @@
           {{ t("portal.nav.appointments") }}
         </router-link>
 
-        <!-- Chat FAB — intentionally inert for now, no functionality wired up -->
-        <!-- <div class="flex flex-col items-center">
+        <div v-if="aiEnabled" class="flex flex-col items-center">
           <button
             type="button"
             class="w-12 h-12 -mt-5 rounded-full bg-gradient-to-br from-[var(--p-primary-color)] to-[var(--p-primary-600)] shadow-lg flex items-center justify-center text-white"
+            @click="showAiChat = true"
           >
             <i class="pi pi-comment text-lg"></i>
           </button>
           <span class="text-xs font-medium text-gray-400 mt-0.5">{{
             t("portal.nav.chat")
           }}</span>
-        </div> -->
+        </div>
 
         <router-link
           to="/portal/more"
@@ -105,6 +105,8 @@
       </div>
     </nav>
   </div>
+
+  <AiChatPanel v-if="aiEnabled" v-model:visible="showAiChat" />
 
   <Dialog
     v-model:visible="showNotifications"
@@ -179,6 +181,7 @@ import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import Dialog from "primevue/dialog";
 import { useAuthStore } from "../stores/auth";
+import AiChatPanel from "./portal/AiChatPanel.vue";
 
 const route = useRoute();
 const router = useRouter();
@@ -186,6 +189,8 @@ const { t, locale } = useI18n();
 const authStore = useAuthStore();
 
 const shopName = ref("Pure Spa & Massage Experience");
+const aiEnabled = ref(false);
+const showAiChat = ref(false);
 const unreadCount = ref(0);
 const notifications = ref<any[]>([]);
 const showNotifications = ref(false);
@@ -291,6 +296,7 @@ onMounted(async () => {
       const data = await res.json();
       if (data?.name) shopName.value = data.name;
       if (data?.id) setShopManifest(data.id);
+      aiEnabled.value = !!data?.ai_assistant_enabled;
     }
   } catch {}
   fetchNotifications();

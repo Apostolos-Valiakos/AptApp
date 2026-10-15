@@ -13,6 +13,8 @@ capacitor.config.json
 *.dump
 scripts/__pycache__/
 server/tests/
+# The AI service has its own image (ai/Dockerfile) and its own build context.
+ai
 Installation Steps.pdf
 .vscode
 .claude

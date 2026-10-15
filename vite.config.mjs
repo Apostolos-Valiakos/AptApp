@@ -28,6 +28,10 @@ export default defineConfig(({ mode }) => {
           target: `${env.API_URL}:${env.PORT}`,
           ws: true,
         },
+        "/ai": {
+          target: env.AI_URL || "http://localhost:8000",
+          changeOrigin: true,
+        },
         "/health": {
           target: `${env.API_URL}:${env.PORT}`,
           changeOrigin: true,

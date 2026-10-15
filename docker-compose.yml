@@ -58,6 +58,34 @@ services:
       retries: 3
       start_period: 15s
 
+  # AI assistant for the client portal (see ai/). Holds no JWT secret and no
+  # database access: it forwards each caller's own token to `app`.
+  ai:
+    build:
+      context: ./ai
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      AI_MODEL: ${AI_MODEL:-claude-sonnet-5-5}
+      MAIN_API_URL: http://app:3000
+      TZ: "Europe/Athens"
+    ports:
+      # Localhost only — Nginx forwards /ai/ here (see DEPLOY.md).
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ai_data:/data # uploaded policy documents + the vector index
+    mem_limit: 1536m # the embedding model alone needs ~750 MB
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/ai/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
 volumes:
   pgdata:
   uploads:
+  ai_data:

@@ -12,7 +12,7 @@ Everything in this guide was verified as part of writing it: `docker build` succ
 
 ## Architecture recap
 
-One Node/Express process serves both the API (`/api/v1/*`, Socket.IO) **and** the built Vue frontend (static files) on a single port (3000). `docker-compose.yml` runs two containers: `app` and `db` (Postgres 17). Nginx is not in the compose file; we add it on the host as a reverse proxy for TLS.
+One Node/Express process serves both the API (`/api/v1/*`, Socket.IO) **and** the built Vue frontend (static files) on a single port (3000). `docker-compose.yml` runs three containers: `app`, `db` (Postgres 17) and `ai` (the optional client-portal AI assistant, Section 9). Nginx is not in the compose file; we add it on the host as a reverse proxy for TLS.
 
 This app also ships with resilience features that only need the steps in this guide to actually take effect in production — they're already code-complete:
 - **Encrypted, same-server daily backups** (`scripts/backup_db.sh` / `scripts/restore_db.sh`) — set up in [Section 8](#8-set-up-daily-backups).
@@ -108,6 +108,9 @@ BACKUP_ENCRYPTION_KEY=CHANGEME_run_openssl_rand_base64_32
 VAPID_PUBLIC_KEY=CHANGEME_run_node_-e_generateVAPIDKeys
 VAPID_PRIVATE_KEY=CHANGEME_run_node_-e_generateVAPIDKeys
 VAPID_CONTACT_EMAIL=CHANGEME_a_real_support_address
+
+# --- AI assistant (Section 9) ---
+ANTHROPIC_API_KEY=CHANGEME_create_a_key_in_the_anthropic_console
 ```
 
 **Every `CHANGEME_...` value above must be replaced before you're done** — none of them are usable as-is. Two hard-learned rules, since `scripts/backup_db.sh`/`scripts/restore_db.sh` read this file via bash's `source .env` (stricter than Docker Compose's own, more lenient `.env` parsing):
@@ -380,6 +383,33 @@ This app already ships with `scripts/backup_db.sh` and `scripts/restore_db.sh` �
 6. Point an external uptime monitor at `https://your-domain.com/health` (UptimeRobot, Better Uptime, or similar — pick whichever you're comfortable with; none is wired up by default). This is the only piece of this whole setup that needs an account outside the VPS itself.
 
 ---
+
+## 9. AI assistant (client portal chat)
+
+A third container, `ai` (see `ai/`), answers clients' questions and prepares bookings, cancellations and reschedules in the client portal. It has no database access and no `JWT_SECRET`: it forwards each caller's own token to `app` and can only read. Every change is made by the client's browser after they press **Confirm**.
+
+1. **API key.** Create a key in the Anthropic Console and set `ANTHROPIC_API_KEY` in `.env`. Optional: `AI_MODEL` (default `claude-sonnet-5-5`).
+2. **Start it.** `docker compose up -d --build` builds and starts `ai` alongside the others (the first build downloads the embedding model, about 250 MB). It listens on `127.0.0.1:8000` only and is capped at 1.5 GB of memory.
+3. **Nginx.** Add this block inside the same `server { ... }` as `location /`, then `nginx -t && systemctl reload nginx`. `proxy_buffering off` is required, or replies arrive all at once instead of streaming:
+
+   ```nginx
+   location /ai/ {
+       proxy_pass http://127.0.0.1:8000;
+       proxy_http_version 1.1;
+       proxy_set_header Host $host;
+       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+       proxy_buffering off;
+       proxy_read_timeout 120s;
+       client_max_body_size 10m;   # policy document uploads
+   }
+   ```
+4. **Turn it on.** It is off by default per shop. As an admin, open Profile, switch on **AI Assistant** and upload the policy documents (PDF, Word, Markdown or text). The assistant answers policy questions only from those files. Clients then see a chat button in their portal. Booking and rescheduling through the chat also need **Client Self-Booking** to be on.
+5. **Check.** `curl -s http://127.0.0.1:8000/ai/health` should print `{"ok":true}`.
+
+Notes:
+- Files can also be ingested from the command line: `docker compose exec ai python ingest.py --shop <shop_id> /path/in/container/file.pdf`.
+- Uploaded documents and the search index live in the `ai_data` volume. It is not part of the database backup in Section 8; keep the original files, since re-uploading them rebuilds everything.
+- Each client is limited to 30 chat messages per hour.
 
 ## Ongoing operations
 

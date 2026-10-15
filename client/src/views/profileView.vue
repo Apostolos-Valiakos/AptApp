@@ -605,6 +605,8 @@
           </div>
         </div>
 
+        <AiAssistantAdmin v-if="authStore.isAnalyticsAllowed" />
+
         <DiscountCodesAdmin v-if="isShopAdmin" />
 
         <!-- Push Broadcast (admin only) -->
@@ -983,6 +985,7 @@ import { ref, onMounted, computed, reactive, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
 import DiscountCodesAdmin from "../components/DiscountCodesAdmin.vue";
+import AiAssistantAdmin from "../components/AiAssistantAdmin.vue";
 import { useConfirm } from "primevue/useconfirm";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "../stores/auth";

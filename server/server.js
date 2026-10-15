@@ -68,6 +68,18 @@ const publicActionLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// One count per AI chat message: the AI service calls /api/v1/ai/context once
+// per message with the client's own token. Staff/admin calls are not limited.
+const aiChatLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 30,
+  keyGenerator: (req) => `ai:${req.user.clientId}`,
+  skip: (req) => req.user.role !== "client",
+  message: { error: "ai_rate_limited" },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 const { PUBLIC_BASE_URL } = require("./reminderService");
 require("./membershipService");
 const { sendPushToShop, recordNotificationForShop } = require("./pushService");
@@ -6234,6 +6246,63 @@ app.put(
 );
 
 app.put(
+  "/api/v1/shop/ai-assistant",
+  authenticateToken,
+  requireAnalyticsAccess,
+  async (req, res) => {
+    try {
+      await pool.query(
+        `UPDATE shops SET ai_assistant_enabled = $1 WHERE id = $2`,
+        [!!req.body.ai_assistant_enabled, req.shopId],
+      );
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Error updating AI assistant setting:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
+
+// Identity for the AI service, which holds no JWT secret of its own: it
+// forwards the caller's token here and trusts only this response.
+app.get(
+  "/api/v1/ai/context",
+  authenticateToken,
+  aiChatLimiter,
+  async (req, res) => {
+    try {
+      const shopRes = await pool.query(
+        "SELECT name, ai_assistant_enabled, self_booking_enabled FROM shops WHERE id = $1",
+        [req.shopId],
+      );
+      const shop = shopRes.rows[0];
+      if (!shop) return res.status(404).json({ error: "shop_not_found" });
+      let clientFirstName = null;
+      if (req.user.role === "client" && req.user.clientId) {
+        const clientRes = await pool.query(
+          "SELECT first_name FROM clients WHERE id = $1 AND shop_id = $2",
+          [req.user.clientId, req.shopId],
+        );
+        clientFirstName = clientRes.rows[0]?.first_name || null;
+      }
+      res.json({
+        role: req.user.role,
+        client_id: req.user.clientId || null,
+        shop_id: req.shopId,
+        shop_name: shop.name,
+        client_first_name: clientFirstName,
+        ai_assistant_enabled: shop.ai_assistant_enabled,
+        self_booking_enabled: shop.self_booking_enabled,
+        timezone: process.env.TZ || "Europe/Athens",
+      });
+    } catch (err) {
+      console.error("AI context error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
+
+app.put(
   "/api/v1/shop/calendar-settings",
   authenticateToken,
   async (req, res) => {
@@ -7293,6 +7362,144 @@ app.post(
   },
 );
 
+// The client's own upcoming, still-active appointments, with the service and
+// staff ids the AI assistant needs to cancel or reschedule them.
+app.get(
+  "/api/v1/portal/appointments/upcoming",
+  authenticateToken,
+  async (req, res) => {
+    if (req.user.role !== "client") {
+      return res.status(403).json({ error: "Clients only" });
+    }
+    try {
+      const { rows } = await pool.query(
+        `SELECT a.id, a.status,
+                (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) AS start_time,
+                COALESCE((
+                  SELECT json_agg(json_build_object(
+                    'service_id', aps.service_id,
+                    'service_name', s.name,
+                    'staff_id', aps.staff_id,
+                    'staff_name', st.name,
+                    'start_time', aps.start_time,
+                    'duration_minutes', COALESCE(aps.duration_override, s.duration_minutes, 60)
+                  ) ORDER BY aps.start_time)
+                  FROM appointment_services aps
+                  LEFT JOIN services s ON s.id = aps.service_id
+                  LEFT JOIN staff st ON st.id = aps.staff_id
+                  WHERE aps.appointment_id = a.id
+                ), '[]') AS services
+         FROM appointments a
+         WHERE a.client_id = $1 AND a.shop_id = $2
+           AND a.status NOT IN ('cancelled', 'completed', 'no-show')
+           AND COALESCE(a.is_block, false) = false
+           AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) > NOW()
+         ORDER BY 3`,
+        [req.user.clientId, req.shopId],
+      );
+      res.json(rows);
+    } catch (err) {
+      console.error("Portal upcoming appointments error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
+
+// Moves a client's own single-service appointment to another free slot
+// (optionally another eligible staff member). Same slot rules as a new
+// self-booking; multi-service appointments are left to the shop.
+app.post(
+  "/api/v1/portal/appointments/:id/reschedule",
+  authenticateToken,
+  async (req, res) => {
+    if (req.user.role !== "client") {
+      return res.status(403).json({ error: "Clients only" });
+    }
+    const id = safeUUID(req.params.id);
+    const start = new Date(req.body.start_time);
+    if (!id || !req.body.start_time || isNaN(start.getTime())) {
+      return res.status(400).json({ error: "start_time is required" });
+    }
+    if (start.getTime() <= Date.now()) {
+      return res.status(422).json({ error: "past_time" });
+    }
+    try {
+      const shopRes = await pool.query(
+        "SELECT self_booking_enabled FROM shops WHERE id = $1",
+        [req.shopId],
+      );
+      if (!shopRes.rows[0]?.self_booking_enabled) {
+        return res.status(404).json({ error: "self_booking_disabled" });
+      }
+      const apptRes = await pool.query(
+        `SELECT id FROM appointments
+         WHERE id = $1 AND client_id = $2 AND shop_id = $3
+           AND status NOT IN ('cancelled', 'completed', 'no-show')
+           AND COALESCE(is_block, false) = false`,
+        [id, req.user.clientId, req.shopId],
+      );
+      if (apptRes.rows.length === 0) {
+        return res
+          .status(404)
+          .json({ error: "Appointment not found or cannot be rescheduled" });
+      }
+      const svcRes = await pool.query(
+        `SELECT aps.id, aps.service_id, aps.staff_id,
+                COALESCE(aps.duration_override, s.duration_minutes, 60) AS duration
+         FROM appointment_services aps
+         JOIN services s ON s.id = aps.service_id
+         WHERE aps.appointment_id = $1`,
+        [id],
+      );
+      if (svcRes.rows.length !== 1) {
+        return res.status(422).json({ error: "multi_service" });
+      }
+      const row = svcRes.rows[0];
+      const staffId = safeUUID(req.body.staff_id) || row.staff_id;
+      if (String(staffId) !== String(row.staff_id)) {
+        const staffRes = await pool.query(
+          `SELECT 1 FROM staff s
+           WHERE s.id = $1 AND s.shop_id = $2 AND s.is_active = true
+             AND s.visible_in_calendar = true
+             AND (
+               NOT EXISTS (SELECT 1 FROM staff_services ss WHERE ss.staff_id = s.id)
+               OR EXISTS (SELECT 1 FROM staff_services ss WHERE ss.staff_id = s.id AND ss.service_id = $3)
+             )`,
+          [staffId, req.shopId, row.service_id],
+        );
+        if (staffRes.rows.length === 0) {
+          return res.status(422).json({ error: "staff_not_available" });
+        }
+      }
+      // Local (server TZ) calendar date of the requested start.
+      const date = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}-${String(start.getDate()).padStart(2, "0")}`;
+      const slots = await computeAvailableSlots(pool, {
+        shopId: req.shopId,
+        staffId,
+        date,
+        durationMinutes: Number(row.duration),
+        skipPast: true,
+        excludeAppointmentId: id,
+      });
+      if (!slots.includes(start.toISOString())) {
+        return res.status(409).json({ error: "slot_unavailable" });
+      }
+      await pool.query(
+        "UPDATE appointment_services SET start_time = $1, staff_id = $2 WHERE id = $3",
+        [start.toISOString(), staffId, row.id],
+      );
+      await pool.query(
+        "UPDATE appointments SET email_reminder_sent = false, updated_at = NOW() WHERE id = $1",
+        [id],
+      );
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Portal appointment reschedule error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
+
 app.post(
   "/api/v1/portal/appointments/:id/confirm",
   authenticateToken,
@@ -7611,6 +7818,83 @@ app.get(
   },
 );
 
+// Free start times (15-minute steps, ISO strings) for one staff member on one
+// date: inside their working window, clear of other bookings and time off.
+// excludeAppointmentId ignores that appointment's own blocks, so a booking
+// being rescheduled doesn't collide with itself.
+const computeAvailableSlots = async (
+  db,
+  { shopId, staffId, date, durationMinutes, skipPast = false, excludeAppointmentId = null },
+) => {
+  const window = await getEffectiveWorkingHoursForDate(db, staffId, shopId, date);
+  if (!window) return [];
+
+  const busyRes = await db.query(
+    `SELECT aps.start_time,
+            (aps.start_time + (COALESCE(aps.duration_override, s.duration_minutes, 60) || ' minutes')::interval) AS end_time
+     FROM appointment_services aps
+     JOIN appointments a ON a.id = aps.appointment_id
+     JOIN services s ON s.id = aps.service_id
+     WHERE aps.staff_id = $1 AND a.shop_id = $2 AND a.status != 'cancelled'
+       AND aps.start_time::date = $3::date
+       AND ($4::uuid IS NULL OR a.id != $4::uuid)`,
+    [staffId, shopId, date, excludeAppointmentId],
+  );
+  const timeOffRes = await db.query(
+    `SELECT start_date, start_time, end_time, type FROM staff_time_off
+     WHERE staff_id = $1 AND shop_id = $2
+       AND (
+         (type = 'leave' AND $3::date BETWEEN start_date AND end_date)
+         OR (type = 'break' AND start_date = $3::date)
+       )`,
+    [staffId, shopId, date],
+  );
+
+  const dayBase = new Date(`${date}T00:00:00`);
+  const busyIntervals = busyRes.rows.map((r) => ({
+    start: new Date(r.start_time).getTime(),
+    end: new Date(r.end_time).getTime(),
+  }));
+  for (const row of timeOffRes.rows) {
+    if (row.type === "leave") {
+      busyIntervals.push({ start: -Infinity, end: Infinity });
+    } else {
+      const [sh, sm] = row.start_time.split(":").map(Number);
+      const [eh, em] = row.end_time.split(":").map(Number);
+      const start = new Date(dayBase);
+      start.setHours(sh, sm, 0, 0);
+      const end = new Date(dayBase);
+      end.setHours(eh, em, 0, 0);
+      busyIntervals.push({ start: start.getTime(), end: end.getTime() });
+    }
+  }
+
+  const [winStartH, winStartM] = window.start_time.split(":").map(Number);
+  const [winEndH, winEndM] = window.end_time.split(":").map(Number);
+  const windowStart = new Date(dayBase);
+  windowStart.setHours(winStartH, winStartM, 0, 0);
+  const windowEnd = new Date(dayBase);
+  windowEnd.setHours(winEndH, winEndM, 0, 0);
+
+  const slots = [];
+  const stepMs = 15 * 60 * 1000;
+  const durationMs = durationMinutes * 60 * 1000;
+  const now = Date.now();
+  for (
+    let t = windowStart.getTime();
+    t + durationMs <= windowEnd.getTime();
+    t += stepMs
+  ) {
+    if (skipPast && t < now) continue;
+    const candidateEnd = t + durationMs;
+    const overlaps = busyIntervals.some(
+      (b) => t < b.end && candidateEnd > b.start,
+    );
+    if (!overlaps) slots.push(new Date(t).toISOString());
+  }
+  return slots;
+};
+
 // Available start-time slots for one staff member/service/date — used by the
 // client self-booking wizard. Role-agnostic at the route level (staff/admin
 // could reuse it later), but a client caller additionally requires
@@ -7648,84 +7932,13 @@ app.get("/api/v1/availability", authenticateToken, async (req, res) => {
     }
     const durationMinutes = service.duration_minutes || 60;
 
-    const window = await getEffectiveWorkingHoursForDate(
-      pool,
-      validStaffId,
-      req.shopId,
+    const slots = await computeAvailableSlots(pool, {
+      shopId: req.shopId,
+      staffId: validStaffId,
       date,
-    );
-    if (!window) {
-      return res.json({
-        date,
-        service_id: validServiceId,
-        staff_id: validStaffId,
-        duration_minutes: durationMinutes,
-        slots: [],
-      });
-    }
-
-    const busyRes = await pool.query(
-      `SELECT aps.start_time,
-              (aps.start_time + (COALESCE(aps.duration_override, s.duration_minutes, 60) || ' minutes')::interval) AS end_time
-       FROM appointment_services aps
-       JOIN appointments a ON a.id = aps.appointment_id
-       JOIN services s ON s.id = aps.service_id
-       WHERE aps.staff_id = $1 AND a.shop_id = $2 AND a.status != 'cancelled'
-         AND aps.start_time::date = $3::date`,
-      [validStaffId, req.shopId, date],
-    );
-    const timeOffRes = await pool.query(
-      `SELECT start_date, start_time, end_time, type FROM staff_time_off
-       WHERE staff_id = $1 AND shop_id = $2
-         AND (
-           (type = 'leave' AND $3::date BETWEEN start_date AND end_date)
-           OR (type = 'break' AND start_date = $3::date)
-         )`,
-      [validStaffId, req.shopId, date],
-    );
-
-    const dayBase = new Date(`${date}T00:00:00`);
-    const busyIntervals = busyRes.rows.map((r) => ({
-      start: new Date(r.start_time).getTime(),
-      end: new Date(r.end_time).getTime(),
-    }));
-    for (const row of timeOffRes.rows) {
-      if (row.type === "leave") {
-        busyIntervals.push({ start: -Infinity, end: Infinity });
-      } else {
-        const [sh, sm] = row.start_time.split(":").map(Number);
-        const [eh, em] = row.end_time.split(":").map(Number);
-        const start = new Date(dayBase);
-        start.setHours(sh, sm, 0, 0);
-        const end = new Date(dayBase);
-        end.setHours(eh, em, 0, 0);
-        busyIntervals.push({ start: start.getTime(), end: end.getTime() });
-      }
-    }
-
-    const [winStartH, winStartM] = window.start_time.split(":").map(Number);
-    const [winEndH, winEndM] = window.end_time.split(":").map(Number);
-    const windowStart = new Date(dayBase);
-    windowStart.setHours(winStartH, winStartM, 0, 0);
-    const windowEnd = new Date(dayBase);
-    windowEnd.setHours(winEndH, winEndM, 0, 0);
-
-    const slots = [];
-    const stepMs = 15 * 60 * 1000;
-    const durationMs = durationMinutes * 60 * 1000;
-    const now = Date.now();
-    for (
-      let t = windowStart.getTime();
-      t + durationMs <= windowEnd.getTime();
-      t += stepMs
-    ) {
-      if (req.user.role === "client" && t < now) continue;
-      const candidateEnd = t + durationMs;
-      const overlaps = busyIntervals.some(
-        (b) => t < b.end && candidateEnd > b.start,
-      );
-      if (!overlaps) slots.push(new Date(t).toISOString());
-    }
+      durationMinutes,
+      skipPast: req.user.role === "client",
+    });
 
     res.json({
       date,
@@ -7803,6 +8016,9 @@ app.get("/api/v1/availability", authenticateToken, async (req, res) => {
     // existing shops see no change until the owner turns it on.
     await pool.query(
       `ALTER TABLE shops ADD COLUMN IF NOT EXISTS self_booking_enabled BOOLEAN NOT NULL DEFAULT false`,
+    );
+    await pool.query(
+      `ALTER TABLE shops ADD COLUMN IF NOT EXISTS ai_assistant_enabled BOOLEAN NOT NULL DEFAULT false`,
     );
     // Lets a staff member keep their login/appointments without cluttering the
     // scheduler with a resource column (e.g. frontdesk-only accounts).
