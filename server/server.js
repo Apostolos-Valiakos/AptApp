@@ -5191,6 +5191,104 @@ app.get("/api/v1/reports/payments", authenticateToken, requireAnalyticsAccess, a
     res.status(500).json({ error: "Internal server error" });
   }
 });
+// ==================== EXPENSES ====================
+// Shop running costs (rent, supplies, ...). Admin, super admin and frontdesk.
+const EXPENSE_METHODS = ["cash", "card", "bank-transfer"];
+
+// A from/to bound arrives as an ISO timestamp of local midnight; expenses are
+// plain calendar dates, so compare against that timestamp's local date.
+const expenseDateOf = (paramIndex) =>
+  `(($${paramIndex})::timestamptz AT TIME ZONE '${process.env.TZ || "Europe/Athens"}')::date`;
+
+const parseExpense = (body) => {
+  const amount = Number(body.amount);
+  const description = String(body.description || "").trim();
+  const date = String(body.expense_date || "");
+  const method = String(body.payment_method || "cash");
+  if (!(amount > 0) || amount > 1e7) return { error: "amount must be a positive number" };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || isNaN(new Date(`${date}T00:00:00`).getTime())) {
+    return { error: "expense_date must be YYYY-MM-DD" };
+  }
+  if (!description || description.length > 500) return { error: "description is required (max 500 characters)" };
+  if (!EXPENSE_METHODS.includes(method)) return { error: "invalid payment_method" };
+  return { value: { amount: Math.round(amount * 100) / 100, description, date, method } };
+};
+
+app.get("/api/v1/expenses", authenticateToken, requireShopAdminAccess, async (req, res) => {
+  const { from, to } = req.query;
+  const params = [req.shopId];
+  let filter = "";
+  for (const [value, op] of [[from, ">="], [to, "<="]]) {
+    if (!value) continue;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value))) return res.status(400).json({ error: "dates must be YYYY-MM-DD" });
+    params.push(value);
+    filter += ` AND expense_date ${op} $${params.length}::date`;
+  }
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, amount, to_char(expense_date, 'YYYY-MM-DD') AS expense_date, description,
+              payment_method, created_at
+       FROM expenses WHERE shop_id = $1 ${filter}
+       ORDER BY expense_date DESC, created_at DESC`,
+      params,
+    );
+    res.json(rows.map((r) => ({ ...r, amount: Number(r.amount) })));
+  } catch (err) {
+    console.error("List expenses error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.post("/api/v1/expenses", authenticateToken, requireShopAdminAccess, async (req, res) => {
+  const parsed = parseExpense(req.body);
+  if (parsed.error) return res.status(400).json({ error: parsed.error });
+  const e = parsed.value;
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO expenses (shop_id, amount, expense_date, description, payment_method, created_by_user_id)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+      [req.shopId, e.amount, e.date, e.description, e.method, String(req.user.userId || "")],
+    );
+    res.status(201).json({ id: rows[0].id });
+  } catch (err) {
+    console.error("Create expense error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.put("/api/v1/expenses/:id", authenticateToken, requireShopAdminAccess, async (req, res) => {
+  const id = safeUUID(req.params.id);
+  if (!id) return res.status(400).json({ error: "Invalid id" });
+  const parsed = parseExpense(req.body);
+  if (parsed.error) return res.status(400).json({ error: parsed.error });
+  const e = parsed.value;
+  try {
+    const { rowCount } = await pool.query(
+      `UPDATE expenses SET amount = $1, expense_date = $2, description = $3, payment_method = $4, updated_at = NOW()
+       WHERE id = $5 AND shop_id = $6`,
+      [e.amount, e.date, e.description, e.method, id, req.shopId],
+    );
+    if (!rowCount) return res.status(404).json({ error: "Not found" });
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Update expense error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.delete("/api/v1/expenses/:id", authenticateToken, requireShopAdminAccess, async (req, res) => {
+  const id = safeUUID(req.params.id);
+  if (!id) return res.status(400).json({ error: "Invalid id" });
+  try {
+    const { rowCount } = await pool.query("DELETE FROM expenses WHERE id = $1 AND shop_id = $2", [id, req.shopId]);
+    if (!rowCount) return res.status(404).json({ error: "Not found" });
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Delete expense error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 app.get("/api/v1/reports/finances", authenticateToken, requireAnalyticsAccess, async (req, res) => {
   const { from, to, excludeCash, excludeCard } = req.query;
   const shopId = req.shopId;
@@ -5292,12 +5390,33 @@ app.get("/api/v1/reports/finances", authenticateToken, requireAnalyticsAccess, a
     );
     const collectedToday = Number(todayRes.rows[0].total) || 0;
 
+    // --- E. EXPENSES for the period, hidden by the same cash/card toggles ---
+    const expParams = [shopId];
+    let expFilter = "";
+    if (from) {
+      expParams.push(from);
+      expFilter += ` AND expense_date >= ${expenseDateOf(expParams.length)}`;
+    }
+    if (to) {
+      expParams.push(to);
+      expFilter += ` AND expense_date <= ${expenseDateOf(expParams.length)}`;
+    }
+    if (excludeCash === "true") expFilter += ` AND payment_method <> 'cash'`;
+    if (excludeCard === "true") expFilter += ` AND payment_method <> 'card'`;
+    const expRes = await client.query(
+      `SELECT COALESCE(SUM(amount), 0) AS total FROM expenses WHERE shop_id = $1 ${expFilter}`,
+      expParams,
+    );
+    const totalExpenses = Number(expRes.rows[0].total) || 0;
+
     // --- Final Response (All keys required by FinancialsView.vue) ---
     res.json({
       total_sales: totalSales,
       total_payments: totalPayments,
       collected_today: collectedToday,
       total_debt: totalDebt,
+      total_expenses: totalExpenses,
+      net_profit: totalPayments - totalExpenses,
     });
   } catch (err) {
     console.error("Finance Report Error:", err);
@@ -7803,6 +7922,22 @@ app.get("/api/v1/availability", authenticateToken, async (req, res) => {
     // existing shops see no change until the owner turns it on.
     await pool.query(
       `ALTER TABLE shops ADD COLUMN IF NOT EXISTS self_booking_enabled BOOLEAN NOT NULL DEFAULT false`,
+    );
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS expenses (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+        amount NUMERIC(10,2) NOT NULL CHECK (amount > 0),
+        expense_date DATE NOT NULL,
+        description TEXT NOT NULL,
+        payment_method VARCHAR(20) NOT NULL DEFAULT 'cash',
+        created_by_user_id VARCHAR(255),
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_expenses_shop_date ON expenses(shop_id, expense_date)`,
     );
     // Lets a staff member keep their login/appointments without cluttering the
     // scheduler with a resource column (e.g. frontdesk-only accounts).

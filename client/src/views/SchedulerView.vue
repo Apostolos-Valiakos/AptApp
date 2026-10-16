@@ -2,10 +2,60 @@
   <div class="flex flex-col h-[calc(100vh-64px)] bg-white" @click="closeMenus">
     <!-- ===== TOOLBAR ===== -->
     <div
-      class="flex flex-wrap items-center justify-between gap-3 px-4 md:px-6 py-3 border-b border-gray-100 bg-white flex-shrink-0"
+      class="relative flex flex-wrap items-center justify-between gap-3 px-4 md:px-6 border-b border-gray-100 bg-white flex-shrink-0"
+      :class="isPhone ? 'py-2' : 'py-3'"
     >
+      <!-- PHONE: month title, search, menu -->
+      <div v-if="isPhone" class="flex items-center justify-between w-full gap-2">
+        <div class="relative">
+          <button
+            @click.stop="toggleDatePicker"
+            class="flex items-center gap-1.5 text-lg font-bold text-gray-900 select-none"
+          >
+            {{ mobileMonthTitle }}
+            <i class="pi pi-chevron-down text-xs text-gray-400"></i>
+          </button>
+          <div
+            v-if="showDatePicker"
+            @click.stop
+            class="absolute top-full left-0 mt-2 z-50 bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden"
+          >
+            <DatePicker
+              inline
+              v-model="pickerDate"
+              dateFormat="dd/mm/yy"
+              :minDate="isStaffRole ? todayDate : undefined"
+              @date-select="onDatePicked"
+            />
+          </div>
+        </div>
+        <div class="flex items-center gap-1">
+          <button
+            @click="calendarApi?.today()"
+            class="px-2.5 py-1.5 text-xs font-bold text-[var(--p-primary-700)] bg-[var(--p-primary-50)] rounded-lg"
+          >
+            {{ t("scheduler.mobile.today") }}
+          </button>
+          <button
+            @click="clientSearchVisible = true"
+            class="w-10 h-10 flex items-center justify-center rounded-lg text-[var(--p-primary-600)]"
+            :aria-label="t('clientSearch.button')"
+          >
+            <i class="pi pi-search text-lg"></i>
+          </button>
+          <button
+            @click.stop="mobileMenuOpen = !mobileMenuOpen; showDatePicker = false"
+            class="w-10 h-10 flex items-center justify-center rounded-lg text-gray-600"
+            :class="mobileMenuOpen ? 'bg-gray-100' : ''"
+            :aria-label="t('scheduler.mobile.menu')"
+          >
+            <i class="pi pi-ellipsis-v text-lg"></i>
+          </button>
+        </div>
+      </div>
+
       <!-- LEFT: Navigation -->
-      <div class="flex items-center gap-2">
+      <div v-if="!isPhone" class="flex items-center gap-2">
         <button
           @click="canGoPrev && calendarApi?.prev()"
           :disabled="!canGoPrev"
@@ -51,8 +101,13 @@
         </div>
       </div>
 
-      <!-- RIGHT: Controls -->
-      <div class="flex items-center gap-2 flex-wrap">
+      <!-- RIGHT: Controls (on phones: the ⋮ menu panel) -->
+      <div
+        v-show="!isPhone || mobileMenuOpen"
+        @click.stop
+        class="flex items-center gap-2 flex-wrap"
+        :class="isPhone ? 'absolute right-2 top-full mt-1 z-50 w-[min(20rem,calc(100vw-1rem))] bg-white rounded-xl shadow-lg border border-gray-100 p-3 flex-col !items-stretch' : ''"
+      >
         <!-- Status Filter -->
         <div class="flex items-center bg-gray-100 rounded-lg p-0.5 gap-0.5">
           <button
@@ -89,7 +144,7 @@
         </div>
 
         <!-- Zoom -->
-        <div class="hidden sm:flex items-center bg-gray-100 rounded-lg p-0.5">
+        <div class="items-center bg-gray-100 rounded-lg p-0.5" :class="isPhone ? 'flex self-start' : 'hidden sm:flex'">
           <button
             @click="zoomOut"
             class="p-1.5 rounded-md text-gray-500 hover:bg-white hover:shadow-sm hover:text-gray-800 transition-all"
@@ -111,6 +166,7 @@
 
         <!-- Client search -->
         <button
+          v-if="!isPhone"
           @click="clientSearchVisible = true"
           class="flex items-center gap-1.5 bg-[var(--p-primary-color)] hover:brightness-105 text-white px-3 md:px-4 py-2 rounded-lg text-xs font-bold shadow-sm active:scale-95 transition-all flex-shrink-0"
         >
@@ -151,6 +207,37 @@
           </button>
         </div>
       </div>
+    </div>
+
+    <!-- ===== PHONE DAY STRIP (swipe for the previous/next week) ===== -->
+    <div
+      v-if="isPhone"
+      class="grid grid-cols-7 border-b border-gray-100 bg-white flex-shrink-0 py-1.5 select-none"
+      @touchstart.passive="onStripTouchStart"
+      @touchend="onStripTouchEnd"
+    >
+      <button
+        v-for="d in weekStrip"
+        :key="d.key"
+        type="button"
+        :disabled="d.disabled"
+        @click="goToDay(d.date)"
+        class="flex flex-col items-center gap-1 py-1 disabled:opacity-30"
+      >
+        <span class="text-[11px] font-medium" :class="d.weekend ? 'text-gray-400' : 'text-gray-600'">{{ d.letter }}</span>
+        <span
+          class="w-9 h-9 rounded-full flex items-center justify-center text-base font-semibold"
+          :class="
+            d.selected
+              ? 'bg-[var(--p-primary-color)] text-white'
+              : d.today
+                ? 'text-[var(--p-primary-700)] ring-1 ring-[var(--p-primary-300)]'
+                : d.weekend
+                  ? 'text-gray-400'
+                  : 'text-gray-900'
+          "
+        >{{ d.day }}</span>
+      </button>
     </div>
 
     <!-- ===== CALENDAR AREA ===== -->
@@ -288,6 +375,7 @@ import {
   isStaffAvailable,
   toLocalDateStr,
   getWorkingRangesForDate,
+  mondayOf,
 } from "../utils/staffAvailability";
 import { displayServiceName } from "../utils/serviceVariations";
 
@@ -533,6 +621,81 @@ const changeView = (viewName: string) => {
 
 const closeMenus = () => {
   showDatePicker.value = false;
+  mobileMenuOpen.value = false;
+};
+
+// --- Phone layout: compact top bar, day strip, narrow staff columns ---
+const PHONE_MAX_WIDTH = 768;
+const isPhone = ref(window.innerWidth < PHONE_MAX_WIDTH);
+const mobileMenuOpen = ref(false);
+
+const viewDate = computed(() => {
+  if (!currentStart.value) return new Date();
+  const d = new Date(currentStart.value);
+  d.setHours(0, 0, 0, 0);
+  return d;
+});
+
+const sameDay = (a: Date, b: Date) => toLocalDateStr(a) === toLocalDateStr(b);
+const dateLocale = computed(() => (locale.value === "el" ? "el-GR" : "en-GB"));
+
+// Browsers give the Greek month in the genitive ("Οκτωβρίου") when formatted
+// alone; a heading needs the nominative.
+const GREEK_MONTHS = [
+  "Ιανουάριος", "Φεβρουάριος", "Μάρτιος", "Απρίλιος", "Μάιος", "Ιούνιος",
+  "Ιούλιος", "Αύγουστος", "Σεπτέμβριος", "Οκτώβριος", "Νοέμβριος", "Δεκέμβριος",
+];
+const mobileMonthTitle = computed(() => {
+  const d = viewDate.value;
+  const month =
+    locale.value === "el"
+      ? GREEK_MONTHS[d.getMonth()]
+      : d.toLocaleDateString("en-GB", { month: "long" });
+  return d.getFullYear() === new Date().getFullYear() ? month : `${month} ${d.getFullYear()}`;
+});
+
+const weekStrip = computed(() => {
+  const monday = mondayOf(viewDate.value);
+  return Array.from({ length: 7 }, (_, i) => {
+    const date = new Date(monday);
+    date.setDate(monday.getDate() + i);
+    return {
+      date,
+      key: toLocalDateStr(date),
+      letter: date.toLocaleDateString(dateLocale.value, { weekday: "narrow" }),
+      day: date.getDate(),
+      weekend: date.getDay() === 0 || date.getDay() === 6,
+      selected: currentView.value !== "dayGridMonth" && sameDay(date, viewDate.value),
+      today: sameDay(date, new Date()),
+      disabled: isStaffRole.value && date < todayDate.value,
+    };
+  });
+});
+
+const goToDay = (date: Date) => {
+  const api = calendarApi.value;
+  if (!api) return;
+  const target = isStaffRole.value && date < todayDate.value ? todayDate.value : date;
+  api.changeView("resourceTimeGridDay", target);
+  currentView.value = "resourceTimeGridDay";
+};
+
+const shiftWeek = (weeks: number) => {
+  const d = new Date(viewDate.value);
+  d.setDate(d.getDate() + weeks * 7);
+  goToDay(d);
+};
+
+let stripTouch: { x: number; y: number } | null = null;
+const onStripTouchStart = (e: TouchEvent) => {
+  stripTouch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+};
+const onStripTouchEnd = (e: TouchEvent) => {
+  if (!stripTouch) return;
+  const dx = e.changedTouches[0].clientX - stripTouch.x;
+  const dy = e.changedTouches[0].clientY - stripTouch.y;
+  stripTouch = null;
+  if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) shiftWeek(dx < 0 ? 1 : -1);
 };
 
 // --- Date picker popover ---
@@ -1025,7 +1188,10 @@ const isRangeAllowedForResource = (start: Date, end: Date, resource: any) => {
   }).available;
 };
 
-const getDayMinWidth = () => (window.innerWidth < 768 ? 130 : 160);
+// Phones fit about 6-7 narrow staff columns (time gutter ~44px) and scroll
+// sideways for the rest; larger screens keep the roomier width.
+const getDayMinWidth = () =>
+  window.innerWidth < 768 ? Math.max(46, Math.floor((window.innerWidth - 44) / 6.5)) : 160;
 
 // eventContent/resourceLabelContent below build raw HTML strings from
 // client/staff/service names, which are user-editable text, not code — always
@@ -1176,15 +1342,36 @@ const calendarOptions = ref({
   },
 
   windowResize: () => {
+    isPhone.value = window.innerWidth < PHONE_MAX_WIDTH;
     if (fullCalendar.value) {
-      fullCalendar.value.getApi().setOption("dayMinWidth", getDayMinWidth());
+      fullCalendar.value
+        .getApi()
+        .setOption("dayMinWidth", fitStaff.value ? 0 : getDayMinWidth());
     }
+  },
+
+  // Phone: the current time as a small pill on the time axis.
+  nowIndicatorContent: (arg: any) => {
+    if (!arg.isAxis || !isPhone.value) return "";
+    const d = arg.date as Date;
+    const hhmm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    return { html: `<span class="fc-now-pill">${hhmm}</span>` };
   },
 
   resourceLabelContent: (arg: any) => {
     const src = escapeHtml(arg.resource.extendedProps.imageUrl);
     const title = escapeHtml(arg.resource.title);
     const notWorking = !!arg.resource.extendedProps.notWorking;
+    if (isPhone.value) {
+      const initial = escapeHtml(Array.from(String(arg.resource.title || "?").trim())[0] || "?");
+      return {
+        html: `
+        <div class="flex items-center justify-center py-1.5 w-full" title="${title}">
+          <span class="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white ${notWorking ? "bg-gray-300" : "bg-[var(--p-primary-color)]"}">${initial}</span>
+        </div>
+      `,
+      };
+    }
     return {
       html: `
         <div class="flex flex-col items-center justify-center py-2 w-full h-full ${notWorking ? "opacity-60" : ""}">
@@ -1299,6 +1486,22 @@ const calendarOptions = ref({
     const archivedBadge = props.serviceArchived
       ? `<span class="absolute top-1 right-6 text-gray-500" title="${escapeHtml(t("services.archivedTooltip"))}"><i class="pi pi-box text-[9px]"></i></span>`
       : "";
+
+    if (isPhone.value && !isMonthView) {
+      const start = arg.event.start as Date | null;
+      const startText = start
+        ? `${String(start.getHours()).padStart(2, "0")}:${String(start.getMinutes()).padStart(2, "0")}`
+        : "";
+      return {
+        html: `
+        <div class="relative w-full h-full px-1 py-0.5 flex flex-col leading-tight overflow-hidden">
+          ${durationMins > 30 ? `<div class="text-[9px] font-semibold truncate ${timeClass}">${startText}</div>` : ""}
+          <div class="text-[10px] font-bold truncate ${textClass}">${escapeHtml(props.client_name)}</div>
+          ${durationMins > 15 ? `<div class="text-[9px] truncate ${serviceClass}">${escapeHtml(props.service_name)}</div>` : ""}
+        </div>
+      `,
+      };
+    }
 
     return {
       html: `
@@ -1642,5 +1845,24 @@ onMounted(async () => {
 .scrollbar-hide {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+/* Phone: current time as a pill on the time axis (see nowIndicatorContent) */
+.fc-now-pill {
+  position: absolute;
+  left: 2px;
+  top: 0;
+  transform: translateY(-50%);
+  background: #111827;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 3px 5px;
+  border-radius: 9999px;
+  white-space: nowrap;
+}
+.fc .fc-timegrid-now-indicator-arrow:has(.fc-now-pill) {
+  border-color: transparent !important;
 }
 </style>

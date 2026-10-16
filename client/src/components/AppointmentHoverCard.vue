@@ -40,6 +40,24 @@
           </div>
         </div>
 
+        <template v-if="appointmentNotes || internalNotes">
+          <div class="border-t border-gray-100 my-3"></div>
+          <div class="space-y-2">
+            <div v-if="appointmentNotes">
+              <div class="text-[11px] font-bold text-gray-500 uppercase tracking-wide">
+                {{ t("bookingSidebar.appointmentNotes") }}
+              </div>
+              <p class="text-sm text-gray-800 whitespace-pre-line break-words line-clamp-4">{{ appointmentNotes }}</p>
+            </div>
+            <div v-if="internalNotes" class="border-l-4 border-l-amber-400 bg-amber-50 rounded-r-md px-2 py-1">
+              <div class="text-[11px] font-bold text-amber-700 uppercase tracking-wide">
+                {{ t("booking.notes.internalNote") }}
+              </div>
+              <p class="text-sm text-gray-800 whitespace-pre-line break-words line-clamp-4">{{ internalNotes }}</p>
+            </div>
+          </div>
+        </template>
+
         <div class="border-t border-gray-100 my-3"></div>
 
         <div class="flex text-sm">
@@ -96,6 +114,9 @@ const statusHeaderText = computed(() => {
 });
 
 const clientName = computed(() => props.appointment.client_name || t("scheduler.hoverCard.unknownClient"));
+
+const appointmentNotes = computed(() => (props.appointment.booking_notes || "").trim());
+const internalNotes = computed(() => (props.appointment.internal_notes || "").trim());
 
 const dateRangeText = computed(() => {
   const start: Date | undefined = props.appointment.start;

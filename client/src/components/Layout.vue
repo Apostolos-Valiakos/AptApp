@@ -328,6 +328,13 @@ const navItems = computed(() => [
     icon: "pi pi-wallet",
   },
   {
+    label: t("nav.expenses"),
+    path: "/app/expenses",
+    ownerOnly: true,
+    frontdeskOnly: true,
+    icon: "pi pi-receipt",
+  },
+  {
     label: t("nav.packages"),
     path: "/app/packages",
     ownerOnly: true,
