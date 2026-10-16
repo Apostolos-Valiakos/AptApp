@@ -57,6 +57,19 @@
             </span>
             <i class="pi pi-chevron-down text-gray-400 text-xs"></i>
           </button>
+          <div v-if="otherVariations(service).length" class="flex flex-wrap gap-1.5 mt-2">
+            <button
+              v-for="v in otherVariations(service)"
+              :key="v.id"
+              type="button"
+              class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border border-[var(--p-primary-200)] text-[var(--p-primary-700)] bg-[var(--p-primary-50)] hover:bg-[var(--p-primary-100)] transition-colors"
+              :title="t('bookingServices.addVariationAfter')"
+              @click="addVariationAfter(index, v)"
+            >
+              <i class="pi pi-plus text-[10px]"></i>
+              {{ v.name }} · {{ v.duration_minutes }}′ · €{{ Number(v.price).toFixed(2).replace(/\.00$/, "") }}
+            </button>
+          </div>
         </div>
 
         <div class="w-full sm:w-1/3">
@@ -266,6 +279,37 @@ const addService = () => {
   });
 
   emit("update:modelValue", list);
+};
+
+// The service's variations other than the one this row already is.
+const otherVariations = (service: any) => {
+  if (!service.service_id) return [];
+  const found = props.services.find((s: any) => s.id === service.service_id);
+  return (found?.variations || []).filter((v: any) => v.name !== service.variation_name);
+};
+
+// Adds the variation as a new row right after this one (and after any sauna/
+// hammam blocks it generated), starting when it ends, with the same staff.
+const addVariationAfter = (index: number, variation: any) => {
+  const list = [...props.modelValue];
+  const svc = list[index];
+  const found = props.services.find((s: any) => s.id === svc.service_id);
+  let insertAt = index + 1;
+  while (list[insertAt]?._autoGenFor) insertAt++;
+  const prev = list[insertAt - 1];
+  const start = new Date(
+    new Date(prev.start_time).getTime() + (prev.duration_override || 60) * 60000,
+  );
+  list.splice(insertAt, 0, {
+    service_id: svc.service_id,
+    staff_id: svc.staff_id,
+    start_time: start,
+    duration_override: variation.duration_minutes,
+    price_override: Number(variation.price),
+    variation_name: variation.name,
+    _label: `${found?.name || ""} — ${variation.name}`,
+  });
+  recalcTimes(list);
 };
 
 const removeService = (index: number) => {

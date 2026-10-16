@@ -24,6 +24,7 @@ const ShopsView = () => import("../views/ShopsView.vue");
 const MembershipTiersView = () => import("../views/MembershipTiersView.vue");
 const DailyReportView = () => import("../views/DailyReportView.vue");
 const PackageTypesView = () => import("../views/PackageTypesView.vue");
+const ExpensesView = () => import("../views/ExpensesView.vue");
 const MembershipReportView = () => import("../views/MembershipReportView.vue");
 const QrScannerView = () => import("../views/QrScannerView.vue");
 const DemoRequestsView = () => import("../views/DemoRequestsView.vue");
@@ -76,6 +77,11 @@ const routes = [
             meta: { requiresShopAdmin: true },
           },
           { path: "daily-report", component: DailyReportView },
+          {
+            path: "expenses",
+            component: ExpensesView,
+            meta: { requiresShopAdmin: true },
+          },
           {
             path: "packages",
             component: PackageTypesView,

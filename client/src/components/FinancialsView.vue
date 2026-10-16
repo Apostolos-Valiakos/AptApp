@@ -8,12 +8,20 @@
         </h1>
         <p class="text-gray-500 mt-1 text-sm">{{ t("analytics.subtitle") }}</p>
       </div>
-      <Button
-        :label="t('nav.membershipReport')"
-        icon="pi pi-chart-pie"
-        class="p-button-outlined flex-shrink-0"
-        @click="router.push('/app/membership-report')"
-      />
+      <div class="flex gap-2 flex-wrap">
+        <Button
+          :label="t('nav.expenses')"
+          icon="pi pi-receipt"
+          class="p-button-outlined flex-shrink-0"
+          @click="router.push('/app/expenses')"
+        />
+        <Button
+          :label="t('nav.membershipReport')"
+          icon="pi pi-chart-pie"
+          class="p-button-outlined flex-shrink-0"
+          @click="router.push('/app/membership-report')"
+        />
+      </div>
     </div>
 
     <!-- Filter Bar -->
@@ -178,8 +186,8 @@
       </div>
     </div>
 
-    <!-- KPI Cards Row 2 — 2 mini cards, unified style -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+    <!-- KPI Cards Row 2 — 4 mini cards, unified style -->
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-6">
       <!-- Cancellation Rate -->
       <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
         <div class="flex items-center justify-between">
@@ -226,6 +234,52 @@
             class="w-12 h-12 rounded-full flex items-center justify-center bg-green-50 text-green-600"
           >
             <i class="pi pi-wallet text-xl"></i>
+          </div>
+        </div>
+      </div>
+
+      <!-- Expenses in the selected period -->
+      <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+        <div class="flex items-center justify-between">
+          <div>
+            <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide mb-1">
+              {{ t("analytics.kpi.periodExpenses") }}
+            </h4>
+            <Skeleton v-if="loading" height="1.75rem" width="6rem" />
+            <div v-else class="text-2xl font-bold text-gray-800">
+              €{{ formatCurrency(finances.total_expenses) }}
+            </div>
+            <div class="text-xs text-gray-400 mt-1">
+              {{ t("analytics.kpi.periodExpensesNote") }}
+            </div>
+          </div>
+          <div class="w-12 h-12 rounded-full flex items-center justify-center bg-red-50 text-red-600">
+            <i class="pi pi-receipt text-xl"></i>
+          </div>
+        </div>
+      </div>
+
+      <!-- Net: collected minus expenses -->
+      <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+        <div class="flex items-center justify-between">
+          <div>
+            <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide mb-1">
+              {{ t("analytics.kpi.netProfit") }}
+            </h4>
+            <Skeleton v-if="loading" height="1.75rem" width="6rem" />
+            <div
+              v-else
+              class="text-2xl font-bold"
+              :class="finances.net_profit < 0 ? 'text-red-600' : 'text-gray-800'"
+            >
+              {{ finances.net_profit < 0 ? "−" : "" }}€{{ formatCurrency(Math.abs(finances.net_profit)) }}
+            </div>
+            <div class="text-xs text-gray-400 mt-1">
+              {{ t("analytics.kpi.netProfitNote") }}
+            </div>
+          </div>
+          <div class="w-12 h-12 rounded-full flex items-center justify-center bg-indigo-50 text-indigo-600">
+            <i class="pi pi-calculator text-xl"></i>
           </div>
         </div>
       </div>
@@ -899,6 +953,8 @@ const finances = ref({
   total_payments: 0,
   collected_today: 0,
   total_debt: 0,
+  total_expenses: 0,
+  net_profit: 0,
 });
 
 const analytics = ref<any>({
