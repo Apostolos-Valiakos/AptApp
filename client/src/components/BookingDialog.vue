@@ -447,6 +447,7 @@
             :client="selectedClient"
             :calculated-balance="previousDebt"
             v-model:bookingNotes="form.booking_notes"
+            @debt-changed="onDebtChanged"
           />
         </div>
       </div>
@@ -658,6 +659,36 @@ const selectedClient = ref<any>(null);
 const onClientPicked = (client: any) => {
   selectedClient.value = client;
   form.value.client_id = client.id;
+  refreshClientBalance(client.id);
+};
+
+// The stored balance can be stale (debt appears when an appointment's time
+// passes), so the server recalculates it whenever a client is shown here.
+const refreshClientBalance = async (clientId: string) => {
+  if (!clientId) return;
+  try {
+    const token = localStorage.getItem("token");
+    const res = await fetch(`/api/v1/clients/${clientId}/balance`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return;
+    const { balance } = await res.json();
+    if (selectedClient.value?.id === clientId) {
+      selectedClient.value.outstanding_balance = Number(balance) || 0;
+    }
+  } catch {
+    // keep the stored figure if the refresh fails
+  }
+};
+
+// A payment or write-off made from the sidebar.
+const onDebtChanged = (e: { appointmentId?: string; amount: number; newBalance: number }) => {
+  if (selectedClient.value) selectedClient.value.outstanding_balance = Number(e.newBalance) || 0;
+  if (e.appointmentId && e.appointmentId === form.value.id) {
+    form.value.deposit_amount = Number(form.value.deposit_amount || 0) + Number(e.amount || 0);
+    form.value.payment_status = "paid";
+  }
+  emit("refresh");
 };
 
 const clearSelectedClient = () => {
@@ -683,6 +714,7 @@ const loadClientById = async (clientId: string, fallback: any) => {
   } catch {
     // keep the fallback if the lookup fails
   }
+  await refreshClientBalance(clientId);
 };
 
 // This client's other active appointments the same calendar day, across
@@ -704,6 +736,13 @@ const loadSiblingAppointments = async (clientId: string, startTime: Date) => {
       siblingAppointments.value = all.filter(
         (a: any) => a.id !== form.value.id,
       );
+      // Pre-select the day's other unpaid appointments, so checkout totals
+      // the whole day by default; staff can untick to pay one only.
+      if (canCombineDayPayment.value) {
+        selectedSiblingIds.value = siblingAppointments.value
+          .filter((s: any) => Number(s.owed) > 0)
+          .map((s: any) => s.id);
+      }
     }
   } catch {
     // leave the list empty if this fails — not critical to saving/paying
@@ -726,6 +765,7 @@ const loadWalkInClient = async () => {
       const walkIn = await res.json();
       selectedClient.value = walkIn;
       form.value.client_id = walkIn.id;
+      refreshClientBalance(walkIn.id);
     }
   } catch {
     // leave the client picker blank if this fails

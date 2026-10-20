@@ -610,6 +610,27 @@ const updateSlotDuration = () => {
   }
 };
 
+// Snapping is 5 minutes (snapDuration), but a click on an empty slot should
+// still start at the slot the user sees, e.g. 10:00 for any click in the
+// 10:00 row at 60' zoom. Slots are counted from slotMinTime, so 120' rows
+// starting at 07:00 round to 07:00/09:00/..., matching the grid.
+const roundRangeToSlots = (start: Date, end: Date) => {
+  const slot = slotDurationMinutes.value;
+  const [h, m] = shopSlotMinTime.value.split(":").map(Number);
+  const gridStart = (h || 0) * 60 + (m || 0);
+  const minutesOf = (d: Date) => d.getHours() * 60 + d.getMinutes() - gridStart;
+  const at = (d: Date, mins: number) => {
+    const r = new Date(d);
+    r.setHours(0, gridStart + mins, 0, 0);
+    return r;
+  };
+  const s = at(start, Math.floor(minutesOf(start) / slot) * slot);
+  const endMins = minutesOf(end) + (end.getDate() !== start.getDate() ? 24 * 60 : 0);
+  const e = at(start, Math.max(Math.ceil(endMins / slot) * slot, minutesOf(s) + slot));
+  return { start: s, end: e };
+};
+const formatSlotIso = (d: Date) => calendarApi.value?.formatIso(d) ?? d.toISOString();
+
 const changeView = (viewName: string) => {
   const api = calendarApi.value;
   if (api) {
@@ -1279,6 +1300,10 @@ const calendarOptions = ref({
     hour12: false,
   } as const,
   slotDuration: "00:15:00",
+  // Dragging and resizing move in 5-minute steps at every zoom level; without
+  // this FullCalendar snaps to slotDuration, i.e. 30/60/120 minutes zoomed out.
+  // A click on an empty slot is rounded back to the visible slot in select.
+  snapDuration: "00:05:00",
   slotLabelInterval: "01:00",
   slotMinTime: "07:00:00",
   slotMaxTime: "23:00:00",
@@ -1487,6 +1512,17 @@ const calendarOptions = ref({
       ? `<span class="absolute top-1 right-6 text-gray-500" title="${escapeHtml(t("services.archivedTooltip"))}"><i class="pi pi-box text-[9px]"></i></span>`
       : "";
 
+    // While dragging or resizing, FullCalendar renders a "mirror" copy at the
+    // new position; label it with the exact new time, since a 5-minute step
+    // is only a few pixels when zoomed out.
+    if (arg.isMirror && !isMonthView && start && end) {
+      const hhmm = (d: Date) =>
+        `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+      return {
+        html: `<div class="fc-drag-time-pill">${hhmm(start)} – ${hhmm(end)}</div>`,
+      };
+    }
+
     if (isPhone.value && !isMonthView) {
       const start = arg.event.start as Date | null;
       const startText = start
@@ -1657,9 +1693,10 @@ const calendarOptions = ref({
   },
 
   select: (info: any) => {
+    const { start, end } = roundRangeToSlots(info.start, info.end);
     selectedAppointment.value = {
-      start_time: info.startStr,
-      end_time: info.endStr,
+      start_time: formatSlotIso(start),
+      end_time: formatSlotIso(end),
       staff_id: info.resource ? info.resource.id : null,
       staff_name: info.resource ? info.resource.title : "",
     };
@@ -1864,5 +1901,27 @@ onMounted(async () => {
 }
 .fc .fc-timegrid-now-indicator-arrow:has(.fc-now-pill) {
   border-color: transparent !important;
+}
+
+/* Drag/resize preview: exact new time, sitting just above the box so a short
+   (or zoomed-out) appointment doesn't clip it (see eventContent isMirror) */
+.fc .fc-event-mirror,
+.fc .fc-event-mirror .fc-event-main {
+  overflow: visible !important;
+  z-index: 50 !important;
+}
+.fc-drag-time-pill {
+  position: absolute;
+  left: 2px;
+  bottom: calc(100% + 2px);
+  background: #111827;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 9999px;
+  white-space: nowrap;
+  pointer-events: none;
 }
 </style>
