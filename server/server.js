@@ -928,45 +928,54 @@ const saveIdempotency = async (client, key, shopId, status, body) => {
 };
 
 // --- HELPER: Recalculate Outstanding Balance for a Client ---
+// A client's balance: what past, non-cancelled appointments (since March 2026)
+// cost minus what was recorded against them, plus manual debts minus what was
+// recorded against those. Write-offs are payment records too, so they clear
+// debt without counting as revenue (see the revenue exclusion helpers).
+const clientBalanceSql = (clientRef) => `(
+  COALESCE((
+    SELECT SUM(x.total_cost - x.total_paid) FROM (
+      SELECT
+        COALESCE(SUM(COALESCE(aps.price_override, s.price)), 0)
+          + COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = a.id), 0) AS total_cost,
+        COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0) AS total_paid,
+        (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) AS appt_time
+      FROM appointments a
+      LEFT JOIN appointment_services aps ON a.id = aps.appointment_id
+      LEFT JOIN services s ON aps.service_id = s.id
+      WHERE a.client_id = ${clientRef} AND a.status != 'cancelled'
+      GROUP BY a.id
+    ) x
+    WHERE x.appt_time <= CURRENT_TIMESTAMP AND x.appt_time >= '2026-03-01 00:00:00'
+  ), 0)
+  + COALESCE((
+    SELECT SUM(d.amount - COALESCE((SELECT SUM(t.amount) FROM transactions t WHERE t.client_debt_id = d.id), 0))
+    FROM client_debts d
+    WHERE d.client_id = ${clientRef} AND d.debt_date <= CURRENT_DATE
+  ), 0)
+)`;
+
 const recalculateClientBalance = async (client, clientId) => {
   try {
-    // We use a subquery to find the appointment time from appointment_services
-    // since 'start_time' does not exist on the appointments table directly.
-    const balanceRes = await client.query(
-      `SELECT
-         COALESCE(SUM(total_cost - total_paid), 0) as new_balance
-       FROM (
-         SELECT
-           a.id,
-           COALESCE(SUM(COALESCE(aps.price_override, s.price)), 0)
-             + COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = a.id), 0) as total_cost,
-           COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0) as total_paid,
-           (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) as appt_time
-         FROM appointments a
-         LEFT JOIN appointment_services aps ON a.id = aps.appointment_id
-         LEFT JOIN services s ON aps.service_id = s.id
-         WHERE a.client_id = $1
-           AND a.status != 'cancelled'
-         GROUP BY a.id
-       ) subquery
-       WHERE appt_time <= CURRENT_TIMESTAMP
-         AND appt_time >= '2026-03-01 00:00:00'`,
-      [clientId],
-    );
-
-    const newBalance = balanceRes.rows[0].new_balance;
-
-    // This updates the 'Clients' list you see in your second image
-    await client.query(
-      "UPDATE clients SET outstanding_balance = $1 WHERE id = $2",
-      [newBalance, clientId],
-    );
-
+    const balanceRes = await client.query(`SELECT ${clientBalanceSql("$1")} AS new_balance`, [clientId]);
+    const newBalance = Number(balanceRes.rows[0].new_balance) || 0;
+    await client.query("UPDATE clients SET outstanding_balance = $1 WHERE id = $2", [newBalance, clientId]);
     return newBalance;
   } catch (err) {
     console.error("Error recalculating balance:", err);
     throw err;
   }
+};
+
+// Stored balances only change on writes, but debt also appears when an
+// appointment's time passes. Refreshing every client at startup keeps the
+// stored figure (clients list, etc.) from drifting.
+const recalculateAllClientBalances = async () => {
+  const started = Date.now();
+  const { rowCount } = await pool.query(
+    `UPDATE clients c SET outstanding_balance = ${clientBalanceSql("c.id")}`,
+  );
+  console.log(`Recalculated ${rowCount} client balances in ${Date.now() - started} ms`);
 };
 
 // --- VISIBILITY HELPER ---
@@ -991,7 +1000,7 @@ const getVisibilityClause = (user, tableAlias = "a") => {
 // (that transaction uses a real payment_method like cash/card, so it's counted
 // normally and is unaffected by this exclusion).
 const buildRevenueExclusionClause = (excludeCash, excludeCard, alias = "a") => {
-  const conditions = [`_t.payment_method IN ('membership', 'package')`];
+  const conditions = [`_t.payment_method IN ('membership', 'package', 'write-off')`];
   if (excludeCash === "true") {
     conditions.push(`_t.payment_method = 'cash'`);
     conditions.push(
@@ -1003,7 +1012,7 @@ const buildRevenueExclusionClause = (excludeCash, excludeCard, alias = "a") => {
 };
 
 const buildTxnMethodExclusionClause = (excludeCash, excludeCard, columnPrefix = "") => {
-  const conditions = [`${columnPrefix}payment_method IN ('membership', 'package')`];
+  const conditions = [`${columnPrefix}payment_method IN ('membership', 'package', 'write-off')`];
   if (excludeCash === "true") {
     conditions.push(`${columnPrefix}payment_method = 'cash'`);
     conditions.push(
@@ -4717,7 +4726,7 @@ app.get("/api/v1/reports/daily", authenticateToken, async (req, res) => {
        LEFT JOIN clients c ON c.id = t.client_id
        LEFT JOIN appointments a ON a.id = t.appointment_id
        WHERE t.shop_id = $1 AND t.created_at::date = CURRENT_DATE
-         AND COALESCE(t.payment_method, '') NOT IN ('membership', 'package')
+         AND COALESCE(t.payment_method, '') NOT IN ('membership', 'package', 'write-off')
          ${methodExclusion}
          ${visibility}
        ORDER BY t.created_at DESC`,
@@ -6677,35 +6686,215 @@ app.delete("/api/v1/products/:id", authenticateToken, async (req, res) => {
 });
 // GET FULL CLIENT PROFILE (Info + History + File Metadata)
 // Lightweight: last N past appointments for the booking sidebar
+// ==================== DEBT ====================
+const DEBT_PAYMENT_METHODS = ["cash", "card", "bank-transfer"];
+
+// "payment" records money received; "write_off" cancels the debt without revenue.
+const parseDebtResolution = (body) => {
+  const mode = body.mode;
+  if (mode === "write_off") return { method: "write-off", type: "write_off" };
+  if (mode === "payment" && DEBT_PAYMENT_METHODS.includes(body.payment_method)) {
+    return { method: body.payment_method, type: "payment" };
+  }
+  return null;
+};
+
+const clientInShop = async (db, clientId, shopId) =>
+  (await db.query("SELECT 1 FROM clients WHERE id = $1 AND shop_id = $2", [clientId, shopId])).rowCount > 0;
+
+app.get("/api/v1/clients/:id/balance", authenticateToken, async (req, res) => {
+  if (req.user.role === "client") return res.status(403).json({ error: "Forbidden" });
+  const id = safeUUID(req.params.id);
+  if (!id) return res.status(400).json({ error: "Invalid id" });
+  try {
+    if (!(await clientInShop(pool, id, req.shopId))) return res.status(404).json({ error: "Not found" });
+    res.json({ balance: await recalculateClientBalance(pool, id) });
+  } catch (err) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.post("/api/v1/appointments/:id/resolve-debt", authenticateToken, requireShopAdminAccess, async (req, res) => {
+  const id = safeUUID(req.params.id);
+  const how = parseDebtResolution(req.body);
+  if (!id || !how) return res.status(400).json({ error: "mode must be payment (with payment_method) or write_off" });
+  const note = String(req.body.note || "").trim().slice(0, 500) || null;
+  const db = await pool.connect();
+  try {
+    await db.query("BEGIN");
+    const apptRes = await db.query(
+      `SELECT a.id, a.client_id,
+              COALESCE((SELECT SUM(COALESCE(aps.price_override, s.price)) FROM appointment_services aps
+                        JOIN services s ON s.id = aps.service_id WHERE aps.appointment_id = a.id), 0)
+                + COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = a.id), 0) AS cost,
+              COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0) AS paid
+       FROM appointments a
+       WHERE a.id = $1 AND a.shop_id = $2 AND a.status <> 'cancelled'
+       FOR UPDATE OF a`,
+      [id, req.shopId],
+    );
+    const appt = apptRes.rows[0];
+    if (!appt) {
+      await db.query("ROLLBACK");
+      return res.status(404).json({ error: "Appointment not found or cancelled" });
+    }
+    const owed = Math.round((Number(appt.cost) - Number(appt.paid)) * 100) / 100;
+    if (!(owed > 0)) {
+      await db.query("ROLLBACK");
+      return res.status(409).json({ error: "nothing_owed" });
+    }
+    await db.query(
+      `INSERT INTO transactions (appointment_id, client_id, amount, payment_method, transaction_type, shop_id, reason, created_by_user_id, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
+      [id, appt.client_id, owed, how.method, how.type, req.shopId, note, String(req.user.userId || "")],
+    );
+    await db.query(
+      `UPDATE appointments SET payment_status = 'paid', deposit_amount = $1, updated_at = NOW() WHERE id = $2`,
+      [Number(appt.cost), id],
+    );
+    const balance = appt.client_id ? await recalculateClientBalance(db, appt.client_id) : 0;
+    await db.query("COMMIT");
+    res.json({ success: true, amount: owed, new_balance: balance });
+  } catch (err) {
+    await db.query("ROLLBACK");
+    console.error("Resolve appointment debt error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  } finally {
+    db.release();
+  }
+});
+
+app.get("/api/v1/clients/:id/debts", authenticateToken, requireShopAdminAccess, async (req, res) => {
+  const id = safeUUID(req.params.id);
+  if (!id) return res.status(400).json({ error: "Invalid id" });
+  try {
+    const { rows } = await pool.query(
+      `SELECT d.id, d.amount::float AS amount, to_char(d.debt_date, 'YYYY-MM-DD') AS debt_date, d.note,
+              GREATEST(0, d.amount - COALESCE((SELECT SUM(t.amount) FROM transactions t WHERE t.client_debt_id = d.id), 0))::float AS remaining
+       FROM client_debts d
+       WHERE d.client_id = $1 AND d.shop_id = $2
+       ORDER BY d.debt_date DESC, d.created_at DESC`,
+      [id, req.shopId],
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error("List client debts error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.post("/api/v1/clients/:id/debts", authenticateToken, requireShopAdminAccess, async (req, res) => {
+  const id = safeUUID(req.params.id);
+  const amount = Math.round(Number(req.body.amount) * 100) / 100;
+  const date = String(req.body.debt_date || "");
+  const note = String(req.body.note || "").trim();
+  if (!id || !(amount > 0) || amount > 1e7) return res.status(400).json({ error: "amount must be a positive number" });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: "debt_date must be YYYY-MM-DD" });
+  if (!note || note.length > 500) return res.status(400).json({ error: "note is required (max 500 characters)" });
+  try {
+    if (!(await clientInShop(pool, id, req.shopId))) return res.status(404).json({ error: "Not found" });
+    await pool.query(
+      `INSERT INTO client_debts (shop_id, client_id, amount, debt_date, note, created_by_user_id) VALUES ($1, $2, $3, $4, $5, $6)`,
+      [req.shopId, id, amount, date, note, String(req.user.userId || "")],
+    );
+    res.status(201).json({ success: true, new_balance: await recalculateClientBalance(pool, id) });
+  } catch (err) {
+    console.error("Add client debt error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.post("/api/v1/client-debts/:id/resolve", authenticateToken, requireShopAdminAccess, async (req, res) => {
+  const id = safeUUID(req.params.id);
+  const how = parseDebtResolution(req.body);
+  if (!id || !how) return res.status(400).json({ error: "mode must be payment (with payment_method) or write_off" });
+  const db = await pool.connect();
+  try {
+    await db.query("BEGIN");
+    const debtRes = await db.query(
+      `SELECT d.id, d.client_id,
+              d.amount - COALESCE((SELECT SUM(t.amount) FROM transactions t WHERE t.client_debt_id = d.id), 0) AS remaining
+       FROM client_debts d WHERE d.id = $1 AND d.shop_id = $2 FOR UPDATE OF d`,
+      [id, req.shopId],
+    );
+    const debt = debtRes.rows[0];
+    if (!debt) {
+      await db.query("ROLLBACK");
+      return res.status(404).json({ error: "Not found" });
+    }
+    const remaining = Math.round(Number(debt.remaining) * 100) / 100;
+    if (!(remaining > 0)) {
+      await db.query("ROLLBACK");
+      return res.status(409).json({ error: "nothing_owed" });
+    }
+    await db.query(
+      `INSERT INTO transactions (appointment_id, client_id, client_debt_id, amount, payment_method, transaction_type, shop_id, created_by_user_id, created_at)
+       VALUES (NULL, $1, $2, $3, $4, $5, $6, $7, NOW())`,
+      [debt.client_id, id, remaining, how.method, how.type, req.shopId, String(req.user.userId || "")],
+    );
+    const balance = await recalculateClientBalance(db, debt.client_id);
+    await db.query("COMMIT");
+    res.json({ success: true, amount: remaining, new_balance: balance });
+  } catch (err) {
+    await db.query("ROLLBACK");
+    console.error("Resolve client debt error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  } finally {
+    db.release();
+  }
+});
+
 app.get(
   "/api/v1/clients/:id/past-appointments",
   authenticateToken,
   async (req, res) => {
     const { id } = req.params;
-    const limit = Math.min(parseInt(req.query.limit) || 5, 20);
+    const limit = Math.min(parseInt(req.query.limit) || 10, 20);
     const threeMonthClause =
       req.user.role !== "super_admin"
         ? "AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) >= NOW() - INTERVAL '3 months'"
         : "";
+    // Filters for the booking sidebar. "completed" = the visit took place
+    // (including past bookings never marked completed); "unpaid" = not
+    // cancelled and still owing, partly paid included.
+    const STATUS_FILTERS = {
+      all: "",
+      completed: "AND a.status IN ('completed', 'new', 'confirmed', 'arrived', 'started')",
+      cancelled: "AND a.status = 'cancelled'",
+      "no-show": "AND a.status = 'no-show'",
+      unpaid: "AND a.status <> 'cancelled' AND x.owed > 0",
+    };
+    const statusClause = STATUS_FILTERS[req.query.status] ?? "";
     try {
       const { rows } = await pool.query(
-        `SELECT
-            a.id,
-            a.status,
-            (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) as start_time,
-            (SELECT string_agg(s.name, ', ')
-             FROM appointment_services aps
-             JOIN services s ON aps.service_id = s.id
-             WHERE aps.appointment_id = a.id) as service_names,
-            (SELECT string_agg(DISTINCT st.name, ', ')
-             FROM appointment_services aps
-             JOIN staff st ON aps.staff_id = st.id
-             WHERE aps.appointment_id = a.id) as staff_names
-         FROM appointments a
-         WHERE a.client_id = $1 AND a.shop_id = $2
-           AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) < NOW()
+        `SELECT x.* FROM (
+           SELECT
+              a.id,
+              a.status,
+              (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) as start_time,
+              (SELECT string_agg(s.name, ', ')
+               FROM appointment_services aps
+               JOIN services s ON aps.service_id = s.id
+               WHERE aps.appointment_id = a.id) as service_names,
+              (SELECT string_agg(DISTINCT st.name, ', ')
+               FROM appointment_services aps
+               JOIN staff st ON aps.staff_id = st.id
+               WHERE aps.appointment_id = a.id) as staff_names,
+              GREATEST(0,
+                COALESCE((SELECT SUM(COALESCE(aps.price_override, s.price))
+                          FROM appointment_services aps JOIN services s ON s.id = aps.service_id
+                          WHERE aps.appointment_id = a.id), 0)
+                + COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = a.id), 0)
+                - COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0)
+              )::float AS owed
+           FROM appointments a
+           WHERE a.client_id = $1 AND a.shop_id = $2
+         ) x
+         JOIN appointments a ON a.id = x.id
+         WHERE x.start_time < NOW()
            ${threeMonthClause}
-         ORDER BY 3 DESC
+           ${statusClause}
+         ORDER BY x.start_time DESC
          LIMIT $3`,
         [id, req.shopId, limit],
       );
@@ -7939,6 +8128,25 @@ app.get("/api/v1/availability", authenticateToken, async (req, res) => {
     await pool.query(
       `CREATE INDEX IF NOT EXISTS idx_expenses_shop_date ON expenses(shop_id, expense_date)`,
     );
+    // Debt added by hand (e.g. an old balance from a previous system), not
+    // tied to an appointment. Payments/write-offs against it point here.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS client_debts (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+        client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+        amount NUMERIC(10,2) NOT NULL CHECK (amount > 0),
+        debt_date DATE NOT NULL,
+        note TEXT NOT NULL,
+        created_by_user_id VARCHAR(255),
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_client_debts_client ON client_debts(client_id)`);
+    await pool.query(
+      `ALTER TABLE transactions ADD COLUMN IF NOT EXISTS client_debt_id UUID REFERENCES client_debts(id) ON DELETE SET NULL`,
+    );
+    recalculateAllClientBalances().catch((err) => console.error("Startup balance recalculation failed:", err));
     // Lets a staff member keep their login/appointments without cluttering the
     // scheduler with a resource column (e.g. frontdesk-only accounts).
     await pool.query(
