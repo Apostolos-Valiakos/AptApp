@@ -5,6 +5,7 @@
     :showHeader="false"
     :style="{ width: '32rem', maxWidth: '95vw' }"
     :contentStyle="{ padding: 0 }"
+    @show="scrollToCurrent"
   >
     <div class="flex flex-col max-h-[85vh]">
       <div class="flex items-center justify-between px-5 pt-5 pb-3">
@@ -55,7 +56,7 @@
         </span>
       </div>
 
-      <div class="flex-1 overflow-y-auto px-5 pb-5">
+      <div ref="listEl" class="flex-1 overflow-y-auto px-5 pb-5">
         <div v-if="groupedServices.length === 0" class="text-center text-gray-400 py-10 text-sm">
           {{ t("servicePicker.noResults") }}
         </div>
@@ -67,7 +68,9 @@
             <div
               v-for="svc in group.items"
               :key="svc.id"
-              class="border border-gray-200 rounded-xl overflow-hidden"
+              :data-service-id="svc.id"
+              class="border rounded-xl overflow-hidden"
+              :class="svc.id === currentServiceId ? 'border-[var(--p-primary-color)] ring-1 ring-[var(--p-primary-color)]' : 'border-gray-200'"
             >
               <!-- Flat, single-price service -->
               <button
@@ -84,7 +87,10 @@
                   <span class="text-sm text-gray-400 whitespace-nowrap">
                     {{ formatDuration(svc.duration_minutes) }}
                   </span>
-                  <span class="w-5 h-5 rounded-full border-2 border-gray-300 flex-shrink-0"></span>
+                  <span
+                    class="w-5 h-5 rounded-full border-2 flex-shrink-0"
+                    :class="svc.id === currentServiceId ? 'border-[var(--p-primary-color)] border-[6px]' : 'border-gray-300'"
+                  ></span>
                 </span>
               </button>
 
@@ -117,7 +123,10 @@
                       <span class="text-sm text-gray-400 whitespace-nowrap">
                         {{ formatDuration(variation.duration_minutes) }}
                       </span>
-                      <span class="w-5 h-5 rounded-full border-2 border-gray-300 flex-shrink-0"></span>
+                      <span
+                        class="w-5 h-5 rounded-full border-2 flex-shrink-0"
+                        :class="isCurrentVariation(svc, variation) ? 'border-[var(--p-primary-color)] border-[6px]' : 'border-gray-300'"
+                      ></span>
                     </span>
                   </button>
                 </div>
@@ -131,7 +140,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from "vue";
+import { ref, computed, watch, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
 import { groupServicesByCategory } from "../../utils/serviceGroups";
 
@@ -142,6 +151,10 @@ const props = defineProps<{
   services: any[];
   staff: any[];
   currentStaffId?: string | null;
+  // The service already on the row being edited, if any: the list opens
+  // scrolled to it, with its variations expanded and the current one marked.
+  currentServiceId?: string | null;
+  currentVariationName?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -163,10 +176,25 @@ watch(
   (v) => {
     if (!v) return;
     search.value = "";
-    expandedId.value = null;
+    const current = props.services.find((s: any) => s.id === props.currentServiceId);
+    expandedId.value = current?.variations?.length ? current.id : null;
     staffFilterId.value = props.currentStaffId || null;
   },
 );
+
+const listEl = ref<HTMLElement | null>(null);
+const isCurrentVariation = (svc: any, variation: any) =>
+  svc.id === props.currentServiceId && variation.name === props.currentVariationName;
+
+// Runs once the dialog is shown, so the list is rendered and measurable.
+const scrollToCurrent = async () => {
+  if (!props.currentServiceId) return;
+  await nextTick();
+  const el = listEl.value?.querySelector<HTMLElement>(
+    `[data-service-id="${CSS.escape(String(props.currentServiceId))}"]`,
+  );
+  el?.scrollIntoView({ block: "center" });
+};
 
 const staffFilter = computed(() =>
   staffFilterId.value ? props.staff.find((s) => s.id === staffFilterId.value) : null,

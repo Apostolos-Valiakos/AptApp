@@ -143,6 +143,39 @@ export const isStaffAvailable = (params: {
   return { available: true };
 };
 
+// For overtime warnings: the staff member's working ranges that day as
+// "10:00–14:00, 16:00–20:20", "" for a scheduled day off, or null when they
+// have no schedule (unrestricted).
+export const describeWorkingDay = (
+  workingHours: WorkingHourRange[],
+  staffList: StaffLike[],
+  staffId: any,
+  date: Date,
+): string | null => {
+  const staffMember = (staffList || []).find((s) => String(s.id) === String(staffId));
+  if (!staffMember?.working_hours_enabled) return null;
+  const ranges = getWorkingRangesForDate(workingHours, staffId, date);
+  if (ranges === null) return null;
+  return ranges.map((r) => `${r.start.slice(0, 5)}–${r.end.slice(0, 5)}`).join(", ");
+};
+
+// Shared overtime confirmation text (booking dialog, calendar click and
+// drag): one line per staff member, e.g. "Ιωάννα: ωράριο 10:00–20:20".
+export const overtimeConfirmMessage = (
+  entries: { name: string; hours: string | null }[],
+  t: (key: string, values?: Record<string, unknown>) => string,
+): string => {
+  const seen = new Set<string>();
+  const lines = entries
+    .filter((e) => !seen.has(e.name) && seen.add(e.name))
+    .map((e) =>
+      e.hours
+        ? `• ${t("booking.overtime.line", { name: e.name, hours: e.hours })}`
+        : `• ${t("booking.overtime.lineDayOff", { name: e.name })}`,
+    );
+  return `${t("booking.overtime.intro")}\n\n${lines.join("\n")}\n\n${t("booking.overtime.question")}`;
+};
+
 // --- Per-week schedule editing (StaffScheduleView.vue) ---
 // Each week can be its own independently-saved version (effective_from =
 // that week's Monday). Building the editable 7-day set for a given week is

@@ -149,7 +149,9 @@ const assertServicesHaveStaff = (services, isBlock) => {
 // second check — only time-off applies to them, exactly as it always has.
 // Uses the same timestamptz -> date/time cast convention as the existing
 // (pre-existing, working) time-off conflict-check query for consistency.
-const assertStaffAvailable = async (client, { staffId, shopId, startTime, durationMinutes }) => {
+// allowOvertime (admin, super admin and frontdesk, after confirming in the
+// app) skips only the working-hours part: leave and breaks still block.
+const assertStaffAvailable = async (client, { staffId, shopId, startTime, durationMinutes, allowOvertime = false }) => {
   if (!staffId) return;
   // Deliberately unconditional, regardless of staff_working_hours now having
   // effective-dated versions: editing an unrelated field on a past
@@ -174,6 +176,7 @@ const assertStaffAvailable = async (client, { staffId, shopId, startTime, durati
     [staffId, shopId, startTime, duration],
   );
   if (timeOff.rows.length > 0) throw new StaffUnavailableError("time_off", staffId);
+  if (allowOvertime) return;
 
   const staffRow = await client.query(
     `SELECT working_hours_enabled FROM staff WHERE id = $1 AND shop_id = $2`,
@@ -324,6 +327,7 @@ const createAppointmentSeries = async (client, data, shopId) => {
     group_id_override,
     instance_starts,
     allow_unavailable,
+    allow_overtime,
   } = data;
 
   assertServicesHaveStaff(services, is_block);
@@ -473,6 +477,7 @@ const createAppointmentSeries = async (client, data, shopId) => {
             shopId,
             startTime: svcInstanceStartIso,
             durationMinutes: svc.duration_override,
+            allowOvertime: !!allow_overtime,
           });
         }
 
@@ -550,6 +555,7 @@ const performSingleUpdate = async (client, id, shopId, body) => {
     is_eoppy,
     services = [],
     products = [],
+    allow_overtime,
   } = body;
 
   assertServicesHaveStaff(services, is_block);
@@ -631,6 +637,7 @@ const performSingleUpdate = async (client, id, shopId, body) => {
         shopId,
         startTime: svc.start_time,
         durationMinutes: svc.duration_override,
+        allowOvertime: !!allow_overtime,
       });
       if (safeUUID(svc.service_id)) {
         await client.query(
@@ -3507,6 +3514,7 @@ app.post("/api/v1/appointments", authenticateToken, async (req, res) => {
     let bookingPayload = req.body;
     if (!["admin", "super_admin", "frontdesk"].includes(req.user.role)) {
       delete bookingPayload.allow_unavailable;
+      delete bookingPayload.allow_overtime;
     }
     if (req.user.role === "client") {
       if (!req.user.clientId) {
@@ -3722,6 +3730,12 @@ app.put("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
   // Without this, a client JWT could rewrite any appointment in the shop.
   if (req.user.role === "client") {
     return res.status(403).json({ error: "forbidden" });
+  }
+  // Same overrides as on create: only these roles may book outside working
+  // hours (allow_overtime) or skip availability checks (allow_unavailable).
+  if (!["admin", "super_admin", "frontdesk"].includes(req.user.role)) {
+    delete req.body.allow_unavailable;
+    delete req.body.allow_overtime;
   }
 
   const client = await pool.connect();

@@ -1261,6 +1261,15 @@ export default {
     emailClient: "Email στον πελάτη",
     save: "Αποθήκευση",
     cancelAppt: "Διαγραφή Ραντεβού",
+    groupedWithExisting: "Προστέθηκε στο υπάρχον ραντεβού του πελάτη στις {time}",
+    overtime: {
+      header: "Εκτός ωραρίου",
+      intro: "Η ώρα είναι εκτός ωραρίου εργασίας:",
+      line: "{name}: ωράριο {hours}",
+      lineDayOff: "{name}: ρεπό αυτή τη μέρα",
+      question: "Να καταχωρηθεί ως υπερωρία;",
+      accept: "Ναι, υπερωρία",
+    },
     changeConfirm: {
       header: "Επιβεβαίωση αλλαγών",
       intro: "Πρόκειται να αλλάξετε αυτό το ραντεβού:",
@@ -1529,6 +1538,9 @@ export default {
     },
   },
   bookingServices: {
+    outsideHours: "εκτός ωραρίου",
+    overtimeNote: "Εκτός ωραρίου (ωράριο {hours}) · υπερωρία",
+    overtimeNoteDayOff: "Ρεπό αυτή τη μέρα · υπερωρία",
     addVariationAfter: "Προσθήκη ως επιπλέον υπηρεσία, αμέσως μετά",
     label: "Επιλογή Υπηρεσίας",
     service: "Υπηρεσία",
