@@ -151,6 +151,7 @@ export default {
     language: 'Language',
   },
   login: {
+    sessionExpired: 'Your session has expired. Please log in again.',
     subtitle: 'Welcome back! Sign in to your account.',
     username: 'Username',
     password: 'Password',

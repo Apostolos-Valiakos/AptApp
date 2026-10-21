@@ -804,7 +804,16 @@ app.get("/manifest.webmanifest", async (req, res) => {
 });
 
 const distPath = path.join(__dirname, "../dist");
-app.use(express.static(distPath));
+// index.html is never cached, so a refresh after a rebuild always gets the
+// new build's file names; the hashed files under /assets can be cached.
+const noCacheIndex = (res) => res.setHeader("Cache-Control", "no-cache");
+app.use(
+  express.static(distPath, {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith("index.html")) noCacheIndex(res);
+    },
+  }),
+);
 const dbFileStorage = multer.memoryStorage();
 const dbFileUpload = multer({
   storage: dbFileStorage,
@@ -1054,7 +1063,9 @@ const authenticateToken = (req, res, next) => {
   if (!token) return res.sendStatus(401);
 
   jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
-    if (err) return res.sendStatus(403);
+    // 401 (not 403) so the app can tell an expired or invalid session apart
+    // from "not allowed" and send the user back to the login page.
+    if (err) return res.status(401).json({ error: "invalid_token" });
 
     if (user.shopId) {
       const forcedAt = forceLogoutCache.get(user.shopId);
@@ -10355,6 +10366,12 @@ app.get(/(.*)/, (req, res) => {
   if (req.path.startsWith("/api")) {
     return res.status(404).json({ error: "API Route Not Found" });
   }
+  // A missing build file (e.g. from a tab opened before a rebuild) must fail
+  // as a real 404, not come back as index.html, so the app can reload itself.
+  if (req.path.startsWith("/assets/")) {
+    return res.status(404).end();
+  }
+  noCacheIndex(res);
   res.sendFile(path.join(distPath, "index.html"));
 });
 

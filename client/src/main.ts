@@ -22,6 +22,7 @@ import { createPinia } from "pinia";
 import PrimeVue from "primevue/config";
 import App from "./App.vue";
 import router from "./router";
+import { installSessionRecovery } from "./utils/sessionRecovery";
 
 // === PrimeVue v4 Theming ===
 import Aura from "@primevue/themes/aura";
@@ -85,6 +86,8 @@ const initApp = async () => {
   await themeStore.fetchAndApplyTheme();
 
   app.use(router);
+  // Expired session → login page; stale build after a rebuild → reload.
+  installSessionRecovery(router);
   app.use(i18n);
   app.use(ToastService);
   app.use(ConfirmationService);

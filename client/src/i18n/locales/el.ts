@@ -151,6 +151,7 @@ export default {
     language: "Γλώσσα",
   },
   login: {
+    sessionExpired: "Η σύνδεση έληξε. Συνδεθείτε ξανά.",
     subtitle: "Καλώς ήρθατε! Συνδεθείτε στο λογαριασμό σας.",
     username: "Όνομα Χρήστη",
     password: "Κωδικός",
