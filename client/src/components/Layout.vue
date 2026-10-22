@@ -248,12 +248,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, computed, nextTick } from "vue";
+import { ref, onMounted, onUnmounted, watch, computed, nextTick, defineAsyncComponent } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { useAuthStore } from "../stores/auth";
 import { useChatStore } from "../stores/chat";
 import { useSettingsStore } from "../stores/settings";
-import FloatingChat from "../components/FloatingChat.vue";
+// Staff chat: only shown to logged-in staff, so its code loads only then.
+const FloatingChat = defineAsyncComponent(() => import("../components/FloatingChat.vue"));
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
 import {
