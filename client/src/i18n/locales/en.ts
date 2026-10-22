@@ -151,6 +151,7 @@ export default {
     language: 'Language',
   },
   login: {
+    sessionExpired: 'Your session has expired. Please log in again.',
     subtitle: 'Welcome back! Sign in to your account.',
     username: 'Username',
     password: 'Password',
@@ -1223,6 +1224,15 @@ export default {
     emailClient: 'Email client',
     save: 'Save',
     cancelAppt: 'Cancel Appt',
+    groupedWithExisting: "Added to this client's existing appointment at {time}",
+    overtime: {
+      header: 'Outside working hours',
+      intro: 'This time is outside working hours:',
+      line: '{name}: works {hours}',
+      lineDayOff: '{name}: day off',
+      question: 'Book it as overtime?',
+      accept: 'Yes, overtime',
+    },
     changeConfirm: {
       header: 'Confirm changes',
       intro: 'You are about to change this appointment:',
@@ -1472,6 +1482,9 @@ export default {
     },
   },
   bookingServices: {
+    outsideHours: 'outside hours',
+    overtimeNote: 'Outside working hours ({hours}) · overtime',
+    overtimeNoteDayOff: 'Day off · overtime',
     addVariationAfter: 'Add this as another service, right after',
     label: 'Service Selection',
     service: 'Service',

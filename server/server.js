@@ -149,7 +149,9 @@ const assertServicesHaveStaff = (services, isBlock) => {
 // second check — only time-off applies to them, exactly as it always has.
 // Uses the same timestamptz -> date/time cast convention as the existing
 // (pre-existing, working) time-off conflict-check query for consistency.
-const assertStaffAvailable = async (client, { staffId, shopId, startTime, durationMinutes }) => {
+// allowOvertime (admin, super admin and frontdesk, after confirming in the
+// app) skips only the working-hours part: leave and breaks still block.
+const assertStaffAvailable = async (client, { staffId, shopId, startTime, durationMinutes, allowOvertime = false }) => {
   if (!staffId) return;
   // Deliberately unconditional, regardless of staff_working_hours now having
   // effective-dated versions: editing an unrelated field on a past
@@ -174,6 +176,7 @@ const assertStaffAvailable = async (client, { staffId, shopId, startTime, durati
     [staffId, shopId, startTime, duration],
   );
   if (timeOff.rows.length > 0) throw new StaffUnavailableError("time_off", staffId);
+  if (allowOvertime) return;
 
   const staffRow = await client.query(
     `SELECT working_hours_enabled FROM staff WHERE id = $1 AND shop_id = $2`,
@@ -324,6 +327,7 @@ const createAppointmentSeries = async (client, data, shopId) => {
     group_id_override,
     instance_starts,
     allow_unavailable,
+    allow_overtime,
   } = data;
 
   assertServicesHaveStaff(services, is_block);
@@ -473,6 +477,7 @@ const createAppointmentSeries = async (client, data, shopId) => {
             shopId,
             startTime: svcInstanceStartIso,
             durationMinutes: svc.duration_override,
+            allowOvertime: !!allow_overtime,
           });
         }
 
@@ -550,6 +555,7 @@ const performSingleUpdate = async (client, id, shopId, body) => {
     is_eoppy,
     services = [],
     products = [],
+    allow_overtime,
   } = body;
 
   assertServicesHaveStaff(services, is_block);
@@ -631,6 +637,7 @@ const performSingleUpdate = async (client, id, shopId, body) => {
         shopId,
         startTime: svc.start_time,
         durationMinutes: svc.duration_override,
+        allowOvertime: !!allow_overtime,
       });
       if (safeUUID(svc.service_id)) {
         await client.query(
@@ -797,7 +804,16 @@ app.get("/manifest.webmanifest", async (req, res) => {
 });
 
 const distPath = path.join(__dirname, "../dist");
-app.use(express.static(distPath));
+// index.html is never cached, so a refresh after a rebuild always gets the
+// new build's file names; the hashed files under /assets can be cached.
+const noCacheIndex = (res) => res.setHeader("Cache-Control", "no-cache");
+app.use(
+  express.static(distPath, {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith("index.html")) noCacheIndex(res);
+    },
+  }),
+);
 const dbFileStorage = multer.memoryStorage();
 const dbFileUpload = multer({
   storage: dbFileStorage,
@@ -1047,7 +1063,9 @@ const authenticateToken = (req, res, next) => {
   if (!token) return res.sendStatus(401);
 
   jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
-    if (err) return res.sendStatus(403);
+    // 401 (not 403) so the app can tell an expired or invalid session apart
+    // from "not allowed" and send the user back to the login page.
+    if (err) return res.status(401).json({ error: "invalid_token" });
 
     if (user.shopId) {
       const forcedAt = forceLogoutCache.get(user.shopId);
@@ -3507,6 +3525,7 @@ app.post("/api/v1/appointments", authenticateToken, async (req, res) => {
     let bookingPayload = req.body;
     if (!["admin", "super_admin", "frontdesk"].includes(req.user.role)) {
       delete bookingPayload.allow_unavailable;
+      delete bookingPayload.allow_overtime;
     }
     if (req.user.role === "client") {
       if (!req.user.clientId) {
@@ -3722,6 +3741,12 @@ app.put("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
   // Without this, a client JWT could rewrite any appointment in the shop.
   if (req.user.role === "client") {
     return res.status(403).json({ error: "forbidden" });
+  }
+  // Same overrides as on create: only these roles may book outside working
+  // hours (allow_overtime) or skip availability checks (allow_unavailable).
+  if (!["admin", "super_admin", "frontdesk"].includes(req.user.role)) {
+    delete req.body.allow_unavailable;
+    delete req.body.allow_overtime;
   }
 
   const client = await pool.connect();
@@ -10341,6 +10366,12 @@ app.get(/(.*)/, (req, res) => {
   if (req.path.startsWith("/api")) {
     return res.status(404).json({ error: "API Route Not Found" });
   }
+  // A missing build file (e.g. from a tab opened before a rebuild) must fail
+  // as a real 404, not come back as index.html, so the app can reload itself.
+  if (req.path.startsWith("/assets/")) {
+    return res.status(404).end();
+  }
+  noCacheIndex(res);
   res.sendFile(path.join(distPath, "index.html"));
 });
 

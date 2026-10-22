@@ -80,7 +80,7 @@
           <Dropdown
             v-model="service.staff_id"
             :options="getFilteredStaff(service)"
-            optionLabel="name"
+            optionLabel="label"
             optionValue="id"
             class="w-full p-inputtext-sm"
             :class="{ 'p-invalid': isStaffMissing(service) }"
@@ -88,6 +88,9 @@
           />
           <p v-if="isStaffMissing(service)" class="text-xs text-red-500 mt-1">
             {{ t("bookingServices.staffRequired") }}
+          </p>
+          <p v-else-if="overtimeNote(service)" class="text-xs text-amber-700 mt-1">
+            <i class="pi pi-clock text-[10px] mr-0.5"></i>{{ overtimeNote(service) }}
           </p>
         </div>
       </div>
@@ -163,6 +166,8 @@
       :services="services"
       :staff="staff"
       :currentStaffId="pickerIndex !== null ? modelValue[pickerIndex]?.staff_id : null"
+      :currentServiceId="pickerIndex !== null ? modelValue[pickerIndex]?.service_id : null"
+      :currentVariationName="pickerIndex !== null ? modelValue[pickerIndex]?.variation_name : null"
       @picked="onServicePicked"
     />
   </div>
@@ -172,7 +177,7 @@
 import { ref, computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { useAuthStore } from "../../stores/auth";
-import { isStaffAvailable } from "../../utils/staffAvailability";
+import { isStaffAvailable, describeWorkingDay } from "../../utils/staffAvailability";
 import { displayServiceName } from "../../utils/serviceVariations";
 import ServicePickerDialog from "./ServicePickerDialog.vue";
 import TimeDropdown from "./TimeDropdown.vue";
@@ -196,18 +201,33 @@ const props = defineProps({
 
 const emit = defineEmits(["update:modelValue"]);
 
-const isStaffUnavailable = (staffId: any, serviceStart: any, durationMinutes: number) => {
-  if (!serviceStart) return false;
+// null = available; otherwise why not ("time_off" or "outside_hours").
+const staffUnavailableReason = (staffId: any, serviceStart: any, durationMinutes: number) => {
+  if (!serviceStart) return null;
   const start = new Date(serviceStart);
   const end = new Date(start.getTime() + (durationMinutes || 60) * 60000);
-  return !isStaffAvailable({
+  const result = isStaffAvailable({
     staffList: props.staff,
     workingHours: props.workingHours,
     timeOff: props.timeOff,
     staffId,
     start,
     end,
-  }).available;
+  });
+  return result.available ? null : result.reason || "time_off";
+};
+
+// Admin, super admin and frontdesk may book staff outside their working
+// hours (overtime) after confirming on save; leave and breaks stay blocked.
+const canBookOvertime = computed(() => authStore.isShopAdmin);
+
+const overtimeNote = (service: any) => {
+  if (!service.staff_id || !service.start_time) return "";
+  if (staffUnavailableReason(service.staff_id, service.start_time, service.duration_override) !== "outside_hours") return "";
+  const hours = describeWorkingDay(props.workingHours, props.staff, service.staff_id, new Date(service.start_time));
+  return hours
+    ? t("bookingServices.overtimeNote", { hours })
+    : t("bookingServices.overtimeNoteDayOff");
 };
 
 const isStaffMissing = (service: any) =>
@@ -250,12 +270,16 @@ const getFilteredStaff = (service: any) => {
           s.service_ids.includes(serviceId),
       );
 
-  if (service.start_time) {
-    list = list.filter(
-      (s: any) => !isStaffUnavailable(s.id, service.start_time, service.duration_override),
-    );
+  const available: any[] = [];
+  const overtime: any[] = [];
+  for (const s of list) {
+    const reason = staffUnavailableReason(s.id, service.start_time, service.duration_override);
+    if (!reason) available.push({ ...s, label: s.name });
+    else if (reason === "outside_hours" && canBookOvertime.value) {
+      overtime.push({ ...s, label: `${s.name} · ${t("bookingServices.outsideHours")}` });
+    }
   }
-  return list;
+  return [...available, ...overtime];
 };
 
 const addService = () => {

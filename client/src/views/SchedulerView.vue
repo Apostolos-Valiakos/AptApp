@@ -1,5 +1,5 @@
 <template>
-  <div class="flex flex-col h-[calc(100vh-64px)] bg-white" @click="closeMenus">
+  <div class="flex flex-col h-[calc(100vh-48px)] bg-white" @click="closeMenus">
     <!-- ===== TOOLBAR ===== -->
     <div
       class="relative flex flex-wrap items-center justify-between gap-3 px-4 md:px-6 border-b border-gray-100 bg-white flex-shrink-0"
@@ -261,6 +261,7 @@
         v-if="calendarResources.length > 0"
         ref="fullCalendar"
         :options="calendarOptions"
+        :style="{ '--slot-row-height': `${slotRowHeight}px` }"
         class="h-full w-full"
       />
 
@@ -376,6 +377,8 @@ import {
   toLocalDateStr,
   getWorkingRangesForDate,
   mondayOf,
+  describeWorkingDay,
+  overtimeConfirmMessage,
 } from "../utils/staffAvailability";
 import { displayServiceName } from "../utils/serviceVariations";
 
@@ -393,7 +396,12 @@ const hideHoverCard = () => {
   clearLinkedHighlight();
 };
 
-const confirmMove = (before: any[], after: any[]): Promise<boolean> => {
+type OvertimeEntry = { name: string; hours: string | null };
+const confirmMove = (
+  before: any[],
+  after: any[],
+  overtime: OvertimeEntry[] = [],
+): Promise<boolean> => {
   const lines = describeServiceChanges(
     snapshotServices(before),
     snapshotServices(after),
@@ -412,13 +420,15 @@ const confirmMove = (before: any[], after: any[]): Promise<boolean> => {
       moveConfirmOpen = false;
       resolve(v);
     };
+    const changes = `${t("booking.changeConfirm.intro")}\n\n${lines.map((l) => `• ${l}`).join("\n")}`;
     confirm.require({
-      header: t("booking.changeConfirm.header"),
-      message: `${t("booking.changeConfirm.intro")}\n\n${lines
-        .map((l) => `• ${l}`)
-        .join("\n")}\n\n${t("booking.changeConfirm.question")}`,
-      icon: "pi pi-question-circle",
-      acceptLabel: t("booking.changeConfirm.apply"),
+      header: overtime.length ? t("booking.overtime.header") : t("booking.changeConfirm.header"),
+      // With overtime, the overtime question replaces the generic one.
+      message: overtime.length
+        ? `${changes}\n\n${overtimeConfirmMessage(overtime, t)}`
+        : `${changes}\n\n${t("booking.changeConfirm.question")}`,
+      icon: overtime.length ? "pi pi-clock" : "pi pi-question-circle",
+      acceptLabel: overtime.length ? t("booking.overtime.accept") : t("booking.changeConfirm.apply"),
       rejectLabel: t("booking.changeConfirm.cancel"),
       accept: () => done(true),
       reject: () => done(false),
@@ -573,49 +583,53 @@ const handleReorderSave = async (newOrder: any[]) => {
 };
 
 // --- Zoom ---
-// Every level here divides evenly into 60 (or, for 120, is an even multiple
-// of it) — guaranteeing a slot boundary lands exactly on every hour (and,
-// for 5/10/15/20/30/60, often on the half/quarter marks too) at every zoom
-// level. An arbitrary step (the old version incremented by a flat 10
-// starting from 15, producing 25/35/45/...) would drift off those
-// boundaries after the first hour of the day, breaking slotLaneClassNames'
-// hour/half/quarter line detection and the big hour-number label below.
-const ZOOM_LEVELS = [5, 10, 15, 20, 30, 60, 120];
-// Matches calendarOptions' initial slotDuration ("00:15:00") below, so the
-// displayed zoom state and the actual grid start in sync.
-const slotDurationMinutes = ref(15);
+// The grid always has 15-minute rows (4 lines per hour, see calendarOptions'
+// slotDuration); zooming only changes how tall a row is, via the
+// --slot-row-height CSS variable on the calendar. Clicks therefore land on
+// quarter hours at every zoom, while drag and resize snap to 5 minutes.
+const SLOT_MINUTES = 15;
+const ZOOM_ROW_HEIGHTS = [81, 54, 40, 27, 20, 13, 9];
+const zoomLevel = ref(ZOOM_ROW_HEIGHTS.indexOf(27));
+const slotRowHeight = computed(() => ZOOM_ROW_HEIGHTS[zoomLevel.value]);
 
 const zoomIn = () => {
-  const idx = ZOOM_LEVELS.indexOf(slotDurationMinutes.value);
-  if (idx > 0) {
-    slotDurationMinutes.value = ZOOM_LEVELS[idx - 1];
-    updateSlotDuration();
-  }
+  if (zoomLevel.value > 0) zoomLevel.value--;
 };
 const zoomOut = () => {
-  const idx = ZOOM_LEVELS.indexOf(slotDurationMinutes.value);
-  if (idx !== -1 && idx < ZOOM_LEVELS.length - 1) {
-    slotDurationMinutes.value = ZOOM_LEVELS[idx + 1];
-    updateSlotDuration();
-  }
+  if (zoomLevel.value < ZOOM_ROW_HEIGHTS.length - 1) zoomLevel.value++;
 };
-const updateSlotDuration = () => {
-  const api = calendarApi.value;
-  if (api) {
-    const h = Math.floor(slotDurationMinutes.value / 60)
-      .toString()
-      .padStart(2, "0");
-    const m = (slotDurationMinutes.value % 60).toString().padStart(2, "0");
-    api.setOption("slotDuration", `${h}:${m}:00`);
-  }
+// FullCalendar measures row heights to place events, so re-measure once the
+// new height is in the DOM.
+// FullCalendar only re-measures rows when its options change; updateSize()
+// keeps the old positions, leaving events and clicks off by the zoom change.
+// Re-setting the same 15 minutes in the other of two equivalent forms counts
+// as a change and makes it re-measure.
+let slotDurationToggle = false;
+watch(slotRowHeight, async () => {
+  await nextTick();
+  slotDurationToggle = !slotDurationToggle;
+  calendarApi.value?.setOption(
+    "slotDuration",
+    slotDurationToggle ? { minutes: SLOT_MINUTES } : "00:15:00",
+  );
+});
+
+// FullCalendar has one snap setting for everything: 15 minutes suits clicks
+// on the empty grid, 5 minutes suits moving an appointment. Every drag or
+// resize starts on an appointment, so switch to 5 while the pointer is over
+// one, and back to 15 when it leaves; never mid-drag.
+let snapMinutes = SLOT_MINUTES;
+const setSnapMinutes = (mins: number) => {
+  if (dragInProgress || mins === snapMinutes) return;
+  snapMinutes = mins;
+  calendarApi.value?.setOption("snapDuration", { minutes: mins });
 };
 
-// Snapping is 5 minutes (snapDuration), but a click on an empty slot should
-// still start at the slot the user sees, e.g. 10:00 for any click in the
-// 10:00 row at 60' zoom. Slots are counted from slotMinTime, so 120' rows
-// starting at 07:00 round to 07:00/09:00/..., matching the grid.
+// Safety net for select: a click on an empty slot should start at the row
+// the user sees, e.g. 10:15 for any click in the 10:15 row. Rows are counted
+// from slotMinTime, matching the grid.
 const roundRangeToSlots = (start: Date, end: Date) => {
-  const slot = slotDurationMinutes.value;
+  const slot = SLOT_MINUTES;
   const [h, m] = shopSlotMinTime.value.split(":").map(Number);
   const gridStart = (h || 0) * 60 + (m || 0);
   const minutesOf = (d: Date) => d.getHours() * 60 + d.getMinutes() - gridStart;
@@ -803,7 +817,6 @@ const calendarResources = computed(() => {
     id: r.id.toString(),
     title: r.name,
     eventBackgroundColor: "#f3f4f6",
-    imageUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(r.name)}&background=random&color=fff&rounded=true&bold=true`,
     notWorking: currentView.value === "resourceTimeGridDay" && isNotWorkingOnDay(r),
   }));
 });
@@ -1197,17 +1210,51 @@ const updateAppointment = async (
 // member's time-off or outside their configured working hours. This is a
 // UX convenience only (prevents the gesture from ever completing); the
 // server-side assertStaffAvailable guard is the actual authority.
-const isRangeAllowedForResource = (start: Date, end: Date, resource: any) => {
-  if (!resource) return true;
-  return isStaffAvailable({
+const staffAvailability = (staffId: any, start: Date, end: Date) =>
+  isStaffAvailable({
     staffList: calendarStore.resources,
     workingHours: calendarStore.workingHours,
     timeOff: calendarStore.timeOff,
-    staffId: resource.id,
+    staffId,
     start,
     end,
-  }).available;
+  });
+
+// Admin, super admin and frontdesk may book outside a staff member's working
+// hours (incl. a scheduled day off) as overtime, after a confirmation; leave
+// and breaks stay blocked for everyone.
+const canBookOvertime = computed(() => authStore.isShopAdmin);
+
+const isRangeAllowedForResource = (start: Date, end: Date, resource: any) => {
+  if (!resource) return true;
+  const result = staffAvailability(resource.id, start, end);
+  return result.available || (result.reason === "outside_hours" && canBookOvertime.value);
 };
+
+// The overtime entry for a staff member and time range, or null when the
+// range is within their working hours.
+const overtimeEntryFor = (staffId: any, start: Date, end: Date): OvertimeEntry | null => {
+  if (!staffId) return null;
+  if (staffAvailability(staffId, start, end).reason !== "outside_hours") return null;
+  return {
+    name: calendarStore.resources.find((r: any) => String(r.id) === String(staffId))?.name || "",
+    hours: describeWorkingDay(calendarStore.workingHours, calendarStore.resources, staffId, start),
+  };
+};
+
+const confirmOvertimeSlot = (entry: OvertimeEntry): Promise<boolean> =>
+  new Promise((resolve) => {
+    confirm.require({
+      header: t("booking.overtime.header"),
+      message: overtimeConfirmMessage([entry], t),
+      icon: "pi pi-clock",
+      acceptLabel: t("booking.overtime.accept"),
+      rejectLabel: t("common.cancel"),
+      accept: () => resolve(true),
+      reject: () => resolve(false),
+      onHide: () => resolve(false),
+    });
+  });
 
 // Phones fit about 6-7 narrow staff columns (time gutter ~44px) and scroll
 // sideways for the rest; larger screens keep the roomier width.
@@ -1299,11 +1346,12 @@ const calendarOptions = ref({
     minute: "2-digit",
     hour12: false,
   } as const,
+  // Fixed: zoom changes row height, not this (see ZOOM_ROW_HEIGHTS).
   slotDuration: "00:15:00",
-  // Dragging and resizing move in 5-minute steps at every zoom level; without
-  // this FullCalendar snaps to slotDuration, i.e. 30/60/120 minutes zoomed out.
-  // A click on an empty slot is rounded back to the visible slot in select.
-  snapDuration: "00:05:00",
+  // Clicks and selections on the empty grid snap to the 15-minute rows;
+  // hovering an appointment switches this to 5 minutes so dragging and
+  // resizing move in 5-minute steps (see setSnapMinutes).
+  snapDuration: "00:15:00",
   slotLabelInterval: "01:00",
   slotMinTime: "07:00:00",
   slotMaxTime: "23:00:00",
@@ -1330,7 +1378,10 @@ const calendarOptions = ref({
     return [];
   },
   height: "100%",
-  expandRows: true,
+  // Rows keep the zoom height exactly (see ZOOM_ROW_HEIGHTS). Stretching them
+  // to fill the screen would not stretch the separate time-axis column, so
+  // the hour numbers would drift off their lines when zoomed out.
+  expandRows: false,
   dayMinWidth:
     localStorage.getItem("fitStaff") === "true" ? 0 : getDayMinWidth(),
   stickyHeaderDates: true,
@@ -1384,7 +1435,6 @@ const calendarOptions = ref({
   },
 
   resourceLabelContent: (arg: any) => {
-    const src = escapeHtml(arg.resource.extendedProps.imageUrl);
     const title = escapeHtml(arg.resource.title);
     const notWorking = !!arg.resource.extendedProps.notWorking;
     if (isPhone.value) {
@@ -1399,9 +1449,8 @@ const calendarOptions = ref({
     }
     return {
       html: `
-        <div class="flex flex-col items-center justify-center py-2 w-full h-full ${notWorking ? "opacity-60" : ""}">
-          <img src="${src}" alt="${title}" class="w-8 h-8 rounded-full border-2 border-white shadow-sm mb-1.5 object-cover ${notWorking ? "grayscale" : ""}" />
-          <div style="white-space:normal;word-break:break-word;" class="font-bold ${notWorking ? "text-gray-400" : "text-gray-800"} text-[11px] md:text-[13px] leading-tight text-center px-1">
+        <div class="flex flex-col items-center justify-center py-1 w-full h-full ${notWorking ? "opacity-60" : ""}">
+          <div style="white-space:normal;word-break:break-word;" class="font-bold ${notWorking ? "text-gray-400" : "text-gray-800"} text-[10px] md:text-[11px] leading-tight text-center px-0.5">
             ${title}
           </div>
           ${notWorking ? `<div class="text-[10px] text-gray-400 uppercase tracking-wide mt-0.5">${escapeHtml(t("staff.workingHours.dayOff"))}</div>` : ""}
@@ -1530,7 +1579,7 @@ const calendarOptions = ref({
         : "";
       return {
         html: `
-        <div class="relative w-full h-full px-1 py-0.5 flex flex-col leading-tight overflow-hidden">
+        <div lang="el" class="relative w-full h-full px-1 py-0.5 flex flex-col leading-tight overflow-hidden uppercase">
           ${durationMins > 30 ? `<div class="text-[9px] font-semibold truncate ${timeClass}">${startText}</div>` : ""}
           <div class="text-[10px] font-bold truncate ${textClass}">${escapeHtml(props.client_name)}</div>
           ${durationMins > 15 ? `<div class="text-[9px] truncate ${serviceClass}">${escapeHtml(props.service_name)}</div>` : ""}
@@ -1541,7 +1590,7 @@ const calendarOptions = ref({
 
     return {
       html: `
-      <div class="relative w-full ${paddingClass} flex flex-col leading-tight overflow-hidden hover:brightness-95 transition-all ${isMonthView ? "" : "h-full"}">
+      <div lang="el" class="relative w-full ${paddingClass} flex flex-col leading-tight overflow-hidden uppercase hover:brightness-95 transition-all ${isMonthView ? "" : "h-full"}">
         ${statusBadge}
         ${archivedBadge}
         ${!hideTime && !isMonthView ? `<div class="text-[10px] md:text-[12px] font-semibold mb-0.5 truncate ${timeClass}">${timeText}</div>` : ""}
@@ -1580,6 +1629,7 @@ const calendarOptions = ref({
   eventDragStop: () => {
     dragInProgress = false;
     hideHoverCard();
+    setTimeout(() => setSnapMinutes(SLOT_MINUTES));
   },
   eventResizeStart: () => {
     dragInProgress = true;
@@ -1588,9 +1638,11 @@ const calendarOptions = ref({
   eventResizeStop: () => {
     dragInProgress = false;
     hideHoverCard();
+    setTimeout(() => setSnapMinutes(SLOT_MINUTES));
   },
 
   eventMouseEnter: (info: any) => {
+    if (info.event.display !== "background") setSnapMinutes(5);
     if (!info.event.extendedProps?.isServiceEvent) return;
     if (dragInProgress || moveConfirmOpen) return;
     highlightLinkedEvents(info.event.extendedProps, info.el);
@@ -1617,6 +1669,7 @@ const calendarOptions = ref({
   },
 
   eventMouseLeave: () => {
+    setSnapMinutes(SLOT_MINUTES);
     clearLinkedHighlight();
     hideHoverCard();
   },
@@ -1656,13 +1709,19 @@ const calendarOptions = ref({
       services[serviceIndex].duration_override = (end - start) / 60000;
       if (newResourceId) services[serviceIndex].staff_id = newResourceId;
     }
-    if (!(await confirmMove(fullAppointment.services, services))) {
+    const overtime = overtimeEntryFor(
+      services[serviceIndex]?.staff_id,
+      info.event.start,
+      info.event.end,
+    );
+    if (!(await confirmMove(fullAppointment.services, services, overtime ? [overtime] : []))) {
       info.revert();
       return;
     }
     const ok = await updateAppointment(appointmentId, {
       ...fullAppointment,
       services,
+      allow_overtime: !!overtime,
     });
     if (!ok) info.revert();
   },
@@ -1681,24 +1740,40 @@ const calendarOptions = ref({
       services[serviceIndex].duration_minutes = newDuration;
       services[serviceIndex].duration_override = newDuration;
     }
-    if (!(await confirmMove(fullAppointment.services, services))) {
+    const overtime = overtimeEntryFor(
+      services[serviceIndex]?.staff_id,
+      info.event.start,
+      info.event.end,
+    );
+    if (!(await confirmMove(fullAppointment.services, services, overtime ? [overtime] : []))) {
       info.revert();
       return;
     }
     const ok = await updateAppointment(appointmentId, {
       ...fullAppointment,
       services,
+      allow_overtime: !!overtime,
     });
     if (!ok) info.revert();
   },
 
-  select: (info: any) => {
+  select: async (info: any) => {
+    // Clear the selection right away; FullCalendar ignores a click that
+    // repeats the current selection, so re-clicking a slot after closing the
+    // dialog would otherwise do nothing.
+    info.view.calendar.unselect();
     const { start, end } = roundRangeToSlots(info.start, info.end);
+    const staffId = info.resource ? info.resource.id : null;
+    // Outside the staff member's hours: ask first; the booking dialog then
+    // doesn't ask again for the same staff member.
+    const overtime = overtimeEntryFor(staffId, start, end);
+    if (overtime && !(await confirmOvertimeSlot(overtime))) return;
     selectedAppointment.value = {
       start_time: formatSlotIso(start),
       end_time: formatSlotIso(end),
-      staff_id: info.resource ? info.resource.id : null,
+      staff_id: staffId,
       staff_name: info.resource ? info.resource.title : "",
+      overtime_confirmed_staff_id: overtime ? staffId : null,
     };
     dialogVisible.value = true;
   },
@@ -1797,6 +1872,36 @@ onMounted(async () => {
 
 .fc-timegrid-axis {
   border-right: 1px solid #e5e7eb;
+}
+
+/* Centre each hour number on its hour line instead of below it: anchor the
+   label to the top of its slot (where the line is) and lift it by half its
+   own height. */
+.fc .fc-timegrid-slot-label {
+  vertical-align: top;
+  overflow: visible;
+}
+.fc .fc-timegrid-slot-label-frame {
+  height: 0;
+  overflow: visible;
+}
+.fc .fc-timegrid-slot-label-cushion {
+  transform: translateY(-50%);
+}
+/* The first hour's line is the top edge of the grid; lifting its label would
+   hide half of it under the staff header. */
+.fc tr:first-child > .fc-timegrid-slot-label .fc-timegrid-slot-label-cushion {
+  transform: none;
+}
+
+/* Zoom: every row is 15 minutes; the zoom buttons set this height. The label
+   frame above has no height, so the hour number never forces a row taller. */
+.fc .fc-timegrid-slot {
+  height: var(--slot-row-height, 27px);
+  /* An empty cell still keeps a text line's height, which would stop small
+     rows at ~17px; the hour label sets its own font sizes. */
+  font-size: 0;
+  line-height: 0;
 }
 
 /* Reference-style time axis: quarter-hour rows get almost no line at all,

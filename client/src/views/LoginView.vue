@@ -64,10 +64,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useAuthStore } from "../stores/auth";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { useThemeStore } from "../stores/themes";
 import { useToast } from "primevue/usetoast";
 
@@ -79,8 +79,18 @@ const loading = ref(false);
 const showPassword = ref(false);
 const authStore = useAuthStore();
 const router = useRouter();
+const route = useRoute();
 const themeStore = useThemeStore();
 const toast = useToast();
+
+// Sent here after the server refused an expired or revoked session
+// (see utils/sessionRecovery.ts).
+onMounted(() => {
+  if (route.query.expired) {
+    toast.add({ severity: "warn", summary: t("login.sessionExpired"), life: 6000 });
+    router.replace({ path: "/login" });
+  }
+});
 
 const login = async () => {
   loading.value = true;

@@ -6,14 +6,14 @@
       class="sticky top-0 z-50 bg-gradient-to-r from-[var(--p-primary-color)] to-[var(--p-primary-600)] shadow-md"
     >
       <div class="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="flex justify-between h-16">
-          <div class="flex items-center min-w-0">
+        <div class="flex justify-between h-12">
+          <div class="flex items-center min-w-0 flex-1">
             <div
-              class="flex-shrink-0 flex items-center mr-4 lg:mr-6 group cursor-pointer"
+              class="flex-shrink-0 flex items-center mr-3 lg:mr-5 group cursor-pointer"
               @click="router.push('/')"
             >
               <div
-                class="w-9 h-9 bg-white rounded-xl flex items-center justify-center shadow-sm transition-transform group-hover:rotate-12"
+                class="w-7 h-7 bg-white rounded-lg flex items-center justify-center shadow-sm transition-transform group-hover:rotate-12"
               >
                 <img src="../../static/logo for photos-02.png" />
               </div>
@@ -25,16 +25,26 @@
               </span>
             </div>
 
-            <div class="hidden md:flex items-center gap-0.5 min-w-0">
+            <!-- Links shrink step by step to fit (see fitNavLinks), so they
+                 never slide under the buttons on the right. -->
+            <div
+              ref="navLinksEl"
+              class="hidden md:flex items-center gap-0.5 min-w-0 flex-1 overflow-hidden mr-2"
+            >
               <router-link
                 v-for="item in visibleNavItems"
                 :key="item.path"
                 :to="item.path"
+                :title="navDensity.iconOnly ? item.label : undefined"
                 active-class="bg-white/25 text-white font-bold shadow-inner"
-                class="px-2.5 lg:px-3 py-2 rounded-xl text-sm font-bold text-white/90 hover:bg-white/10 hover:text-white transition-all whitespace-nowrap"
+                class="py-1 rounded-lg font-bold text-white/90 hover:bg-white/10 hover:text-white transition-colors whitespace-nowrap flex-shrink-0"
+                :class="navDensity.link"
               >
-                <i :class="item.icon + ' mr-1 text-xs'"></i>
-                {{ item.label }}
+                <i
+                  v-if="navDensity.icon"
+                  :class="[item.icon, navDensity.iconOnly ? 'text-sm' : 'mr-1 text-xs']"
+                ></i>
+                <template v-if="!navDensity.iconOnly">{{ item.label }}</template>
               </router-link>
             </div>
           </div>
@@ -43,7 +53,7 @@
             <div class="hidden md:flex items-center gap-2 lg:gap-4">
               <button
                 @click="toggleLocale"
-                class="bg-white/15 hover:bg-white/25 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all border border-white/20 flex-shrink-0"
+                class="bg-white/15 hover:bg-white/25 text-white px-2.5 py-1 rounded-lg text-xs font-bold transition-all border border-white/20 flex-shrink-0"
                 :title="t('nav.language')"
               >
                 {{ locale === "el" ? "🇬🇧 EN" : "🇬🇷 EL" }}
@@ -56,14 +66,14 @@
                   :title="authStore.user?.username"
                 >
                   <div
-                    class="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm bg-[var(--p-primary-100)] text-[var(--p-primary-600)]"
+                    class="w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs bg-[var(--p-primary-100)] text-[var(--p-primary-600)]"
                   >
                     {{ authStore.user?.username?.charAt(0).toUpperCase() }}
                   </div>
                 </router-link>
                 <button
                   @click="logout"
-                  class="bg-white text-[var(--p-primary-color)] hover:bg-[var(--p-primary-50)] px-5 py-2 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95 flex-shrink-0"
+                  class="bg-white text-[var(--p-primary-color)] hover:bg-[var(--p-primary-50)] px-4 py-1 rounded-lg text-sm font-bold transition-all shadow-sm active:scale-95 flex-shrink-0"
                 >
                   {{ t("nav.logout") }}
                 </button>
@@ -81,7 +91,7 @@
 
             <button
               @click="mobileMenuOpen = !mobileMenuOpen"
-              class="md:hidden p-2 rounded-xl text-white hover:bg-white/10"
+              class="md:hidden p-1.5 rounded-lg text-white hover:bg-white/10"
             >
               <i
                 :class="mobileMenuOpen ? 'pi pi-times' : 'pi pi-bars'"
@@ -154,7 +164,7 @@
 
     <div
       v-if="authStore.isImpersonating"
-      class="sticky top-16 z-40 bg-amber-500 text-white text-center py-2 text-sm font-bold flex items-center justify-center gap-3"
+      class="sticky top-12 z-40 bg-amber-500 text-white text-center py-2 text-sm font-bold flex items-center justify-center gap-3"
     >
       <span>{{ t('platform.banner.viewingAs', { shop: authStore.user?.shopName }) }}</span>
       <button @click="handleExitImpersonation" class="underline">
@@ -164,7 +174,7 @@
 
     <div
       v-if="authStore.isAuthenticated && pendingWrites.length > 0"
-      class="sticky top-16 z-40"
+      class="sticky top-12 z-40"
     >
       <div
         class="text-center py-2 text-sm font-bold flex items-center justify-center gap-3 cursor-pointer"
@@ -238,7 +248,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, computed } from "vue";
+import { ref, onMounted, onUnmounted, watch, computed, nextTick } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { useAuthStore } from "../stores/auth";
 import { useChatStore } from "../stores/chat";
@@ -407,6 +417,43 @@ const visibleNavItems = computed(() => {
   });
 });
 
+// Nav links: start at full size and step down until they fit the space
+// left of the right-hand buttons; re-checked on resize and when the links
+// change (they differ by role and language).
+const NAV_DENSITIES = [
+  { link: "px-3 text-sm", icon: true, iconOnly: false },
+  { link: "px-2 text-[13px]", icon: true, iconOnly: false },
+  { link: "px-1.5 text-xs", icon: true, iconOnly: false },
+  { link: "px-1.5 text-xs", icon: false, iconOnly: false },
+  { link: "px-1 text-[11px]", icon: false, iconOnly: false },
+  { link: "px-2", icon: true, iconOnly: true },
+] as const;
+const navLinksEl = ref<HTMLElement | null>(null);
+const navDensityLevel = ref(0);
+const navDensity = computed(() => NAV_DENSITIES[navDensityLevel.value]);
+
+const navOverflows = () => {
+  const el = navLinksEl.value;
+  return !!el && el.offsetParent !== null && el.scrollWidth > el.clientWidth + 1;
+};
+let fitting = false;
+const fitNavLinks = async () => {
+  if (fitting) return;
+  fitting = true;
+  try {
+    navDensityLevel.value = 0;
+    await nextTick();
+    while (navOverflows() && navDensityLevel.value < NAV_DENSITIES.length - 1) {
+      navDensityLevel.value++;
+      await nextTick();
+    }
+  } finally {
+    fitting = false;
+  }
+};
+let navResizeObserver: ResizeObserver | null = null;
+watch(() => [visibleNavItems.value.length, locale.value], fitNavLinks);
+
 const isFullWidthPage = computed(() => route.path.includes("/app/scheduler"));
 
 const logout = () => {
@@ -541,12 +588,22 @@ onMounted(() => {
   resyncFilterState();
   document.addEventListener("visibilitychange", handleVisibilityChange);
   filterResyncTimer = setInterval(resyncFilterState, 45000);
+
+  // Observe the nav bar itself: its width follows the window, while the links
+  // container's own width is what the fitting changes.
+  const navBar = navLinksEl.value?.closest("nav");
+  if (navBar) {
+    navResizeObserver = new ResizeObserver(() => fitNavLinks());
+    navResizeObserver.observe(navBar);
+  }
+  fitNavLinks();
 });
 
 onUnmounted(() => {
   window.removeEventListener("keydown", handleKeydown);
   document.removeEventListener("visibilitychange", handleVisibilityChange);
   if (filterResyncTimer) clearInterval(filterResyncTimer);
+  navResizeObserver?.disconnect();
 });
 </script>
 

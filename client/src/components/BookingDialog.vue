@@ -135,6 +135,14 @@
               </div>
             </div>
 
+            <div
+              v-if="groupedWithTime"
+              class="mb-3 flex items-center gap-2 rounded-lg bg-[var(--p-primary-50)] border border-[var(--p-primary-200)] px-3 py-2 text-sm text-[var(--p-primary-800)]"
+            >
+              <i class="pi pi-link text-xs"></i>
+              {{ t("booking.groupedWithExisting", { time: groupedWithTime }) }}
+            </div>
+
             <!-- Services -->
             <BookingServices
               v-model="servicesList"
@@ -497,7 +505,12 @@ import ClientProfileDialog from "./ClientProfileDialog.vue";
 import { useConfirm } from "primevue/useconfirm";
 import { useToast } from "primevue/usetoast";
 import { fetchOrQueue } from "../offline/queue";
-import { isStaffAvailable, toLocalDateStr } from "../utils/staffAvailability";
+import {
+  isStaffAvailable,
+  toLocalDateStr,
+  describeWorkingDay,
+  overtimeConfirmMessage,
+} from "../utils/staffAvailability";
 import { matchVariationName } from "../utils/serviceVariations";
 import { markManualStarts } from "../utils/serviceSequence";
 import {
@@ -660,6 +673,7 @@ const onClientPicked = (client: any) => {
   selectedClient.value = client;
   form.value.client_id = client.id;
   refreshClientBalance(client.id);
+  groupWithSameDayAppointment(client.id);
 };
 
 // The stored balance can be stale (debt appears when an appointment's time
@@ -751,6 +765,68 @@ const loadSiblingAppointments = async (clientId: string, startTime: Date) => {
   }
 };
 
+// A new booking for a client who already has an appointment that day is
+// added to that appointment instead (same client, same day, not cancelled
+// or no-show): the dialog switches to the existing appointment and appends
+// the new service rows at their own times. Not for the shared walk-in
+// client, time blocks or recurring bookings. groupRequest discards a stale
+// lookup when the client, date or dialog changes meanwhile.
+const walkInClientId = ref<string | null>(null);
+const groupedWithTime = ref<string | null>(null);
+let groupRequest = 0;
+
+const groupWithSameDayAppointment = async (clientId: string) => {
+  if (!clientId || form.value.id || form.value.is_block || isRecurring.value) return;
+  if (clientId === walkInClientId.value) return;
+  const request = ++groupRequest;
+  const dateStr = toLocalDateStr(new Date(form.value.start_time));
+  try {
+    const token = localStorage.getItem("token");
+    const res = await fetch(`/api/v1/appointments?date=${dateStr}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return;
+    const all = await res.json();
+    const firstStart = (a: any) =>
+      new Date(a.services?.[0]?.start_time || a.start_time).getTime();
+    const existing = (Array.isArray(all) ? all : [])
+      .filter(
+        (a: any) =>
+          a.client_id === clientId &&
+          !a.is_block &&
+          !["cancelled", "no-show", "no_show"].includes(a.status),
+      )
+      .sort((a: any, b: any) => firstStart(a) - firstStart(b))[0];
+    if (!existing) return;
+    if (
+      request !== groupRequest ||
+      !props.visible ||
+      form.value.id ||
+      form.value.client_id !== clientId ||
+      isRecurring.value
+    ) return;
+
+    const newRows = servicesList.value.map((r: any) => ({ ...r, _manualStart: true }));
+    const newProducts = productsList.value.map((p: any) => ({ ...p }));
+    const newBookingNotes = (form.value.booking_notes || "").trim();
+    const newInternalNotes = (form.value.internal_notes || "").trim();
+
+    loadExistingAppointment(existing, null);
+    servicesList.value = [...servicesList.value, ...newRows];
+    productsList.value = [...productsList.value, ...newProducts];
+    const appendNote = (current: string, extra: string) =>
+      !extra || current.includes(extra) ? current : current ? `${current}\n${extra}` : extra;
+    form.value.booking_notes = appendNote(form.value.booking_notes || "", newBookingNotes);
+    form.value.internal_notes = appendNote(form.value.internal_notes || "", newInternalNotes);
+
+    const start = new Date(firstStart(existing));
+    groupedWithTime.value = `${String(start.getHours()).padStart(2, "0")}:${String(start.getMinutes()).padStart(2, "0")}`;
+    nextTick(suggestAmountToPay);
+  } catch {
+    // keep it as a separate new booking if the lookup fails
+  }
+};
+
 // Pre-selects the shop's single walk-in client on a brand-new, blank
 // appointment — lets staff save fast and attribute it to a real client
 // later via the same "×" clear-and-search flow used for any appointment.
@@ -763,6 +839,7 @@ const loadWalkInClient = async () => {
     });
     if (res.ok) {
       const walkIn = await res.json();
+      walkInClientId.value = walkIn.id;
       selectedClient.value = walkIn;
       form.value.client_id = walkIn.id;
       refreshClientBalance(walkIn.id);
@@ -970,6 +1047,133 @@ watch(combinedTotalDueNow, (newVal) => {
   }
 });
 
+// Fills the form from an existing appointment (EDIT MODE). Also used when a
+// new booking is grouped into the client's existing appointment that day.
+const loadExistingAppointment = (val: any, resolvedStaffId: any) => {
+  form.value = {
+    id: val.id,
+    client_id: val.client_id || null,
+    start_time: val.start_time ? new Date(val.start_time) : new Date(),
+    status: val.status || "new",
+    internal_notes: val.internal_notes || "",
+    booking_notes: val.booking_notes || "",
+    deposit_amount: Number(val.deposit_amount || 0),
+    payment_status: val.payment_status || "unpaid",
+    payment_method: val.payment_method || "card",
+    is_block: !!val.is_block,
+    save_receipt:
+      val.save_receipt !== undefined ? !!val.save_receipt : true,
+    is_eoppy: !!val.is_eoppy,
+  };
+
+  if (val.client_id) {
+    loadClientById(val.client_id, {
+      id: val.client_id,
+      first_name: val.first_name,
+      last_name: val.last_name,
+      full_name: `${val.first_name || ""} ${val.last_name || ""}`.trim(),
+      phone: val.client_phone,
+      outstanding_balance: Number(val.client_outstanding_balance || 0),
+    });
+  } else {
+    selectedClient.value = null;
+  }
+
+  let rule = null;
+  if (val.recurrence) {
+    try {
+      rule =
+        typeof val.recurrence === "string"
+          ? JSON.parse(val.recurrence)
+          : val.recurrence;
+    } catch (e) {
+      console.warn("Invalid recurrence format, resetting:", val.recurrence);
+      rule = null;
+    }
+  }
+
+  if (rule) {
+    isRecurring.value = true;
+    recurrenceForm.value = {
+      freq: rule.freq || "Weekly",
+      end_date: rule.end_date ? new Date(rule.end_date) : null,
+    };
+  } else {
+    isRecurring.value = false;
+    recurrenceForm.value = { freq: "Weekly", end_date: null };
+  }
+
+  if (val.services?.length > 0) {
+    servicesList.value = markManualStarts(val.services.map((s: any) => {
+      // Which variation this row was is now persisted server-side
+      // (appointment_services.variation_name — s.variation_name here),
+      // independent of price/duration, so it survives later edits to
+      // either (e.g. extending the duration). s.variation_name is only
+      // absent for appointments saved before that column existed; for
+      // those, fall back once here to reverse-matching the saved price/
+      // duration against the service's current variation list — same as
+      // before, still breaks if price/duration are edited afterward,
+      // but that's now limited to pre-migration data only.
+      const catalogService = props.services?.find(
+        (cs: any) => cs.id === s.service_id,
+      );
+      const resolvedVariationName =
+        s.variation_name ||
+        matchVariationName(
+          catalogService,
+          Number(s.price || 0),
+          s.duration_minutes || 60,
+        );
+      return {
+        service_id: s.service_id,
+        staff_id: s.staff_id,
+        start_time: s.start_time
+          ? new Date(s.start_time)
+          : new Date(val.start_time),
+        duration_override: s.duration_minutes || 60,
+        price_override: Number(s.price || 0),
+        variation_name: resolvedVariationName || null,
+        service_archived: !!s.service_archived,
+        _label: resolvedVariationName
+          ? `${catalogService?.name || s.service_name || ""} — ${resolvedVariationName}`
+          : catalogService?.name || s.service_name || "",
+      };
+    }));
+  } else {
+    servicesList.value = [
+      {
+        service_id: null,
+        staff_id: resolvedStaffId,
+        start_time: new Date(form.value.start_time),
+        duration_override: 60,
+        price_override: 0,
+      },
+    ];
+  }
+
+  productsList.value = Array.isArray(val.products)
+    ? val.products.map((p: any) => ({
+        product_id: p.product_id,
+        quantity: p.quantity || 1,
+        price: Number(p.price || 0),
+      }))
+    : [];
+
+  originalServices.value = snapshotServices(servicesList.value);
+  discount.value = discountFromAppointment(val);
+  originalDiscountAmount.value = discountAmount.value;
+  const apptStartTime = val.services?.[0]?.start_time || val.start_time;
+  originalSnapshot.value = {
+    price: currentApptTotal.value,
+    deposit: form.value.deposit_amount,
+    isPast: apptStartTime ? new Date(apptStartTime) < new Date() : false,
+  };
+
+  if (form.value.client_id && form.value.start_time) {
+    loadSiblingAppointments(form.value.client_id, form.value.start_time);
+  }
+};
+
 // === INITIALIZATION ===
 watch(
   [() => props.appointment, () => props.visible],
@@ -987,130 +1191,11 @@ watch(
       if (found) resolvedStaffId = found.id;
     }
 
+    groupedWithTime.value = null;
+    groupRequest++;
     if (val && val.id) {
       // === EDIT MODE ===
-      form.value = {
-        id: val.id,
-        client_id: val.client_id || null,
-        start_time: val.start_time ? new Date(val.start_time) : new Date(),
-        status: val.status || "new",
-        internal_notes: val.internal_notes || "",
-        booking_notes: val.booking_notes || "",
-        deposit_amount: Number(val.deposit_amount || 0),
-        payment_status: val.payment_status || "unpaid",
-        payment_method: val.payment_method || "card",
-        is_block: !!val.is_block,
-        save_receipt:
-          val.save_receipt !== undefined ? !!val.save_receipt : true,
-        is_eoppy: !!val.is_eoppy,
-      };
-
-      if (val.client_id) {
-        loadClientById(val.client_id, {
-          id: val.client_id,
-          first_name: val.first_name,
-          last_name: val.last_name,
-          full_name: `${val.first_name || ""} ${val.last_name || ""}`.trim(),
-          phone: val.client_phone,
-          outstanding_balance: Number(val.client_outstanding_balance || 0),
-        });
-      } else {
-        selectedClient.value = null;
-      }
-
-      let rule = null;
-      if (val.recurrence) {
-        try {
-          rule =
-            typeof val.recurrence === "string"
-              ? JSON.parse(val.recurrence)
-              : val.recurrence;
-        } catch (e) {
-          console.warn("Invalid recurrence format, resetting:", val.recurrence);
-          rule = null;
-        }
-      }
-
-      if (rule) {
-        isRecurring.value = true;
-        recurrenceForm.value = {
-          freq: rule.freq || "Weekly",
-          end_date: rule.end_date ? new Date(rule.end_date) : null,
-        };
-      } else {
-        isRecurring.value = false;
-        recurrenceForm.value = { freq: "Weekly", end_date: null };
-      }
-
-      if (val.services?.length > 0) {
-        servicesList.value = markManualStarts(val.services.map((s: any) => {
-          // Which variation this row was is now persisted server-side
-          // (appointment_services.variation_name — s.variation_name here),
-          // independent of price/duration, so it survives later edits to
-          // either (e.g. extending the duration). s.variation_name is only
-          // absent for appointments saved before that column existed; for
-          // those, fall back once here to reverse-matching the saved price/
-          // duration against the service's current variation list — same as
-          // before, still breaks if price/duration are edited afterward,
-          // but that's now limited to pre-migration data only.
-          const catalogService = props.services?.find(
-            (cs: any) => cs.id === s.service_id,
-          );
-          const resolvedVariationName =
-            s.variation_name ||
-            matchVariationName(
-              catalogService,
-              Number(s.price || 0),
-              s.duration_minutes || 60,
-            );
-          return {
-            service_id: s.service_id,
-            staff_id: s.staff_id,
-            start_time: s.start_time
-              ? new Date(s.start_time)
-              : new Date(val.start_time),
-            duration_override: s.duration_minutes || 60,
-            price_override: Number(s.price || 0),
-            variation_name: resolvedVariationName || null,
-            service_archived: !!s.service_archived,
-            _label: resolvedVariationName
-              ? `${catalogService?.name || s.service_name || ""} — ${resolvedVariationName}`
-              : catalogService?.name || s.service_name || "",
-          };
-        }));
-      } else {
-        servicesList.value = [
-          {
-            service_id: null,
-            staff_id: resolvedStaffId,
-            start_time: new Date(form.value.start_time),
-            duration_override: 60,
-            price_override: 0,
-          },
-        ];
-      }
-
-      productsList.value = Array.isArray(val.products)
-        ? val.products.map((p: any) => ({
-            product_id: p.product_id,
-            quantity: p.quantity || 1,
-            price: Number(p.price || 0),
-          }))
-        : [];
-
-      originalServices.value = snapshotServices(servicesList.value);
-      discount.value = discountFromAppointment(val);
-      originalDiscountAmount.value = discountAmount.value;
-      const apptStartTime = val.services?.[0]?.start_time || val.start_time;
-      originalSnapshot.value = {
-        price: currentApptTotal.value,
-        deposit: form.value.deposit_amount,
-        isPast: apptStartTime ? new Date(apptStartTime) < new Date() : false,
-      };
-
-      if (form.value.client_id && form.value.start_time) {
-        loadSiblingAppointments(form.value.client_id, form.value.start_time);
-      }
+      loadExistingAppointment(val, resolvedStaffId);
     } else {
       // === NEW MODE ===
       const newStart = val?.start_time ? new Date(val.start_time) : new Date();
@@ -1185,6 +1270,7 @@ watch(
       discount.value = emptyDiscount();
       originalDiscountAmount.value = 0;
       originalSnapshot.value = { price: 0, deposit: 0, isPast: false };
+      if (val?.client_id && !val?.time_off_id) groupWithSameDayAppointment(val.client_id);
     }
 
     // Suggest a sensible default amount after the form (and computed values) have settled.
@@ -1290,6 +1376,20 @@ const confirmChanges = (): Promise<boolean> => {
     });
   });
 };
+
+const confirmOvertime = (entries: { name: string; hours: string | null }[]): Promise<boolean> =>
+  new Promise((resolve) => {
+    confirm.require({
+      header: t("booking.overtime.header"),
+      message: overtimeConfirmMessage(entries, t),
+      icon: "pi pi-clock",
+      acceptLabel: t("booking.overtime.accept"),
+      rejectLabel: t("common.cancel"),
+      accept: () => resolve(true),
+      reject: () => resolve(false),
+      onHide: () => resolve(false),
+    });
+  });
 
 // A "block time" dialog has no client or real service — it just needs one
 // staff member + a time span, which already live on servicesList's single
@@ -1503,7 +1603,13 @@ const executeSave = async (close = true, scope = "single") => {
   // picked, or if the field was pre-filled by dragging a calendar slot. The
   // server is the actual authority (see assertStaffAvailable), this is just
   // fast feedback before making a network call.
+  // Outside working hours (incl. a scheduled day off) is allowed as overtime
+  // for admin, super admin and frontdesk after a confirmation; leave and
+  // breaks always block. A click on the calendar may already have confirmed
+  // it for that staff member (appointment.overtime_confirmed_staff_id).
+  let allowOvertime = false;
   if (!form.value.is_block) {
+    const overtime: { staffId: any; name: string; hours: string | null }[] = [];
     for (const svc of servicesList.value) {
       if (!svc.staff_id || !svc.start_time) continue;
       const start = new Date(svc.start_time);
@@ -1518,15 +1624,28 @@ const executeSave = async (close = true, scope = "single") => {
         start,
         end,
       });
-      if (!availability.available) {
-        toast.add({
-          severity: "error",
-          summary: t("common.error"),
-          detail: t("booking.validation.staffUnavailable"),
-          life: 4000,
+      if (availability.available) continue;
+      if (availability.reason === "outside_hours" && authStore.isShopAdmin) {
+        overtime.push({
+          staffId: svc.staff_id,
+          name: (props.staff || []).find((s: any) => String(s.id) === String(svc.staff_id))?.name || "",
+          hours: describeWorkingDay(props.workingHours || [], props.staff || [], svc.staff_id, start),
         });
-        return;
+        continue;
       }
+      toast.add({
+        severity: "error",
+        summary: t("common.error"),
+        detail: t("booking.validation.staffUnavailable"),
+        life: 4000,
+      });
+      return;
+    }
+    if (overtime.length > 0) {
+      const preConfirmed = props.appointment?.overtime_confirmed_staff_id;
+      const needsConfirm = overtime.some((o) => String(o.staffId) !== String(preConfirmed));
+      if (needsConfirm && !(await confirmOvertime(overtime))) return;
+      allowOvertime = true;
     }
   }
 
@@ -1541,6 +1660,7 @@ const executeSave = async (close = true, scope = "single") => {
   try {
     const payload = {
       ...form.value,
+      allow_overtime: allowOvertime,
       recurrence: isRecurring.value
         ? {
             freq: recurrenceForm.value.freq,
