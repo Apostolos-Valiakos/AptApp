@@ -13,6 +13,7 @@ if (!process.env.MESSAGE_ENCRYPTION_KEY) {
 }
 
 const express = require("express");
+const compression = require("compression");
 const http = require("http");
 const jwt = require("jsonwebtoken");
 const pool = require("./db");
@@ -742,6 +743,9 @@ app.use(
     allowedHeaders: ["Content-Type", "Authorization", "Idempotency-Key"],
   }),
 );
+// Compress responses (code, styles, HTML, JSON) — about 70-75% smaller on the
+// wire. Images and video are already compressed and are skipped.
+app.use(compression());
 app.use(express.json());
 
 // ==================== HEALTH CHECK ====================
@@ -804,16 +808,17 @@ app.get("/manifest.webmanifest", async (req, res) => {
 });
 
 const distPath = path.join(__dirname, "../dist");
-// index.html is never cached, so a refresh after a rebuild always gets the
-// new build's file names; the hashed files under /assets can be cached.
+// Caching: build files carry a hash in their name that changes with every
+// build, so browsers can keep them for a year without asking again;
+// index.html never (so a refresh after a rebuild always gets the new names).
 const noCacheIndex = (res) => res.setHeader("Cache-Control", "no-cache");
-app.use(
-  express.static(distPath, {
-    setHeaders: (res, filePath) => {
-      if (filePath.endsWith("index.html")) noCacheIndex(res);
-    },
-  }),
-);
+const ONE_YEAR_IMMUTABLE = "public, max-age=31536000, immutable";
+const cacheHeaders = (res, filePath) => {
+  const p = filePath.split(path.sep).join("/");
+  if (p.endsWith(".html")) noCacheIndex(res);
+  else if (p.includes("/assets/")) res.setHeader("Cache-Control", ONE_YEAR_IMMUTABLE);
+};
+app.use(express.static(distPath, { setHeaders: cacheHeaders }));
 const dbFileStorage = multer.memoryStorage();
 const dbFileUpload = multer({
   storage: dbFileStorage,
