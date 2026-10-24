@@ -11,7 +11,24 @@
       inputClass="w-full"
       @complete="searchClients"
       @update:modelValue="onPicked"
-    />
+    >
+      <!-- Same as the scheduler's client search: phone (or email) under the
+           name, so clients with the same name can be told apart. -->
+      <template #option="{ option }">
+        <div class="flex items-center gap-3 py-1 min-w-0">
+          <div
+            class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
+            :style="{ backgroundColor: avatarColor(option.full_name) }"
+          >
+            {{ initials(option.full_name) }}
+          </div>
+          <div class="min-w-0">
+            <div class="font-semibold text-gray-900 truncate">{{ option.full_name }}</div>
+            <div class="text-xs text-gray-500 truncate">{{ option.phone || option.email || "" }}</div>
+          </div>
+        </div>
+      </template>
+    </AutoComplete>
     <Button
       v-if="allowWalkIn"
       icon="pi pi-user"
@@ -69,6 +86,7 @@
 import { ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
+import { avatarColor, initials } from "../utils/avatar";
 
 const props = defineProps({
   allowWalkIn: { type: Boolean, default: false },

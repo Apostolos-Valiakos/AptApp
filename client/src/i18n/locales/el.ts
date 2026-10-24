@@ -623,6 +623,7 @@ export default {
   clientProfile: {
     header: "Προφίλ Πελάτη",
     balance: "Υπόλοιπο",
+    walkInLocked: "Αυτός είναι ο πελάτης «Walk in» (χωρίς συγκεκριμένο πελάτη): το όνομα και τα στοιχεία επικοινωνίας δεν αλλάζουν. Για ένα ραντεβού, αφαιρέστε τον και επιλέξτε τον πραγματικό πελάτη.",
     noPhone: "Χωρίς Τηλέφωνο",
     noEmail: "Χωρίς Email",
     tabs: {
@@ -1179,6 +1180,8 @@ export default {
       appointments: "Ραντεβού",
       hoursBooked: "Ώρες",
       revenueGenerated: "Έσοδα",
+      daysWorked: "Ημέρες εργασίας",
+      avgPerDay: "Μ.Ο. ανά ημέρα",
       date: "Ημερομηνία",
       client: "Πελάτης",
       splitPayment: "Συνδυασμένη",

@@ -725,10 +725,12 @@ app.use(
       directives: {
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
+        // Google Fonts: the app's Manrope (client/index.html) loads its CSS from
+        // fonts.googleapis.com and the font files from fonts.gstatic.com.
+        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         imgSrc: ["'self'", "data:", "https:"],
         connectSrc: ["'self'", "ws:", "wss:"],
-        fontSrc: ["'self'", "data:"],
+        fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"],
         objectSrc: ["'none'"],
         frameAncestors: ["'none'"],
       },
@@ -2390,7 +2392,8 @@ app.get("/api/v1/clients", authenticateToken, async (req, res) => {
       const { rows } = await pool.query(
         `SELECT id, first_name, last_name,
                 first_name || ' ' || last_name as full_name,
-                email, phone, outstanding_balance, custom_fields
+                email, phone, outstanding_balance, custom_fields,
+                (id = (SELECT walk_in_client_id FROM shops WHERE id = $1)) AS is_walk_in
          FROM active_clients WHERE shop_id = $1 ${slimSearchClause}
          ORDER BY NULLIF(TRIM(last_name), '') NULLS LAST, first_name
          ${slimLimitClause}`,
@@ -2526,7 +2529,7 @@ app.get("/api/v1/clients/walk-in", authenticateToken, async (req, res) => {
       if (existing.rows[0]) {
         await client.query("COMMIT");
         const c = existing.rows[0];
-        return res.json({ ...c, full_name: `${c.first_name} ${c.last_name}`.trim() });
+        return res.json({ ...c, full_name: `${c.first_name} ${c.last_name}`.trim(), is_walk_in: true });
       }
       // Referenced client was deleted — fall through and create a fresh one.
     }
@@ -2539,7 +2542,7 @@ app.get("/api/v1/clients/walk-in", authenticateToken, async (req, res) => {
     const c = created.rows[0];
     await client.query("UPDATE shops SET walk_in_client_id = $1 WHERE id = $2", [c.id, req.shopId]);
     await client.query("COMMIT");
-    res.json({ ...c, full_name: `${c.first_name} ${c.last_name}`.trim() });
+    res.json({ ...c, full_name: `${c.first_name} ${c.last_name}`.trim(), is_walk_in: true });
   } catch (err) {
     await client.query("ROLLBACK");
     console.error(err);
@@ -2596,6 +2599,18 @@ app.post("/api/v1/clients", authenticateToken, async (req, res) => {
   }
 });
 
+// The client row if it is this shop's walk-in client, otherwise null.
+const walkInClientRow = async (db, clientId, shopId) => {
+  if (!safeUUID(clientId)) return null;
+  const { rows } = await db.query(
+    `SELECT c.first_name, c.last_name, c.email, c.phone
+     FROM shops s JOIN clients c ON c.id = s.walk_in_client_id
+     WHERE s.id = $1 AND c.id = $2`,
+    [shopId, clientId],
+  );
+  return rows[0] || null;
+};
+
 app.put("/api/v1/clients/:id", authenticateToken, async (req, res) => {
   const { id } = req.params;
   const {
@@ -2612,6 +2627,17 @@ app.put("/api/v1/clients/:id", authenticateToken, async (req, res) => {
   } = req.body;
 
   try {
+    // The shop's walk-in client stands for "no specific client": renaming it
+    // turns every future walk-in booking into that person's (it happened
+    // once in production). Its name, phone and email can't be changed, by
+    // anyone; the rest (notes, custom fields) stays editable.
+    const walkIn = await walkInClientRow(pool, id, req.shopId);
+    if (walkIn) {
+      const same = (a, b) => String(a ?? "").trim() === String(b ?? "").trim();
+      const changed = !same(first_name, walkIn.first_name) || !same(last_name, walkIn.last_name)
+        || !same(email, walkIn.email) || !same(phone, walkIn.phone);
+      if (changed) return res.status(409).json({ error: "walk_in_locked" });
+    }
     await pool.query(
       `UPDATE clients 
        SET first_name=$1, last_name=$2, email=$3, phone=$4, notes=$5, custom_fields=$6,
@@ -4883,18 +4909,26 @@ app.get("/api/v1/reports/analytics", authenticateToken, requireAnalyticsAccess, 
           : 0;
 
       // C. Staff Utilization
-      // Returns hours booked per staff member
+      // Per staff member: hours booked, appointments, revenue, the days they
+      // had appointments, and appointments per such day. Cancelled and
+      // no-show appointments and time blocks are left out, so every column
+      // (and the average) counts the same appointments.
       const utilRes = await client.query(
         `SELECT st.name,
            SUM(COALESCE(aps.duration_override, s.duration_minutes))/60.0 as hours_booked,
            COUNT(aps.id) as appt_count,
-           SUM(COALESCE(aps.price_override, s.price)) as total_revenue
+           SUM(COALESCE(aps.price_override, s.price)) as total_revenue,
+           COUNT(DISTINCT (aps.start_time AT TIME ZONE '${process.env.TZ || "Europe/Athens"}')::date) as days_worked,
+           ROUND(COUNT(aps.id)::numeric
+                 / NULLIF(COUNT(DISTINCT (aps.start_time AT TIME ZONE '${process.env.TZ || "Europe/Athens"}')::date), 0), 1) as avg_per_day
          FROM appointment_services aps
          JOIN staff st ON aps.staff_id = st.id
          LEFT JOIN services s ON aps.service_id = s.id
          JOIN appointments a ON aps.appointment_id = a.id
          WHERE st.shop_id = $1
          AND aps.start_time >= $2 AND aps.start_time <= $3
+         AND a.status NOT IN ('cancelled', 'no-show', 'no_show')
+         AND NOT COALESCE(a.is_block, false)
          ${buildRevenueExclusionClause(excludeCash, excludeCard, "a")}
          GROUP BY st.name`,
         [req.shopId, startDate, endDate],
@@ -7036,10 +7070,12 @@ app.get("/api/v1/clients/:id/full", authenticateToken, async (req, res) => {
       [id],
     );
 
+    const walkInRes = await pool.query("SELECT walk_in_client_id FROM shops WHERE id = $1", [req.shopId]);
     res.json({
       client: {
         ...client,
         full_name: `${client.first_name} ${client.last_name}`,
+        is_walk_in: walkInRes.rows[0]?.walk_in_client_id === client.id,
       },
       history: historyRes.rows,
       files: filesRes.rows,

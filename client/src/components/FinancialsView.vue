@@ -730,6 +730,28 @@
             sortable
           ></Column>
           <Column
+            field="days_worked"
+            :header="t('analytics.tables.daysWorked')"
+            sortable
+          >
+            <template #body="slotProps">
+              {{ Number(slotProps.data.days_worked || 0) }}
+            </template>
+          </Column>
+          <!-- Appointments ÷ days with appointments, e.g. 79 ÷ 20 = 4.0 -->
+          <Column
+            field="avg_per_day"
+            :header="t('analytics.tables.avgPerDay')"
+            sortable
+            :sortField="(row) => Number(row.avg_per_day || 0)"
+          >
+            <template #body="slotProps">
+              <span v-tooltip.top="`${slotProps.data.appt_count} ÷ ${slotProps.data.days_worked}`">
+                {{ Number(slotProps.data.avg_per_day || 0).toFixed(1) }}
+              </span>
+            </template>
+          </Column>
+          <Column
             field="hours_booked"
             :header="t('analytics.tables.hoursBooked')"
             sortable

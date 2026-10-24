@@ -77,6 +77,15 @@
 
       <div class="flex-grow overflow-y-auto pr-2 pb-4">
         <div v-if="activeTab === 'Info'" class="space-y-4">
+          <!-- The walk-in client stands for "no specific client"; its name
+               and contact details are locked (the server refuses changes). -->
+          <div
+            v-if="clientData.is_walk_in"
+            class="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-800"
+          >
+            <i class="pi pi-lock text-xs mt-1"></i>
+            <span>{{ t("clientProfile.walkInLocked") }}</span>
+          </div>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label
@@ -84,7 +93,7 @@
               >
                 {{ t('clientProfile.info.firstName') }}
               </label>
-              <InputText v-model="editForm.first_name" class="w-full" />
+              <InputText v-model="editForm.first_name" class="w-full" :disabled="clientData.is_walk_in" />
             </div>
             <div>
               <label
@@ -92,7 +101,7 @@
               >
                 {{ t('clientProfile.info.lastName') }}
               </label>
-              <InputText v-model="editForm.last_name" class="w-full" />
+              <InputText v-model="editForm.last_name" class="w-full" :disabled="clientData.is_walk_in" />
             </div>
           </div>
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -102,7 +111,7 @@
               >
                 {{ t('clientProfile.info.email') }}
               </label>
-              <InputText v-model="editForm.email" class="w-full" />
+              <InputText v-model="editForm.email" class="w-full" :disabled="clientData.is_walk_in" />
             </div>
             <div>
               <label
@@ -110,7 +119,7 @@
               >
                 {{ t('clientProfile.info.phone') }}
               </label>
-              <InputText v-model="editForm.phone" class="w-full" />
+              <InputText v-model="editForm.phone" class="w-full" :disabled="clientData.is_walk_in" />
             </div>
             <div>
               <label
@@ -670,6 +679,8 @@ const saveClientInfo = async () => {
     if (res.ok) {
       clientData.value = { ...clientData.value, ...payload };
       emit("refresh");
+    } else if (res.status === 409) {
+      toast.add({ severity: "warn", summary: t("clientProfile.walkInLocked"), life: 6000 });
     }
   } finally {
     saving.value = false;

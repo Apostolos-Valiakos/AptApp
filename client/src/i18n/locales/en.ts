@@ -605,6 +605,7 @@ export default {
   clientProfile: {
     header: 'Client Profile',
     balance: 'Balance',
+    walkInLocked: "This is the walk-in client (no specific client): its name and contact details can't be changed. For a booking, clear it and pick the real client instead.",
     noPhone: 'No Phone',
     noEmail: 'No Email',
     tabs: {
@@ -1144,6 +1145,8 @@ export default {
       appointments: 'Appointments',
       hoursBooked: 'Hours Booked',
       revenueGenerated: 'Revenue Generated',
+      daysWorked: 'Days worked',
+      avgPerDay: 'Avg per day',
       date: 'Date',
       client: 'Client',
       splitPayment: 'Split',
