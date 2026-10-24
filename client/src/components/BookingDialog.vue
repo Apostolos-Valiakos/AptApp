@@ -122,7 +122,10 @@
                     ></i>
                   </div>
                 </div>
+                <!-- No profile for the walk-in client: it stands for "no
+                     specific client" and its details can't be edited. -->
                 <Button
+                  v-if="!isWalkInSelected"
                   icon="pi pi-eye"
                   class="p-button-outlined p-button-secondary w-12"
                   style="
@@ -2031,6 +2034,12 @@ const executeDelete = async (scope: string) => {
 };
 
 // --- Client Helpers ---
+const isWalkInSelected = computed(
+  () =>
+    !!selectedClient.value?.is_walk_in ||
+    (!!walkInClientId.value && form.value.client_id === walkInClientId.value),
+);
+
 const openClientProfile = () => {
   if (!form.value.client_id) return;
   currentProfileId.value = form.value.client_id;
