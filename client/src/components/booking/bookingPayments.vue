@@ -13,12 +13,12 @@
         class="text-5xl font-extrabold mb-6 tracking-tight"
         :class="{ 'animate-pulse': totalDueNow > 0 }"
       >
-        €{{ totalDueNow.toFixed(2) }}
+        {{ formatMoney(totalDueNow) }}
       </div>
       <div class="space-y-0 border-t border-gray-700 pt-4 text-sm opacity-90">
         <div class="flex justify-between py-2 border-b border-gray-700/50">
           <span>{{ t("payment.appointmentCost") }}</span>
-          <span class="font-medium">€{{ servicesTotal.toFixed(2) }}</span>
+          <span class="font-medium">{{ formatMoney(servicesTotal) }}</span>
         </div>
         <div
           v-if="productsTotal > 0"
@@ -26,7 +26,7 @@
         >
           <span>{{ t("payment.products") }}</span>
           <span class="font-medium text-amber-300"
-            >+ €{{ productsTotal.toFixed(2) }}</span
+            >+ {{ formatMoney(productsTotal) }}</span
           >
         </div>
         <div
@@ -35,7 +35,7 @@
         >
           <span>{{ t("payment.discount") }}</span>
           <span class="font-medium text-green-300"
-            >- €{{ discountAmount.toFixed(2) }}</span
+            >- {{ formatMoney(discountAmount) }}</span
           >
         </div>
         <div
@@ -44,7 +44,7 @@
         >
           <span>{{ t("payment.sameDayAppointments") }}</span>
           <span class="font-medium text-amber-300"
-            >+ €{{ sameDayAppointmentsTotal.toFixed(2) }}</span
+            >+ {{ formatMoney(sameDayAppointmentsTotal) }}</span
           >
         </div>
         <div
@@ -53,7 +53,7 @@
         >
           <span>{{ t("payment.previousDebt") }}</span>
           <span class="font-medium text-red-300"
-            >+ €{{ previousDebt.toFixed(2) }}</span
+            >+ {{ formatMoney(previousDebt) }}</span
           >
         </div>
         <div
@@ -62,7 +62,7 @@
         >
           <span>{{ t("payment.newPackages") }}</span>
           <span class="font-medium text-amber-300"
-            >+ €{{ packagesTotal.toFixed(2) }}</span
+            >+ {{ formatMoney(packagesTotal) }}</span
           >
         </div>
         <div
@@ -71,12 +71,12 @@
         >
           <span>{{ t("payment.newGiftCards") }}</span>
           <span class="font-medium text-amber-300"
-            >+ €{{ giftCardsTotal.toFixed(2) }}</span
+            >+ {{ formatMoney(giftCardsTotal) }}</span
           >
         </div>
         <div class="flex justify-between pt-2">
           <span>{{ t("payment.paid") }}</span>
-          <span>- €{{ depositAmount.toFixed(2) }}</span>
+          <span>- {{ formatMoney(depositAmount) }}</span>
         </div>
       </div>
     </div>
@@ -184,10 +184,8 @@
           <p class="text-xs text-orange-700">
             {{
               t("payment.giftCard.shortfall", {
-                covered: Number(selectedGiftCard.remaining_balance).toFixed(2),
-                remaining: (
-                  totalDueNow - Number(selectedGiftCard.remaining_balance)
-                ).toFixed(2),
+                covered: formatMoney(selectedGiftCard.remaining_balance),
+                remaining: formatMoney(totalDueNow - Number(selectedGiftCard.remaining_balance)),
               })
             }}
           </p>
@@ -295,7 +293,7 @@
             <p class="text-xs text-gray-400 mt-1">
               {{
                 t("payment.split.remainingNote", {
-                  remaining: remainderAfterBoth.toFixed(2),
+                  remaining: formatMoney(remainderAfterBoth),
                 })
               }}
             </p>
@@ -346,7 +344,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from "vue";
+import { formatMoney } from "../../utils/format";
+import { ref, computed, watch, type PropType } from "vue";
 import { useI18n } from "vue-i18n";
 import GiftCardPicker from "./GiftCardPicker.vue";
 import MembershipPicker from "./MembershipPicker.vue";
@@ -366,7 +365,7 @@ const props = defineProps({
   amountToPay: { type: Number, default: 0 },
   loading: { type: Boolean, default: false },
   paymentMethod: { type: String, default: "cash" },
-  giftCardId: { type: String, default: null },
+  giftCardId: { type: String as PropType<string | null>, default: null },
   paidPaymentMethod: { type: String, default: null },
   clientId: { type: String, default: null },
   catalogServices: { type: Array as () => any[], default: () => [] },

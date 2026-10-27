@@ -4,6 +4,7 @@
 // affected appointment is marked `_offline: "pending" | "conflict"`.
 // Pure function, so it can be tested without a browser.
 import type { QueuedWrite } from "./db";
+import { appointmentTotal, paymentStatus } from "../utils/money";
 
 export interface OverlayContext {
   services: any[]; // the service catalogue (GET /api/v1/services)
@@ -47,18 +48,19 @@ const clientFields = (clientId: string | null | undefined, ctx: OverlayContext, 
   };
 };
 
+// The server sends each appointment's charged total (current_appt_total);
+// the display `price` of a service line is the list price before any
+// discount, so it can't be summed for the total. Offline changes to the
+// services recompute it with the same rule (utils/money.ts).
 const totalOf = (appt: any) =>
-  (appt.services || []).reduce((sum: number, s: any) => sum + Number(s.price || 0), 0) +
-  (appt.products || []).reduce((sum: number, p: any) => sum + Number(p.price || 0) * Number(p.quantity || 1), 0);
+  Number.isFinite(Number(appt.current_appt_total)) && appt.current_appt_total !== null && appt.current_appt_total !== undefined
+    ? Number(appt.current_appt_total)
+    : appointmentTotal(appt.services, appt.products);
 
-const withPaymentStatus = (appt: any) => {
-  const total = totalOf(appt);
-  const paid = Number(appt.deposit_amount || 0);
-  return {
-    ...appt,
-    payment_status: paid <= 0 ? "unpaid" : paid + 0.005 >= total ? "paid" : "partial",
-  };
-};
+const withPaymentStatus = (appt: any) => ({
+  ...appt,
+  payment_status: paymentStatus(totalOf(appt), Number(appt.deposit_amount || 0)),
+});
 
 export function applyPendingWrites(appointments: any[], writes: QueuedWrite[], ctx: OverlayContext): any[] {
   // Keyed by id; a synced create is matched by its real id (via idMap) so the
@@ -98,6 +100,7 @@ export function applyPendingWrites(appointments: any[], writes: QueuedWrite[], c
             payment_method: null,
             services,
             products: w.body?.products || [],
+            current_appt_total: appointmentTotal(services, w.body?.products || []),
             start_time: services[0].start_time,
           }),
           w,
@@ -125,11 +128,25 @@ export function applyPendingWrites(appointments: any[], writes: QueuedWrite[], c
             ...(w.body && "client_id" in w.body ? clientFields(w.body.client_id, ctx, current) : {}),
             services: services.length ? services : current.services,
             products: w.body?.products ?? current.products,
+            // New services or products: the total follows them.
+            current_appt_total:
+              w.body?.services || w.body?.products
+                ? appointmentTotal(services.length ? services : current.services, w.body?.products ?? current.products)
+                : current.current_appt_total,
             start_time: (services[0] || current.services?.[0])?.start_time ?? current.start_time,
           }),
           w,
         ),
       );
+      continue;
+    }
+
+    // A cancellation (e.g. "cancel instead" of deleting a paid booking).
+    const cancelMatch = w.method === "POST" && path.match(/^\/api\/v1\/appointments\/([^/?]+)\/cancel$/);
+    if (cancelMatch) {
+      const id = realId(decodeURIComponent(cancelMatch[1]));
+      const current = byId.get(id);
+      if (current) byId.set(id, mark({ ...current, status: "cancelled", version: null }, w));
       continue;
     }
 

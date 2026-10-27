@@ -227,7 +227,15 @@
           </div>
           <div v-if="w.status === 'conflict'" class="flex flex-wrap items-center gap-2">
             <button
-              v-if="canKeepMine(w)"
+              v-if="canCancelInstead(w)"
+              @click="cancelInsteadQueuedWrite(w.id)"
+              class="px-3 py-1 rounded-full text-xs font-semibold text-white bg-[var(--p-primary-600)] hover:bg-[var(--p-primary-700)]"
+              data-testid="offline-cancel-instead"
+            >
+              {{ t("offline.cancelInstead") }}
+            </button>
+            <button
+              v-else-if="canKeepMine(w)"
               @click="keepMineQueuedWrite(w.id)"
               class="px-3 py-1 rounded-full text-xs font-semibold text-white bg-[var(--p-primary-600)] hover:bg-[var(--p-primary-700)]"
               data-testid="offline-keep-mine"
@@ -235,7 +243,7 @@
               {{ t("offline.keepMine") }}
             </button>
             <button
-              v-else-if="!['depends_on_conflict', 'missing_record', 'appointment_missing'].includes(w.conflict?.code || '')"
+              v-else-if="!['depends_on_conflict', 'missing_record', 'appointment_missing', 'has_payments'].includes(w.conflict?.code || '')"
               @click="retryQueuedWrite(w.id)"
               class="px-3 py-1 rounded-full text-xs font-semibold border border-[var(--p-primary-400)] text-[var(--p-primary-700)] hover:bg-[var(--p-primary-50)]"
             >
@@ -287,8 +295,9 @@ import {
   retryQueuedWrite,
   discardQueuedWrite,
   keepMineQueuedWrite,
+  cancelInsteadQueuedWrite,
 } from "../offline/queue";
-import { canKeepMine } from "../offline/sync";
+import { canCancelInstead, canKeepMine } from "../offline/sync";
 import type { QueuedWrite } from "../offline/db";
 import { useLogout } from "../composables/useLogout";
 
@@ -315,7 +324,7 @@ const conflictText = (w: QueuedWrite) => {
       time: new Date(clash.start_time).toLocaleString("el-GR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }),
     });
   }
-  const known = ["slot_taken", "stale_appointment", "appointment_missing", "depends_on_conflict", "missing_record"];
+  const known = ["slot_taken", "stale_appointment", "appointment_missing", "depends_on_conflict", "missing_record", "has_payments"];
   return known.includes(code) ? t(`offline.conflict.${code}`) : w.lastError || code;
 };
 // Discarding drops a change for good (e.g. a booking), so ask first.

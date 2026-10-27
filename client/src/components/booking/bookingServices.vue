@@ -19,17 +19,38 @@
       </span>
     </div>
 
-    <div
-      v-for="(service, index) in modelValue"
-      :key="index"
-      class="relative p-6 bg-white border border-transparent rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(255,147,212,0.12)] hover:border-[var(--p-primary-200)] transition-all duration-300 group"
+    <!-- Drag a row by its handle to change the order; a combo service moves
+         with the rows it generated. Times then follow each other again. -->
+    <draggable
+      :model-value="rowGroups"
+      item-key="key"
+      handle=".service-drag-handle"
+      ghost-class="drag-ghost"
+      :animation="150"
+      :force-fallback="true"
+      class="space-y-4"
+      @update:model-value="onReorder"
     >
+      <template #item="{ element: rowGroup }">
+      <div class="space-y-4" :data-testid="'service-group'">
+    <div
+      v-for="service in rowGroup.rows"
+      :key="keyFor(service)"
+      class="relative p-6 bg-white border border-transparent rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(255,147,212,0.12)] hover:border-[var(--p-primary-200)] transition-all duration-300 group"
+      :data-testid="'service-row'"
+    >
+      <i
+        v-if="rowGroups.length > 1 && service === rowGroup.rows[0]"
+        class="pi pi-bars service-drag-handle absolute left-2 top-2 cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 text-sm"
+        :title="t('bookingServices.dragToReorder')"
+        data-testid="service-drag-handle"
+      ></i>
       <div
         class="absolute left-0 top-6 bottom-6 w-1 bg-[var(--p-primary-300)] rounded-r-full opacity-0 group-hover:opacity-100 transition-opacity"
       ></div>
       <button
         v-if="modelValue.length > 1"
-        @click="removeService(index)"
+        @click="removeService(modelValue.indexOf(service))"
         class="absolute -right-2 -top-2 bg-white p-1 rounded-full shadow border border-gray-200 text-gray-400 hover:text-red-600 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity z-10"
       >
         <i class="pi pi-trash text-xs"></i>
@@ -44,7 +65,7 @@
             type="button"
             class="h-[54px] w-full flex items-center justify-between gap-2 px-3 text-sm border border-gray-300 rounded-md bg-white hover:border-gray-400 transition-colors"
             data-testid="service-picker"
-            @click="openPicker(index)"
+            @click="openPicker(modelValue.indexOf(service))"
           >
             <span class="flex items-center gap-2 min-w-0">
               <span :class="displayName(service) ? 'text-gray-900' : 'text-gray-400'" class="truncate">
@@ -65,10 +86,10 @@
               type="button"
               class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border border-[var(--p-primary-200)] text-[var(--p-primary-700)] bg-[var(--p-primary-50)] hover:bg-[var(--p-primary-100)] transition-colors"
               :title="t('bookingServices.addVariationAfter')"
-              @click="addVariationAfter(index, v)"
+              @click="addVariationAfter(modelValue.indexOf(service), v)"
             >
               <i class="pi pi-plus text-[10px]"></i>
-              {{ v.name }} · {{ v.duration_minutes }}′ · €{{ Number(v.price).toFixed(2).replace(/\.00$/, "") }}
+              {{ v.name }} · {{ v.duration_minutes }}′ · {{ formatMoney(v.price, { compact: true }) }}
             </button>
           </div>
         </div>
@@ -151,6 +172,9 @@
         </div>
       </div>
     </div>
+      </div>
+      </template>
+    </draggable>
 
     <button
       @click="addService"
@@ -175,12 +199,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { formatMoney } from "../../utils/format";
+import { ref, computed, type PropType } from "vue";
 import { useI18n } from "vue-i18n";
 import { useAuthStore } from "../../stores/auth";
 import { isStaffAvailable, describeWorkingDay } from "../../utils/staffAvailability";
 import { displayServiceName } from "../../utils/serviceVariations";
-import ServicePickerDialog from "./ServicePickerDialog.vue";
+import ServicePickerDialog, { type PickedService } from "./ServicePickerDialog.vue";
+import draggable from "vuedraggable";
 import TimeDropdown from "./TimeDropdown.vue";
 import { pinStartTimes } from "../../utils/serviceSequence";
 const { t } = useI18n();
@@ -192,7 +218,7 @@ const props = defineProps({
   services: { type: Array as () => any[], default: () => [] },
   staff: { type: Array as () => any[], default: () => [] },
   baseStartTime: { type: Date, default: () => new Date() },
-  defaultStaffId: { type: [Number, String], default: null },
+  defaultStaffId: { type: [Number, String] as PropType<number | string | null>, default: null },
   timeOff: { type: Array as () => any[], default: () => [] },
   workingHours: { type: Array as () => any[], default: () => [] },
   requireStaff: { type: Boolean, default: true },
@@ -347,11 +373,12 @@ const removeService = (index: number) => {
 // than the service's own flat price) was chosen — its price/duration wins
 // over the base service's, everything else (combo splitting, etc.) is
 // unaffected since that's keyed off the service itself, not the variation.
-const updateServiceDetails = (
+// Works on `list` in place (the caller emits it).
+const applyServiceDetails = (
+  list: any[],
   index: number,
   pickedOverride?: { duration_minutes: number; price: number },
 ) => {
-  const list = [...props.modelValue];
   const svc = list[index];
   const found = props.services.find((s: any) => s.id === svc.service_id);
 
@@ -415,7 +442,7 @@ const updateServiceDetails = (
       }
     }
   }
-  recalcTimes(list);
+  return list;
 };
 
 // --- Service picker modal (replaces the old inline dropdown) ---
@@ -448,27 +475,65 @@ const displayName = (service: any) => {
   return displayServiceName(found, service.price_override, service.duration_override);
 };
 
-const onServicePicked = (picked: {
-  service_id: string;
-  name: string;
-  variation_name: string | null;
-  duration_minutes: number;
-  price: number;
-}) => {
-  if (pickerIndex.value === null) return;
-  const svc = props.modelValue[pickerIndex.value];
-  svc.service_id = picked.service_id;
-  svc._label = picked.name;
-  // Saved alongside price/duration so which variation this row is survives
-  // later edits to either (see utils/serviceVariations.ts) — always
-  // overwritten here, including to null, since switching services/
-  // variations must never leave a stale variation_name from a previous pick.
-  svc.variation_name = picked.variation_name;
-  svc.service_archived = false;
-  updateServiceDetails(pickerIndex.value, {
-    duration_minutes: picked.duration_minutes,
-    price: picked.price,
+// The picker's ticked services, in ticking order: the first goes on the row
+// the picker was opened from, each next one in a new row right after the
+// previous (after any sauna/hammam rows it generated), same staff member,
+// starting when the previous ends.
+const onServicePicked = (pickedList: PickedService[]) => {
+  if (pickerIndex.value === null || pickedList.length === 0) return;
+  const list = [...props.modelValue];
+  let at = pickerIndex.value;
+  const staffId = list[at]?.staff_id ?? props.defaultStaffId;
+  pickedList.forEach((picked, n) => {
+    if (n > 0) {
+      let insertAt = at + 1;
+      while (list[insertAt]?._autoGenFor) insertAt++;
+      list.splice(insertAt, 0, { staff_id: staffId, start_time: list[insertAt - 1].start_time, duration_override: 60, price_override: 0 });
+      at = insertAt;
+    }
+    const svc = list[at];
+    svc.service_id = picked.service_id;
+    svc._label = picked.name;
+    // Saved alongside price/duration so which variation this row is survives
+    // later edits to either (see utils/serviceVariations.ts) — always
+    // overwritten here, including to null, since switching services/
+    // variations must never leave a stale variation_name from a previous pick.
+    svc.variation_name = picked.variation_name;
+    svc.service_archived = false;
+    svc._manualStart = false;
+    applyServiceDetails(list, at, { duration_minutes: picked.duration_minutes, price: picked.price });
   });
+  recalcTimes(list);
+};
+
+// --- Reordering (drag and drop) ---
+// Stable keys for the rows (not stored on them, so nothing extra is saved).
+const rowKeys = new WeakMap<object, number>();
+let nextRowKey = 0;
+const keyFor = (row: object) => {
+  if (!rowKeys.has(row)) rowKeys.set(row, ++nextRowKey);
+  return rowKeys.get(row)!;
+};
+// A row and the rows generated from it (a combo's sauna/hammam blocks) move together.
+const rowGroups = computed(() => {
+  const groups: { key: number; rows: any[] }[] = [];
+  for (const row of props.modelValue) {
+    const last = groups[groups.length - 1];
+    const prev = last?.rows[last.rows.length - 1];
+    const belongs = row._autoGenFor && prev && (prev.service_id === row._autoGenFor || prev._autoGenFor === row._autoGenFor);
+    if (belongs) last.rows.push(row);
+    else groups.push({ key: keyFor(row), rows: [row] });
+  }
+  return groups;
+});
+// New order: all rows follow each other again, from the first row's start.
+const onReorder = (groups: { rows: any[] }[]) => {
+  const start = props.modelValue[0]?.start_time;
+  const list = groups.flatMap((g) => g.rows);
+  if (list.length === 0) return;
+  list.forEach((row) => (row._manualStart = false));
+  list[0].start_time = new Date(start);
+  recalcTimes(list);
 };
 
 const recalcTimes = (existingList?: any[]) => {
@@ -495,3 +560,10 @@ const recalcTimes = (existingList?: any[]) => {
   emit("update:modelValue", list);
 };
 </script>
+
+<style scoped>
+/* The row being dragged leaves a faint placeholder where it will land. */
+:deep(.drag-ghost) {
+  opacity: 0.4;
+}
+</style>

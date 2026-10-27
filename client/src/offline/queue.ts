@@ -13,7 +13,7 @@ import {
   updateQueuedWrite,
   type QueuedWrite,
 } from "./db";
-import { flush, keepMine, type SendResult } from "./sync";
+import { cancelInstead, flush, keepMine, type SendResult } from "./sync";
 import { findTempIds, newTempId, substituteIds } from "./tempIds";
 
 const pending = ref<QueuedWrite[]>([]);
@@ -45,7 +45,7 @@ let lastCreatedAt = 0;
 const nextCreatedAt = () => (lastCreatedAt = Math.max(Date.now(), lastCreatedAt + 1));
 
 const genId = () =>
-  globalThis.crypto?.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  typeof globalThis.crypto?.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 const currentShopId = (): string | null => {
   try {
@@ -222,6 +222,15 @@ export const keepMineQueuedWrite = async (id: string) => {
   const write = pending.value.find((w) => w.id === id);
   if (!write) return;
   await updateQueuedWrite(plain(keepMine(write)));
+  await refreshPending();
+  flushQueue();
+};
+
+/** "Cancel instead": a refused delete (the booking has payments) becomes a cancellation. */
+export const cancelInsteadQueuedWrite = async (id: string) => {
+  const write = pending.value.find((w) => w.id === id);
+  if (!write) return;
+  await updateQueuedWrite(plain(cancelInstead(write)));
   await refreshPending();
   flushQueue();
 };

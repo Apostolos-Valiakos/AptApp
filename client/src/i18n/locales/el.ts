@@ -52,6 +52,10 @@ export default {
     },
   },
   servicePicker: {
+    selectedCount: "{n} επιλεγμένες",
+    selectHint: "Επιλέξτε μία ή περισσότερες υπηρεσίες",
+    add: "Προσθήκη",
+    addCount: "Προσθήκη ({n})",
     title: "Προσθήκη υπηρεσίας",
     searchPlaceholder: "Αναζήτηση υπηρεσίας",
     servicesFrom: "Υπηρεσίες από: {name}",
@@ -331,6 +335,7 @@ export default {
     customHours: "Αλλαγή ωραρίου",
   },
   offline: {
+    cancelInstead: "Ακύρωση αντί για διαγραφή",
     offlineBanner: "Εκτός σύνδεσης · {count} αλλαγή/ές αποθηκευμένες τοπικά",
     needsLogin: "Η σύνδεση έληξε · συνδεθείτε ξανά για να συγχρονιστούν {count} αλλαγή/ές",
     waiting: "Σε αναμονή συγχρονισμού",
@@ -339,6 +344,7 @@ export default {
     confirmDiscard: "Να απορριφθεί οριστικά η αλλαγή «{label}»;",
     logoutUnsynced: "{count} αλλαγή/ές δεν έχουν συγχρονιστεί ακόμα και θα χαθούν με την αποσύνδεση. Αποσύνδεση;",
     conflict: {
+      has_payments: "Έχει πληρωμές, οπότε δεν διαγράφεται· μπορεί να ακυρωθεί (οι πληρωμές μένουν ως πίστωση).",
       slot_taken: "Η ώρα κλείστηκε από άλλη συσκευή στο μεταξύ.",
       slot_taken_with: "Η ώρα κλείστηκε στο μεταξύ: {client}, {time}.",
       stale_appointment: "Το ραντεβού άλλαξε από άλλη συσκευή στο μεταξύ.",
@@ -488,7 +494,7 @@ export default {
         "Κατά την κράτηση, δημιουργείται από ένα ραντεβού στο ημερολόγιο για κάθε υπηρεσία παρακάτω, αμέσως μετά από αυτή — η καθεμία με το δικό της προεπιλεγμένο προσωπικό, αν έχει οριστεί.",
       comboComponentsPlaceholder: "Επιλέξτε τις υπηρεσίες που περιλαμβάνονται σε αυτόν τον συνδυασμό",
       comboComponentsSummary:
-        "Επιλεγμένα μέρη: {minutes} λεπτά / {price}€ — αφαιρούνται από την τιμή/διάρκεια αυτής της υπηρεσίας κατά την κράτηση.",
+        "Επιλεγμένα μέρη: {minutes} λεπτά / {price} — αφαιρούνται από την τιμή/διάρκεια αυτής της υπηρεσίας κατά την κράτηση.",
       hasVariations: "Αυτή η υπηρεσία έχει πολλαπλές επιλογές",
       hasVariationsNote:
         "π.χ. «30 λεπτά» / «60 λεπτά», η καθεμία με τη δική της τιμή και διάρκεια — εμφανίζεται ως αναπτυσσόμενη ομάδα κατά την κράτηση αντί για μία σταθερή τιμή.",
@@ -722,7 +728,7 @@ export default {
     appointments: "Ραντεβού",
     noAppointments: "Δεν υπάρχουν ραντεβού ακόμη",
     with: "με",
-    balanceDue: "Οφείλει €{amount}",
+    balanceDue: "Οφείλει {amount}",
     moreActions: "Περαιτέρω δράσεις",
     book: "Κλείστε ραντεβού",
     editDetails: "Επεξεργασία στοιχείων πελάτη",
@@ -1098,7 +1104,7 @@ export default {
     add: "Νέο έξοδο",
     edit: "Επεξεργασία εξόδου",
     delete: "Διαγραφή εξόδου",
-    deleteConfirm: 'Διαγραφή του "{description}" (€{amount});',
+    deleteConfirm: 'Διαγραφή του "{description}" ({amount});',
     from: "Από",
     to: "Έως",
     method: "Τρόπος πληρωμής",
@@ -1231,6 +1237,12 @@ export default {
     },
   },
   booking: {
+    hasPayments: {
+      header: "Το ραντεβού έχει πληρωμές",
+      message: "Ραντεβού με πληρωμές δεν διαγράφεται. Να ακυρωθεί; Θα μείνει ως ακυρωμένο και ό,τι πληρώθηκε μένει στον πελάτη ως πίστωση.",
+      accept: "Ακύρωση ραντεβού",
+      reject: "Πίσω",
+    },
     newAppointment: "Νέο Ραντεβού",
     editAppointment: "Επεξεργασία Ραντεβού",
     editBlock: "Επεξεργασία Αποκλεισμού",
@@ -1326,6 +1338,8 @@ export default {
       saveClient: "Αποθήκευση",
     },
     toast: {
+      cancelledKeptPayments: "Το ραντεβού ακυρώθηκε",
+      cancelledKeptPaymentsDetail: "Οι πληρωμές του έμειναν στον πελάτη ως πίστωση.",
       saveFailed: "Αποτυχία Αποθήκευσης",
       saveFailedDetail: "Αδυναμία αποθήκευσης ραντεβού. Δοκιμάστε ξανά.",
       paymentFailed: "Αποτυχία Πληρωμής",
@@ -1488,7 +1502,7 @@ export default {
     button: "Επιστροφή χρημάτων",
     title: "Επιστροφή χρημάτων στον πελάτη",
     amount: "Ποσό επιστροφής",
-    maxNote: "Έως €{max} — το ποσό που έχει πληρωθεί σε αυτό το ραντεβού.",
+    maxNote: "Έως {max} — το ποσό που έχει πληρωθεί σε αυτό το ραντεβού.",
     method: "Μέθοδος επιστροφής",
     reason: "Αιτιολογία",
     reasonPlaceholder: "Γιατί γίνεται η επιστροφή;",
@@ -1498,6 +1512,9 @@ export default {
     exceedsPaid: "Υπερβαίνει το ποσό που έχει πληρωθεί σε αυτό το ραντεβού.",
   },
   payment: {
+    recordedToast: "Η πληρωμή καταχωρήθηκε",
+    recordedToastDetail: "{amount} · {method}",
+    nothingToPay: "Συμπληρώστε το ποσό της πληρωμής.",
     totalBalance: "Συνολικό Υπόλοιπο",
     appointmentCost: "Κόστος ραντεβού",
     products: "Προϊόντα",
@@ -1546,18 +1563,19 @@ export default {
       noResults: "Δεν βρέθηκαν έγκυρες δωροκάρτες",
       expires: "Λήξη",
       shortfall:
-        "Η κάρτα καλύπτει €{covered} — απομένουν €{remaining} για πληρωμή με άλλο τρόπο.",
+        "Η κάρτα καλύπτει {covered} — απομένουν {remaining} για πληρωμή με άλλο τρόπο.",
     },
     split: {
       add: "Προσθήκη δεύτερου τρόπου πληρωμής",
       secondMethod: "Δεύτερος Τρόπος Πληρωμής",
       secondAmount: "Ποσό (2ος τρόπος)",
-      remainingNote: "Υπόλοιπο μετά και τους δύο τρόπους: €{remaining}",
+      remainingNote: "Υπόλοιπο μετά και τους δύο τρόπους: {remaining}",
       paidToast: "Συνδυασμένη Πληρωμή",
-      paidToastDetail: "{method1}: €{amount1} + {method2}: €{amount2}",
+      paidToastDetail: "{method1}: {amount1} + {method2}: {amount2}",
     },
   },
   bookingServices: {
+    dragToReorder: "Σύρετε για αλλαγή σειράς",
     outsideHours: "εκτός ωραρίου",
     overtimeNote: "Εκτός ωραρίου (ωράριο {hours}) · υπερωρία",
     overtimeNoteDayOff: "Ρεπό αυτή τη μέρα · υπερωρία",
@@ -1585,6 +1603,9 @@ export default {
     appointmentNotes: "Σημειώσεις Ραντεβού",
     pastAppointments: "Πρόσφατα Ραντεβού",
     debt: {
+      paidToast: "Η οφειλή εξοφλήθηκε",
+      paidToastDetail: "{amount} · {method}",
+      writtenOffToast: "Η οφειλή διαγράφηκε",
       resolve: "Εξόφληση",
       resolveTitle: "Εξόφληση οφειλής",
       modePayment: "Πληρωμή",
@@ -1601,7 +1622,7 @@ export default {
       failed: "Δεν ήταν δυνατή η αποθήκευση. Δοκιμάστε ξανά.",
     },
     noMatchingAppointments: "Δεν υπάρχουν ραντεβού με αυτή την κατάσταση.",
-    owes: "οφειλή €{amount}",
+    owes: "οφειλή {amount}",
     filters: {
       all: "Όλα",
       unpaid: "Απλήρωτα",

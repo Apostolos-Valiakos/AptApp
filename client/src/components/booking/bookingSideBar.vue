@@ -20,7 +20,7 @@
         class="inline-flex items-center bg-red-100 text-red-800 text-xs font-bold px-3 py-1 rounded-full mb-6"
       >
         <i class="pi pi-exclamation-circle mr-1"></i>
-        {{ t("bookingSidebar.balance") }}: €{{ calculatedBalance.toFixed(2) }}
+        {{ t("bookingSidebar.balance") }}: {{ formatMoney(calculatedBalance) }}
       </div>
 
       <!-- ΕΟΠΠΥ breakdown card -->
@@ -179,7 +179,7 @@
             <span class="block text-xs text-gray-400">{{ formatApptDate(d.debt_date) }}</span>
           </span>
           <span class="flex flex-col items-end flex-shrink-0">
-            <span class="font-semibold text-amber-800 tabular-nums">€{{ Number(d.remaining).toFixed(2) }}</span>
+            <span class="font-semibold text-amber-800 tabular-nums">{{ formatMoney(d.remaining) }}</span>
             <button
               type="button"
               class="text-xs font-semibold text-[var(--p-primary-700)] hover:underline"
@@ -215,7 +215,7 @@
       <div v-if="resolveTarget" class="space-y-4">
         <div class="text-sm text-gray-600">
           <div class="truncate">{{ resolveTarget.label }}</div>
-          <div class="text-lg font-bold text-gray-900 tabular-nums">€{{ resolveTarget.amount.toFixed(2) }}</div>
+          <div class="text-lg font-bold text-gray-900 tabular-nums">{{ formatMoney(resolveTarget.amount) }}</div>
         </div>
         <div class="grid grid-cols-2 gap-2">
           <button
@@ -274,10 +274,12 @@
 </template>
 
 <script setup lang="ts">
+import { api, ApiError } from "../../api/http";
 import { ref, computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useAuthStore } from "../../stores/auth";
 import { useToast } from "primevue/usetoast";
+import { formatMoney } from "../../utils/format";
 const { t } = useI18n();
 const authStore = useAuthStore();
 
@@ -317,16 +319,12 @@ const resolveMethod = ref("cash");
 const addDebtVisible = ref(false);
 const newDebt = ref<{ amount: number | null; date: Date | null; note: string }>({ amount: null, date: new Date(), note: "" });
 
-const authHeaders = () => ({
-  "Content-Type": "application/json",
-  Authorization: `Bearer ${localStorage.getItem("token")}`,
-});
 
 const loadDebts = async (clientId: string) => {
   if (!canManageDebt.value) return;
   try {
-    const res = await fetch(`/api/v1/clients/${clientId}/debts`, { headers: authHeaders() });
-    if (res.ok && props.client?.id === clientId) manualDebts.value = await res.json();
+    const debts = await api.get(`/api/v1/clients/${clientId}/debts`);
+    if (props.client?.id === clientId) manualDebts.value = debts;
   } catch {
     // sidebar extra — fail silently
   }
@@ -361,14 +359,25 @@ const confirmResolve = async () => {
       target.kind === "appointment"
         ? `/api/v1/appointments/${target.id}/resolve-debt`
         : `/api/v1/client-debts/${target.id}/resolve`;
-    const res = await fetch(url, {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({ mode: resolveMode.value, payment_method: resolveMethod.value }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error === "nothing_owed" ? t("bookingSidebar.debt.nothingOwed") : t("bookingSidebar.debt.failed"));
+    const data = await api
+      .post(url, { mode: resolveMode.value, payment_method: resolveMethod.value })
+      .catch((e: ApiError) => {
+        throw new Error(e.data?.error === "nothing_owed" ? t("bookingSidebar.debt.nothingOwed") : t("bookingSidebar.debt.failed"));
+      });
     resolveVisible.value = false;
+    toast.add(
+      resolveMode.value === "write_off"
+        ? { severity: "success", summary: t("bookingSidebar.debt.writtenOffToast"), detail: formatMoney(data.amount), life: 4000 }
+        : {
+            severity: "success",
+            summary: t("bookingSidebar.debt.paidToast"),
+            detail: t("bookingSidebar.debt.paidToastDetail", {
+              amount: formatMoney(data.amount),
+              method: t(`payment.methodLabels.${resolveMethod.value}`),
+            }),
+            life: 4000,
+          },
+    );
     await afterDebtChange(data, target.kind === "appointment" ? target.id : undefined);
   } catch (e: any) {
     failDebt(e);
@@ -383,13 +392,11 @@ const saveDebt = async () => {
   try {
     const d = newDebt.value.date;
     const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-    const res = await fetch(`/api/v1/clients/${props.client.id}/debts`, {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({ amount: newDebt.value.amount, debt_date: date, note: newDebt.value.note.trim() }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(t("bookingSidebar.debt.failed"));
+    const data = await api
+      .post(`/api/v1/clients/${props.client.id}/debts`, { amount: newDebt.value.amount, debt_date: date, note: newDebt.value.note.trim() })
+      .catch(() => {
+        throw new Error(t("bookingSidebar.debt.failed"));
+      });
     addDebtVisible.value = false;
     await afterDebtChange(data);
   } catch (e: any) {
@@ -431,7 +438,7 @@ const statusLabel = (appt: any) => {
   const base = style.key ? t(`common.status.${style.key}`) : appt.status;
   if (appt.status !== "cancelled" && Number(appt.owed) > 0) {
     return {
-      text: `${base} · ${t("bookingSidebar.owes", { amount: Number(appt.owed).toFixed(2) })}`,
+      text: `${base} · ${t("bookingSidebar.owes", { amount: formatMoney(appt.owed) })}`,
       cls: "bg-amber-50 text-amber-800",
     };
   }
@@ -452,14 +459,10 @@ const loadHistory = async (clientId: string) => {
   const filter = historyFilter.value;
   loadingHistory.value = true;
   try {
-    const token = localStorage.getItem("token");
-    const res = await fetch(
-      `/api/v1/clients/${clientId}/past-appointments?limit=10&status=${encodeURIComponent(filter)}`,
-      { headers: { Authorization: `Bearer ${token}` } },
-    );
+    const rows = await api.get(`/api/v1/clients/${clientId}/past-appointments?limit=10&status=${encodeURIComponent(filter)}`);
     // Ignore a reply for a client or filter the user has already moved on from.
-    if (!res.ok || props.client?.id !== clientId || historyFilter.value !== filter) return;
-    pastAppointments.value = await res.json();
+    if (props.client?.id !== clientId || historyFilter.value !== filter) return;
+    pastAppointments.value = rows;
     if (filter === "all") hasHistory.value = pastAppointments.value.length > 0;
   } catch {
     // sidebar extra — fail silently

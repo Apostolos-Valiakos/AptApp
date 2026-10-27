@@ -8,10 +8,10 @@ export type SendResult = { status: number; data: any } | { networkError: true };
 
 export interface SyncDeps {
   getWrites(): Promise<QueuedWrite[]>;
-  updateWrite(w: QueuedWrite): Promise<void>;
+  updateWrite(w: QueuedWrite): Promise<unknown>;
   removeWrite(id: string): Promise<void>;
   getIdMap(): Promise<Record<string, string>>;
-  saveIdMapping(tempId: string, realId: string): Promise<void>;
+  saveIdMapping(tempId: string, realId: string): Promise<unknown>;
   /** Sends one write; must use write.id as the Idempotency-Key. */
   send(w: QueuedWrite): Promise<SendResult>;
   /** The shop of the session that is logged in now (null when logged out). */
@@ -156,6 +156,23 @@ export const keepMine = (w: QueuedWrite): QueuedWrite => ({
   lastError: undefined,
   body: w.body && typeof w.body === "object" ? { ...w.body, force: true } : w.body,
 });
+
+/**
+ * "Cancel instead" for a delete the server refused because the booking has
+ * payments: the same write becomes a cancellation of that booking (kept,
+ * marked cancelled, payments stay as the client's credit).
+ */
+export const cancelInstead = (w: QueuedWrite): QueuedWrite => ({
+  ...w,
+  method: "POST",
+  endpoint: w.endpoint.replace(/\?.*$/, "") + "/cancel",
+  body: {},
+  kind: "appointment",
+  status: "pending",
+  conflict: undefined,
+  lastError: undefined,
+});
+export const canCancelInstead = (w: QueuedWrite) => w.method === "DELETE" && w.conflict?.code === "has_payments";
 
 /** Conflicts that "keep mine" can resolve (the others can only be discarded). */
 export const canKeepMine = (w: QueuedWrite) =>

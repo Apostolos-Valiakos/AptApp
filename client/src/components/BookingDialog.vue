@@ -271,7 +271,7 @@
                   >
                 </div>
                 <div class="text-sm font-semibold text-gray-800 flex-shrink-0">
-                  €{{ sib.owed.toFixed(2) }}
+                  {{ formatMoney(sib.owed) }}
                   <span
                     v-if="sib.payment_status === 'paid'"
                     class="text-xs font-normal text-green-600"
@@ -489,6 +489,7 @@
 </template>
 
 <script setup lang="ts">
+import { api } from "../api/http";
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from "vue";
 import { useI18n } from "vue-i18n";
 import BookingProducts from "./booking/bookingProducts.vue";
@@ -515,6 +516,9 @@ import { useToast } from "primevue/usetoast";
 import { fetchOrQueue } from "../offline/queue";
 import { knownOverlapIds } from "../offline/overlaps";
 import { isTempId } from "../offline/tempIds";
+import { formatMoney } from "../utils/format";
+import { useBookingTotals } from "../composables/useBookingTotals";
+import { appendNote, firstStartOf, sameDayAppointmentFor } from "../utils/sameDayGrouping";
 import { useCalendarStore } from "../stores/calendar";
 import {
   isStaffAvailable,
@@ -657,11 +661,7 @@ const toggleMobileSidebar = () => {
 
 onMounted(async () => {
   try {
-    const res = await fetch("/api/v1/discount-codes", {
-      headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
-    });
-    if (res.ok)
-      discountCodes.value = (await res.json()).filter((c: any) => c.is_active);
+    discountCodes.value = (await api.get("/api/v1/discount-codes")).filter((c: any) => c.is_active);
   } catch {
     // codes are optional; fixed/percent discounts still work
   }
@@ -692,12 +692,7 @@ const onClientPicked = (client: any) => {
 const refreshClientBalance = async (clientId: string) => {
   if (!clientId) return;
   try {
-    const token = localStorage.getItem("token");
-    const res = await fetch(`/api/v1/clients/${clientId}/balance`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) return;
-    const { balance } = await res.json();
+    const { balance } = await api.get(`/api/v1/clients/${clientId}/balance`);
     if (selectedClient.value?.id === clientId) {
       selectedClient.value.outstanding_balance = Number(balance) || 0;
     }
@@ -728,14 +723,8 @@ const loadClientById = async (clientId: string, fallback: any) => {
   selectedClient.value = fallback;
   if (!clientId) return;
   try {
-    const token = localStorage.getItem("token");
-    const res = await fetch(`/api/v1/clients?slim=true&id=${clientId}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (res.ok) {
-      const rows = await res.json();
-      if (rows[0]) selectedClient.value = rows[0];
-    }
+    const rows = await api.get(`/api/v1/clients?slim=true&id=${clientId}`);
+    if (rows[0]) selectedClient.value = rows[0];
   } catch {
     // keep the fallback if the lookup fails
   }
@@ -750,14 +739,9 @@ const loadClientById = async (clientId: string, fallback: any) => {
 const loadSiblingAppointments = async (clientId: string, startTime: Date) => {
   siblingsLoading.value = true;
   try {
-    const token = localStorage.getItem("token");
     const dateStr = toLocalDateStr(startTime);
-    const res = await fetch(
-      `/api/v1/clients/${clientId}/appointments-on-date?date=${dateStr}`,
-      { headers: { Authorization: `Bearer ${token}` } },
-    );
-    if (res.ok) {
-      const all = await res.json();
+    const all = await api.get(`/api/v1/clients/${clientId}/appointments-on-date?date=${dateStr}`).catch(() => null);
+    if (all) {
       siblingAppointments.value = all.filter(
         (a: any) => a.id !== form.value.id,
       );
@@ -792,22 +776,7 @@ const groupWithSameDayAppointment = async (clientId: string) => {
   const request = ++groupRequest;
   const dateStr = toLocalDateStr(new Date(form.value.start_time));
   try {
-    const token = localStorage.getItem("token");
-    const res = await fetch(`/api/v1/appointments?date=${dateStr}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) return;
-    const all = await res.json();
-    const firstStart = (a: any) =>
-      new Date(a.services?.[0]?.start_time || a.start_time).getTime();
-    const existing = (Array.isArray(all) ? all : [])
-      .filter(
-        (a: any) =>
-          a.client_id === clientId &&
-          !a.is_block &&
-          !["cancelled", "no-show", "no_show"].includes(a.status),
-      )
-      .sort((a: any, b: any) => firstStart(a) - firstStart(b))[0];
+    const existing = sameDayAppointmentFor(await api.get(`/api/v1/appointments?date=${dateStr}`), clientId);
     if (!existing) return;
     if (
       request !== groupRequest ||
@@ -825,12 +794,10 @@ const groupWithSameDayAppointment = async (clientId: string) => {
     loadExistingAppointment(existing, null);
     servicesList.value = [...servicesList.value, ...newRows];
     productsList.value = [...productsList.value, ...newProducts];
-    const appendNote = (current: string, extra: string) =>
-      !extra || current.includes(extra) ? current : current ? `${current}\n${extra}` : extra;
     form.value.booking_notes = appendNote(form.value.booking_notes || "", newBookingNotes);
     form.value.internal_notes = appendNote(form.value.internal_notes || "", newInternalNotes);
 
-    const start = new Date(firstStart(existing));
+    const start = new Date(firstStartOf(existing));
     groupedWithTime.value = `${String(start.getHours()).padStart(2, "0")}:${String(start.getMinutes()).padStart(2, "0")}`;
     nextTick(suggestAmountToPay);
   } catch {
@@ -844,12 +811,8 @@ const groupWithSameDayAppointment = async (clientId: string) => {
 // Silently does nothing if it fails; staff can still pick a client by hand.
 const loadWalkInClient = async () => {
   try {
-    const token = localStorage.getItem("token");
-    const res = await fetch("/api/v1/clients/walk-in", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (res.ok) {
-      const walkIn = await res.json();
+    const walkIn = await api.get("/api/v1/clients/walk-in").catch(() => null);
+    if (walkIn) {
       walkInClientId.value = walkIn.id;
       selectedClient.value = walkIn;
       form.value.client_id = walkIn.id;
@@ -891,140 +854,34 @@ const pendingGiftCardsTotal = computed(() =>
 const siblingAppointments = ref<any[]>([]);
 const selectedSiblingIds = ref<string[]>([]);
 const siblingsLoading = ref(false);
-const selectedSiblingsOwedTotal = computed(() =>
-  siblingAppointments.value
-    .filter((s) => selectedSiblingIds.value.includes(s.id))
-    .reduce((sum, s) => sum + Number(s.owed), 0),
-);
-const selectedSiblingsDepositTotal = computed(() =>
-  siblingAppointments.value
-    .filter((s) => selectedSiblingIds.value.includes(s.id))
-    .reduce((sum, s) => sum + Number(s.deposit_amount), 0),
-);
-
-const servicesTotal = computed(() =>
-  servicesList.value.reduce(
-    (sum, s) => sum + (Number(s.price_override) || 0),
-    0,
-  ),
-);
-const productsTotal = computed(() =>
-  productsList.value.reduce(
-    (sum, p) => sum + (Number(p.price) || 0) * (p.quantity || 1),
-    0,
-  ),
-);
-const discountAmount = computed(() =>
-  computeDiscountAmount(
-    discount.value,
-    servicesTotal.value,
-    productsTotal.value,
-  ),
-);
-const currentApptTotal = computed(
-  () => servicesTotal.value + productsTotal.value - discountAmount.value,
-);
+// The money side (totals, earlier debt, what's due now): see
+// composables/useBookingTotals.ts.
+const {
+  selectedSiblingsOwedTotal,
+  selectedSiblingsDepositTotal,
+  servicesTotal,
+  productsTotal,
+  discountAmount,
+  currentApptTotal,
+  previousDebt,
+  totalDueNow,
+  combinedTotalDueNow,
+  suggestedAmount,
+} = useBookingTotals({
+  services: servicesList,
+  products: productsList,
+  discount,
+  client: selectedClient,
+  isEdit: isEditMode,
+  form,
+  siblings: siblingAppointments,
+  selectedSiblingIds,
+  pendingPackagesTotal,
+  pendingGiftCardsTotal,
+});
 
 const originalServices = ref<ServiceSnapshot[]>([]);
 const originalSnapshot = ref({ price: 0, deposit: 0, isPast: false });
-
-const originalDebtContribution = computed(() => {
-  if (!form.value.id) return 0;
-  // Mirror the backend logic: future appointments only contributed their deposit (as a credit) to the DB balance
-  if (originalSnapshot.value.isPast) {
-    return originalSnapshot.value.price - originalSnapshot.value.deposit;
-  } else {
-    return -originalSnapshot.value.deposit;
-  }
-});
-const isApptInDatabaseBalance = computed(() => {
-  if (!form.value.id || !form.value.start_time) return false;
-
-  const apptDate = new Date(form.value.start_time);
-  const startDateLimit = new Date("2026-03-01T00:00:00");
-
-  // 1. If the appointment is before March 1st, 2026, it is NOT in the balance calculation
-  if (apptDate < startDateLimit) return false;
-
-  // 2. Matches SQL: Only appointments that have already happened (<= NOW)
-  // are included in the database's outstanding_balance field.
-  return apptDate <= new Date();
-});
-
-// Replace your existing previousDebt and totalDueNow with this:
-
-// Mirrors isApptInDatabaseBalance above, per selected sibling — a sibling
-// appointment later today (start_time > now) isn't yet folded into
-// selectedClient.outstanding_balance (recalculateClientBalance only counts
-// appointments <= NOW), so it must not be subtracted out of previousDebt
-// below, only one already elapsed today should be.
-const isSiblingInDatabaseBalance = (sibling: any) => {
-  const start = sibling?.services?.[0]?.start_time;
-  if (!start) return false;
-  const apptDate = new Date(start);
-  if (apptDate < new Date("2026-03-01T00:00:00")) return false;
-  return apptDate <= new Date();
-};
-
-const previousDebt = computed(() => {
-  if (!selectedClient.value) return 0;
-  if (!isEditMode.value) return Number(selectedClient.value.outstanding_balance || 0);
-
-  // The DB balance contains: other_debt + (currentApptTotal - alreadyPaid)
-  // for the primary appointment, if IT is already elapsed, PLUS the same for
-  // any selected sibling that is independently already elapsed — these are
-  // two separate conditions, not one shared gate: a future primary can still
-  // have an already-elapsed sibling whose debt is already folded into
-  // outstanding_balance, and vice versa. Subtract only whichever of these
-  // genuinely contributed to the DB balance, so we isolate other_debt
-  // without double-counting (once via outstanding_balance, once via
-  // selectedSiblingsOwedTotal in combinedTotalDueNow below).
-  let adjusted = Number(selectedClient.value.outstanding_balance || 0);
-
-  if (isApptInDatabaseBalance.value) {
-    const currentApptUnpaid = Math.max(
-      0,
-      currentApptTotal.value - form.value.deposit_amount,
-    );
-    adjusted -= currentApptUnpaid;
-  }
-
-  const selectedSiblingsUnpaid = siblingAppointments.value
-    .filter(
-      (s) =>
-        selectedSiblingIds.value.includes(s.id) &&
-        isSiblingInDatabaseBalance(s),
-    )
-    .reduce((sum, s) => sum + Number(s.owed), 0);
-  adjusted -= selectedSiblingsUnpaid;
-
-  return Math.max(0, adjusted);
-});
-
-const totalDueNow = computed(() => {
-  // 1. Calculate what is still owed specifically for THIS appointment
-  const currentApptUnpaid = Math.max(
-    0,
-    currentApptTotal.value - form.value.deposit_amount,
-  );
-
-  // 2. Total Due = (Old Debt) + (Unpaid part of current visit) + any package
-  // being bought alongside this payment (sold in full, not part of the
-  // appointment's own debt — see pendingPackages/pendingGiftCards/recordPayment below).
-  return (
-    previousDebt.value +
-    currentApptUnpaid +
-    pendingPackagesTotal.value +
-    pendingGiftCardsTotal.value
-  );
-});
-
-// What BookingPayments actually renders/collects against — totalDueNow plus
-// whichever same-day siblings are currently checked. See recordPayment below
-// for how this flows into appointment_ids on save.
-const combinedTotalDueNow = computed(
-  () => totalDueNow.value + selectedSiblingsOwedTotal.value,
-);
 
 // Suggests a sensible default amount: pay off whatever's explicitly owed for
 // this appointment plus any currently-checked same-day siblings, falling
@@ -1036,13 +893,7 @@ const combinedTotalDueNow = computed(
 // must track it upward too, not just clamp down (see the clamp watch below,
 // which only ever handles decreases).
 const suggestAmountToPay = () => {
-  const currentApptUnpaid = Math.max(
-    0,
-    currentApptTotal.value - form.value.deposit_amount,
-  );
-  const selectedUnpaid = currentApptUnpaid + selectedSiblingsOwedTotal.value;
-  amountToPayNow.value =
-    selectedUnpaid > 0 ? selectedUnpaid : Math.max(0, combinedTotalDueNow.value);
+  amountToPayNow.value = suggestedAmount();
 };
 
 watch(selectedSiblingIds, () => nextTick(suggestAmountToPay), { deep: true });
@@ -1377,7 +1228,7 @@ const confirmChanges = (): Promise<boolean> => {
   );
   if (discountAmount.value !== originalDiscountAmount.value) {
     lines.push(
-      `${t("discount.line")}: €${originalDiscountAmount.value.toFixed(2)} → €${discountAmount.value.toFixed(2)}`,
+      `${t("discount.line")}: ${formatMoney(originalDiscountAmount.value)} → ${formatMoney(discountAmount.value)}`,
     );
   }
   if (lines.length === 0) return Promise.resolve(true);
@@ -1511,13 +1362,8 @@ const saveAsTimeOff = async (force = false): Promise<boolean> => {
 // with no appointment created in its place.
 const unblockTimeOff = async (): Promise<boolean> => {
   if (!form.value.time_off_id || !form.value.time_off_staff_id) return false;
-  const token = localStorage.getItem("token");
   try {
-    const res = await fetch(
-      `/api/v1/staff/${form.value.time_off_staff_id}/time-off/${form.value.time_off_id}`,
-      { method: "DELETE", headers: { Authorization: `Bearer ${token}` } },
-    );
-    if (!res.ok) throw new Error("Failed");
+    await api.del(`/api/v1/staff/${form.value.time_off_staff_id}/time-off/${form.value.time_off_id}`);
     toast.add({
       severity: "success",
       summary: t("common.success"),
@@ -1556,21 +1402,19 @@ const save = async (close = true): Promise<boolean> => {
         rejectLabel: t("booking.editDialog.thisOnly"),
         acceptLabel: t("booking.editDialog.thisAndFuture"),
         accept: async () => {
-          await executeSave(close, "series");
-          resolve(true);
+          resolve(await executeSave(close, "series"));
         },
         reject: async () => {
-          await executeSave(close, "single");
-          resolve(true);
+          resolve(await executeSave(close, "single"));
         },
       });
     });
   }
-  await executeSave(close, isConvertingToSeries ? "series" : "single");
-  return true;
+  return executeSave(close, isConvertingToSeries ? "series" : "single");
 };
 
-const executeSave = async (close = true, scope = "single") => {
+/** Saves the booking; true once saved (or queued offline), false if it wasn't. */
+const executeSave = async (close = true, scope = "single"): Promise<boolean> => {
   // Unblocking (toggling an existing block's button off) and editing a
   // block's time/duration are both time-off-only flows with no client/
   // service involved — skip the normal booking validations entirely.
@@ -1582,7 +1426,7 @@ const executeSave = async (close = true, scope = "single") => {
       detail: t("booking.validation.selectClient"),
       life: 3000,
     });
-    return;
+    return false;
   }
   if (servicesList.value.length === 0) {
     toast.add({
@@ -1591,7 +1435,7 @@ const executeSave = async (close = true, scope = "single") => {
       detail: t("booking.validation.addService"),
       life: 3000,
     });
-    return;
+    return false;
   }
   if (missingStaffService.value) {
     toast.add({
@@ -1600,7 +1444,7 @@ const executeSave = async (close = true, scope = "single") => {
       detail: t("booking.validation.staffRequired"),
       life: 3000,
     });
-    return;
+    return false;
   }
 
   if (form.value.time_off_id && !form.value.is_block) {
@@ -1659,12 +1503,12 @@ const executeSave = async (close = true, scope = "single") => {
         detail: t("booking.validation.staffUnavailable"),
         life: 4000,
       });
-      return;
+      return false;
     }
     if (overtime.length > 0) {
       const preConfirmed = props.appointment?.overtime_confirmed_staff_id;
       const needsConfirm = overtime.some((o) => String(o.staffId) !== String(preConfirmed));
-      if (needsConfirm && !(await confirmOvertime(overtime))) return;
+      if (needsConfirm && !(await confirmOvertime(overtime))) return false;
       allowOvertime = true;
     }
   }
@@ -1735,7 +1579,7 @@ const executeSave = async (close = true, scope = "single") => {
         emit("save");
         dialogVisible.value = false;
       }
-      return;
+      return true; // saved on this device, syncs later
     }
 
     const res = result.response;
@@ -1772,6 +1616,7 @@ const executeSave = async (close = true, scope = "single") => {
       emit("save");
       dialogVisible.value = false;
     }
+    return true;
   } catch (e) {
     console.error(e);
     toast.add({
@@ -1780,6 +1625,7 @@ const executeSave = async (close = true, scope = "single") => {
       detail: (e as Error).message || t("booking.toast.saveFailedDetail"),
       life: 4000,
     });
+    return false;
   } finally {
     loading.value = false;
   }
@@ -1797,8 +1643,10 @@ const recordPayment = async (
     amountToPayNow.value <= 0 &&
     pendingPackagesTotal.value <= 0 &&
     pendingGiftCardsTotal.value <= 0
-  )
+  ) {
+    toast.add({ severity: "warn", summary: t("booking.toast.paymentFailed"), detail: t("payment.nothingToPay"), life: 3500 });
     return;
+  }
   paymentLoading.value = true;
 
   // The entered amount covers "service + package" together (see totalDueNow),
@@ -1953,15 +1801,29 @@ const recordPayment = async (
         pendingGiftCards.value = [];
       }
 
+      // Every recorded payment is confirmed: a split one with both legs,
+      // otherwise the amount and method (package and gift-card sales have
+      // their own toasts above).
+      if (!split && (serviceLegAmount > 0 || selectedPaymentMethod.value === "membership")) {
+        toast.add({
+          severity: "success",
+          summary: t("payment.recordedToast"),
+          detail: t("payment.recordedToastDetail", {
+            amount: formatMoney(serviceLegAmount),
+            method: t(`payment.methodLabels.${selectedPaymentMethod.value}`),
+          }),
+          life: 4000,
+        });
+      }
       if (split) {
         toast.add({
           severity: "success",
           summary: t("payment.split.paidToast"),
           detail: t("payment.split.paidToastDetail", {
             method1: selectedPaymentMethod.value,
-            amount1: amountToPayNow.value.toFixed(2),
+            amount1: formatMoney(amountToPayNow.value),
             method2: split.payment_method2,
-            amount2: split.amount2.toFixed(2),
+            amount2: formatMoney(split.amount2),
           }),
           life: 5000,
         });
@@ -2031,7 +1893,58 @@ const confirmDelete = () => {
   });
 };
 
+// A booking with payments isn't deleted (the server refuses: has_payments):
+// it's cancelled instead — kept, marked cancelled, and what was paid stays
+// the client's credit.
+// Opened after the current question has closed: it's asked from the delete
+// confirmation's accept, and PrimeVue hides the dialog right after that runs,
+// which would hide this one too.
+const offerCancelInstead = () => {
+  setTimeout(askCancelInstead, 0);
+};
+const askCancelInstead = () => {
+  confirm.require({
+    header: t("booking.hasPayments.header"),
+    message: t("booking.hasPayments.message"),
+    icon: "pi pi-exclamation-triangle",
+    acceptLabel: t("booking.hasPayments.accept"),
+    rejectLabel: t("booking.hasPayments.reject"),
+    acceptClass: "p-button-danger",
+    rejectClass: "p-button-outlined p-button-secondary",
+    accept: cancelInstead,
+  });
+};
+
+const cancelInstead = async () => {
+  try {
+    const result = await fetchOrQueue(`/api/v1/appointments/${form.value.id}/cancel`, "POST", {}, {
+      kind: "appointment",
+      label: `${t("booking.cancelAppt")} · ${selectedClient.value?.first_name || ""} ${selectedClient.value?.last_name || ""}`.trim(),
+    });
+    if (result.queued) {
+      toast.add({ severity: "warn", summary: t("booking.toast.savedOffline"), detail: t("booking.toast.savedOfflineDetail"), life: 4000 });
+    } else {
+      const data = await result.response.json().catch(() => ({}));
+      if (!result.response.ok) {
+        toast.add({ severity: "error", summary: t("booking.toast.deleteFailed"), detail: data.error || t("booking.toast.deleteFailedDetail"), life: 4000 });
+        return;
+      }
+      if (data.new_balance !== undefined && selectedClient.value) {
+        selectedClient.value.outstanding_balance = Number(data.new_balance);
+      }
+      toast.add({ severity: "success", summary: t("booking.toast.cancelledKeptPayments"), detail: t("booking.toast.cancelledKeptPaymentsDetail"), life: 5000 });
+    }
+    emit("save");
+    dialogVisible.value = false;
+  } catch (e) {
+    console.error(e);
+    toast.add({ severity: "error", summary: t("booking.toast.deleteFailed"), detail: t("booking.toast.networkError"), life: 4000 });
+  }
+};
+
 const executeDelete = async (scope: string) => {
+  // Payments already known here: don't even try to delete.
+  if (Number(form.value.deposit_amount || 0) !== 0) return offerCancelInstead();
   try {
     // Offline the deletion is queued (and the booking hidden right away).
     const result = await fetchOrQueue(`/api/v1/appointments/${form.value.id}?scope=${scope}`, "DELETE", undefined, {
@@ -2052,6 +1965,7 @@ const executeDelete = async (scope: string) => {
     const res = result.response;
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
+      if (data.error === "has_payments") return offerCancelInstead();
       toast.add({
         severity: "error",
         summary: t("booking.toast.deleteFailed"),
