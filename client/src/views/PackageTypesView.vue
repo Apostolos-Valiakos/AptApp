@@ -28,7 +28,7 @@
         <template #body="{ data }">{{ data.visits }}</template>
       </Column>
       <Column :header="t('packages.price')">
-        <template #body="{ data }">€{{ Number(data.price).toFixed(2) }}</template>
+        <template #body="{ data }">{{ formatMoney(data.price) }}</template>
       </Column>
       <Column :header="t('packages.validity')">
         <template #body="{ data }">
@@ -93,6 +93,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatMoney } from "../utils/format";
 import { ref, reactive, computed, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";

@@ -363,6 +363,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatMoney } from "../utils/format";
 import { ref, onMounted, computed, watch, h } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
@@ -418,8 +419,7 @@ const ServiceRowBody = (props: { service: any }, { emit }: any) =>
       formatDurationLabel(props.service.duration_minutes),
     ]),
     h("span", { class: "inline-flex items-center gap-1 text-sm font-medium text-gray-800 flex-shrink-0 w-20" }, [
-      h("i", { class: "pi pi-euro text-gray-400 text-xs" }),
-      Number(props.service.price).toFixed(2),
+      formatMoney(props.service.price),
     ]),
     h("i", {
       class: props.service.bookable_online
@@ -527,7 +527,7 @@ const comboSummary = computed(() => {
   const price = picked.reduce((sum: number, s: any) => sum + Number(s.price || 0), 0);
   return t("services.dialog.comboComponentsSummary", {
     minutes,
-    price: price.toFixed(2),
+    price: formatMoney(price),
   });
 });
 

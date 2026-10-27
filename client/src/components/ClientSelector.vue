@@ -86,6 +86,7 @@
 </template>
 
 <script setup lang="ts">
+import { api, ApiError } from "../api/http";
 import { ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
@@ -123,17 +124,15 @@ const searchClients = (event: { query: string }) => {
         clientSuggestions.value = await searchCachedClients(q, 10);
         return;
       }
-      const token = localStorage.getItem("token");
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 6000);
       try {
-        const res = await fetch(
-          `/api/v1/clients?slim=true&search=${encodeURIComponent(q)}&limit=10`,
-          { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal },
-        );
-        clientSuggestions.value = res.ok ? await res.json() : [];
-      } catch {
-        clientSuggestions.value = await searchCachedClients(q, 10);
+        clientSuggestions.value = await api.get(`/api/v1/clients?slim=true&search=${encodeURIComponent(q)}&limit=10`, {
+          signal: controller.signal,
+        });
+      } catch (err) {
+        // Refused by the server: no results. Not reached: the saved list.
+        clientSuggestions.value = err instanceof ApiError ? [] : await searchCachedClients(q, 10);
       } finally {
         clearTimeout(timer);
       }
@@ -155,12 +154,7 @@ const loadingWalkIn = ref(false);
 const pickWalkIn = async () => {
   loadingWalkIn.value = true;
   try {
-    const token = localStorage.getItem("token");
-    const res = await fetch("/api/v1/clients/walk-in", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error("Walk-in lookup failed");
-    const walkIn = await res.json();
+    const walkIn = await api.get("/api/v1/clients/walk-in");
     walkIn.full_name =
       walkIn.full_name || `${walkIn.first_name || ""} ${walkIn.last_name || ""}`.trim();
     emit("select", walkIn);

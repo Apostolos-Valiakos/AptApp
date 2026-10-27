@@ -39,7 +39,7 @@
       </div>
       <div v-if="selected" class="text-sm text-gray-600 bg-gray-50 rounded-lg p-3">
         {{ selected.visits }} × {{ selected.service_name }} —
-        <b>€{{ Number(selected.price).toFixed(2) }}</b>
+        <b>{{ formatMoney(selected.price) }}</b>
         <span v-if="selected.validity_days">
           · {{ t("packages.validFor", { n: selected.validity_days }) }}</span
         >
@@ -63,6 +63,8 @@
 </template>
 
 <script setup lang="ts">
+import { api, ApiError } from "../../api/http";
+import { formatMoney } from "../../utils/format";
 import { ref, computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
@@ -92,15 +94,11 @@ const saving = ref(false);
 const types = computed(() =>
   rawTypes.value.map((p) => ({
     ...p,
-    label: `${p.name} — €${Number(p.price).toFixed(2)}`,
+    label: `${p.name} — ${formatMoney(p.price)}`,
   })),
 );
 const selected = computed(() => types.value.find((p) => p.id === typeId.value));
 
-const headers = () => ({
-  "Content-Type": "application/json",
-  Authorization: `Bearer ${localStorage.getItem("token")}`,
-});
 
 watch(
   () => props.visible,
@@ -109,8 +107,7 @@ watch(
     typeId.value = null;
     method.value = "cash";
     try {
-      const res = await fetch("/api/v1/package-types", { headers: headers() });
-      if (res.ok) rawTypes.value = (await res.json()).filter((p: any) => p.is_active);
+      rawTypes.value = (await api.get("/api/v1/package-types")).filter((p: any) => p.is_active);
     } catch {
       rawTypes.value = [];
     }
@@ -130,13 +127,11 @@ const confirm = async () => {
   }
   saving.value = true;
   try {
-    const res = await fetch(`/api/v1/clients/${props.clientId}/packages`, {
-      method: "POST",
-      headers: headers(),
-      body: JSON.stringify({ package_type_id: typeId.value, payment_method: method.value }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || t("packages.failed"));
+    await api
+      .post(`/api/v1/clients/${props.clientId}/packages`, { package_type_id: typeId.value, payment_method: method.value })
+      .catch((e: ApiError) => {
+        throw new Error(e.data?.error || t("packages.failed"));
+      });
     toast.add({ severity: "success", summary: t("packages.sell.sold"), life: 2500 });
     visibleModel.value = false;
     emit("sold");

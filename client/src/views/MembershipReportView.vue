@@ -24,11 +24,11 @@
         </div>
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
           <div class="text-xs font-bold text-gray-400 uppercase">{{ t('membershipReport.mrr') }}</div>
-          <div class="text-3xl font-bold text-gray-900 mt-1">€{{ report.mrr_estimate.toFixed(2) }}</div>
+          <div class="text-3xl font-bold text-gray-900 mt-1">{{ formatMoney(report.mrr_estimate) }}</div>
         </div>
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
           <div class="text-xs font-bold text-gray-400 uppercase">{{ t('membershipReport.revenue') }}</div>
-          <div class="text-3xl font-bold text-gray-900 mt-1">€{{ report.membership_revenue.toFixed(2) }}</div>
+          <div class="text-3xl font-bold text-gray-900 mt-1">{{ formatMoney(report.membership_revenue) }}</div>
         </div>
       </div>
 
@@ -39,7 +39,7 @@
           <Column field="active_count" :header="t('membershipReport.activeMembers')"></Column>
           <Column field="paused_count" :header="t('membershipReport.pausedMembers')"></Column>
           <Column :header="t('membershipReport.monthlyPrice')">
-            <template #body="slotProps">€{{ Number(slotProps.data.monthly_price).toFixed(2) }}</template>
+            <template #body="slotProps">{{ formatMoney(slotProps.data.monthly_price) }}</template>
           </Column>
         </DataTable>
       </div>
@@ -76,6 +76,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatMoney } from "../utils/format";
 import { ref, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 

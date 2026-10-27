@@ -1,4 +1,5 @@
 import { defineStore } from "pinia";
+import { api } from "../api/http";
 import { ref, watch } from "vue";
 
 export const useSettingsStore = defineStore("settings", () => {
@@ -80,11 +81,8 @@ export const useSettingsStore = defineStore("settings", () => {
     if (shopSettings.value && !force) return shopSettings.value;
     if (shopSettingsPromise) return shopSettingsPromise;
 
-    const token = localStorage.getItem("token");
-    shopSettingsPromise = fetch("/api/v1/shop", {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((res) => res.json())
+    shopSettingsPromise = api
+      .get("/api/v1/shop")
       .then((data) => {
         shopSettings.value = data;
         return data;

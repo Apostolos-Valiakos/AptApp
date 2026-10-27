@@ -103,7 +103,8 @@ const ageDistribution = computed(() => {
   const total = props.clients.length;
   if (total === 0) return [];
 
-  const distribution = ageRanges.value.map((range) => {
+  type AgeBucket = { label: string; count: number; percentage: number; isUnknown: boolean; min: number | null; max: number | null };
+  const distribution: AgeBucket[] = ageRanges.value.map((range) => {
     const count = props.clients.filter((c: any) => {
       const age = calculateAge(c.date_of_birth);
       return age !== null && age >= range.min && age <= range.max;

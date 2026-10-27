@@ -5,7 +5,7 @@
 export const TEMP_PREFIX = "tmp-";
 
 export const newTempId = () =>
-  TEMP_PREFIX + (globalThis.crypto?.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
+  TEMP_PREFIX + (typeof globalThis.crypto?.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
 
 export const isTempId = (v: unknown): v is string => typeof v === "string" && v.startsWith(TEMP_PREFIX);
 

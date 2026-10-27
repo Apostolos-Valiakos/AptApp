@@ -267,7 +267,7 @@
               text
               rounded
               class="text-gray-500 hover:text-gray-700"
-              @click="$refs.fileInput.click()"
+              @click="fileInput?.click()"
             />
 
             <textarea
@@ -548,7 +548,7 @@ const formatTime = (timestamp: string) => {
   return date.toLocaleDateString("en-GB");
 };
 
-const formatFileSize = (bytes: number | undefined) => {
+const formatFileSize = (bytes: number | null | undefined) => {
   if (!bytes) return "0 B";
   const k = 1024;
   const sizes = ["B", "KB", "MB", "GB"];

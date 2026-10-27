@@ -19,7 +19,7 @@
 
     <TabView>
       <!-- ===== Recipes tab ===== -->
-      <TabPanel :header="t('productUsage.tabs.recipes')">
+      <TabPanel :value="0" :header="t('productUsage.tabs.recipes')">
         <div class="max-w-xl mb-6">
           <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('productUsage.selectService') }}</label>
           <Dropdown
@@ -117,7 +117,7 @@
       </TabPanel>
 
       <!-- ===== Stocktakes tab ===== -->
-      <TabPanel :header="t('productUsage.tabs.stocktakes')">
+      <TabPanel :value="1" :header="t('productUsage.tabs.stocktakes')">
         <div class="max-w-xl mb-6">
           <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('productUsage.product') }}</label>
           <Dropdown

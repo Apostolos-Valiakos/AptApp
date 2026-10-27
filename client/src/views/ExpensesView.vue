@@ -35,7 +35,7 @@
       <div class="flex justify-between items-baseline mb-4 flex-wrap gap-2">
         <span class="text-sm text-gray-500">{{ t("expenses.count", { n: visible.length }) }}</span>
         <span class="text-lg font-bold text-gray-900 tabular-nums">
-          {{ t("expenses.total") }}: €{{ visibleTotal.toFixed(2) }}
+          {{ t("expenses.total") }}: {{ formatMoney(visibleTotal) }}
         </span>
       </div>
 
@@ -62,7 +62,7 @@
           <template #body="{ data }">{{ t(`common.paymentMethod.${data.payment_method}`) }}</template>
         </Column>
         <Column field="amount" :header="t('expenses.amount')" sortable headerClass="text-right" bodyClass="text-right tabular-nums">
-          <template #body="{ data }">€{{ Number(data.amount).toFixed(2) }}</template>
+          <template #body="{ data }">{{ formatMoney(data.amount) }}</template>
         </Column>
         <Column>
           <template #body="{ data }">
@@ -107,6 +107,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatMoney } from "../utils/format";
 import { ref, reactive, computed, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
@@ -239,7 +240,7 @@ const save = async () => {
 const remove = (e: any) =>
   confirm.require({
     header: t("expenses.delete"),
-    message: t("expenses.deleteConfirm", { description: e.description, amount: Number(e.amount).toFixed(2) }),
+    message: t("expenses.deleteConfirm", { description: e.description, amount: formatMoney(e.amount) }),
     icon: "pi pi-exclamation-triangle",
     acceptClass: "p-button-danger",
     accept: async () => {

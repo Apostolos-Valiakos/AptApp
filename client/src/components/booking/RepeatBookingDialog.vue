@@ -59,6 +59,7 @@
 </template>
 
 <script setup lang="ts">
+import { api } from "../../api/http";
 import { ref, computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
@@ -161,15 +162,9 @@ const removeRow = (idx: number) => {
 const save = async () => {
   saving.value = true;
   try {
-    const token = localStorage.getItem("token");
-    const res = await fetch("/api/v1/appointments", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-        "Idempotency-Key": `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      },
-      body: JSON.stringify({
+    await api.post(
+      "/api/v1/appointments",
+      {
         client_id: props.clientId,
         status: "new",
         save_receipt: true,
@@ -183,9 +178,9 @@ const save = async () => {
         })),
         instance_starts: rows.value.map((r) => rowStart(r).toISOString()),
         allow_unavailable: true,
-      }),
-    });
-    if (!res.ok) throw new Error("Repeat failed");
+      },
+      { headers: { "Idempotency-Key": `${Date.now()}-${Math.random().toString(36).slice(2)}` } },
+    );
     toast.add({
       severity: "success",
       summary: t("common.success"),

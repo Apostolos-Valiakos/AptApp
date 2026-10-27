@@ -68,7 +68,7 @@
         <div class="text-xs text-amber-700">{{ t("packages.pending.label") }}</div>
       </div>
       <div class="flex items-center gap-2 flex-shrink-0">
-        <span class="font-bold text-amber-900">€{{ Number(p.price).toFixed(2) }}</span>
+        <span class="font-bold text-amber-900">{{ formatMoney(p.price) }}</span>
         <button type="button" class="text-amber-500 hover:text-amber-700" @click="removePending(idx)">
           <i class="pi pi-times"></i>
         </button>
@@ -85,6 +85,8 @@
 </template>
 
 <script setup lang="ts">
+import { api, ApiError } from "../../api/http";
+import { formatMoney } from "../../utils/format";
 import { ref, computed, watch, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
@@ -124,10 +126,6 @@ const packages = ref<any[]>([]);
 const showSell = ref(false);
 const busyId = ref<string | null>(null);
 
-const headers = () => ({
-  "Content-Type": "application/json",
-  Authorization: `Bearer ${localStorage.getItem("token")}`,
-});
 
 const load = async () => {
   if (!props.clientId) {
@@ -135,8 +133,7 @@ const load = async () => {
     return;
   }
   try {
-    const res = await fetch(`/api/v1/clients/${props.clientId}/packages`, { headers: headers() });
-    packages.value = res.ok ? await res.json() : [];
+    packages.value = await api.get(`/api/v1/clients/${props.clientId}/packages`);
   } catch {
     packages.value = [];
   }
@@ -168,13 +165,11 @@ const redeem = async (p: any) => {
   try {
     const apptId = await props.ensureSaved();
     if (!apptId) return;
-    const res = await fetch(`/api/v1/appointments/${apptId}/package-redemptions`, {
-      method: "POST",
-      headers: headers(),
-      body: JSON.stringify({ client_package_id: p.id }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || t("packages.failed"));
+    const data = await api
+      .post(`/api/v1/appointments/${apptId}/package-redemptions`, { client_package_id: p.id })
+      .catch((e: ApiError) => {
+        throw new Error(e.data?.error || t("packages.failed"));
+      });
     toast.add({ severity: "success", summary: t("packages.card.redeemed"), life: 2500 });
     emit("changed", data);
     await load();
@@ -187,9 +182,9 @@ const redeem = async (p: any) => {
 
 const undo = async (u: any) => {
   try {
-    const res = await fetch(`/api/v1/package-usage/${u.id}`, { method: "DELETE", headers: headers() });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || t("packages.failed"));
+    const data = await api.del(`/api/v1/package-usage/${u.id}`).catch((e: ApiError) => {
+      throw new Error(e.data?.error || t("packages.failed"));
+    });
     emit("changed", { ...data, amount: -Number(u.amount || 0), undo: true } as any);
     await load();
   } catch (e: any) {

@@ -8,7 +8,7 @@
     <div class="space-y-4">
       <div class="text-sm text-gray-600 bg-gray-50 rounded-lg p-3">
         {{ t("priceChange.currentTotal") }}:
-        <b>€{{ Number(currentTotal).toFixed(2) }}</b>
+        <b>{{ formatMoney(currentTotal) }}</b>
       </div>
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1">{{
@@ -48,6 +48,8 @@
 </template>
 
 <script setup lang="ts">
+import { api, ApiError } from "../../api/http";
+import { formatMoney } from "../../utils/format";
 import { ref, computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
@@ -92,10 +94,6 @@ const canSubmit = computed(
     reason.value.trim().length > 0,
 );
 
-const headers = () => ({
-  "Content-Type": "application/json",
-  Authorization: `Bearer ${localStorage.getItem("token")}`,
-});
 
 const confirm = async () => {
   let apptId = props.appointmentId;
@@ -104,16 +102,14 @@ const confirm = async () => {
 
   saving.value = true;
   try {
-    const res = await fetch(`/api/v1/appointments/${apptId}/price-change`, {
-      method: "POST",
-      headers: headers(),
-      body: JSON.stringify({
+    const data = await api
+      .post(`/api/v1/appointments/${apptId}/price-change`, {
         new_total: newTotal.value,
         reason: reason.value.trim(),
-      }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || t("priceChange.failed"));
+      })
+      .catch((e: ApiError) => {
+        throw new Error(e.data?.error || t("priceChange.failed"));
+      });
     toast.add({
       severity: "success",
       summary: t("priceChange.success"),

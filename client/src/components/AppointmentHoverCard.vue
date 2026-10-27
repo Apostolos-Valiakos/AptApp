@@ -70,6 +70,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatMoney } from "../utils/format";
 import { ref, computed, onMounted, nextTick, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
@@ -156,9 +157,9 @@ const paymentBadgeClass = computed(() =>
   isPaid.value ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700",
 );
 const paymentText = computed(() => {
-  const amount = Number(props.appointment.current_appt_total || 0).toFixed(2);
+  const amount = formatMoney(props.appointment.current_appt_total);
   const label = t(isPaid.value ? "scheduler.hoverCard.paid" : "scheduler.hoverCard.unpaid");
-  return `${label} ${amount} €`;
+  return `${label} ${amount}`;
 });
 
 const bookedOnText = computed(() => {

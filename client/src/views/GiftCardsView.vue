@@ -51,7 +51,7 @@
         field="initial_amount"
       >
         <template #body="slotProps">
-          €{{ Number(slotProps.data.initial_amount).toFixed(2) }}
+          {{ formatMoney(slotProps.data.initial_amount) }}
         </template>
       </Column>
 
@@ -62,7 +62,7 @@
         field="remaining_balance"
       >
         <template #body="slotProps">
-          €{{ Number(slotProps.data.remaining_balance).toFixed(2) }}
+          {{ formatMoney(slotProps.data.remaining_balance) }}
         </template>
       </Column>
 
@@ -192,6 +192,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatMoney } from "../utils/format";
 import { ref, computed, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";

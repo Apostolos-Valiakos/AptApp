@@ -62,7 +62,7 @@
           class="font-bold"
           :class="result.outstanding_balance > 0 ? 'text-red-600' : 'text-emerald-600'"
         >
-          €{{ Number(result.outstanding_balance).toFixed(2) }}
+          {{ formatMoney(result.outstanding_balance) }}
         </span>
       </div>
 
@@ -140,6 +140,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatMoney } from "../utils/format";
 import { ref, onUnmounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";

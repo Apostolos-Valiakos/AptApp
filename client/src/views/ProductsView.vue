@@ -67,7 +67,7 @@
                   {{ variation.variation_name || t('products.table.standard') }}
                 </span>
                 <span class="text-xs text-gray-500">
-                  {{ t('products.table.price') }}: {{ variation.price }}€
+                  {{ t('products.table.price') }}: {{ formatMoney(variation.price) }}
                 </span>
               </div>
 
@@ -249,6 +249,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatMoney } from "../utils/format";
 import { ref, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";

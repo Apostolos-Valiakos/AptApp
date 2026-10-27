@@ -393,7 +393,7 @@ const token = localStorage.getItem("token");
 
 // NEW: State for the Profile Dialog
 const profileVisible = ref(false);
-const selectedClientId = ref(null);
+const selectedClientId = ref<string | null>(null);
 
 const editingClient = ref<any>({
   id: null,
@@ -561,8 +561,8 @@ const addCustomField = () => {
   editingClient.value.custom_fields.push({ title: "", value: "" });
 };
 
-const removeCustomField = (index: number) => {
-  editingClient.value.custom_fields.splice(index, 1);
+const removeCustomField = (index: number | string) => {
+  editingClient.value.custom_fields.splice(Number(index), 1);
 };
 
 // Save logic (Only for Creation now)
