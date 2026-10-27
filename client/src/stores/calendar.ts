@@ -11,22 +11,14 @@ import {
   pruneCachedAppointments,
 } from "../offline/localData";
 import { idMap, pendingWrites } from "../offline/queue";
+import { api } from "../api/http";
 
 // Offline mode: everything loaded here is also kept in the browser (see
 // offline/localData.ts), so the calendar opens and works without a
 // connection; changes waiting to sync are drawn on top (offline/overlay.ts).
 
-const authHeaders = () => ({
-  Authorization: `Bearer ${localStorage.getItem("token")}`,
-  "Content-Type": "application/json",
-});
-
-/** GET that throws on network failure and on an error status. */
-const getJson = async (url: string) => {
-  const res = await fetch(url, { headers: authHeaders() });
-  if (!res.ok) throw Object.assign(new Error(`HTTP ${res.status}`), { status: res.status });
-  return res.json();
-};
+/** GET that throws on network failure, and ApiError (with .status) on a refusal. */
+const getJson = (url: string) => api.get(url);
 
 const PREFETCH_DAYS_BACK = 7;
 const PREFETCH_DAYS_AHEAD = 30;
@@ -170,20 +162,12 @@ export const useCalendarStore = defineStore("calendar", () => {
   const updateResourceOrder = async (reorderedStaff: any[]) => {
     resources.value = reorderedStaff;
 
-    const token = localStorage.getItem("token");
     try {
-      await fetch("/api/v1/staff/reorder", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          orders: reorderedStaff.map((s, index) => ({
-            id: s.id,
-            sort_order: index,
-          })),
-        }),
+      await api.post("/api/v1/staff/reorder", {
+        orders: reorderedStaff.map((s, index) => ({
+          id: s.id,
+          sort_order: index,
+        })),
       });
     } catch (err) {
       console.error("Failed to save staff order", err);

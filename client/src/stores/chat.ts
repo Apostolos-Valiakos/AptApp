@@ -252,6 +252,11 @@ export const useChatStore = defineStore("chat", () => {
       useSettingsStore().setCashLockedByShop(false);
     });
 
+    // Another screen changed bookings or payments: the scheduler reloads.
+    socket.value.on("appointments:changed", () => {
+      window.dispatchEvent(new CustomEvent("appointments-changed"));
+    });
+
     socket.value.on("card:filter:set", ({ hidden }: { hidden: boolean }) => {
       remoteHideCard.value = hidden;
       cardLocked.value = hidden;

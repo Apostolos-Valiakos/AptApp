@@ -395,7 +395,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch, computed, nextTick } from "vue";
+import { ref, onMounted, onUnmounted, watch, computed, nextTick } from "vue";
 import FullCalendar from "@fullcalendar/vue3";
 import resourceTimeGridPlugin from "@fullcalendar/resource-timegrid";
 import scrollGridPlugin from "@fullcalendar/scrollgrid";
@@ -431,6 +431,7 @@ import {
   overtimeConfirmMessage,
 } from "../utils/staffAvailability";
 import { displayServiceName } from "../utils/serviceVariations";
+import { api as http, ApiError } from "../api/http"; // (`api` in this file is FullCalendar's)
 import { fetchOrQueue } from "../offline/queue";
 import { knownOverlapIds } from "../offline/overlaps";
 import { isTempId } from "../offline/tempIds";
@@ -583,7 +584,7 @@ const toggleFitStaff = () => {
 
 // --- Status filter ---
 const statusFilter = ref<"all" | "active" | "cancelled">("all");
-const statusFilterOptions = [
+const statusFilterOptions: { label: string; value: "all" | "active" | "cancelled"; icon: string }[] = [
   { label: "All", value: "all", icon: "" },
   { label: "Active", value: "active", icon: "pi pi-check-circle" },
   { label: "Cancelled", value: "cancelled", icon: "pi pi-times-circle" },
@@ -608,16 +609,11 @@ const handleSwap = async (swapData: {
   appointment2_id: number;
 }) => {
   try {
-    const res = await fetch("/api/v1/appointments/swap", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(swapData),
+    // (This request used to go without the login token, so the server
+    // always refused it.)
+    const data = await http.post("/api/v1/appointments/swap", swapData).catch((e: ApiError) => {
+      throw new Error(e.data?.error || "Swap failed");
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || "Swap failed");
-    }
-    const data = await res.json();
     if (!data.success) throw new Error(t("scheduler.toasts.swapFailedError"));
 
     swapDialogVisible.value = false;
@@ -1418,6 +1414,36 @@ const clearLinkedHighlight = () => {
 };
 
 // --- Calendar Options ---
+// Ctrl (or ⌘) + drag moves all of an appointment's cards together. While
+// dragging with it held, the other cards of that appointment are outlined.
+// FullCalendar won't start a drag when Ctrl is held on pressing (it keeps
+// Ctrl-click for the Mac context menu), so a Ctrl + press on a card is
+// remembered here and handed on without Ctrl (see onCardMouseDown).
+let moveTogetherArmed = false;
+const isMoveTogether = (e: MouseEvent | undefined) => moveTogetherArmed || !!(e?.ctrlKey || e?.metaKey);
+let moveTogetherId: string | null = null;
+const markMoveTogether = (on: boolean) => {
+  if (!moveTogetherId) return;
+  document
+    .querySelectorAll(`.fc-event[data-appointment-id="${CSS.escape(moveTogetherId)}"]`)
+    .forEach((el) => el.classList.toggle("fc-move-together", on));
+};
+const onMoveTogetherKey = (e: KeyboardEvent) => markMoveTogether(isMoveTogether(e as unknown as MouseEvent));
+const startMoveTogetherHint = (appointmentId: string | undefined) => {
+  moveTogetherId = appointmentId ? String(appointmentId) : null;
+  markMoveTogether(moveTogetherArmed);
+  window.addEventListener("keydown", onMoveTogetherKey);
+  window.addEventListener("keyup", onMoveTogetherKey);
+};
+const stopMoveTogetherHint = () => {
+  markMoveTogether(false);
+  moveTogetherId = null;
+  // Cleared after eventDrop has read it (it runs right after this).
+  setTimeout(() => (moveTogetherArmed = false));
+  window.removeEventListener("keydown", onMoveTogetherKey);
+  window.removeEventListener("keyup", onMoveTogetherKey);
+};
+
 const calendarOptions = ref({
   schedulerLicenseKey: "CC-Attribution-NonCommercial-NoDerivatives",
   longPressDelay: 350,
@@ -1729,13 +1755,15 @@ const calendarOptions = ref({
     if (apptId) info.el.dataset.appointmentId = apptId; // used by the browser tests
   },
 
-  eventDragStart: () => {
+  eventDragStart: (info: any) => {
     dragInProgress = true;
     hideHoverCard();
+    startMoveTogetherHint(info.event.extendedProps?.appointmentId);
   },
   eventDragStop: () => {
     dragInProgress = false;
     hideHoverCard();
+    stopMoveTogetherHint();
     setTimeout(() => setSnapMinutes(SLOT_MINUTES));
   },
   eventResizeStart: () => {
@@ -1810,25 +1838,39 @@ const calendarOptions = ref({
     let services = prepareServicesForUpdate(
       JSON.parse(JSON.stringify(fullAppointment.services)),
     );
-    if (services[serviceIndex]) {
+    // Ctrl (⌘ on a Mac) held when dropping: every card of this appointment
+    // moves by the same time, and all to the column it was dropped in.
+    const moveAll = isMoveTogether(info.jsEvent) && services.length > 1;
+    if (moveAll) {
+      const shift = start - info.oldEvent.start.getTime();
+      services = services.map((s: any) => ({
+        ...s,
+        start_time: new Date(new Date(s.start_time).getTime() + shift).toISOString(),
+        ...(newResourceId ? { staff_id: newResourceId } : {}),
+      }));
+    } else if (services[serviceIndex]) {
       services[serviceIndex].start_time = info.event.start.toISOString();
       services[serviceIndex].duration_minutes = (end - start) / 60000;
       services[serviceIndex].duration_override = (end - start) / 60000;
       if (newResourceId) services[serviceIndex].staff_id = newResourceId;
     }
-    const overtime = overtimeEntryFor(
-      services[serviceIndex]?.staff_id,
-      info.event.start,
-      info.event.end,
-    );
-    if (!(await confirmMove(fullAppointment.services, services, overtime ? [overtime] : []))) {
+    const overtime = (moveAll ? services : [services[serviceIndex]])
+      .map((s: any) => {
+        if (!s) return null;
+        const from = new Date(s.start_time);
+        const to = new Date(from.getTime() + (Number(s.duration_override) || 60) * 60000);
+        return overtimeEntryFor(s.staff_id, from, to);
+      })
+      .filter((o: OvertimeEntry | null, i: number, all: (OvertimeEntry | null)[]): o is OvertimeEntry =>
+        !!o && all.findIndex((x) => x?.name === o.name) === i);
+    if (!(await confirmMove(fullAppointment.services, services, overtime))) {
       info.revert();
       return;
     }
     const ok = await updateAppointment(appointmentId, {
       ...fullAppointment,
       services,
-      allow_overtime: !!overtime,
+      allow_overtime: overtime.length > 0,
     });
     if (!ok) info.revert();
   },
@@ -1914,6 +1956,76 @@ watch(
   { deep: true },
 );
 
+// Live updates: bookings changed on another screen (see "appointments:changed"
+// in server.js). Reloads the visible range after a short pause, so a burst of
+// changes is one reload; not mid-drag, and not while the tab is hidden (then
+// on return).
+const LIVE_RELOAD_DELAY_MS = 700;
+let liveReloadTimer: ReturnType<typeof setTimeout> | null = null;
+let liveReloadPending = false;
+const liveReload = () => {
+  if (liveReloadTimer) clearTimeout(liveReloadTimer);
+  liveReloadTimer = setTimeout(() => {
+    liveReloadTimer = null;
+    if (dragInProgress || document.hidden) {
+      liveReloadPending = true;
+      if (dragInProgress) liveReload(); // try again once the drag is over
+      return;
+    }
+    liveReloadPending = false;
+    calendarStore.refreshVisibleRange();
+  }, LIVE_RELOAD_DELAY_MS);
+};
+const onVisibleAgain = () => {
+  if (!document.hidden && liveReloadPending) liveReload();
+};
+// Ctrl + press on a card (before FullCalendar sees it): note it, and pass the
+// same press on without Ctrl so the drag starts.
+const onCardMouseDown = (e: MouseEvent) => {
+  if (!e.ctrlKey || e.button !== 0 || !(e.target as HTMLElement)?.closest?.(".fc-event")) return;
+  moveTogetherArmed = true;
+  e.stopImmediatePropagation();
+  e.preventDefault();
+  e.target!.dispatchEvent(
+    new MouseEvent("mousedown", {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+      button: 0,
+      buttons: 1,
+      clientX: e.clientX,
+      clientY: e.clientY,
+      screenX: e.screenX,
+      screenY: e.screenY,
+      shiftKey: e.shiftKey,
+      altKey: e.altKey,
+      metaKey: e.metaKey,
+      ctrlKey: false,
+    }),
+  );
+};
+// A Ctrl + press that didn't become a drag (just a click) mustn't count later.
+const disarmMoveTogether = () => {
+  if (!dragInProgress) setTimeout(() => (moveTogetherArmed = false), 0);
+};
+onMounted(() => {
+  document.addEventListener("mousedown", onCardMouseDown, true);
+  document.addEventListener("mouseup", disarmMoveTogether, true);
+});
+onUnmounted(() => {
+  document.removeEventListener("mousedown", onCardMouseDown, true);
+  document.removeEventListener("mouseup", disarmMoveTogether, true);
+});
+onMounted(() => {
+  window.addEventListener("appointments-changed", liveReload);
+  document.addEventListener("visibilitychange", onVisibleAgain);
+});
+onUnmounted(() => {
+  window.removeEventListener("appointments-changed", liveReload);
+  document.removeEventListener("visibilitychange", onVisibleAgain);
+  if (liveReloadTimer) clearTimeout(liveReloadTimer);
+});
+
 onMounted(async () => {
   await calendarStore.fetchBaseResources();
   nextTick(async () => {
@@ -1923,11 +2035,8 @@ onMounted(async () => {
     const token = localStorage.getItem("token");
     if (token) {
       try {
-        const res = await fetch("/api/v1/shop", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (res.ok) {
-          const shop = await res.json();
+        const shop = await http.get("/api/v1/shop").catch(() => null);
+        if (shop) {
           if (shop.slot_min_time)
             shopSlotMinTime.value = shop.slot_min_time + ":00";
           if (shop.slot_max_time)
@@ -1949,6 +2058,12 @@ onMounted(async () => {
 </script>
 
 <style>
+/* Ctrl + drag: the appointment's other cards, which move along. */
+.fc-v-event.fc-move-together {
+  outline: 2px dashed var(--p-primary-color);
+  outline-offset: 1px;
+}
+
 /* Docked date calendar: fills its column, no frame, no sideways scroll. */
 .docked-date-picker .p-datepicker,
 .docked-date-picker .p-datepicker-panel {
