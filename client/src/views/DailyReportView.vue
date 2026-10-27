@@ -11,14 +11,14 @@
     <div v-if="data" class="grid grid-cols-1 sm:grid-cols-3 gap-4">
       <div class="bg-gradient-to-br from-gray-900 to-gray-800 text-white rounded-2xl p-6 sm:col-span-1">
         <div class="text-xs uppercase tracking-wider opacity-70 font-bold">{{ t("dailyReport.collected") }}</div>
-        <div class="text-4xl font-extrabold mt-1">€{{ data.total_collected.toFixed(2) }}</div>
+        <div class="text-4xl font-extrabold mt-1">{{ formatMoney(data.total_collected) }}</div>
       </div>
       <div class="bg-white border border-gray-100 rounded-2xl p-6 shadow-sm">
         <div class="text-xs uppercase tracking-wider text-gray-400 font-bold mb-2">{{ t("dailyReport.byMethod") }}</div>
         <div v-if="!data.by_method.length" class="text-sm text-gray-400">—</div>
         <div v-for="m in data.by_method" :key="m.method" class="flex justify-between text-sm py-0.5">
           <span class="text-gray-600 capitalize">{{ m.method }}</span>
-          <span class="font-semibold">€{{ m.amount.toFixed(2) }}</span>
+          <span class="font-semibold">{{ formatMoney(m.amount) }}</span>
         </div>
       </div>
       <div class="bg-white border border-gray-100 rounded-2xl p-6 shadow-sm">
@@ -61,9 +61,9 @@
                 </div>
               </td>
               <td class="py-2 pr-3">{{ statusLabel(a.status) }}</td>
-              <td class="py-2 pr-3 text-right">€{{ a.total_cost.toFixed(2) }}</td>
+              <td class="py-2 pr-3 text-right">{{ formatMoney(a.total_cost) }}</td>
               <td class="py-2 text-right" :class="a.paid + 0.01 < a.total_cost ? 'text-amber-600 font-semibold' : 'text-emerald-600'">
-                €{{ a.paid.toFixed(2) }}
+                {{ formatMoney(a.paid) }}
               </td>
             </tr>
           </tbody>
@@ -89,7 +89,7 @@
               <td class="py-2 pr-3 whitespace-nowrap">{{ fmtTime(p.created_at) }}</td>
               <td class="py-2 pr-3">{{ [p.first_name, p.last_name].filter(Boolean).join(" ") || "—" }}</td>
               <td class="py-2 pr-3 capitalize">{{ p.payment_method }}<span v-if="p.transaction_type && p.transaction_type.endsWith('_sale')" class="text-gray-400"> · {{ p.transaction_type.replace("_", " ") }}</span></td>
-              <td class="py-2 text-right font-semibold">€{{ Number(p.amount).toFixed(2) }}</td>
+              <td class="py-2 text-right font-semibold">{{ formatMoney(p.amount) }}</td>
             </tr>
           </tbody>
         </table>
@@ -99,6 +99,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatMoney } from "../utils/format";
 import { ref, computed, onMounted, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";

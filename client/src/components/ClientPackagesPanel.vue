@@ -56,7 +56,7 @@
           <span>{{ t("packages.card.bought") }}: {{ fmtDate(p.purchased_at) }}</span>
           <span v-if="p.expires_at">{{ t("packages.card.expires") }}: {{ fmtDate(p.expires_at) }}</span>
           <span v-else>{{ t("packages.neverExpires") }}</span>
-          <span>€{{ Number(p.price_paid).toFixed(2) }}</span>
+          <span>{{ formatMoney(p.price_paid) }}</span>
         </div>
         <p v-if="p.note && !portal" class="text-xs text-gray-500 mt-1 italic">{{ p.note }}</p>
 
@@ -114,6 +114,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatMoney } from "../utils/format";
 import { ref, reactive, computed, onMounted, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";

@@ -1,4 +1,5 @@
 import { defineStore } from "pinia";
+import { api } from "../api/http";
 import { palette } from "@primeuix/themes";
 
 export const useThemeStore = defineStore("theme", {
@@ -32,19 +33,9 @@ export const useThemeStore = defineStore("theme", {
         const token = localStorage.getItem("token");
         if (!token) return; // If no token, keep default
 
-        const response = await fetch("/api/v1/shop", {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          if (data && data.primary_color) {
-            this.applyTheme(data.primary_color);
-          }
+        const data = await api.get("/api/v1/shop");
+        if (data && data.primary_color) {
+          this.applyTheme(data.primary_color);
         }
       } catch (error) {
         console.error("Failed to fetch theme:", error);
@@ -56,19 +47,7 @@ export const useThemeStore = defineStore("theme", {
       this.applyTheme(newColor);
 
       try {
-        const token = localStorage.getItem("token"); // or access_token
-        const response = await fetch("/api/v1/shop/theme", {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ primaryColor: newColor }),
-        });
-
-        if (!response.ok) {
-          throw new Error("Failed to save theme");
-        }
+        await api.put("/api/v1/shop/theme", { primaryColor: newColor });
 
         // Success! (No action needed, UI is already updated)
       } catch (error) {

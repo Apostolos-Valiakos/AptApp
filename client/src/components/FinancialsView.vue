@@ -95,7 +95,7 @@
         </div>
         <Skeleton v-if="loading" height="2.25rem" width="60%" />
         <div v-else class="text-3xl font-bold text-gray-900">
-          €{{ formatCurrency(finances.total_sales) }}
+          {{ formatMoney(finances.total_sales) }}
         </div>
         <p class="text-xs text-gray-400 mt-2">
           {{ t("analytics.kpi.totalSalesNote") }} ({{
@@ -124,7 +124,7 @@
         </div>
         <Skeleton v-if="loading" height="2.25rem" width="60%" />
         <div v-else class="text-3xl font-bold text-gray-900">
-          €{{ formatCurrency(finances.collected_today) }}
+          {{ formatMoney(finances.collected_today) }}
         </div>
         <p class="text-xs text-gray-400 mt-2">
           {{ t("analytics.kpi.collectedTodayNote") }}
@@ -150,7 +150,7 @@
         </div>
         <Skeleton v-if="loading" height="2.25rem" width="60%" />
         <div v-else class="text-3xl font-bold text-gray-900">
-          €{{ formatCurrency(finances.total_debt) }}
+          {{ formatMoney(finances.total_debt) }}
         </div>
         <p class="text-xs text-gray-400 mt-2">
           {{ t("analytics.kpi.totalDebtNote") }}
@@ -224,7 +224,7 @@
             </h4>
             <Skeleton v-if="loading" height="1.75rem" width="6rem" />
             <div v-else class="text-2xl font-bold text-gray-800">
-              €{{ formatCurrency(finances.total_payments) }}
+              {{ formatMoney(finances.total_payments) }}
             </div>
             <div class="text-xs text-gray-400 mt-1">
               {{ t("analytics.kpi.periodPaymentsNote") }}
@@ -247,7 +247,7 @@
             </h4>
             <Skeleton v-if="loading" height="1.75rem" width="6rem" />
             <div v-else class="text-2xl font-bold text-gray-800">
-              €{{ formatCurrency(finances.total_expenses) }}
+              {{ formatMoney(finances.total_expenses) }}
             </div>
             <div class="text-xs text-gray-400 mt-1">
               {{ t("analytics.kpi.periodExpensesNote") }}
@@ -272,7 +272,7 @@
               class="text-2xl font-bold"
               :class="finances.net_profit < 0 ? 'text-red-600' : 'text-gray-800'"
             >
-              {{ finances.net_profit < 0 ? "−" : "" }}€{{ formatCurrency(Math.abs(finances.net_profit)) }}
+              {{ finances.net_profit < 0 ? "−" : "" }}{{ formatMoney(Math.abs(finances.net_profit)) }}
             </div>
             <div class="text-xs text-gray-400 mt-1">
               {{ t("analytics.kpi.netProfitNote") }}
@@ -288,7 +288,7 @@
     <!-- Tab Section -->
     <TabView class="bg-white rounded-2xl shadow-sm border border-gray-100 p-2">
       <!-- Tab: Client Demographics -->
-      <TabPanel :header="t('analytics.tabs.demographics')">
+      <TabPanel :value="0" :header="t('analytics.tabs.demographics')">
         <div class="p-6 max-w-7xl mx-auto">
           <div class="grid grid-cols-1 gap-6 mb-8">
             <div
@@ -352,9 +352,7 @@
                         : ''
                     "
                   >
-                    €{{
-                      formatCurrency(slotProps.data.outstanding_balance || 0)
-                    }}
+                    {{ formatMoney(slotProps.data.outstanding_balance || 0) }}
                   </span>
                 </template>
               </Column>
@@ -380,7 +378,7 @@
       </TabPanel>
 
       <!-- Tab: Service Performance (All Statuses) -->
-      <TabPanel :header="t('analytics.tabs.servicePerformance')">
+      <TabPanel :value="1" :header="t('analytics.tabs.servicePerformance')">
         <DataTable
           :value="serviceSummaryReport"
           responsiveLayout="scroll"
@@ -413,7 +411,7 @@
           >
             <template #body="slotProps">
               <span class="text-green-700 font-bold"
-                >€{{ formatCurrency(slotProps.data.total_paid) }}</span
+                >{{ formatMoney(slotProps.data.total_paid) }}</span
               >
             </template>
           </Column>
@@ -430,7 +428,7 @@
                     : 'text-gray-400'
                 "
               >
-                €{{ formatCurrency(slotProps.data.total_owed) }}
+                {{ formatMoney(slotProps.data.total_owed) }}
               </span>
             </template>
           </Column>
@@ -441,7 +439,7 @@
           >
             <template #body="slotProps">
               <span class="text-gray-600 italic"
-                >€{{ formatCurrency(slotProps.data.total_value) }}</span
+                >{{ formatMoney(slotProps.data.total_value) }}</span
               >
             </template>
           </Column>
@@ -452,7 +450,7 @@
       </TabPanel>
 
       <!-- Tab: Sales by Service -->
-      <TabPanel :header="t('analytics.tabs.sales')">
+      <TabPanel :value="2" :header="t('analytics.tabs.sales')">
         <!-- Pie Chart -->
         <div
           class="mb-6 bg-white rounded-xl border border-gray-100 p-4"
@@ -487,14 +485,14 @@
             sortable
           >
             <template #body="slotProps">
-              €{{ formatCurrency(slotProps.data.total_revenue) }}
+              {{ formatMoney(slotProps.data.total_revenue) }}
             </template>
           </Column>
         </DataTable>
       </TabPanel>
 
       <!-- Tab: Products -->
-      <TabPanel :header="t('analytics.tabs.products')">
+      <TabPanel :value="3" :header="t('analytics.tabs.products')">
         <!-- Summary cards -->
         <div class="grid grid-cols-2 gap-4 mb-6">
           <div class="bg-white rounded-xl border border-gray-100 p-5">
@@ -504,7 +502,7 @@
               {{ t("analytics.products.totalRevenue") }}
             </div>
             <div class="text-2xl font-black text-gray-900">
-              €{{ formatCurrency(productsSummary.total_revenue) }}
+              {{ formatMoney(productsSummary.total_revenue) }}
             </div>
           </div>
           <div class="bg-white rounded-xl border border-gray-100 p-5">
@@ -551,7 +549,7 @@
             sortable
           >
             <template #body="slotProps">
-              €{{ formatCurrency(slotProps.data.total_revenue) }}
+              {{ formatMoney(slotProps.data.total_revenue) }}
             </template>
           </Column>
           <Column
@@ -576,7 +574,7 @@
       </TabPanel>
 
       <!-- Tab: Product Usage -->
-      <TabPanel :header="t('analytics.tabs.productUsage')">
+      <TabPanel :value="4" :header="t('analytics.tabs.productUsage')">
         <div class="flex justify-end mb-4">
           <router-link to="/app/product-usage" class="text-sm text-[var(--p-primary-600)] hover:underline flex items-center gap-1">
             <i class="pi pi-cog text-xs"></i>
@@ -639,14 +637,14 @@
       </TabPanel>
 
       <!-- Tab: Gift Cards -->
-      <TabPanel :header="t('analytics.tabs.giftCards')">
+      <TabPanel :value="5" :header="t('analytics.tabs.giftCards')">
         <div class="grid grid-cols-3 gap-4 mb-6">
           <div class="bg-white rounded-xl border border-gray-100 p-5">
             <div class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">
               {{ t("analytics.giftCards.totalRevenue") }}
             </div>
             <div class="text-2xl font-black text-gray-900">
-              €{{ formatCurrency(giftCardsSummary.total_revenue) }}
+              {{ formatMoney(giftCardsSummary.total_revenue) }}
             </div>
           </div>
           <div class="bg-white rounded-xl border border-gray-100 p-5">
@@ -654,7 +652,7 @@
               {{ t("analytics.giftCards.totalOutstanding") }}
             </div>
             <div class="text-2xl font-black text-gray-900">
-              €{{ formatCurrency(giftCardsSummary.total_outstanding) }}
+              {{ formatMoney(giftCardsSummary.total_outstanding) }}
             </div>
           </div>
           <div class="bg-white rounded-xl border border-gray-100 p-5">
@@ -683,12 +681,12 @@
           <Column field="customer_name" :header="t('giftCards.table.customer')" sortable></Column>
           <Column field="initial_amount" :header="t('giftCards.table.initialAmount')" sortable>
             <template #body="slotProps">
-              €{{ formatCurrency(slotProps.data.initial_amount) }}
+              {{ formatMoney(slotProps.data.initial_amount) }}
             </template>
           </Column>
           <Column field="remaining_balance" :header="t('giftCards.table.remainingBalance')" sortable>
             <template #body="slotProps">
-              €{{ formatCurrency(slotProps.data.remaining_balance) }}
+              {{ formatMoney(slotProps.data.remaining_balance) }}
             </template>
           </Column>
           <Column field="issued_at" :header="t('giftCards.table.issued')" sortable>
@@ -700,7 +698,7 @@
       </TabPanel>
 
       <!-- Tab: Staff Performance -->
-      <TabPanel :header="t('analytics.tabs.staffPerformance')">
+      <TabPanel :value="6" :header="t('analytics.tabs.staffPerformance')">
         <!-- Bar Chart -->
         <div
           class="mb-6 bg-white rounded-xl border border-gray-100 p-4"
@@ -743,7 +741,7 @@
             field="avg_per_day"
             :header="t('analytics.tables.avgPerDay')"
             sortable
-            :sortField="(row) => Number(row.avg_per_day || 0)"
+            :sortField="numericSort('avg_per_day')"
           >
             <template #body="slotProps">
               <span v-tooltip.top="`${slotProps.data.appt_count} ÷ ${slotProps.data.days_worked}`">
@@ -766,14 +764,14 @@
             sortable
           >
             <template #body="slotProps">
-              €{{ formatCurrency(slotProps.data.total_revenue || 0) }}
+              {{ formatMoney(slotProps.data.total_revenue || 0) }}
             </template>
           </Column>
         </DataTable>
       </TabPanel>
 
       <!-- Tab: Payments Log -->
-      <TabPanel :header="t('analytics.tabs.paymentsLog')">
+      <TabPanel :value="7" :header="t('analytics.tabs.paymentsLog')">
         <!-- Revenue Over Time Chart -->
         <div
           class="mb-6 bg-white rounded-xl border border-gray-100 p-4"
@@ -880,7 +878,7 @@
             <template #body="slotProps">
               <span
                 :class="Number(slotProps.data.amount) < 0 ? 'font-bold text-red-700' : 'font-bold text-green-700'"
-                >{{ Number(slotProps.data.amount) < 0 ? '−' : '+' }}€{{ formatCurrency(Math.abs(slotProps.data.amount)) }}</span
+                >{{ Number(slotProps.data.amount) < 0 ? '−' : '+' }}{{ formatMoney(Math.abs(slotProps.data.amount)) }}</span
               >
             </template>
           </Column>
@@ -927,12 +925,12 @@
           </Column>
           <Column :header="t('analytics.tables.oldTotal')">
             <template #body="slotProps">
-              €{{ formatCurrency(slotProps.data.old_total) }}
+              {{ formatMoney(slotProps.data.old_total) }}
             </template>
           </Column>
           <Column :header="t('analytics.tables.newTotal')">
             <template #body="slotProps">
-              <b>€{{ formatCurrency(slotProps.data.new_total) }}</b>
+              <b>{{ formatMoney(slotProps.data.new_total) }}</b>
             </template>
           </Column>
         </DataTable>
@@ -942,6 +940,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatMoney } from "../utils/format";
 import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
@@ -951,6 +950,10 @@ import TabPanel from "primevue/tabpanel";
 import Skeleton from "primevue/skeleton";
 import ClientDemographics from "./ClientDemographics.vue";
 import { useSettingsStore } from "../stores/settings";
+
+// Sorts a column by a number field. DataTable compares whatever this returns;
+// its types only allow a string, hence the cast.
+const numericSort = (key: string) => ((row: any) => Number(row[key] || 0)) as unknown as (item: any) => string;
 
 const { t } = useI18n();
 const router = useRouter();
@@ -1008,12 +1011,6 @@ const openAgeGroupDialog = (data: any) => {
   displayGroupDialog.value = true;
 };
 
-const formatCurrency = (val: any) => {
-  return Number(val).toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-};
 
 const formatDate = (d: Date | null) => {
   if (!d) return "";

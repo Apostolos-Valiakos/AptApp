@@ -13,13 +13,24 @@
             class="flex items-center gap-1.5 text-lg font-bold text-gray-900 select-none"
           >
             {{ mobileMonthTitle }}
-            <i class="pi pi-chevron-down text-xs text-gray-400"></i>
+            <i v-if="!calendarDocked" class="pi pi-chevron-down text-xs text-gray-400"></i>
           </button>
           <div
             v-if="showDatePicker"
             @click.stop
             class="absolute top-full left-0 mt-2 z-50 bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden"
           >
+            <div class="flex justify-end px-2 pt-2">
+              <button
+                @click="dockCalendar(true)"
+                class="w-7 h-7 rounded-md flex items-center justify-center text-gray-400 hover:text-[var(--p-primary-600)] hover:bg-[var(--p-primary-50)]"
+                v-tooltip.bottom="t('scheduler.dockCalendar')"
+                :aria-label="t('scheduler.dockCalendar')"
+                data-testid="dock-calendar"
+              >
+                <i class="pi pi-thumbtack text-sm"></i>
+              </button>
+            </div>
             <DatePicker
               inline
               v-model="pickerDate"
@@ -83,13 +94,24 @@
             class="flex items-center gap-1 text-sm md:text-base font-bold text-gray-800 min-w-[120px] md:min-w-[180px] select-none hover:text-[var(--p-primary-700)] transition-colors"
           >
             {{ currentTitle }}
-            <i class="pi pi-chevron-down text-[10px] text-gray-400"></i>
+            <i v-if="!calendarDocked" class="pi pi-chevron-down text-[10px] text-gray-400"></i>
           </button>
           <div
             v-if="showDatePicker"
             @click.stop
             class="absolute top-full left-0 mt-2 z-50 bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden"
           >
+            <div class="flex justify-end px-2 pt-2">
+              <button
+                @click="dockCalendar(true)"
+                class="w-7 h-7 rounded-md flex items-center justify-center text-gray-400 hover:text-[var(--p-primary-600)] hover:bg-[var(--p-primary-50)]"
+                v-tooltip.bottom="t('scheduler.dockCalendar')"
+                :aria-label="t('scheduler.dockCalendar')"
+                data-testid="dock-calendar"
+              >
+                <i class="pi pi-thumbtack text-sm"></i>
+              </button>
+            </div>
             <DatePicker
               inline
               v-model="pickerDate"
@@ -240,8 +262,35 @@
       </button>
     </div>
 
+    <div class="flex-grow flex min-h-0">
+    <!-- ===== DOCKED DATE CALENDAR (pinned from the date popup) ===== -->
+    <aside
+      v-if="calendarDocked"
+      class="docked-date-picker flex-shrink-0 w-[272px] border-r border-gray-100 bg-white overflow-y-auto overflow-x-hidden"
+      data-testid="docked-calendar"
+    >
+      <div class="flex justify-end px-2 pt-2">
+        <button
+          @click="dockCalendar(false)"
+          class="w-7 h-7 rounded-md flex items-center justify-center text-[var(--p-primary-600)] bg-[var(--p-primary-50)] hover:bg-[var(--p-primary-100)]"
+          v-tooltip.bottom="t('scheduler.undockCalendar')"
+          :aria-label="t('scheduler.undockCalendar')"
+          data-testid="undock-calendar"
+        >
+          <i class="pi pi-thumbtack text-sm rotate-45"></i>
+        </button>
+      </div>
+      <DatePicker
+        inline
+        v-model="dockedDate"
+        dateFormat="dd/mm/yy"
+        :minDate="isStaffRole ? todayDate : undefined"
+        @date-select="onDatePicked"
+      />
+    </aside>
+
     <!-- ===== CALENDAR AREA ===== -->
-    <div class="flex-grow overflow-auto relative">
+    <div class="flex-1 min-w-0 overflow-auto relative">
       <!-- Loading overlay -->
       <transition name="fade">
         <div
@@ -291,6 +340,7 @@
           </a>
         </div>
       </div>
+    </div>
     </div>
 
     <BookingDialog
@@ -345,7 +395,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch, computed, nextTick } from "vue";
+import { ref, onMounted, onUnmounted, watch, computed, nextTick } from "vue";
 import FullCalendar from "@fullcalendar/vue3";
 import resourceTimeGridPlugin from "@fullcalendar/resource-timegrid";
 import scrollGridPlugin from "@fullcalendar/scrollgrid";
@@ -381,6 +431,10 @@ import {
   overtimeConfirmMessage,
 } from "../utils/staffAvailability";
 import { displayServiceName } from "../utils/serviceVariations";
+import { api as http, ApiError } from "../api/http"; // (`api` in this file is FullCalendar's)
+import { fetchOrQueue } from "../offline/queue";
+import { knownOverlapIds } from "../offline/overlaps";
+import { isTempId } from "../offline/tempIds";
 
 const reorderDialogVisible = ref(false);
 const authStore = useAuthStore();
@@ -470,6 +524,19 @@ const shopSlotMinTime = ref("07:00:00");
 const shopSlotMaxTime = ref("23:00:00");
 const showDatePicker = ref(false);
 const pickerDate = ref<Date | null>(null);
+// The date calendar can be pinned next to the schedule instead of opening as
+// a popup; each device remembers the choice.
+const DOCKED_KEY = "scheduler.calendarDocked";
+const readDocked = () => {
+  try {
+    return localStorage.getItem(DOCKED_KEY) === "1";
+  } catch {
+    return false;
+  }
+};
+const calendarDocked = ref(readDocked());
+/** The docked calendar's selection: follows the day the schedule shows. */
+const dockedDate = ref<Date | null>(new Date());
 const todayDate = computed(() => {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
@@ -517,7 +584,7 @@ const toggleFitStaff = () => {
 
 // --- Status filter ---
 const statusFilter = ref<"all" | "active" | "cancelled">("all");
-const statusFilterOptions = [
+const statusFilterOptions: { label: string; value: "all" | "active" | "cancelled"; icon: string }[] = [
   { label: "All", value: "all", icon: "" },
   { label: "Active", value: "active", icon: "pi pi-check-circle" },
   { label: "Cancelled", value: "cancelled", icon: "pi pi-times-circle" },
@@ -542,16 +609,11 @@ const handleSwap = async (swapData: {
   appointment2_id: number;
 }) => {
   try {
-    const res = await fetch("/api/v1/appointments/swap", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(swapData),
+    // (This request used to go without the login token, so the server
+    // always refused it.)
+    const data = await http.post("/api/v1/appointments/swap", swapData).catch((e: ApiError) => {
+      throw new Error(e.data?.error || "Swap failed");
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || "Swap failed");
-    }
-    const data = await res.json();
     if (!data.success) throw new Error(t("scheduler.toasts.swapFailedError"));
 
     swapDialogVisible.value = false;
@@ -734,7 +796,19 @@ const onStripTouchEnd = (e: TouchEvent) => {
 };
 
 // --- Date picker popover ---
+const dockCalendar = async (docked: boolean) => {
+  calendarDocked.value = docked;
+  showDatePicker.value = false;
+  try {
+    localStorage.setItem(DOCKED_KEY, docked ? "1" : "0");
+  } catch {}
+  // The schedule's width changed: FullCalendar has to re-measure.
+  await nextTick();
+  calendarApi.value?.updateSize();
+};
+
 const toggleDatePicker = () => {
+  if (calendarDocked.value) return; // already on screen
   if (!showDatePicker.value)
     pickerDate.value = calendarApi.value?.getDate() ?? new Date();
   showDatePicker.value = !showDatePicker.value;
@@ -898,9 +972,15 @@ const calendarEvents = computed(() => {
         backgroundColor: bgColor,
         borderColor: "transparent",
         textColor: "#1f2937",
-        classNames: ["fresha-event"],
+        // Changes waiting to sync (offline) are outlined: dashed while pending,
+        // red when the server refused them (see the sync banner).
+        classNames: [
+          "fresha-event",
+          ...(appt._offline === "conflict" ? ["fc-offline-conflict"] : appt._offline ? ["fc-offline-pending"] : []),
+        ],
         extendedProps: {
           isServiceEvent: true,
+          offlineState: appt._offline || null,
           appointmentId: appt.id,
           group_id: appt.group_id,
           serviceIndex: index,
@@ -1179,17 +1259,37 @@ const updateAppointment = async (
   updates: any,
 ): Promise<boolean> => {
   try {
-    const token = localStorage.getItem("token");
-    const res = await fetch(`/api/v1/appointments/${id}`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(updates),
+    // Offline the move is queued and shown right away (see offline/queue.ts);
+    // base_version lets the server refuse it if the appointment changed
+    // meanwhile instead of overwriting that change.
+    const body = {
+      ...updates,
+      ...(updates.version != null && !isTempId(String(id)) ? { base_version: updates.version } : {}),
+    };
+    delete body.version;
+    delete body._offline;
+    const result = await fetchOrQueue(`/api/v1/appointments/${id}`, "PUT", body, {
+      kind: "appointment",
+      label: `${updates.first_name || ""} ${updates.last_name || ""}`.trim() || t("booking.editDialog.title"),
+      offlineExtras: { offline_known_overlaps: knownOverlapIds(calendarStore.events, updates.services || [], id) },
     });
+    if (result.queued) {
+      toast.add({
+        severity: "warn",
+        summary: t("booking.toast.savedOffline"),
+        detail: t("booking.toast.savedOfflineDetail"),
+        life: 4000,
+      });
+      return true;
+    }
+    const res = result.response;
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
+      if (err.error === "stale_appointment" || err.error === "appointment_missing") {
+        // Changed (or deleted) on another device meanwhile: show the current state.
+        await calendarStore.fetchAppointments(currentStart.value, currentEnd.value);
+        throw new Error(t(`offline.conflict.${err.error}`));
+      }
       throw new Error(err.error || t("scheduler.toasts.updateFailedError"));
     }
     await calendarStore.fetchAppointments(currentStart.value, currentEnd.value);
@@ -1314,6 +1414,36 @@ const clearLinkedHighlight = () => {
 };
 
 // --- Calendar Options ---
+// Ctrl (or ⌘) + drag moves all of an appointment's cards together. While
+// dragging with it held, the other cards of that appointment are outlined.
+// FullCalendar won't start a drag when Ctrl is held on pressing (it keeps
+// Ctrl-click for the Mac context menu), so a Ctrl + press on a card is
+// remembered here and handed on without Ctrl (see onCardMouseDown).
+let moveTogetherArmed = false;
+const isMoveTogether = (e: MouseEvent | undefined) => moveTogetherArmed || !!(e?.ctrlKey || e?.metaKey);
+let moveTogetherId: string | null = null;
+const markMoveTogether = (on: boolean) => {
+  if (!moveTogetherId) return;
+  document
+    .querySelectorAll(`.fc-event[data-appointment-id="${CSS.escape(moveTogetherId)}"]`)
+    .forEach((el) => el.classList.toggle("fc-move-together", on));
+};
+const onMoveTogetherKey = (e: KeyboardEvent) => markMoveTogether(isMoveTogether(e as unknown as MouseEvent));
+const startMoveTogetherHint = (appointmentId: string | undefined) => {
+  moveTogetherId = appointmentId ? String(appointmentId) : null;
+  markMoveTogether(moveTogetherArmed);
+  window.addEventListener("keydown", onMoveTogetherKey);
+  window.addEventListener("keyup", onMoveTogetherKey);
+};
+const stopMoveTogetherHint = () => {
+  markMoveTogether(false);
+  moveTogetherId = null;
+  // Cleared after eventDrop has read it (it runs right after this).
+  setTimeout(() => (moveTogetherArmed = false));
+  window.removeEventListener("keydown", onMoveTogetherKey);
+  window.removeEventListener("keyup", onMoveTogetherKey);
+};
+
 const calendarOptions = ref({
   schedulerLicenseKey: "CC-Attribution-NonCommercial-NoDerivatives",
   longPressDelay: 350,
@@ -1404,6 +1534,7 @@ const calendarOptions = ref({
 
   datesSet: async (arg: any) => {
     currentTitle.value = arg.view.title;
+    dockedDate.value = arg.view.calendar.getDate();
     currentView.value = arg.view.type;
     currentStart.value = arg.startStr;
     currentEnd.value = arg.endStr;
@@ -1620,15 +1751,19 @@ const calendarOptions = ref({
     if (key) info.el.dataset.linkKey = key;
     const dayKey = info.event.extendedProps?.dayClientKey;
     if (dayKey) info.el.dataset.dayClientKey = dayKey;
+    const apptId = info.event.extendedProps?.appointmentId;
+    if (apptId) info.el.dataset.appointmentId = apptId; // used by the browser tests
   },
 
-  eventDragStart: () => {
+  eventDragStart: (info: any) => {
     dragInProgress = true;
     hideHoverCard();
+    startMoveTogetherHint(info.event.extendedProps?.appointmentId);
   },
   eventDragStop: () => {
     dragInProgress = false;
     hideHoverCard();
+    stopMoveTogetherHint();
     setTimeout(() => setSnapMinutes(SLOT_MINUTES));
   },
   eventResizeStart: () => {
@@ -1703,25 +1838,39 @@ const calendarOptions = ref({
     let services = prepareServicesForUpdate(
       JSON.parse(JSON.stringify(fullAppointment.services)),
     );
-    if (services[serviceIndex]) {
+    // Ctrl (⌘ on a Mac) held when dropping: every card of this appointment
+    // moves by the same time, and all to the column it was dropped in.
+    const moveAll = isMoveTogether(info.jsEvent) && services.length > 1;
+    if (moveAll) {
+      const shift = start - info.oldEvent.start.getTime();
+      services = services.map((s: any) => ({
+        ...s,
+        start_time: new Date(new Date(s.start_time).getTime() + shift).toISOString(),
+        ...(newResourceId ? { staff_id: newResourceId } : {}),
+      }));
+    } else if (services[serviceIndex]) {
       services[serviceIndex].start_time = info.event.start.toISOString();
       services[serviceIndex].duration_minutes = (end - start) / 60000;
       services[serviceIndex].duration_override = (end - start) / 60000;
       if (newResourceId) services[serviceIndex].staff_id = newResourceId;
     }
-    const overtime = overtimeEntryFor(
-      services[serviceIndex]?.staff_id,
-      info.event.start,
-      info.event.end,
-    );
-    if (!(await confirmMove(fullAppointment.services, services, overtime ? [overtime] : []))) {
+    const overtime = (moveAll ? services : [services[serviceIndex]])
+      .map((s: any) => {
+        if (!s) return null;
+        const from = new Date(s.start_time);
+        const to = new Date(from.getTime() + (Number(s.duration_override) || 60) * 60000);
+        return overtimeEntryFor(s.staff_id, from, to);
+      })
+      .filter((o: OvertimeEntry | null, i: number, all: (OvertimeEntry | null)[]): o is OvertimeEntry =>
+        !!o && all.findIndex((x) => x?.name === o.name) === i);
+    if (!(await confirmMove(fullAppointment.services, services, overtime))) {
       info.revert();
       return;
     }
     const ok = await updateAppointment(appointmentId, {
       ...fullAppointment,
       services,
-      allow_overtime: !!overtime,
+      allow_overtime: overtime.length > 0,
     });
     if (!ok) info.revert();
   },
@@ -1807,6 +1956,76 @@ watch(
   { deep: true },
 );
 
+// Live updates: bookings changed on another screen (see "appointments:changed"
+// in server.js). Reloads the visible range after a short pause, so a burst of
+// changes is one reload; not mid-drag, and not while the tab is hidden (then
+// on return).
+const LIVE_RELOAD_DELAY_MS = 700;
+let liveReloadTimer: ReturnType<typeof setTimeout> | null = null;
+let liveReloadPending = false;
+const liveReload = () => {
+  if (liveReloadTimer) clearTimeout(liveReloadTimer);
+  liveReloadTimer = setTimeout(() => {
+    liveReloadTimer = null;
+    if (dragInProgress || document.hidden) {
+      liveReloadPending = true;
+      if (dragInProgress) liveReload(); // try again once the drag is over
+      return;
+    }
+    liveReloadPending = false;
+    calendarStore.refreshVisibleRange();
+  }, LIVE_RELOAD_DELAY_MS);
+};
+const onVisibleAgain = () => {
+  if (!document.hidden && liveReloadPending) liveReload();
+};
+// Ctrl + press on a card (before FullCalendar sees it): note it, and pass the
+// same press on without Ctrl so the drag starts.
+const onCardMouseDown = (e: MouseEvent) => {
+  if (!e.ctrlKey || e.button !== 0 || !(e.target as HTMLElement)?.closest?.(".fc-event")) return;
+  moveTogetherArmed = true;
+  e.stopImmediatePropagation();
+  e.preventDefault();
+  e.target!.dispatchEvent(
+    new MouseEvent("mousedown", {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+      button: 0,
+      buttons: 1,
+      clientX: e.clientX,
+      clientY: e.clientY,
+      screenX: e.screenX,
+      screenY: e.screenY,
+      shiftKey: e.shiftKey,
+      altKey: e.altKey,
+      metaKey: e.metaKey,
+      ctrlKey: false,
+    }),
+  );
+};
+// A Ctrl + press that didn't become a drag (just a click) mustn't count later.
+const disarmMoveTogether = () => {
+  if (!dragInProgress) setTimeout(() => (moveTogetherArmed = false), 0);
+};
+onMounted(() => {
+  document.addEventListener("mousedown", onCardMouseDown, true);
+  document.addEventListener("mouseup", disarmMoveTogether, true);
+});
+onUnmounted(() => {
+  document.removeEventListener("mousedown", onCardMouseDown, true);
+  document.removeEventListener("mouseup", disarmMoveTogether, true);
+});
+onMounted(() => {
+  window.addEventListener("appointments-changed", liveReload);
+  document.addEventListener("visibilitychange", onVisibleAgain);
+});
+onUnmounted(() => {
+  window.removeEventListener("appointments-changed", liveReload);
+  document.removeEventListener("visibilitychange", onVisibleAgain);
+  if (liveReloadTimer) clearTimeout(liveReloadTimer);
+});
+
 onMounted(async () => {
   await calendarStore.fetchBaseResources();
   nextTick(async () => {
@@ -1816,11 +2035,8 @@ onMounted(async () => {
     const token = localStorage.getItem("token");
     if (token) {
       try {
-        const res = await fetch("/api/v1/shop", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (res.ok) {
-          const shop = await res.json();
+        const shop = await http.get("/api/v1/shop").catch(() => null);
+        if (shop) {
           if (shop.slot_min_time)
             shopSlotMinTime.value = shop.slot_min_time + ":00";
           if (shop.slot_max_time)
@@ -1842,6 +2058,34 @@ onMounted(async () => {
 </script>
 
 <style>
+/* Ctrl + drag: the appointment's other cards, which move along. */
+.fc-v-event.fc-move-together {
+  outline: 2px dashed var(--p-primary-color);
+  outline-offset: 1px;
+}
+
+/* Docked date calendar: fills its column, no frame, no sideways scroll. */
+.docked-date-picker .p-datepicker,
+.docked-date-picker .p-datepicker-panel {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  box-shadow: none;
+}
+.docked-date-picker .p-datepicker-panel {
+  padding: 0 0.5rem 0.75rem;
+}
+.docked-date-picker .p-datepicker-day-view {
+  width: 100%;
+  table-layout: fixed;
+}
+.docked-date-picker .p-datepicker-day-cell {
+  padding: 0.125rem;
+}
+.docked-date-picker .p-datepicker-day {
+  width: 2rem;
+  height: 2rem;
+}
 .fc {
   --fc-border-color: #f3f4f6;
   --fc-now-indicator-color: #ef4444;
@@ -1941,6 +2185,24 @@ onMounted(async () => {
 .fc-v-event .fc-event-main {
   padding: 0;
   color: inherit;
+}
+/* Offline: changes waiting to sync (dashed) and refused ones (red). */
+.fc-v-event.fc-offline-pending {
+  outline: 2px dashed #b45309;
+  outline-offset: -2px;
+}
+.fc-v-event.fc-offline-pending .fc-event-main::after {
+  content: "\e944"; /* pi-cloud-upload */
+  font-family: "primeicons";
+  position: absolute;
+  right: 3px;
+  bottom: 2px;
+  font-size: 10px;
+  color: #b45309;
+}
+.fc-v-event.fc-offline-conflict {
+  outline: 2px solid #dc2626;
+  outline-offset: -2px;
 }
 /* Matches the hovered box's own hover:brightness-95 on its inner content. */
 .fc-linked-hover .fc-event-main > div {

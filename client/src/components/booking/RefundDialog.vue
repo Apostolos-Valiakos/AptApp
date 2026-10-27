@@ -19,7 +19,7 @@
           :max="maxRefundable"
         />
         <p class="text-xs text-gray-400 mt-1">
-          {{ t("refund.maxNote", { max: Number(maxRefundable).toFixed(2) }) }}
+          {{ t("refund.maxNote", { max: formatMoney(maxRefundable) }) }}
         </p>
       </div>
       <div>
@@ -66,6 +66,8 @@
 </template>
 
 <script setup lang="ts">
+import { api, ApiError } from "../../api/http";
+import { formatMoney } from "../../utils/format";
 import { ref, computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
@@ -113,10 +115,6 @@ const canSubmit = computed(
     reason.value.trim().length > 0,
 );
 
-const headers = () => ({
-  "Content-Type": "application/json",
-  Authorization: `Bearer ${localStorage.getItem("token")}`,
-});
 
 const confirm = async () => {
   let apptId = props.appointmentId;
@@ -125,23 +123,19 @@ const confirm = async () => {
 
   saving.value = true;
   try {
-    const res = await fetch(`/api/v1/appointments/${apptId}/refund`, {
-      method: "POST",
-      headers: headers(),
-      body: JSON.stringify({
+    const data = await api
+      .post(`/api/v1/appointments/${apptId}/refund`, {
         amount: amount.value,
         payment_method: method.value,
         reason: reason.value.trim(),
-      }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(
-        data.error === "exceeds_amount_paid"
-          ? t("refund.exceedsPaid")
-          : data.error || t("refund.failed"),
-      );
-    }
+      })
+      .catch((e: ApiError) => {
+        throw new Error(
+          e.data?.error === "exceeds_amount_paid"
+            ? t("refund.exceedsPaid")
+            : e.data?.error || t("refund.failed"),
+        );
+      });
     toast.add({ severity: "success", summary: t("refund.success"), life: 2500 });
     visibleModel.value = false;
     emit("refunded", {

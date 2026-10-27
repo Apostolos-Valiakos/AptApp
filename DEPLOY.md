@@ -390,6 +390,41 @@ git pull
 docker compose up -d --build
 ```
 
+**Database migrations** run by themselves when the app starts
+(`server/migrations/`, recorded in the `schema_migrations` table). Nothing to
+run by hand:
+- On an existing database the first migration (`0001_baseline.sql`, the whole
+  schema) is recorded as already applied; only the newer ones run.
+- If a migration fails, the app does not start: `docker compose logs app`
+  shows `Not starting: Migration … failed: …`, and the database is left as it
+  was (each migration runs in its own transaction).
+- The first start after the October 2026 update applies `0002` (indexes the
+  calendar relies on) and `0003` (removes duplicate constraints that earlier
+  starts had piled up — a few seconds on a large `transactions` table).
+
+`RUN_JOBS=0` in the environment turns off the scheduled jobs (reminder
+emails, push reminders, membership renewals). Leave it unset in production;
+the test servers set it, since they run on copies of real data.
+
+**Connecting with pgAdmin** (through an SSH tunnel). The database is
+published on the VPS at `127.0.0.1:5432` only (`docker-compose.yml`, db
+service), so it can't be reached from the internet, only from the VPS itself.
+pgAdmin reaches it through SSH:
+1. After pulling this change, recreate the db container once so the port is
+   published: `docker compose up -d db` (the data stays in the `pgdata` volume).
+2. In pgAdmin, Register → Server:
+   - **Connection** tab: Host `127.0.0.1`, Port `5432`, Maintenance database
+     = `POSTGRES_DB` from the VPS `.env`, Username `postgres`, Password =
+     `POSTGRES_PASSWORD` from the VPS `.env`.
+   - **SSH Tunnel** tab: Use SSH tunneling = on, Tunnel host = the VPS address,
+     Tunnel port `22`, Username = your SSH user on the VPS, Authentication =
+     your SSH key (identity file) or password.
+3. Check from the VPS that the port is local only:
+   `ss -ltnp | grep 5432` should show `127.0.0.1:5432`, never `0.0.0.0:5432`.
+
+The `postgres` login can change anything. Use pgAdmin for looking, and run
+data fixes as reviewed scripts with a preview first (`BEGIN … ROLLBACK`).
+
 **Logs:**
 ```bash
 docker compose logs -f app

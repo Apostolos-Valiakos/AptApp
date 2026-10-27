@@ -7,6 +7,7 @@
       :placeholder="t('booking.searchClient')"
       :loading="searchingClients"
       forceSelection
+      data-testid="client-search"
       class="w-full"
       inputClass="w-full"
       @complete="searchClients"
@@ -23,7 +24,7 @@
             {{ initials(option.full_name) }}
           </div>
           <div class="min-w-0">
-            <div class="font-semibold text-gray-900 truncate">{{ option.full_name }}</div>
+            <div lang="el" class="font-semibold text-gray-900 truncate uppercase">{{ option.full_name }}</div>
             <div class="text-xs text-gray-500 truncate">{{ option.phone || option.email || "" }}</div>
           </div>
         </div>
@@ -41,6 +42,7 @@
       icon="pi pi-plus"
       class="p-button-outlined"
       v-tooltip="t('booking.newClientBtn')"
+      data-testid="client-new"
       @click="showQuickAdd = true"
     />
 
@@ -55,24 +57,25 @@
           <label class="block text-sm font-medium text-gray-700 mb-1">{{
             t("booking.quickAdd.firstName")
           }}</label>
-          <InputText v-model="newClient.first_name" class="w-full" />
+          <InputText v-model="newClient.first_name" class="w-full" data-testid="client-new-first" />
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">{{
             t("booking.quickAdd.lastName")
           }}</label>
-          <InputText v-model="newClient.last_name" class="w-full" />
+          <InputText v-model="newClient.last_name" class="w-full" data-testid="client-new-last" />
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">{{
             t("booking.quickAdd.mobile")
           }}</label>
-          <InputText v-model="newClient.phone" class="w-full" />
+          <InputText v-model="newClient.phone" class="w-full" data-testid="client-new-phone" />
         </div>
       </div>
       <template #footer>
         <Button
           :label="t('booking.quickAdd.saveClient')"
+          data-testid="client-new-save"
           @click="saveNewClient"
           :loading="savingNewClient"
           class="w-full"
@@ -83,10 +86,13 @@
 </template>
 
 <script setup lang="ts">
+import { api, ApiError } from "../api/http";
 import { ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
 import { avatarColor, initials } from "../utils/avatar";
+import { fetchOrQueue, isOnline } from "../offline/queue";
+import { addCachedClient, searchCachedClients } from "../offline/localData";
 
 const props = defineProps({
   allowWalkIn: { type: Boolean, default: false },
@@ -112,12 +118,24 @@ const searchClients = (event: { query: string }) => {
   searchingClients.value = true;
   clientSearchTimeout = setTimeout(async () => {
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(
-        `/api/v1/clients?slim=true&search=${encodeURIComponent(q)}&limit=10`,
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
-      clientSuggestions.value = res.ok ? await res.json() : [];
+      // Offline (or the server doesn't answer): search the client list kept
+      // in the browser instead (see offline/localData.ts).
+      if (!isOnline.value) {
+        clientSuggestions.value = await searchCachedClients(q, 10);
+        return;
+      }
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 6000);
+      try {
+        clientSuggestions.value = await api.get(`/api/v1/clients?slim=true&search=${encodeURIComponent(q)}&limit=10`, {
+          signal: controller.signal,
+        });
+      } catch (err) {
+        // Refused by the server: no results. Not reached: the saved list.
+        clientSuggestions.value = err instanceof ApiError ? [] : await searchCachedClients(q, 10);
+      } finally {
+        clearTimeout(timer);
+      }
     } finally {
       searchingClients.value = false;
     }
@@ -136,12 +154,7 @@ const loadingWalkIn = ref(false);
 const pickWalkIn = async () => {
   loadingWalkIn.value = true;
   try {
-    const token = localStorage.getItem("token");
-    const res = await fetch("/api/v1/clients/walk-in", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error("Walk-in lookup failed");
-    const walkIn = await res.json();
+    const walkIn = await api.get("/api/v1/clients/walk-in");
     walkIn.full_name =
       walkIn.full_name || `${walkIn.first_name || ""} ${walkIn.last_name || ""}`.trim();
     emit("select", walkIn);
@@ -161,24 +174,39 @@ const showQuickAdd = ref(false);
 const newClient = ref({ first_name: "", last_name: "", phone: "" });
 const savingNewClient = ref(false);
 const saveNewClient = async () => {
+  // Checked here too: offline, a missing name would only be refused when it
+  // syncs (as a conflict), long after the client left.
+  if (!newClient.value.first_name.trim() || !newClient.value.last_name.trim()) {
+    toast.add({ severity: "error", summary: t("booking.toast.saveFailed"), detail: t("booking.quickAdd.nameRequired"), life: 4000 });
+    return;
+  }
   savingNewClient.value = true;
   try {
-    const token = localStorage.getItem("token");
-    const res = await fetch("/api/v1/clients", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(newClient.value),
+    // Offline the new client is queued with a temporary id: it can be booked
+    // (and paid for) straight away, and everything links up when it syncs.
+    const result = await fetchOrQueue("/api/v1/clients", "POST", { ...newClient.value }, {
+      kind: "client",
+      label: `${t("booking.newClientBtn")} · ${newClient.value.first_name} ${newClient.value.last_name}`.trim(),
+      createsId: "client.id",
     });
-    const data = await res.json();
-
-    if (!res.ok || !(data.success || data.client)) {
-      throw new Error("Request failed");
+    let client: any;
+    if (result.queued) {
+      client = { id: result.tempId, ...newClient.value, outstanding_balance: 0, _offline: "pending" };
+      toast.add({
+        severity: "warn",
+        summary: t("booking.toast.savedOffline"),
+        detail: t("booking.toast.savedOfflineDetail"),
+        life: 4000,
+      });
+    } else {
+      const res = result.response;
+      const data = await res.json();
+      if (!res.ok || !(data.success || data.client)) {
+        throw new Error("Request failed");
+      }
+      client = data.client || data;
     }
-
-    const client = data.client || data;
+    addCachedClient(client).catch(() => {});
     client.full_name = `${client.first_name} ${client.last_name}`;
     client.eoppy_breakdown = { total: 0, services: {} };
     client.non_eoppy_breakdown = { total: 0, services: {} };

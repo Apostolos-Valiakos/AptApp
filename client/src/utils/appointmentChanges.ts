@@ -1,3 +1,4 @@
+import { formatMoney } from "./format";
 export interface ServiceSnapshot {
   service_id: any;
   staff_id: any;
@@ -80,7 +81,7 @@ export const describeServiceChanges = (
       );
     if (b.price !== a.price)
       lines.push(
-        `${prefix}${t("booking.changeConfirm.price")}: €${b.price.toFixed(2)} → €${a.price.toFixed(2)}`,
+        `${prefix}${t("booking.changeConfirm.price")}: ${formatMoney(b.price)} → ${formatMoney(a.price)}`,
       );
   }
   return lines;

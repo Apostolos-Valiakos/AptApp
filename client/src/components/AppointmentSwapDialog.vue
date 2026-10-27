@@ -316,7 +316,7 @@ const confirmSwap = () => {
   visible.value = false;
 };
 
-const staffColor = (staffId: number | undefined) => {
+const staffColor = (staffId: string | number | undefined) => {
   const s = normalizedStaff.value.find((st) => st.id === staffId);
   return s?.color || "#888";
 };

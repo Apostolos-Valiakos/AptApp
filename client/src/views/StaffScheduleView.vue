@@ -606,8 +606,8 @@ const toggleWorkingDay = (day: any) => {
 const addWorkingRange = (day: any) => {
   day.ranges.push(defaultRange());
 };
-const removeWorkingRange = (day: any, idx: number) => {
-  day.ranges.splice(idx, 1);
+const removeWorkingRange = (day: any, idx: number | string) => {
+  day.ranges.splice(Number(idx), 1);
   if (day.ranges.length === 0) day.active = false;
 };
 

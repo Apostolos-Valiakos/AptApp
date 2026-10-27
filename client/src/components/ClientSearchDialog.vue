@@ -28,7 +28,7 @@
             {{ initials(option.full_name) }}
           </div>
           <div class="min-w-0">
-            <div class="font-semibold text-gray-900 truncate">{{ option.full_name }}</div>
+            <div lang="el" class="font-semibold text-gray-900 truncate uppercase">{{ option.full_name }}</div>
             <div class="text-xs text-gray-500 truncate">{{ option.phone || option.email || "" }}</div>
           </div>
         </div>
@@ -39,6 +39,7 @@
 </template>
 
 <script setup lang="ts">
+import { api } from "../api/http";
 import { ref, computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { avatarColor, initials } from "../utils/avatar";
@@ -67,12 +68,7 @@ const search = (event: { query: string }) => {
   searching.value = true;
   searchTimeout = setTimeout(async () => {
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(
-        `/api/v1/clients?slim=true&search=${encodeURIComponent(q)}&limit=10`,
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
-      suggestions.value = res.ok ? await res.json() : [];
+      suggestions.value = await api.get(`/api/v1/clients?slim=true&search=${encodeURIComponent(q)}&limit=10`);
     } catch {
       suggestions.value = [];
     } finally {

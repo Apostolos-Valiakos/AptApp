@@ -8,7 +8,7 @@
         v-if="discountAmount > 0"
         class="text-sm font-bold text-emerald-600"
       >
-        − €{{ discountAmount.toFixed(2) }}
+        − {{ formatMoney(discountAmount) }}
       </span>
     </div>
 
@@ -90,6 +90,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatMoney } from "../../utils/format";
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import type { DiscountState, DiscountType, DiscountScope } from "../../utils/discount";

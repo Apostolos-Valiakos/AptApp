@@ -20,7 +20,7 @@
             v-if="isShopAdmin && Number(client.outstanding_balance) > 0"
             class="text-xs font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded-full inline-block mt-0.5"
           >
-            {{ t("clientQuickProfile.balanceDue", { amount: Number(client.outstanding_balance).toFixed(2) }) }}
+            {{ t("clientQuickProfile.balanceDue", { amount: formatMoney(client.outstanding_balance) }) }}
           </span>
         </div>
       </div>
@@ -137,6 +137,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatMoney } from "../utils/format";
 import { ref, computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";

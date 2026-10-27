@@ -99,7 +99,7 @@
               </td>
               <td class="px-3 py-2">{{ describe(u) }}</td>
               <td class="px-3 py-2 text-right font-semibold">
-                €{{ Number(u.discount_amount).toFixed(2) }}
+                {{ formatMoney(u.discount_amount) }}
               </td>
             </tr>
           </tbody>
@@ -110,6 +110,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatMoney } from "../utils/format";
 import { ref, reactive, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
@@ -202,7 +203,7 @@ const describe = (u: any) => {
   const v = Number(u.discount_value);
   if (u.discount_type === "code") return `${u.discount_code_name || t("discount.code")} (${v}%)`;
   if (u.discount_type === "percent") return `${v}%`;
-  return `€${v.toFixed(2)}`;
+  return formatMoney(v);
 };
 
 onMounted(load);

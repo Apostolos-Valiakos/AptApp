@@ -194,7 +194,7 @@
                 <div class="min-w-0">
                   <div class="font-semibold text-gray-900 truncate">{{ svc.name }}</div>
                   <div class="text-xs text-gray-400">
-                    {{ svc.duration_minutes }} min · €{{ Number(svc.price).toFixed(2) }}
+                    {{ svc.duration_minutes }} min · {{ formatMoney(svc.price) }}
                   </div>
                 </div>
               </div>
@@ -327,7 +327,7 @@
             </div>
             <div class="flex justify-between">
               <span class="text-gray-500">{{ t("portal.book.summaryPrice") }}</span>
-              <span class="font-medium">€{{ Number(selectedService?.price).toFixed(2) }}</span>
+              <span class="font-medium">{{ formatMoney(selectedService?.price) }}</span>
             </div>
           </div>
           <div>
@@ -360,6 +360,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatMoney } from "../../utils/format";
 import { ref, computed, watch, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";

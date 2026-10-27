@@ -54,7 +54,7 @@
                 : 'text-green-600'
             "
           >
-            €{{ Number(clientData.outstanding_balance || 0).toFixed(2) }}
+            {{ formatMoney(clientData.outstanding_balance || 0) }}
           </div>
         </div>
       </div>
@@ -238,12 +238,7 @@
                 {{ t(`common.status.${statusKey(appt.status)}`) }}
               </span>
               <span class="font-bold">
-                €{{
-                  (
-                    Number(appt.total_service_price || 0) +
-                    Number(appt.total_product_price || 0)
-                  ).toFixed(2)
-                }}
+                {{ formatMoney(Number(appt.total_service_price || 0) + Number(appt.total_product_price || 0)) }}
               </span>
             </div>
           </div>
@@ -351,7 +346,7 @@
         <div v-if="activeTab === 'Files'" class="space-y-4">
           <div
             class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:bg-gray-50 transition-colors cursor-pointer"
-            @click="$refs.fileInput.click()"
+            @click="fileInput?.click()"
           >
             <input
               type="file"
@@ -428,6 +423,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatMoney } from "../utils/format";
 import { ref, watch, computed } from "vue";
 import Exercises from "./Exercises.vue";
 import ClientPackagesPanel from "./ClientPackagesPanel.vue";
@@ -462,7 +458,7 @@ const clientData = ref<any>(null);
 const history = ref<any[]>([]);
 const files = ref<any[]>([]);
 const editForm = ref<any>({});
-const fileInput = ref<any>(null);
+const fileInput = ref<HTMLInputElement | null>(null);
 const viewingFileId = ref<number | null>(null); // Track which file is loading
 
 // Computed property for the Avatar initials

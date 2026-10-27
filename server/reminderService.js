@@ -569,8 +569,12 @@ const processPushReminders = async () => {
   }
 };
 
-// Runs every 1 minute, matching the ±5 minute window used in the queries above
-cron.schedule("*/1 * * * *", processReminders);
-cron.schedule("*/1 * * * *", processPushReminders);
+// Runs every 1 minute, matching the ±5 minute window used in the queries above.
+// RUN_JOBS=0 turns the schedule off (test servers run on copies of real data
+// and must never email or notify real clients).
+if (process.env.RUN_JOBS !== "0") {
+  cron.schedule("*/1 * * * *", processReminders);
+  cron.schedule("*/1 * * * *", processPushReminders);
+}
 
 module.exports = { processReminders, processPushReminders, PUBLIC_BASE_URL };

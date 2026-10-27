@@ -42,11 +42,11 @@
       </Column>
 
       <Column :header="t('membershipTiers.table.monthlyPrice')">
-        <template #body="slotProps">€{{ Number(slotProps.data.monthly_price).toFixed(2) }}</template>
+        <template #body="slotProps">{{ formatMoney(slotProps.data.monthly_price) }}</template>
       </Column>
 
       <Column :header="t('membershipTiers.table.yearlyPrice')">
-        <template #body="slotProps">€{{ Number(slotProps.data.yearly_price).toFixed(2) }}</template>
+        <template #body="slotProps">{{ formatMoney(slotProps.data.yearly_price) }}</template>
       </Column>
 
       <Column :header="t('membershipTiers.table.gracePeriod')">
@@ -177,6 +177,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatMoney } from "../utils/format";
 import { ref, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
