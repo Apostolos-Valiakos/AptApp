@@ -31,6 +31,11 @@ export const createTestDb = (name) => {
   execSync(`pg_dump "${DEV_URI}" | psql "${SERVER}/${name}" -X -q >/dev/null 2>&1`, { shell: "/bin/bash" });
   return `${SERVER}/${name}`;
 };
+/** An exact copy of an existing test database (nobody may be connected to it). */
+export const cloneTestDb = (source, name) => {
+  psql("postgres", `DROP DATABASE IF EXISTS ${name}; CREATE DATABASE ${name} TEMPLATE ${source};`);
+  return `${SERVER}/${name}`;
+};
 export const dropTestDb = (name) =>
   psql(
     "postgres",
@@ -38,11 +43,27 @@ export const dropTestDb = (name) =>
      DROP DATABASE IF EXISTS ${name};`,
   );
 
-/** Starts server/server.js against the test database; resolves once /health answers. */
-export const startServer = async (dbUri, port) => {
-  const child = spawn("node", ["server/server.js"], {
+/**
+ * Starts server/server.js (or `script`, e.g. a saved copy of an older
+ * version) against the test database; resolves once /health answers.
+ */
+export const startServer = async (dbUri, port, script = "server/server.js") => {
+  const child = spawn("node", [script], {
     cwd: ROOT,
-    env: { ...process.env, POSTGRES_URI: dbUri, PORT: String(port), NODE_ENV: "test" },
+    // The copy holds real clients' emails and push subscriptions: no scheduled
+    // jobs, and no working mail/push credentials, so nothing ever reaches them.
+    env: {
+      ...process.env,
+      POSTGRES_URI: dbUri,
+      PORT: String(port),
+      NODE_ENV: "test",
+      RUN_JOBS: "0",
+      EMAIL_HOST: "mail.invalid",
+      EMAIL_USER: "",
+      EMAIL_PASS: "",
+      VAPID_PUBLIC_KEY: "",
+      VAPID_PRIVATE_KEY: "",
+    },
     stdio: ["ignore", "pipe", "pipe"],
   });
   let log = "";

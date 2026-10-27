@@ -238,16 +238,22 @@ const clickTestId = async (testId) => {
 };
 
 /** Picks the test service in the dialog's (only / first) service row. */
-const pickService = async () => {
-  await clickTestId("service-picker");
-  const sel = `[data-service-id="${ids.service}"] > button`;
-  await page.waitForSelector(sel, { visible: true, timeout: 10000 }).catch(async (err) => {
-    if (process.env.E2E_DEBUG) await page.screenshot({ path: path.join(process.env.E2E_DEBUG, "pick-service.png") });
-    throw err;
-  });
-  await page.click(sel);
-  await sleep(300);
+/** Ticks `serviceIds` (in that order) in the picker of the last service row, then Add. */
+const pickServices = async (serviceIds) => {
+  const pickers = await page.$$('[data-testid="service-picker"]');
+  await pickers[pickers.length - 1].click();
+  for (const id of serviceIds) {
+    const sel = `[data-service-id="${id}"] > button`;
+    await page.waitForSelector(sel, { visible: true, timeout: 10000 }).catch(async (err) => {
+      if (process.env.E2E_DEBUG) await page.screenshot({ path: path.join(process.env.E2E_DEBUG, "pick-service.png") });
+      throw err;
+    });
+    await page.click(sel);
+  }
+  await clickTestId("service-picker-confirm");
+  await sleep(400);
 };
+const pickService = () => pickServices([ids.service]);
 
 /** Chooses a client by name in the dialog's search. */
 const pickClient = async (name) => {
@@ -346,6 +352,9 @@ before(async () => {
 
   ids.client = q(`SELECT id FROM clients WHERE shop_id = '${SHOP}' AND phone IS NOT NULL AND first_name ILIKE '_%' AND first_name !~* 'walk' ORDER BY id LIMIT 1`);
   ids.clientName = q(`SELECT last_name FROM clients WHERE id = '${ids.client}'`);
+  // A client with no bookings, so same-day grouping doesn't join their bookings.
+  ids.soloClientName = "Μονοπελάτης";
+  q(`INSERT INTO clients (first_name, last_name, phone, shop_id) VALUES ('Ε2Ε', '${ids.soloClientName}', '6900000777', '${SHOP}')`);
   ids.otherClient = q(`SELECT id FROM clients WHERE shop_id = '${SHOP}' AND id <> '${ids.client}' AND first_name !~* 'walk' ORDER BY id LIMIT 1`);
 
   otherServer = await startServer(dbUriValue, OTHER_PORT);
@@ -389,6 +398,13 @@ before(async () => {
                    ${staffServices ? `AND id::text IN (${staffServices.split(",").map((s) => `'${s}'`).join(",")})` : ""}
                    ORDER BY name LIMIT 1`);
   assert.ok(ids.service, "a plain service with a price");
+  ids.service2 = q(`SELECT id FROM services sv WHERE shop_id = '${SHOP}' AND is_active AND price > 0 AND id <> '${ids.service}'
+                    AND NOT EXISTS (SELECT 1 FROM service_variations v WHERE v.service_id = sv.id)
+                    AND duration_minutes BETWEEN 15 AND 60
+                    ${staffServices ? `AND id::text IN (${staffServices.split(",").map((s) => `'${s}'`).join(",")})` : ""}
+                    ORDER BY name LIMIT 1`);
+  ids.service2Minutes = Number(q(`SELECT duration_minutes FROM services WHERE id = '${ids.service2}'`));
+  ids.serviceMinutes = Number(q(`SELECT duration_minutes FROM services WHERE id = '${ids.service}'`));
 
   // A booking made earlier online, which the offline calendar must show.
   ids.existing = (await otherDeviceBooking("09:00", { internal_notes: "made online" })).id;
@@ -794,6 +810,131 @@ describe("offline mode in the browser", () => {
     await page.keyboard.press("Escape");
     await page.keyboard.press("Escape");
     await goOnline();
+  });
+
+  test("a booking made on another screen appears without reloading, and paying it shows a confirmation", async () => {
+    if (!appServer) await startAppServer();
+    await reloadApp();
+    // "Another screen": a booking through the same server the app uses.
+    const viaApp = api(APP_PORT, token(ids.admin, "admin"));
+    const r = await viaApp("POST", "/api/v1/appointments", {
+      client_id: ids.otherClient,
+      status: "confirmed",
+      save_receipt: true,
+      allow_unavailable: true,
+      services: [{ service_id: ids.service, staff_id: ids.staff, start_time: at("19:00"), duration_override: 60, price_override: 40 }],
+    });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    await waitFor(() => cardFor(r.data.id), "the new booking on the open calendar, without a reload", 10000);
+
+    // Pay it: a plain one-method payment must be confirmed on screen.
+    await waitFor(async () => !(await page.$(".p-toast-message")), "earlier toasts to go", 15000);
+    await openCard(r.data.id);
+    await clickTestId("booking-payment-tab");
+    await clickTestId("payment-submit");
+    const toast = await waitFor(
+      () => page.evaluate(() => [...document.querySelectorAll(".p-toast-message")].map((t) => t.textContent.replace(/\s+/g, " ")).join(" | ")),
+      "a toast after paying",
+    );
+    assert.match(toast, /Η πληρωμή καταχωρήθηκε|Payment recorded/);
+    // The suggested amount includes the client's earlier debt, so just the format.
+    assert.match(toast, /\d+,\d{2} €/, "amount in the Greek format");
+    assert.equal(count(`SELECT count(*) FROM transactions WHERE appointment_id = '${r.data.id}'`), 1);
+    await page.keyboard.press("Escape");
+  });
+
+  test("deleting a paid booking offers to cancel it instead; the payment stays", async () => {
+    if (!appServer) await startAppServer();
+    await reloadApp();
+    const viaApp = api(APP_PORT, token(ids.admin, "admin"));
+    const r = await viaApp("POST", "/api/v1/appointments", {
+      client_id: ids.otherClient,
+      status: "confirmed",
+      save_receipt: true,
+      allow_unavailable: true,
+      services: [{ service_id: ids.service, staff_id: ids.staff, start_time: at("16:00"), duration_override: 45, price_override: 30 }],
+    });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    assert.equal((await viaApp("POST", "/api/v1/transactions", { appointment_id: r.data.id, client_id: ids.otherClient, amount: 10, payment_method: "cash" })).status, 200);
+    await waitFor(() => cardFor(r.data.id), "the paid booking on the calendar", 10000);
+
+    await openCard(r.data.id);
+    await clickTestId("booking-delete");
+    await page.waitForSelector(".p-confirmdialog-accept-button", { visible: true });
+    await page.click(".p-confirmdialog-accept-button");
+    // The second question: it has payments, cancel instead?
+    // (the first question is still closing for a moment)
+    await waitFor(
+      () => page.evaluate(() => /πληρωμές|payments/.test(document.querySelector(".p-confirmdialog")?.textContent || "")),
+      "the 'has payments' question",
+    );
+    await sleep(300);
+    await page.click(".p-confirmdialog-accept-button");
+    await waitFor(() => q(`SELECT status FROM appointments WHERE id = '${r.data.id}'`) === "cancelled", "the booking cancelled");
+    assert.equal(count(`SELECT count(*) FROM transactions WHERE appointment_id = '${r.data.id}'`), 1, "the payment stays linked");
+  });
+
+  test("several services picked at once, reordered by dragging, and moved together with Ctrl + drag", async () => {
+    if (!appServer) await startAppServer();
+    await reloadApp();
+    await clickSlot("12:00");
+    await pickClient(ids.soloClientName);
+    await pickServices([ids.service, ids.service2]);
+
+    const rowStarts = () =>
+      page.evaluate(() =>
+        [...document.querySelectorAll('[data-testid="service-row"]')].map((row) => ({
+          name: row.querySelector('[data-testid="service-picker"]')?.textContent?.trim(),
+          time: row.querySelector('.p-select-label, .p-dropdown-label, input[readonly]')?.textContent?.trim() || "",
+        })),
+      );
+    const rows = await rowStarts();
+    assert.equal(rows.length, 2, "two service rows");
+
+    // Drag the second row above the first (by its handle).
+    const handles = await page.$$('[data-testid="service-drag-handle"]');
+    assert.equal(handles.length, 2, "each row has a handle");
+    const from = await handles[1].boundingBox();
+    const to = await handles[0].boundingBox();
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.mouse.down();
+    for (let i = 1; i <= 12; i++) await page.mouse.move(from.x + from.width / 2, from.y + (to.y - 20 - from.y) * (i / 12), { steps: 2 });
+    await page.mouse.up();
+    await sleep(500);
+    const after = await rowStarts();
+    assert.equal(after[0].name, rows[1].name, "the second service is now first");
+    await saveDialog();
+
+    const id = await waitFor(
+      () => q(`SELECT appointment_id FROM appointment_services WHERE staff_id = '${ids.staff}' AND start_time = '${at("12:00")}' AND service_id = '${ids.service2}' LIMIT 1`),
+      "the booking saved",
+    );
+    const svc = () => q(`SELECT string_agg(service_id::text || '@' || to_char(start_time AT TIME ZONE 'Europe/Athens', 'HH24:MI'), ',' ORDER BY start_time)
+                         FROM appointment_services WHERE appointment_id = '${id}'`);
+    const second = new Date(new Date(`2000-01-01T12:00:00Z`).getTime() + ids.service2Minutes * 60000).toISOString().slice(11, 16);
+    assert.equal(svc(), `${ids.service2}@12:00,${ids.service}@${second}`, "re-chained in the new order");
+
+    // Ctrl + drag the first card 30 minutes down: both services move.
+    await waitFor(async () => (await cards()).filter((c) => c.id === id).length === 2, "both cards on the calendar");
+    const firstCard = await page.evaluateHandle((apptId) => {
+      const els = [...document.querySelectorAll(`.fc-event[data-appointment-id="${apptId}"]`)];
+      return els.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)[0];
+    }, id);
+    await firstCard.evaluate((el) => el.scrollIntoView({ block: "center" }));
+    const box = await firstCard.boundingBox();
+    const slotHeight = await page.evaluate(() => document.querySelector(".fc-timegrid-slot-lane").getBoundingClientRect().height);
+    const x = box.x + box.width / 2;
+    const y = box.y + Math.min(12, box.height / 3);
+    await page.keyboard.down("Control");
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    for (let i = 1; i <= 10; i++) await page.mouse.move(x, y + (2 * slotHeight * i) / 10, { steps: 2 });
+    await page.mouse.up();
+    await page.keyboard.up("Control");
+    await page.waitForSelector(".p-confirmdialog-accept-button", { visible: true, timeout: 10000 });
+    await page.click(".p-confirmdialog-accept-button");
+    const shifted = new Date(new Date(`2000-01-01T12:30:00Z`).getTime() + ids.service2Minutes * 60000).toISOString().slice(11, 16);
+    await waitFor(() => svc() === `${ids.service2}@12:30,${ids.service}@${shifted}`, "both services moved 30 minutes");
   });
 
   test("logging out deletes the offline data, after warning about changes not synced yet", async () => {

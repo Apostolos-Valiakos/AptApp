@@ -327,3 +327,31 @@ describe("order safety", () => {
     expect(store.size).toBe(0);
   });
 });
+
+describe("a delete refused because the booking has payments", () => {
+  const refused = {
+    id: "w-del",
+    endpoint: "/api/v1/appointments/a1?scope=single",
+    method: "DELETE" as const,
+    body: undefined,
+    kind: "delete" as const,
+    label: "x",
+    createdAt: 1,
+    status: "conflict" as const,
+    conflict: { code: "has_payments", details: {} },
+  };
+
+  test("'cancel instead' turns it into a cancellation of the same booking, same key", async () => {
+    const { cancelInstead, canCancelInstead } = await import("../../client/src/offline/sync");
+    expect(canCancelInstead(refused)).toBe(true);
+    const w = cancelInstead(refused);
+    expect(w).toMatchObject({ id: "w-del", method: "POST", endpoint: "/api/v1/appointments/a1/cancel", body: {}, status: "pending" });
+    expect(w.conflict).toBeUndefined();
+  });
+
+  test("only offered for that refusal", async () => {
+    const { canCancelInstead } = await import("../../client/src/offline/sync");
+    expect(canCancelInstead({ ...refused, conflict: { code: "appointment_missing", details: {} } })).toBe(false);
+    expect(canCancelInstead({ ...refused, method: "PUT" })).toBe(false);
+  });
+});

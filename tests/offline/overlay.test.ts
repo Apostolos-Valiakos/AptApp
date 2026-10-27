@@ -207,3 +207,36 @@ describe("versions while changes wait to sync", () => {
     expect(untouched[0].version).toBe(3);
   });
 });
+
+describe("totals follow the server's rule (charged price, not list price)", () => {
+  // A discounted booking: the service shows its list price (29) but is
+  // charged 20; the server's total says so.
+  const discounted = () => [serverAppt("d1", "2027-03-01T09:00:00.000Z", { current_appt_total: 20 })];
+  const pay = (amount: number) =>
+    w({ endpoint: "/api/v1/transactions", method: "POST", kind: "payment", body: { appointment_id: "d1", amount, payment_method: "cash" } });
+
+  test("paying the discounted total offline shows the booking as paid", () => {
+    const [a] = applyPendingWrites(discounted(), [pay(20)], ctx());
+    expect(a.payment_status).toBe("paid");
+  });
+
+  test("an offline edit to the services recomputes the total from the charged prices", () => {
+    const edit = w({
+      endpoint: "/api/v1/appointments/d1",
+      method: "PUT",
+      body: { services: [{ service_id: "svc-massage", staff_id: "staff-1", start_time: "2027-03-01T09:00:00.000Z", price_override: 15, duration_override: 60 }] },
+    });
+    const [a] = applyPendingWrites(discounted(), [edit, pay(15)], ctx());
+    expect(a.current_appt_total).toBe(15);
+    expect(a.payment_status).toBe("paid");
+  });
+});
+
+describe("a queued cancellation", () => {
+  test("shows the booking as cancelled, pending", () => {
+    const [a] = applyPendingWrites([serverAppt("a1", "2027-01-01T09:00:00.000Z")], [
+      w({ endpoint: "/api/v1/appointments/a1/cancel", method: "POST", body: {} }),
+    ], ctx());
+    expect(a).toMatchObject({ id: "a1", status: "cancelled", _offline: "pending" });
+  });
+});
