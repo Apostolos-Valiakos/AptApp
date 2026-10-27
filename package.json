@@ -8,7 +8,9 @@
     "client:dev": "vite --host",
     "build": "vite build",
     "start": "node server/server.js",
-    "test": "jest --testPathPatterns=server/tests --forceExit --runInBand",
+    "typecheck": "vue-tsc --noEmit -p client",
+    "test": "npm run typecheck && vitest run && node --test tests/offline/server.test.mjs tests/server/auth.test.mjs tests/server/payments.test.mjs",
+    "test:api-compare": "node tests/server/api-compare.mjs",
     "test:offline": "vitest run && node --test tests/offline/server.test.mjs",
     "test:offline:e2e": "npm run build && node --test --test-timeout=1200000 tests/offline/e2e.test.mjs"
   },
@@ -29,8 +31,10 @@
     "puppeteer-core": "^23.11.1",
     "supertest": "^7.2.2",
     "tailwindcss": "^3.4.18",
+    "typescript": "^6.0.3",
     "unplugin-vue-components": "^28.8.0",
-    "vitest": "^2.1.9"
+    "vitest": "^2.1.9",
+    "vue-tsc": "^3.3.13"
   },
   "dependencies": {
     "@capacitor/android": "^7.0.0",
