@@ -73,6 +73,7 @@
                 </router-link>
                 <button
                   @click="logout"
+                  data-testid="logout"
                   class="bg-white text-[var(--p-primary-color)] hover:bg-[var(--p-primary-50)] px-4 py-1 rounded-lg text-sm font-bold transition-all shadow-sm active:scale-95 flex-shrink-0"
                 >
                   {{ t("nav.logout") }}
@@ -172,61 +173,80 @@
       </button>
     </div>
 
+    <!-- Offline mode: connection state, changes waiting to sync, and
+         conflicts to resolve (see offline/queue.ts). -->
     <div
-      v-if="authStore.isAuthenticated && pendingWrites.length > 0"
+      v-if="authStore.isAuthenticated && !authStore.isClient && (pendingWrites.length > 0 || !isOnline)"
       class="sticky top-12 z-40"
+      data-testid="offline-banner"
     >
       <div
         class="text-center py-2 text-sm font-bold flex items-center justify-center gap-3 cursor-pointer"
-        :class="conflictCount > 0 ? 'bg-red-500 text-white' : 'bg-amber-500 text-white'"
+        :class="
+          conflictCount > 0
+            ? 'bg-red-500 text-white'
+            : !isOnline
+              ? 'bg-gray-700 text-white'
+              : 'bg-amber-500 text-white'
+        "
         @click="offlinePanelOpen = !offlinePanelOpen"
       >
-        <i class="pi pi-cloud-upload"></i>
-        <span v-if="conflictCount > 0">
-          {{ t('offline.conflicts', { count: conflictCount }) }}
-        </span>
-        <span v-else>
-          {{ t('offline.pending', { count: pendingCount }) }}
-        </span>
+        <i :class="!isOnline ? 'pi pi-wifi' : 'pi pi-cloud-upload'"></i>
+        <span v-if="conflictCount > 0">{{ t("offline.conflicts", { count: conflictCount }) }}</span>
+        <span v-else-if="syncNeedsLogin">{{ t("offline.needsLogin", { count: pendingCount }) }}</span>
+        <span v-else-if="!isOnline">{{ t("offline.offlineBanner", { count: pendingCount }) }}</span>
+        <span v-else>{{ t("offline.pending", { count: pendingCount }) }}</span>
         <button
-          v-if="pendingCount > 0"
+          v-if="pendingCount > 0 && isOnline && !syncNeedsLogin"
           @click.stop="syncNow"
           :disabled="isSyncingNow"
           class="underline disabled:opacity-60"
         >
-          {{ isSyncingNow ? t('offline.syncing') : t('offline.syncNow') }}
+          {{ isSyncingNow ? t("offline.syncing") : t("offline.syncNow") }}
         </button>
-        <i :class="offlinePanelOpen ? 'pi pi-chevron-up' : 'pi pi-chevron-down'"></i>
+        <i v-if="pendingWrites.length" :class="offlinePanelOpen ? 'pi pi-chevron-up' : 'pi pi-chevron-down'"></i>
       </div>
       <div
-        v-if="offlinePanelOpen"
-        class="bg-white dark:bg-[var(--p-primary-900)] border-b border-[var(--p-primary-200)] shadow-lg max-h-64 overflow-y-auto"
+        v-if="offlinePanelOpen && pendingWrites.length"
+        class="bg-white dark:bg-[var(--p-primary-900)] border-b border-[var(--p-primary-200)] shadow-lg max-h-72 overflow-y-auto"
       >
+        <!-- Centred, with the actions under each line: the top-right
+             corner is where toasts appear, and they would cover them. -->
         <div
           v-for="w in pendingWrites"
           :key="w.id"
-          class="px-4 py-2 border-b border-[var(--p-primary-100)] flex items-center justify-between gap-3 text-sm"
+          class="max-w-2xl mx-auto px-4 py-2 border-b border-[var(--p-primary-100)] last:border-b-0 flex flex-col gap-1.5 text-sm"
+          :data-testid="`offline-write-${w.status}`"
         >
           <div class="min-w-0">
-            <div class="font-bold truncate">{{ w.label || w.kind }}</div>
-            <div v-if="w.status === 'conflict'" class="text-red-600 text-xs truncate">
-              {{ w.lastError }}
+            <div class="font-bold truncate">
+              <i :class="kindIcon(w.kind)" class="text-xs mr-1 text-gray-400"></i>{{ w.label || w.kind }}
             </div>
+            <div v-if="w.status === 'conflict'" class="text-red-600 text-xs">{{ conflictText(w) }}</div>
+            <div v-else class="text-gray-500 text-xs">{{ t("offline.waiting") }}</div>
           </div>
-          <div class="flex items-center gap-2 flex-shrink-0">
+          <div v-if="w.status === 'conflict'" class="flex flex-wrap items-center gap-2">
             <button
-              v-if="w.status === 'conflict'"
-              @click="retryQueuedWrite(w.id)"
-              class="text-xs underline text-[var(--p-primary-600)]"
+              v-if="canKeepMine(w)"
+              @click="keepMineQueuedWrite(w.id)"
+              class="px-3 py-1 rounded-full text-xs font-semibold text-white bg-[var(--p-primary-600)] hover:bg-[var(--p-primary-700)]"
+              data-testid="offline-keep-mine"
             >
-              {{ t('offline.retry') }}
+              {{ t("offline.keepMine") }}
             </button>
             <button
-              v-if="w.status === 'conflict'"
-              @click="discardQueuedWrite(w.id)"
-              class="text-xs underline text-red-600"
+              v-else-if="!['depends_on_conflict', 'missing_record', 'appointment_missing'].includes(w.conflict?.code || '')"
+              @click="retryQueuedWrite(w.id)"
+              class="px-3 py-1 rounded-full text-xs font-semibold border border-[var(--p-primary-400)] text-[var(--p-primary-700)] hover:bg-[var(--p-primary-50)]"
             >
-              {{ t('offline.discard') }}
+              {{ t("offline.retry") }}
+            </button>
+            <button
+              @click="confirmDiscard(w)"
+              class="px-3 py-1 rounded-full text-xs font-semibold border border-red-300 text-red-600 hover:bg-red-50"
+              data-testid="offline-discard"
+            >
+              {{ canKeepMine(w) ? t("offline.keepTheirs") : t("offline.discard") }}
             </button>
           </div>
         </div>
@@ -261,10 +281,16 @@ import {
   pendingWrites,
   pendingCount,
   conflictCount,
+  isOnline,
+  syncNeedsLogin,
   flushQueue,
   retryQueuedWrite,
   discardQueuedWrite,
+  keepMineQueuedWrite,
 } from "../offline/queue";
+import { canKeepMine } from "../offline/sync";
+import type { QueuedWrite } from "../offline/db";
+import { useLogout } from "../composables/useLogout";
 
 const router = useRouter();
 const route = useRoute();
@@ -276,6 +302,26 @@ const mobileMenuOpen = ref(false);
 const { t, locale } = useI18n();
 
 const offlinePanelOpen = ref(false);
+const kindIcon = (kind: string) =>
+  ({ appointment: "pi pi-calendar", payment: "pi pi-euro", client: "pi pi-user", delete: "pi pi-trash" })[kind] ||
+  "pi pi-circle";
+/** Why the server refused a change, in plain words. */
+const conflictText = (w: QueuedWrite) => {
+  const code = w.conflict?.code || "";
+  const clash = w.conflict?.details?.conflicts?.[0];
+  if (code === "slot_taken" && clash) {
+    return t("offline.conflict.slot_taken_with", {
+      client: clash.client_name || "—",
+      time: new Date(clash.start_time).toLocaleString("el-GR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }),
+    });
+  }
+  const known = ["slot_taken", "stale_appointment", "appointment_missing", "depends_on_conflict", "missing_record"];
+  return known.includes(code) ? t(`offline.conflict.${code}`) : w.lastError || code;
+};
+// Discarding drops a change for good (e.g. a booking), so ask first.
+const confirmDiscard = (w: QueuedWrite) => {
+  if (window.confirm(t("offline.confirmDiscard", { label: w.label || w.kind }))) discardQueuedWrite(w.id);
+};
 const isSyncingNow = ref(false);
 const syncNow = async () => {
   isSyncingNow.value = true;
@@ -456,11 +502,10 @@ let navResizeObserver: ResizeObserver | null = null;
 watch(() => [visibleNavItems.value.length, locale.value], fitNavLinks);
 
 const isFullWidthPage = computed(() => route.path.includes("/app/scheduler"));
-
-const logout = () => {
-  authStore.logout();
-  router.push("/");
+const logoutAndClear = useLogout();
+const logout = async () => {
   mobileMenuOpen.value = false;
+  await logoutAndClear("/");
 };
 
 const handleExitImpersonation = () => {

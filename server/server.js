@@ -369,7 +369,7 @@ const createAppointmentSeries = async (client, data, shopId) => {
   let existingStartTimes = null;
   if (!is_block && validClientId && seriesStaffId) {
     const existingRes = await client.query(
-      `SELECT aps.start_time
+      `SELECT aps.start_time, a.id
        FROM appointments a
        JOIN appointment_services aps ON a.id = aps.appointment_id
        WHERE a.shop_id = $1
@@ -378,8 +378,8 @@ const createAppointmentSeries = async (client, data, shopId) => {
          AND a.status != 'cancelled'`,
       [shopId, validClientId, seriesStaffId],
     );
-    existingStartTimes = new Set(
-      existingRes.rows.map((r) => new Date(r.start_time).toISOString()),
+    existingStartTimes = new Map(
+      existingRes.rows.map((r) => [new Date(r.start_time).toISOString(), r.id]),
     );
   }
 
@@ -406,6 +406,9 @@ const createAppointmentSeries = async (client, data, shopId) => {
       validClientId &&
       existingStartTimes?.has(instanceStartIso)
     ) {
+      // Already booked: the answer points at that booking, so a caller
+      // linking follow-ups to the new id (the offline sync queue) still can.
+      if (isFirstInstance) firstAppointmentId = existingStartTimes.get(instanceStartIso);
       continue;
     }
 
@@ -809,7 +812,8 @@ app.get("/manifest.webmanifest", async (req, res) => {
   });
 });
 
-const distPath = path.join(__dirname, "../dist");
+// APP_DIST_PATH: another build folder (the browser tests use client/dist).
+const distPath = process.env.APP_DIST_PATH || path.join(__dirname, "../dist");
 // Caching: build files carry a hash in their name that changes with every
 // build, so browsers can keep them for a year without asking again;
 // index.html never (so a refresh after a rebuild always gets the new names).
@@ -932,22 +936,95 @@ const sanitizeClientBookingPayload = async (client, rawBody, shopId, clientId) =
 // Call inside an open transaction, right after BEGIN. If a cached response
 // exists for this key, the caller should ROLLBACK and return it as-is
 // without re-running the write.
+// Claims the key inside the request's transaction before doing any work: a
+// placeholder row is inserted, so a second request with the same key (a sync
+// retry, or another tab replaying the same offline write at the same moment)
+// waits on that row until the first commits, then gets its saved response
+// instead of writing a second time. If the first rolls back, the placeholder
+// goes with it and the second proceeds as the owner. Returns the saved
+// response to replay, or null when this request should do the work.
 const checkIdempotency = async (client, key, shopId) => {
   if (!key) return null;
+  const claimed = await client.query(
+    `INSERT INTO idempotency_keys (key, shop_id, response_status, response_body)
+     VALUES ($1, $2, 0, '{}'::jsonb) ON CONFLICT (key) DO NOTHING RETURNING key`,
+    [key, shopId],
+  );
+  if (claimed.rowCount > 0) return null;
   const { rows } = await client.query(
     "SELECT response_status, response_body FROM idempotency_keys WHERE key = $1 AND shop_id = $2",
     [key, shopId],
   );
-  return rows[0] || null;
+  // status 0: a placeholder committed without a final response (a route that
+  // didn't record one) — nothing to replay, so let this request proceed.
+  return rows[0] && rows[0].response_status > 0 ? rows[0] : null;
 };
 // Call right before COMMIT, once the response body is final.
 const saveIdempotency = async (client, key, shopId, status, body) => {
   if (!key) return;
   await client.query(
     `INSERT INTO idempotency_keys (key, shop_id, response_status, response_body)
-     VALUES ($1, $2, $3, $4) ON CONFLICT (key) DO NOTHING`,
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (key) DO UPDATE SET response_status = EXCLUDED.response_status,
+                                     response_body = EXCLUDED.response_body
+     WHERE idempotency_keys.shop_id = EXCLUDED.shop_id`,
     [key, shopId, status, JSON.stringify(body)],
   );
+};
+
+// --- Offline sync conflict checks -----------------------------------------
+// A booking saved offline (replayed later by the browser's sync queue)
+// carries offline_known_overlaps: the appointments it overlapped on the
+// device's calendar at save time — overlaps staff saw and accepted. Any OTHER
+// appointment now overlapping the same staff and time was booked online in
+// the meantime, so the write is refused as slot_taken for staff to resolve,
+// unless sent again with force: true ("keep mine").
+class OfflineConflictError extends Error {
+  constructor(code, details) {
+    super(code);
+    this.code = code;
+    this.details = details;
+  }
+}
+const assertNoNewOverlaps = async (client, shopId, body, ownAppointmentId = null) => {
+  if (!Array.isArray(body.offline_known_overlaps) || body.force || body.is_block) return;
+  const known = body.offline_known_overlaps.filter((x) => safeUUID(String(x)));
+  for (const svc of body.services || []) {
+    const staffId = safeUUID(svc.staff_id);
+    if (!staffId || !svc.start_time) continue;
+    const minutes = Number(svc.duration_override || svc.duration_minutes) || 60;
+    const { rows } = await client.query(
+      `SELECT DISTINCT a.id AS appointment_id, aps.start_time,
+              TRIM(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, '')) AS client_name
+       FROM appointment_services aps
+       JOIN appointments a ON a.id = aps.appointment_id
+       LEFT JOIN clients c ON c.id = a.client_id
+       LEFT JOIN services s ON s.id = aps.service_id
+       WHERE a.shop_id = $1 AND aps.staff_id = $2
+         AND a.status NOT IN ('cancelled', 'no-show', 'no_show')
+         AND ($3::uuid IS NULL OR a.id <> $3::uuid)
+         AND NOT (a.id = ANY($4::uuid[]))
+         AND aps.start_time < ($5::timestamptz + ($6 || ' minutes')::interval)
+         AND (aps.start_time + (COALESCE(aps.duration_override, s.duration_minutes, 60) || ' minutes')::interval) > $5::timestamptz`,
+      [shopId, staffId, ownAppointmentId, known, svc.start_time, minutes],
+    );
+    if (rows.length > 0) throw new OfflineConflictError("slot_taken", { staff_id: staffId, conflicts: rows });
+  }
+};
+// An edit carries base_version: the appointment version it was made from. If
+// the appointment changed since (another device, or online while this one was
+// offline), the edit is refused as stale_appointment instead of silently
+// overwriting the newer changes — unless sent again with force: true.
+const assertBaseVersion = async (client, shopId, appointmentId, body) => {
+  if (body.base_version === undefined || body.base_version === null || body.force) return;
+  const { rows } = await client.query(
+    "SELECT version FROM appointments WHERE id = $1 AND shop_id = $2 FOR UPDATE",
+    [appointmentId, shopId],
+  );
+  if (!rows[0]) throw new OfflineConflictError("appointment_missing", {});
+  if (Number(rows[0].version) !== Number(body.base_version)) {
+    throw new OfflineConflictError("stale_appointment", { current_version: Number(rows[0].version) });
+  }
 };
 
 // --- HELPER: Recalculate Outstanding Balance for a Client ---
@@ -2572,8 +2649,18 @@ app.post("/api/v1/clients", authenticateToken, async (req, res) => {
       .json({ error: "First name and last name are required" });
   }
 
+  // Idempotent like bookings: a client created offline is replayed by the
+  // sync queue with the same key, so a retry can't create a duplicate.
+  const idempotencyKey = req.headers["idempotency-key"] || null;
+  const db = await pool.connect();
   try {
-    const { rows } = await pool.query(
+    await db.query("BEGIN");
+    const cached = await checkIdempotency(db, idempotencyKey, req.shopId);
+    if (cached) {
+      await db.query("ROLLBACK");
+      return res.status(cached.response_status).json(cached.response_body);
+    }
+    const { rows } = await db.query(
       `INSERT INTO clients (first_name, last_name, email, phone, notes, custom_fields, shop_id, ergotherapia, physiotherapia, logotherapia, date_of_birth) 
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) 
        RETURNING *`,
@@ -2592,10 +2679,16 @@ app.post("/api/v1/clients", authenticateToken, async (req, res) => {
       ],
     );
     rows[0].full_name = `${rows[0].first_name} ${rows[0].last_name}`;
-    res.json({ success: true, client: rows[0] });
+    const responseBody = { success: true, client: rows[0] };
+    await saveIdempotency(db, idempotencyKey, req.shopId, 200, responseBody);
+    await db.query("COMMIT");
+    res.json(responseBody);
   } catch (err) {
+    await db.query("ROLLBACK").catch(() => {});
     console.error(err);
     res.status(500).json({ error: "Internal server error" });
+  } finally {
+    db.release();
   }
 });
 
@@ -3440,6 +3533,7 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
       `
       SELECT 
         a.id, 
+        a.version,
         a.client_id, 
         a.status, 
         a.internal_notes, 
@@ -3448,7 +3542,10 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
         a.is_block, 
         a.is_eoppy,
         a.save_receipt, 
-        a.created_at,
+        -- As text ("2026-10-21"): a DATE sent as a JS Date becomes the day
+        -- before's 21:00/22:00 UTC (midnight in Athens), and the hover card
+        -- would show the previous day.
+        a.created_at::text AS created_at,
         a.recurrence,
         a.group_id,
         a.discount_type,
@@ -3570,6 +3667,8 @@ app.post("/api/v1/appointments", authenticateToken, async (req, res) => {
       );
     }
 
+    await assertNoNewOverlaps(client, req.shopId, bookingPayload);
+
     const { firstAppointmentId, validClientId } = await createAppointmentSeries(
       client,
       bookingPayload,
@@ -3581,8 +3680,10 @@ app.post("/api/v1/appointments", authenticateToken, async (req, res) => {
       newBalance = await recalculateClientBalance(client, validClientId);
     }
 
+    const versionRes = await client.query("SELECT version FROM appointments WHERE id = $1", [firstAppointmentId]);
     const responseBody = {
       id: firstAppointmentId,
+      version: versionRes.rows[0] ? Number(versionRes.rows[0].version) : null,
       success: true,
       new_balance: newBalance,
     };
@@ -3603,6 +3704,9 @@ app.post("/api/v1/appointments", authenticateToken, async (req, res) => {
     }
     if (err instanceof SelfBookingNotAllowedError) {
       return res.status(422).json({ error: err.message, reason: err.reason });
+    }
+    if (err instanceof OfflineConflictError) {
+      return res.status(409).json({ error: err.code, ...err.details });
     }
     console.error("Create Appointment Error:", err);
     res.status(500).json({ error: "Failed to create appointment" });
@@ -3792,6 +3896,11 @@ app.put("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
 
     const validClientId = safeUUID(req.body.client_id);
 
+    if (scope !== "series") {
+      await assertBaseVersion(client, req.shopId, id, req.body);
+      await assertNoNewOverlaps(client, req.shopId, req.body, id);
+    }
+
     if (scope === "series") {
       const groupInfo = await getGroupDetails(client, id, req.shopId);
       const isRecurringBody = !!req.body.recurrence;
@@ -3861,7 +3970,12 @@ app.put("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
       newBalance = await recalculateClientBalance(client, validClientId);
     }
 
-    const responseBody = { success: true, new_balance: newBalance };
+    const versionRes = await client.query("SELECT version FROM appointments WHERE id = $1 AND shop_id = $2", [id, req.shopId]);
+    const responseBody = {
+      success: true,
+      new_balance: newBalance,
+      version: versionRes.rows[0] ? Number(versionRes.rows[0].version) : null,
+    };
     await saveIdempotency(client, idempotencyKey, req.shopId, 200, responseBody);
 
     await client.query("COMMIT");
@@ -3876,6 +3990,9 @@ app.put("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
     }
     if (err instanceof MissingStaffError) {
       return res.status(422).json({ error: "staff_required" });
+    }
+    if (err instanceof OfflineConflictError) {
+      return res.status(409).json({ error: err.code, ...err.details });
     }
     console.error("Update Appointment Error:", err);
     res.status(500).json({ error: "Update failed" });
@@ -3935,16 +4052,29 @@ app.post("/api/v1/appointments/:id/cancel", authenticateToken, async (req, res) 
 app.delete("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
   const { id } = req.params;
   const { scope } = req.query;
+  const idempotencyKey = req.headers["idempotency-key"] || null;
 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+
+    const cached = await checkIdempotency(client, idempotencyKey, req.shopId);
+    if (cached) {
+      await client.query("ROLLBACK");
+      return res.status(cached.response_status).json(cached.response_body);
+    }
 
     // Look up the client now — the row won't exist to query after deletion.
     const affectedClientRes = await client.query(
       "SELECT client_id FROM appointments WHERE id = $1 AND shop_id = $2",
       [id, req.shopId],
     );
+    // Already gone (deleted on another device, or a replayed offline delete):
+    // the outcome the caller wants, so report success rather than an error.
+    if (affectedClientRes.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.json({ success: true, already_deleted: true });
+    }
     const affectedClientId = affectedClientRes.rows[0]?.client_id || null;
 
     // Collect the appointment ids being deleted so product stock can be restored
@@ -3996,8 +4126,10 @@ app.delete("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
       newBalance = await recalculateClientBalance(client, affectedClientId);
     }
 
+    const responseBody = { success: true, new_balance: newBalance };
+    await saveIdempotency(client, idempotencyKey, req.shopId, 200, responseBody);
     await client.query("COMMIT");
-    res.json({ success: true, new_balance: newBalance });
+    res.json(responseBody);
   } catch (err) {
     console.error(err);
     await client.query("ROLLBACK");
@@ -4701,9 +4833,16 @@ app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
     // Recalculate client balance and return it so the frontend can update without guessing
     const newBalance = await recalculateClientBalance(client, client_id);
 
+    // The appointment's version after the payment (it changes with every
+    // payment), so the booking dialog can keep editing without a false
+    // "changed meanwhile" conflict against its own payment.
+    const apptVersionRes = appointment_id && safeUUID(appointment_id)
+      ? await client.query("SELECT version FROM appointments WHERE id = $1", [appointment_id])
+      : { rows: [] };
     const responseBody = {
       success: true,
       new_balance: newBalance,
+      appointment_version: apptVersionRes.rows[0] ? Number(apptVersionRes.rows[0].version) : null,
       package_amount: Math.round(packageAmount * 100) / 100,
       packages_purchased: purchasedPackages,
       gift_card_amount: Math.round(giftCardAmount * 100) / 100,
@@ -8393,6 +8532,38 @@ app.get("/api/v1/availability", authenticateToken, async (req, res) => {
     await pool.query(
       "CREATE INDEX IF NOT EXISTS idx_idempotency_keys_created_at ON idempotency_keys (created_at)",
     );
+
+    // Appointment versions, for offline/concurrent edit conflicts (see
+    // assertBaseVersion). Raised on any meaningful change of the appointment
+    // row (not the reminder-sent flags set by background jobs), and whenever
+    // its services or payments change.
+    await pool.query("ALTER TABLE appointments ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1");
+    await pool.query(`
+      CREATE OR REPLACE FUNCTION bump_appointment_version() RETURNS trigger AS $$
+      BEGIN
+        IF (to_jsonb(NEW) - 'version' - 'updated_at' - 'email_reminder_sent' - 'push_reminder_sent')
+           IS DISTINCT FROM
+           (to_jsonb(OLD) - 'version' - 'updated_at' - 'email_reminder_sent' - 'push_reminder_sent') THEN
+          NEW.version := OLD.version + 1;
+        END IF;
+        RETURN NEW;
+      END $$ LANGUAGE plpgsql`);
+    await pool.query("DROP TRIGGER IF EXISTS trg_appointments_version ON appointments");
+    await pool.query(`CREATE TRIGGER trg_appointments_version BEFORE UPDATE ON appointments
+                      FOR EACH ROW EXECUTE FUNCTION bump_appointment_version()`);
+    await pool.query(`
+      CREATE OR REPLACE FUNCTION bump_parent_appointment_version() RETURNS trigger AS $$
+      BEGIN
+        UPDATE appointments SET version = version + 1
+        WHERE id = COALESCE(CASE WHEN TG_OP = 'DELETE' THEN OLD.appointment_id ELSE NEW.appointment_id END, NULL);
+        RETURN NULL;
+      END $$ LANGUAGE plpgsql`);
+    for (const table of ["appointment_services", "transactions"]) {
+      await pool.query(`DROP TRIGGER IF EXISTS trg_${table}_appointment_version ON ${table}`);
+      await pool.query(`CREATE TRIGGER trg_${table}_appointment_version
+                        AFTER INSERT OR UPDATE OR DELETE ON ${table}
+                        FOR EACH ROW EXECUTE FUNCTION bump_parent_appointment_version()`);
+    }
   } catch (err) {
     console.error("Failed to run idempotency_keys schema setup:", err);
   }

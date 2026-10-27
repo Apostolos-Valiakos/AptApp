@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { useSettingsStore } from "./settings";
+import { onLoggedIn } from "../offline/queue";
 
 export const useAuthStore = defineStore("auth", () => {
   const user = ref(JSON.parse(localStorage.getItem("user") || "null"));
@@ -60,6 +61,9 @@ export const useAuthStore = defineStore("auth", () => {
           !!data.user?.shop_force_hide_cash,
           data.user?.shop_force_hide_cash_locked_by || null,
         );
+
+        // Changes saved offline while the session was expired can sync now.
+        onLoggedIn();
 
         return { success: true };
       } else {

@@ -998,6 +998,7 @@ import InputSwitch from "primevue/inputswitch";
 import ColorPicker from "primevue/colorpicker";
 import Dialog from "primevue/dialog";
 import DatePicker from "primevue/datepicker";
+import { useLogout } from "../composables/useLogout";
 
 const { t } = useI18n();
 const toast = useToast();
@@ -1499,10 +1500,8 @@ const uploadPhoto = async (e: Event) => {
   }
 };
 
-const handleLogout = () => {
-  authStore.logout();
-  router.push("/login");
-};
+const logoutAndClear = useLogout();
+const handleLogout = () => logoutAndClear("/login");
 
 // --- Force Logout Everyone (super_admin only) ---
 const forcingLogout = ref(false);

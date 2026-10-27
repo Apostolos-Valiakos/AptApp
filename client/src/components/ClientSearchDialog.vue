@@ -28,7 +28,7 @@
             {{ initials(option.full_name) }}
           </div>
           <div class="min-w-0">
-            <div class="font-semibold text-gray-900 truncate">{{ option.full_name }}</div>
+            <div lang="el" class="font-semibold text-gray-900 truncate uppercase">{{ option.full_name }}</div>
             <div class="text-xs text-gray-500 truncate">{{ option.phone || option.email || "" }}</div>
           </div>
         </div>

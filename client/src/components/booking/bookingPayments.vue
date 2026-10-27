@@ -314,6 +314,7 @@
         class="w-full !py-4 !text-lg !bg-green-600 hover:!bg-green-700 !border-none"
         :loading="loading"
         :disabled="!canSubmit"
+        data-testid="payment-submit"
         @click="submitPayment"
       />
     </div>

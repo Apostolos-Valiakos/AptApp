@@ -13,13 +13,24 @@
             class="flex items-center gap-1.5 text-lg font-bold text-gray-900 select-none"
           >
             {{ mobileMonthTitle }}
-            <i class="pi pi-chevron-down text-xs text-gray-400"></i>
+            <i v-if="!calendarDocked" class="pi pi-chevron-down text-xs text-gray-400"></i>
           </button>
           <div
             v-if="showDatePicker"
             @click.stop
             class="absolute top-full left-0 mt-2 z-50 bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden"
           >
+            <div class="flex justify-end px-2 pt-2">
+              <button
+                @click="dockCalendar(true)"
+                class="w-7 h-7 rounded-md flex items-center justify-center text-gray-400 hover:text-[var(--p-primary-600)] hover:bg-[var(--p-primary-50)]"
+                v-tooltip.bottom="t('scheduler.dockCalendar')"
+                :aria-label="t('scheduler.dockCalendar')"
+                data-testid="dock-calendar"
+              >
+                <i class="pi pi-thumbtack text-sm"></i>
+              </button>
+            </div>
             <DatePicker
               inline
               v-model="pickerDate"
@@ -83,13 +94,24 @@
             class="flex items-center gap-1 text-sm md:text-base font-bold text-gray-800 min-w-[120px] md:min-w-[180px] select-none hover:text-[var(--p-primary-700)] transition-colors"
           >
             {{ currentTitle }}
-            <i class="pi pi-chevron-down text-[10px] text-gray-400"></i>
+            <i v-if="!calendarDocked" class="pi pi-chevron-down text-[10px] text-gray-400"></i>
           </button>
           <div
             v-if="showDatePicker"
             @click.stop
             class="absolute top-full left-0 mt-2 z-50 bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden"
           >
+            <div class="flex justify-end px-2 pt-2">
+              <button
+                @click="dockCalendar(true)"
+                class="w-7 h-7 rounded-md flex items-center justify-center text-gray-400 hover:text-[var(--p-primary-600)] hover:bg-[var(--p-primary-50)]"
+                v-tooltip.bottom="t('scheduler.dockCalendar')"
+                :aria-label="t('scheduler.dockCalendar')"
+                data-testid="dock-calendar"
+              >
+                <i class="pi pi-thumbtack text-sm"></i>
+              </button>
+            </div>
             <DatePicker
               inline
               v-model="pickerDate"
@@ -240,8 +262,35 @@
       </button>
     </div>
 
+    <div class="flex-grow flex min-h-0">
+    <!-- ===== DOCKED DATE CALENDAR (pinned from the date popup) ===== -->
+    <aside
+      v-if="calendarDocked"
+      class="docked-date-picker flex-shrink-0 w-[272px] border-r border-gray-100 bg-white overflow-y-auto overflow-x-hidden"
+      data-testid="docked-calendar"
+    >
+      <div class="flex justify-end px-2 pt-2">
+        <button
+          @click="dockCalendar(false)"
+          class="w-7 h-7 rounded-md flex items-center justify-center text-[var(--p-primary-600)] bg-[var(--p-primary-50)] hover:bg-[var(--p-primary-100)]"
+          v-tooltip.bottom="t('scheduler.undockCalendar')"
+          :aria-label="t('scheduler.undockCalendar')"
+          data-testid="undock-calendar"
+        >
+          <i class="pi pi-thumbtack text-sm rotate-45"></i>
+        </button>
+      </div>
+      <DatePicker
+        inline
+        v-model="dockedDate"
+        dateFormat="dd/mm/yy"
+        :minDate="isStaffRole ? todayDate : undefined"
+        @date-select="onDatePicked"
+      />
+    </aside>
+
     <!-- ===== CALENDAR AREA ===== -->
-    <div class="flex-grow overflow-auto relative">
+    <div class="flex-1 min-w-0 overflow-auto relative">
       <!-- Loading overlay -->
       <transition name="fade">
         <div
@@ -291,6 +340,7 @@
           </a>
         </div>
       </div>
+    </div>
     </div>
 
     <BookingDialog
@@ -381,6 +431,9 @@ import {
   overtimeConfirmMessage,
 } from "../utils/staffAvailability";
 import { displayServiceName } from "../utils/serviceVariations";
+import { fetchOrQueue } from "../offline/queue";
+import { knownOverlapIds } from "../offline/overlaps";
+import { isTempId } from "../offline/tempIds";
 
 const reorderDialogVisible = ref(false);
 const authStore = useAuthStore();
@@ -470,6 +523,19 @@ const shopSlotMinTime = ref("07:00:00");
 const shopSlotMaxTime = ref("23:00:00");
 const showDatePicker = ref(false);
 const pickerDate = ref<Date | null>(null);
+// The date calendar can be pinned next to the schedule instead of opening as
+// a popup; each device remembers the choice.
+const DOCKED_KEY = "scheduler.calendarDocked";
+const readDocked = () => {
+  try {
+    return localStorage.getItem(DOCKED_KEY) === "1";
+  } catch {
+    return false;
+  }
+};
+const calendarDocked = ref(readDocked());
+/** The docked calendar's selection: follows the day the schedule shows. */
+const dockedDate = ref<Date | null>(new Date());
 const todayDate = computed(() => {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
@@ -734,7 +800,19 @@ const onStripTouchEnd = (e: TouchEvent) => {
 };
 
 // --- Date picker popover ---
+const dockCalendar = async (docked: boolean) => {
+  calendarDocked.value = docked;
+  showDatePicker.value = false;
+  try {
+    localStorage.setItem(DOCKED_KEY, docked ? "1" : "0");
+  } catch {}
+  // The schedule's width changed: FullCalendar has to re-measure.
+  await nextTick();
+  calendarApi.value?.updateSize();
+};
+
 const toggleDatePicker = () => {
+  if (calendarDocked.value) return; // already on screen
   if (!showDatePicker.value)
     pickerDate.value = calendarApi.value?.getDate() ?? new Date();
   showDatePicker.value = !showDatePicker.value;
@@ -898,9 +976,15 @@ const calendarEvents = computed(() => {
         backgroundColor: bgColor,
         borderColor: "transparent",
         textColor: "#1f2937",
-        classNames: ["fresha-event"],
+        // Changes waiting to sync (offline) are outlined: dashed while pending,
+        // red when the server refused them (see the sync banner).
+        classNames: [
+          "fresha-event",
+          ...(appt._offline === "conflict" ? ["fc-offline-conflict"] : appt._offline ? ["fc-offline-pending"] : []),
+        ],
         extendedProps: {
           isServiceEvent: true,
+          offlineState: appt._offline || null,
           appointmentId: appt.id,
           group_id: appt.group_id,
           serviceIndex: index,
@@ -1179,17 +1263,37 @@ const updateAppointment = async (
   updates: any,
 ): Promise<boolean> => {
   try {
-    const token = localStorage.getItem("token");
-    const res = await fetch(`/api/v1/appointments/${id}`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(updates),
+    // Offline the move is queued and shown right away (see offline/queue.ts);
+    // base_version lets the server refuse it if the appointment changed
+    // meanwhile instead of overwriting that change.
+    const body = {
+      ...updates,
+      ...(updates.version != null && !isTempId(String(id)) ? { base_version: updates.version } : {}),
+    };
+    delete body.version;
+    delete body._offline;
+    const result = await fetchOrQueue(`/api/v1/appointments/${id}`, "PUT", body, {
+      kind: "appointment",
+      label: `${updates.first_name || ""} ${updates.last_name || ""}`.trim() || t("booking.editDialog.title"),
+      offlineExtras: { offline_known_overlaps: knownOverlapIds(calendarStore.events, updates.services || [], id) },
     });
+    if (result.queued) {
+      toast.add({
+        severity: "warn",
+        summary: t("booking.toast.savedOffline"),
+        detail: t("booking.toast.savedOfflineDetail"),
+        life: 4000,
+      });
+      return true;
+    }
+    const res = result.response;
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
+      if (err.error === "stale_appointment" || err.error === "appointment_missing") {
+        // Changed (or deleted) on another device meanwhile: show the current state.
+        await calendarStore.fetchAppointments(currentStart.value, currentEnd.value);
+        throw new Error(t(`offline.conflict.${err.error}`));
+      }
       throw new Error(err.error || t("scheduler.toasts.updateFailedError"));
     }
     await calendarStore.fetchAppointments(currentStart.value, currentEnd.value);
@@ -1404,6 +1508,7 @@ const calendarOptions = ref({
 
   datesSet: async (arg: any) => {
     currentTitle.value = arg.view.title;
+    dockedDate.value = arg.view.calendar.getDate();
     currentView.value = arg.view.type;
     currentStart.value = arg.startStr;
     currentEnd.value = arg.endStr;
@@ -1620,6 +1725,8 @@ const calendarOptions = ref({
     if (key) info.el.dataset.linkKey = key;
     const dayKey = info.event.extendedProps?.dayClientKey;
     if (dayKey) info.el.dataset.dayClientKey = dayKey;
+    const apptId = info.event.extendedProps?.appointmentId;
+    if (apptId) info.el.dataset.appointmentId = apptId; // used by the browser tests
   },
 
   eventDragStart: () => {
@@ -1842,6 +1949,28 @@ onMounted(async () => {
 </script>
 
 <style>
+/* Docked date calendar: fills its column, no frame, no sideways scroll. */
+.docked-date-picker .p-datepicker,
+.docked-date-picker .p-datepicker-panel {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  box-shadow: none;
+}
+.docked-date-picker .p-datepicker-panel {
+  padding: 0 0.5rem 0.75rem;
+}
+.docked-date-picker .p-datepicker-day-view {
+  width: 100%;
+  table-layout: fixed;
+}
+.docked-date-picker .p-datepicker-day-cell {
+  padding: 0.125rem;
+}
+.docked-date-picker .p-datepicker-day {
+  width: 2rem;
+  height: 2rem;
+}
 .fc {
   --fc-border-color: #f3f4f6;
   --fc-now-indicator-color: #ef4444;
@@ -1941,6 +2070,24 @@ onMounted(async () => {
 .fc-v-event .fc-event-main {
   padding: 0;
   color: inherit;
+}
+/* Offline: changes waiting to sync (dashed) and refused ones (red). */
+.fc-v-event.fc-offline-pending {
+  outline: 2px dashed #b45309;
+  outline-offset: -2px;
+}
+.fc-v-event.fc-offline-pending .fc-event-main::after {
+  content: "\e944"; /* pi-cloud-upload */
+  font-family: "primeicons";
+  position: absolute;
+  right: 3px;
+  bottom: 2px;
+  font-size: 10px;
+  color: #b45309;
+}
+.fc-v-event.fc-offline-conflict {
+  outline: 2px solid #dc2626;
+  outline-offset: -2px;
 }
 /* Matches the hovered box's own hover:brightness-95 on its inner content. */
 .fc-linked-hover .fc-event-main > div {

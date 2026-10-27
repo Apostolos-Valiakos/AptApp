@@ -45,6 +45,8 @@ import { useThemeStore } from "./stores/themes";
 import { i18n } from "./i18n";
 import { initOfflineSync } from "./offline/queue";
 
+declare const __APP_SW__: boolean; // set by vite.config.mjs
+
 const MyPreset = definePreset(Aura, {
   semantic: {
     primary: palette("#8B6F4E"),
@@ -59,8 +61,9 @@ const initApp = async () => {
   app.use(pinia);
 
   // 3. Use the store to fetch/apply theme before mounting
+  // At most 3s: with a hung connection the app must still open (offline mode).
   const themeStore = useThemeStore();
-  await themeStore.fetchAndApplyTheme();
+  await Promise.race([themeStore.fetchAndApplyTheme(), new Promise((r) => setTimeout(r, 3000))]);
 
   app.use(router);
   // Expired session → login page; stale build after a rebuild → reload.
@@ -71,6 +74,8 @@ const initApp = async () => {
 
   // Initialize PrimeVue with the dynamic v4 Theme Preset
   app.use(PrimeVue, {
+    // Weeks start on Monday in every date picker.
+    locale: { firstDayOfWeek: 1 },
     theme: {
       preset: MyPreset,
       options: {
@@ -87,6 +92,13 @@ const initApp = async () => {
   // Offline write queue: safe to init even when logged out, it just sits
   // idle with an empty queue until a booking/payment write actually needs it.
   initOfflineSync();
+  // Keeps the staff app's files in the browser, so /app/* opens offline
+  // (client/sw/app-sw.js; production builds only).
+  if (__APP_SW__ && "serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/app-sw.js", { scope: "/app/" }).catch((err) => {
+      console.warn("App service worker not registered", err);
+    });
+  }
 
   // 6. Mount the app (Removes the index.html spinner)
   app.mount("#app");

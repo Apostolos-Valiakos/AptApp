@@ -96,6 +96,7 @@
               <div v-else class="flex gap-2">
                 <div
                   class="flex-grow flex justify-between items-center p-3 border border-gray-200 rounded-xl bg-gray-50 hover:bg-red-50 hover:border-red-200 transition-colors cursor-pointer group"
+                  data-testid="booking-client-clear"
                   @click="clearSelectedClient"
                 >
                   <div class="flex items-center gap-3">
@@ -123,9 +124,10 @@
                   </div>
                 </div>
                 <!-- No profile for the walk-in client: it stands for "no
-                     specific client" and its details can't be edited. -->
+                     specific client" and its details can't be edited. Nor
+                     for a client added offline, until it syncs. -->
                 <Button
-                  v-if="!isWalkInSelected"
+                  v-if="!isWalkInSelected && !isTempId(String(form.client_id))"
                   icon="pi pi-eye"
                   class="p-button-outlined p-button-secondary w-12"
                   style="
@@ -375,6 +377,7 @@
             :label="t('booking.cancelAppt')"
             icon="pi pi-trash"
             class="p-button-danger p-button-text p-button-sm w-full sm:w-auto"
+            data-testid="booking-delete"
             @click="confirmDelete"
           />
           <div class="flex flex-col sm:flex-row gap-3 ml-auto w-full sm:w-auto">
@@ -399,6 +402,7 @@
               <Button
                 v-if="currentTab !== 'Payment'"
                 label="Πληρωμή"
+                data-testid="booking-payment-tab"
                 @click="currentTab = 'Payment'"
                 severity="success"
               />
@@ -415,6 +419,7 @@
             <Button
               :label="t('booking.save')"
               @click="save()"
+              data-testid="booking-save"
               :loading="loading"
               :disabled="!canSaveBooking"
               v-tooltip.top="!canSaveBooking ? t('booking.validation.staffRequired') : null"
@@ -508,6 +513,9 @@ import ClientProfileDialog from "./ClientProfileDialog.vue";
 import { useConfirm } from "primevue/useconfirm";
 import { useToast } from "primevue/usetoast";
 import { fetchOrQueue } from "../offline/queue";
+import { knownOverlapIds } from "../offline/overlaps";
+import { isTempId } from "../offline/tempIds";
+import { useCalendarStore } from "../stores/calendar";
 import {
   isStaffAvailable,
   toLocalDateStr,
@@ -1052,7 +1060,16 @@ watch(combinedTotalDueNow, (newVal) => {
 
 // Fills the form from an existing appointment (EDIT MODE). Also used when a
 // new booking is grouped into the client's existing appointment that day.
+// The version of the appointment this dialog is editing: sent with saves as
+// base_version, so an edit made from an outdated copy (changed on another
+// device, or online while this one was offline) is refused instead of
+// overwriting the newer change. Updated after each save/payment here; null
+// when unknown (a change of this appointment is already waiting to sync).
+const currentVersion = ref<number | null>(null);
+const calendarStoreForOverlaps = useCalendarStore();
+
 const loadExistingAppointment = (val: any, resolvedStaffId: any) => {
+  currentVersion.value = val.version ?? null;
   form.value = {
     id: val.id,
     client_id: val.client_id || null,
@@ -1676,20 +1693,33 @@ const executeSave = async (close = true, scope = "single") => {
       })),
       products: productsList.value,
       ...discountPayload(discount.value),
+      ...(method === "PUT" && currentVersion.value != null && !isTempId(String(form.value.id))
+        ? { base_version: currentVersion.value }
+        : {}),
     };
 
+    const firstStart = servicesList.value[0]?.start_time ? new Date(servicesList.value[0].start_time) : null;
     const result = await fetchOrQueue(url, method, payload, {
       kind: "appointment",
-      label:
-        `${form.value.client_id ? selectedClient.value?.first_name || "" : ""} ${t(
-          "booking.editDialog.title",
-        )}`.trim(),
+      label: [
+        selectedClient.value ? `${selectedClient.value.first_name || ""} ${selectedClient.value.last_name || ""}`.trim() : "",
+        firstStart ? firstStart.toLocaleString("el-GR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "",
+      ].filter(Boolean).join(" · ") || t("booking.editDialog.title"),
+      createsId: method === "POST" ? "id" : undefined,
+      offlineExtras: {
+        offline_known_overlaps: knownOverlapIds(calendarStoreForOverlaps.events, payload.services, form.value.id),
+      },
     });
 
     if (result.queued) {
-      // No network reached the server at all — the write is safely persisted
-      // in IndexedDB and will replay automatically once reconnected. It will
-      // NOT appear on the calendar (or get a real id) until then.
+      // No network reached the server — the write is kept in IndexedDB,
+      // shown on the calendar as "not synced", and replayed once reconnected.
+      // A new booking gets a temporary id, so saving or paying again from
+      // this dialog updates the same booking instead of making a second one.
+      if (method === "POST" && result.tempId) form.value.id = result.tempId;
+      // The queued change will move the version on; the next save mustn't
+      // repeat the check against the old one.
+      currentVersion.value = null;
       toast.add({
         severity: "warn",
         summary: t("booking.toast.savedOffline"),
@@ -1715,12 +1745,16 @@ const executeSave = async (close = true, scope = "single") => {
       if (data.error === "staff_unavailable") {
         throw new Error(t("booking.validation.staffUnavailable"));
       }
+      if (["stale_appointment", "appointment_missing", "slot_taken"].includes(data.error)) {
+        throw new Error(t(`offline.conflict.${data.error}`));
+      }
       throw new Error(data.error || "Failed to save");
     }
 
     if (method === "POST") {
       form.value.id = data.id;
     }
+    if (data.version !== undefined) currentVersion.value = data.version;
 
     if (data.new_balance !== undefined && selectedClient.value) {
       selectedClient.value.outstanding_balance = Number(data.new_balance);
@@ -1787,10 +1821,9 @@ const recordPayment = async (
   }
 
   if (!form.value.id) {
-    // The appointment itself was just created offline and hasn't synced yet
-    // (no real id to attach a payment to). Payments need an existing
-    // appointment, so this one specifically can't be queued — surface it
-    // clearly instead of silently sending a transaction with no target.
+    // No booking to attach the payment to (the save above didn't go through).
+    // A booking saved offline has a temporary id here, and its payment is
+    // queued behind it — that case doesn't reach this branch.
     toast.add({
       severity: "warn",
       summary: t("booking.toast.paymentFailed"),
@@ -1848,6 +1881,7 @@ const recordPayment = async (
       // queued request already carries package_purchases, so the package(s)
       // will be created once it syncs.
       form.value.deposit_amount += totalPaidThisVisit;
+      currentVersion.value = null; // the queued payment will change it
       pendingPackages.value = [];
       pendingGiftCards.value = [];
       // Any selected siblings' owed/payment_status are about to change once
@@ -1894,6 +1928,7 @@ const recordPayment = async (
       if (data.new_balance !== undefined && selectedClient.value) {
         selectedClient.value.outstanding_balance = Number(data.new_balance);
       }
+      if (data.appointment_version !== undefined) currentVersion.value = data.appointment_version;
 
       if (data.packages_purchased?.length) {
         toast.add({
@@ -1997,15 +2032,24 @@ const confirmDelete = () => {
 };
 
 const executeDelete = async (scope: string) => {
-  const token = localStorage.getItem("token");
   try {
-    const res = await fetch(
-      `/api/v1/appointments/${form.value.id}?scope=${scope}`,
-      {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      },
-    );
+    // Offline the deletion is queued (and the booking hidden right away).
+    const result = await fetchOrQueue(`/api/v1/appointments/${form.value.id}?scope=${scope}`, "DELETE", undefined, {
+      kind: "delete",
+      label: `${t("booking.cancelAppt")} · ${selectedClient.value?.first_name || ""} ${selectedClient.value?.last_name || ""}`.trim(),
+    });
+    if (result.queued) {
+      toast.add({
+        severity: "warn",
+        summary: t("booking.toast.savedOffline"),
+        detail: t("booking.toast.savedOfflineDetail"),
+        life: 4000,
+      });
+      emit("save");
+      dialogVisible.value = false;
+      return;
+    }
+    const res = result.response;
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       toast.add({

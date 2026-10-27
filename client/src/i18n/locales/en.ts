@@ -325,6 +325,21 @@ export default {
     customHours: 'Custom hours',
   },
   offline: {
+    offlineBanner: 'Offline · {count} change(s) saved on this device',
+    needsLogin: 'Session expired · log in again to sync {count} change(s)',
+    waiting: 'Waiting to sync',
+    keepMine: 'Keep mine',
+    keepTheirs: 'Keep theirs (discard)',
+    confirmDiscard: 'Discard the change "{label}" for good?',
+    logoutUnsynced: "{count} change(s) haven't synced yet and will be lost if you log out. Log out anyway?",
+    conflict: {
+      slot_taken: 'This time was booked from another device meanwhile.',
+      slot_taken_with: 'This time was booked meanwhile: {client}, {time}.',
+      stale_appointment: 'This appointment was changed from another device meanwhile.',
+      appointment_missing: 'This appointment was deleted from another device meanwhile.',
+      depends_on_conflict: "Depends on another change that needs attention (e.g. this payment's booking).",
+      missing_record: 'The record it refers to was discarded.',
+    },
     pending: '{count} change(s) waiting to sync',
     conflicts: '{count} change(s) need attention',
     syncNow: 'Sync now',
@@ -603,9 +618,9 @@ export default {
     hint: "Pick a client to see their profile, or start a new booking for them.",
   },
   clientProfile: {
+    walkInLocked: "This is the walk-in client (no specific client): its name and contact details can't be changed. For a booking, clear it and pick the real client instead.",
     header: 'Client Profile',
     balance: 'Balance',
-    walkInLocked: "This is the walk-in client (no specific client): its name and contact details can't be changed. For a booking, clear it and pick the real client instead.",
     noPhone: 'No Phone',
     noEmail: 'No Email',
     tabs: {
@@ -1143,10 +1158,10 @@ export default {
       revenue: 'Revenue',
       staffMember: 'Staff Member',
       appointments: 'Appointments',
-      hoursBooked: 'Hours Booked',
-      revenueGenerated: 'Revenue Generated',
       daysWorked: 'Days worked',
       avgPerDay: 'Avg per day',
+      hoursBooked: 'Hours Booked',
+      revenueGenerated: 'Revenue Generated',
       date: 'Date',
       client: 'Client',
       splitPayment: 'Split',
@@ -1264,6 +1279,7 @@ export default {
       no: 'No',
     },
     quickAdd: {
+      nameRequired: 'Enter a first and last name.',
       title: 'Add New Client',
       firstName: 'First Name',
       lastName: 'Last Name',
@@ -1575,6 +1591,8 @@ export default {
     },
   },
   scheduler: {
+    dockCalendar: "Pin the calendar next to the schedule",
+    undockCalendar: "Unpin the calendar",
     mobile: {
       today: 'Today',
       menu: 'More options',
