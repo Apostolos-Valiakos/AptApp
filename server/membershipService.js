@@ -101,9 +101,12 @@ const processGracePeriodExpiry = async () => {
 
 // Hourly is plenty for renewal/expiry bookkeeping — unlike appointment
 // reminders, this doesn't need minute-level precision.
-cron.schedule("0 * * * *", () => {
-  processRenewalReminders();
-  processGracePeriodExpiry();
-});
+// RUN_JOBS=0 turns it off (see reminderService.js).
+if (process.env.RUN_JOBS !== "0") {
+  cron.schedule("0 * * * *", () => {
+    processRenewalReminders();
+    processGracePeriodExpiry();
+  });
+}
 
 module.exports = { processRenewalReminders, processGracePeriodExpiry };

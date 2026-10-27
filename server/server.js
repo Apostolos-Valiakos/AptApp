@@ -17,6 +17,7 @@ const compression = require("compression");
 const http = require("http");
 const jwt = require("jsonwebtoken");
 const pool = require("./db");
+const { runMigrations } = require("./migrate");
 const path = require("path");
 const cors = require("cors");
 const helmet = require("helmet");
@@ -753,6 +754,28 @@ app.use(
 app.use(compression());
 app.use(express.json());
 
+// Live calendars: after a successful change to bookings, payments or clients,
+// every open screen of that shop is told to reload what it shows (the
+// message carries no data). `io` is created further down; this only runs
+// once requests arrive.
+const CALENDAR_WRITE_PATHS = [
+  "/api/v1/appointments",
+  "/api/v1/transactions",
+  "/api/v1/clients",
+  "/api/v1/client-debts",
+  "/api/v1/portal/appointments",
+  "/api/v1/package-usage",
+  "/api/v1/qr",
+];
+app.use(CALENDAR_WRITE_PATHS, (req, res, next) => {
+  if (req.method !== "GET") {
+    res.on("finish", () => {
+      if (res.statusCode < 300 && req.shopId) io.to(`shop:${req.shopId}`).emit("appointments:changed");
+    });
+  }
+  next();
+});
+
 // ==================== HEALTH CHECK ====================
 // Used by the Docker healthcheck and external uptime monitoring.
 // Deliberately unauthenticated (monitors won't have a JWT) and does a real
@@ -1030,8 +1053,9 @@ const assertBaseVersion = async (client, shopId, appointmentId, body) => {
 // --- HELPER: Recalculate Outstanding Balance for a Client ---
 // A client's balance: what past, non-cancelled appointments (since March 2026)
 // cost minus what was recorded against them, plus manual debts minus what was
-// recorded against those. Write-offs are payment records too, so they clear
-// debt without counting as revenue (see the revenue exclusion helpers).
+// recorded against those, minus what was paid on cancelled appointments
+// (credit). Write-offs are payment records too, so they clear debt without
+// counting as revenue (see the revenue exclusion helpers).
 const clientBalanceSql = (clientRef) => `(
   COALESCE((
     SELECT SUM(x.total_cost - x.total_paid) FROM (
@@ -1052,6 +1076,15 @@ const clientBalanceSql = (clientRef) => `(
     SELECT SUM(d.amount - COALESCE((SELECT SUM(t.amount) FROM transactions t WHERE t.client_debt_id = d.id), 0))
     FROM client_debts d
     WHERE d.client_id = ${clientRef} AND d.debt_date <= CURRENT_DATE
+  ), 0)
+  -- A cancelled booking costs nothing, but what was paid on it (less any
+  -- refunds) stays the client's credit.
+  - COALESCE((
+    SELECT SUM(t.amount)
+    FROM transactions t
+    JOIN appointments a ON a.id = t.appointment_id
+    WHERE a.client_id = ${clientRef} AND a.status = 'cancelled'
+      AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) >= '2026-03-01 00:00:00'
   ), 0)
 )`;
 
@@ -1140,6 +1173,12 @@ const forceLogoutCache = new Map();
 const cashFilterCache = new Map();
 const cardFilterCache = new Map();
 
+// Login tokens (login, impersonation, refreshed after "disconnect all")
+// always carry a role. Other tokens signed with the same secret — the client
+// invite link ({ typ: "invite", clientId, shopId, email }) — only prove an
+// email address and must never open the API or the live socket.
+const isSessionToken = (user) => !!user && typeof user.role === "string" && user.typ !== "invite";
+
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers["authorization"];
   const token = (authHeader && authHeader.split(" ")[1]) || req.query.token;
@@ -1149,7 +1188,7 @@ const authenticateToken = (req, res, next) => {
   jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
     // 401 (not 403) so the app can tell an expired or invalid session apart
     // from "not allowed" and send the user back to the login page.
-    if (err) return res.status(401).json({ error: "invalid_token" });
+    if (err || !isSessionToken(user)) return res.status(401).json({ error: "invalid_token" });
 
     if (user.shopId) {
       const forcedAt = forceLogoutCache.get(user.shopId);
@@ -2415,282 +2454,7 @@ app.delete(
   },
 );
 
-// --- CLIENT ROUTES ---
-// app.get("/api/v1/clients", authenticateToken, async (req, res) => {
-//   try {
-//     const { rows } = await pool.query(
-//       `SELECT c.*,
-//         -- Count only EOPPY appointments
-//         (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND is_eoppy = true) as eoppy_count,
-//         -- Count appointments that are NOT EOPPY (is_eoppy is false or null)
-//         (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND (is_eoppy = false OR is_eoppy IS NULL)) as non_eoppy_count
-//       FROM clients c
-//       WHERE shop_id = $1
-//       ORDER BY last_name`,
-//       [req.shopId],
-//     );
-
-//     const data = rows.map((c) => ({
-//       ...c,
-//       full_name: `${c.first_name} ${c.last_name}`,
-//       eoppy_count: parseInt(c.eoppy_count || 0),
-//       non_eoppy_count: parseInt(c.non_eoppy_count || 0),
-//     }));
-
-//     res.json(data);
-//   } catch (err) {
-//     res.status(500).json({ error: "Internal server error" });
-//   }
-// });
-app.get("/api/v1/clients", authenticateToken, async (req, res) => {
-  const { slim, search, limit, offset, id } = req.query;
-  try {
-    // Slim mode: lightweight list for dropdowns (scheduler, booking dialog).
-    // With `search` + `limit` it becomes a fast autocomplete lookup instead of
-    // shipping the entire client table (used by the Gift Cards client picker).
-    // With `id` it's an exact single-row lookup (used to re-hydrate the booking
-    // dialog's already-selected client without loading the full client list).
-    if (slim === "true") {
-      const slimParams = [req.shopId];
-      let slimSearchClause = "";
-      if (id) {
-        slimParams.push(id);
-        slimSearchClause = ` AND id = $${slimParams.length}`;
-      } else if (search) {
-        slimParams.push(`%${String(search).trim()}%`);
-        slimSearchClause = ` AND (first_name || ' ' || last_name ILIKE $${slimParams.length}
-          OR email ILIKE $${slimParams.length}
-          OR REPLACE(phone, ' ', '') ILIKE REPLACE($${slimParams.length}, ' ', ''))`;
-      }
-      const slimLimitClause = limit
-        ? ` LIMIT ${Math.min(parseInt(limit) || 10, 50)}`
-        : "";
-
-      const { rows } = await pool.query(
-        `SELECT id, first_name, last_name,
-                first_name || ' ' || last_name as full_name,
-                email, phone, outstanding_balance, custom_fields,
-                (id = (SELECT walk_in_client_id FROM shops WHERE id = $1)) AS is_walk_in
-         FROM active_clients WHERE shop_id = $1 ${slimSearchClause}
-         ORDER BY NULLIF(TRIM(last_name), '') NULLS LAST, first_name
-         ${slimLimitClause}`,
-        slimParams,
-      );
-      return res.json(rows);
-    }
-
-    const params = [req.shopId];
-    let searchClause = "";
-    if (search) {
-      params.push(`%${String(search).trim()}%`);
-      searchClause = ` AND (c.first_name || ' ' || c.last_name ILIKE $${params.length}
-        OR c.email ILIKE $${params.length}
-        OR REPLACE(c.phone, ' ', '') ILIKE REPLACE($${params.length}, ' ', ''))`;
-    }
-
-    const heavyColumns = `
-        c.*,
-        c.first_name || ' ' || c.last_name as full_name,
-
-        -- EOPPY Breakdown
-        (SELECT jsonb_build_object(
-            'total', COALESCE(SUM(s_inner.count_per_service), 0),
-            'services', COALESCE(jsonb_object_agg(s_inner.service_name, s_inner.count_per_service), '{}'::jsonb)
-          )
-         FROM (
-           SELECT s.name as service_name, COUNT(aps.id) as count_per_service
-           FROM appointments a
-           JOIN appointment_services aps ON a.id = aps.appointment_id
-           JOIN services s ON aps.service_id = s.id
-           WHERE a.client_id = c.id AND a.is_eoppy = true
-           GROUP BY s.name
-         ) s_inner
-        ) as eoppy_breakdown,
-
-        -- Non-EOPPY Breakdown
-        (SELECT jsonb_build_object(
-            'total', COALESCE(SUM(s_inner.count_per_service), 0),
-            'services', COALESCE(jsonb_object_agg(s_inner.service_name, s_inner.count_per_service), '{}'::jsonb)
-          )
-         FROM (
-           SELECT s.name as service_name, COUNT(aps.id) as count_per_service
-           FROM appointments a
-           JOIN appointment_services aps ON a.id = aps.appointment_id
-           JOIN services s ON aps.service_id = s.id
-           WHERE a.client_id = c.id AND (a.is_eoppy = false OR a.is_eoppy IS NULL)
-           GROUP BY s.name
-         ) s_inner
-        ) as non_eoppy_breakdown`;
-
-    // Paged mode: server-side search + pagination, heavy aggregates only for the page
-    if (limit !== undefined) {
-      const pageSize = Math.min(parseInt(limit) || 50, 200);
-      const pageOffset = parseInt(offset) || 0;
-
-      const countRes = await pool.query(
-        `SELECT COUNT(*) as total FROM active_clients c WHERE c.shop_id = $1 ${searchClause}`,
-        params,
-      );
-
-      const pagedParams = [...params, pageSize, pageOffset];
-      const { rows } = await pool.query(
-        `SELECT ${heavyColumns}
-         FROM active_clients c
-         WHERE c.shop_id = $1 ${searchClause}
-         ORDER BY NULLIF(TRIM(c.last_name), '') NULLS LAST, c.first_name
-         LIMIT $${pagedParams.length - 1} OFFSET $${pagedParams.length}`,
-        pagedParams,
-      );
-
-      const data = rows.map((row) => ({
-        ...row,
-        eoppy_breakdown: row.eoppy_breakdown || { total: 0, services: {} },
-        non_eoppy_breakdown: row.non_eoppy_breakdown || {
-          total: 0,
-          services: {},
-        },
-      }));
-
-      return res.json({
-        total: parseInt(countRes.rows[0].total),
-        clients: data,
-      });
-    }
-
-    // Legacy mode: full list with aggregates (backward compatible)
-    const { rows } = await pool.query(
-      `SELECT ${heavyColumns}
-       FROM active_clients c
-       WHERE c.shop_id = $1 ${searchClause}
-       ORDER BY NULLIF(TRIM(c.last_name), '') NULLS LAST, c.first_name`,
-      params,
-    );
-
-    const data = rows.map((row) => ({
-      ...row,
-      eoppy_breakdown: row.eoppy_breakdown || { total: 0, services: {} },
-      non_eoppy_breakdown: row.non_eoppy_breakdown || {
-        total: 0,
-        services: {},
-      },
-    }));
-
-    return res.json(data);
-  } catch (err) {
-    console.error("Clients fetch error:", err);
-    if (!res.headersSent) {
-      return res.status(500).json({ error: "Internal Server Error" });
-    }
-  }
-});
-// Get-or-create this shop's single walk-in client — used to pre-select a
-// client on a brand-new, blank appointment (save fast, attribute later).
-// Guarded by a row lock on the shop so two concurrent first-uses can't each
-// create their own walk-in client.
-app.get("/api/v1/clients/walk-in", authenticateToken, async (req, res) => {
-  if (req.user.role === "client") return res.status(403).json({ error: "Forbidden" });
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    const shopRes = await client.query(
-      "SELECT walk_in_client_id FROM shops WHERE id = $1 FOR UPDATE",
-      [req.shopId],
-    );
-    let walkInId = shopRes.rows[0]?.walk_in_client_id;
-
-    if (walkInId) {
-      const existing = await client.query(
-        "SELECT id, first_name, last_name, phone, email, outstanding_balance FROM clients WHERE id = $1",
-        [walkInId],
-      );
-      if (existing.rows[0]) {
-        await client.query("COMMIT");
-        const c = existing.rows[0];
-        return res.json({ ...c, full_name: `${c.first_name} ${c.last_name}`.trim(), is_walk_in: true });
-      }
-      // Referenced client was deleted — fall through and create a fresh one.
-    }
-
-    const created = await client.query(
-      `INSERT INTO clients (first_name, last_name, shop_id)
-       VALUES ('Walk', 'in', $1) RETURNING id, first_name, last_name, phone, email, outstanding_balance`,
-      [req.shopId],
-    );
-    const c = created.rows[0];
-    await client.query("UPDATE shops SET walk_in_client_id = $1 WHERE id = $2", [c.id, req.shopId]);
-    await client.query("COMMIT");
-    res.json({ ...c, full_name: `${c.first_name} ${c.last_name}`.trim(), is_walk_in: true });
-  } catch (err) {
-    await client.query("ROLLBACK");
-    console.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  } finally {
-    client.release();
-  }
-});
-
-app.post("/api/v1/clients", authenticateToken, async (req, res) => {
-  const {
-    first_name,
-    last_name,
-    email,
-    phone,
-    notes,
-    custom_fields = [],
-    ergotherapia,
-    physiotherapia,
-    logotherapia,
-    date_of_birth,
-  } = req.body;
-
-  if (!first_name?.trim() || !last_name?.trim()) {
-    return res
-      .status(400)
-      .json({ error: "First name and last name are required" });
-  }
-
-  // Idempotent like bookings: a client created offline is replayed by the
-  // sync queue with the same key, so a retry can't create a duplicate.
-  const idempotencyKey = req.headers["idempotency-key"] || null;
-  const db = await pool.connect();
-  try {
-    await db.query("BEGIN");
-    const cached = await checkIdempotency(db, idempotencyKey, req.shopId);
-    if (cached) {
-      await db.query("ROLLBACK");
-      return res.status(cached.response_status).json(cached.response_body);
-    }
-    const { rows } = await db.query(
-      `INSERT INTO clients (first_name, last_name, email, phone, notes, custom_fields, shop_id, ergotherapia, physiotherapia, logotherapia, date_of_birth) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) 
-       RETURNING *`,
-      [
-        first_name,
-        last_name,
-        email,
-        phone,
-        notes,
-        JSON.stringify(custom_fields),
-        req.shopId,
-        ergotherapia,
-        physiotherapia,
-        logotherapia,
-        date_of_birth || null,
-      ],
-    );
-    rows[0].full_name = `${rows[0].first_name} ${rows[0].last_name}`;
-    const responseBody = { success: true, client: rows[0] };
-    await saveIdempotency(db, idempotencyKey, req.shopId, 200, responseBody);
-    await db.query("COMMIT");
-    res.json(responseBody);
-  } catch (err) {
-    await db.query("ROLLBACK").catch(() => {});
-    console.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  } finally {
-    db.release();
-  }
-});
+// --- CLIENT ROUTES --- (the routes themselves: server/routes/clients.js)
 
 // The client row if it is this shop's walk-in client, otherwise null.
 const walkInClientRow = async (db, clientId, shopId) => {
@@ -2703,101 +2467,6 @@ const walkInClientRow = async (db, clientId, shopId) => {
   );
   return rows[0] || null;
 };
-
-app.put("/api/v1/clients/:id", authenticateToken, async (req, res) => {
-  const { id } = req.params;
-  const {
-    first_name,
-    last_name,
-    email,
-    phone,
-    notes,
-    custom_fields = [],
-    ergotherapia,
-    physiotherapia,
-    logotherapia,
-    date_of_birth,
-  } = req.body;
-
-  try {
-    // The shop's walk-in client stands for "no specific client": renaming it
-    // turns every future walk-in booking into that person's (it happened
-    // once in production). Its name, phone and email can't be changed, by
-    // anyone; the rest (notes, custom fields) stays editable.
-    const walkIn = await walkInClientRow(pool, id, req.shopId);
-    if (walkIn) {
-      const same = (a, b) => String(a ?? "").trim() === String(b ?? "").trim();
-      const changed = !same(first_name, walkIn.first_name) || !same(last_name, walkIn.last_name)
-        || !same(email, walkIn.email) || !same(phone, walkIn.phone);
-      if (changed) return res.status(409).json({ error: "walk_in_locked" });
-    }
-    await pool.query(
-      `UPDATE clients 
-       SET first_name=$1, last_name=$2, email=$3, phone=$4, notes=$5, custom_fields=$6,
-           ergotherapia=$7, physiotherapia=$8, logotherapia=$9, date_of_birth=$10
-       WHERE id=$11 AND shop_id=$12`,
-      [
-        first_name,
-        last_name,
-        email,
-        phone,
-        notes,
-        JSON.stringify(custom_fields),
-        !!ergotherapia,
-        !!physiotherapia,
-        !!logotherapia,
-        date_of_birth || null,
-        id,
-        req.shopId,
-      ],
-    );
-    res.json({ success: true });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Update failed" });
-  }
-});
-
-// app.delete("/api/v1/clients/:id", authenticateToken, async (req, res) => {
-//   try {
-//     const result = await pool.query(
-//       "DELETE FROM clients WHERE id = $1 AND shop_id = $2",
-//       [req.params.id, req.shopId],
-//     );
-
-//     // Optional check if the client even existed
-//     if (result.rowCount === 0) {
-//       return res.status(404).json({ error: "Client not found" });
-//     }
-
-//     res.json({ success: true });
-//   } catch (err) {
-//     // 1. Intercept the PostgreSQL Foreign Key Violation Error (Code 23503)
-//     if (err.code === "23503") {
-//       return res.status(409).json({
-//         error:
-//           "Δεν μπορείτε να διαγράψετε αυτόν τον πελάτη, επειδή υπάρχουν ραντεβού καταχωρημένα στο όνομά του.",
-//       });
-//     }
-
-//     // 2. Generic fallback error (hides the ugly SQL from the user)
-//     console.error("Delete Client Error:", err);
-//     res.status(500).json({ error: "Αποτυχία διαγραφής πελάτη." });
-//   }
-// });
-app.delete("/api/v1/clients/:id", authenticateToken, async (req, res) => {
-  const { id } = req.params;
-  try {
-    // We don't DELETE anymore, we just mark them
-    await pool.query("UPDATE clients SET is_deleted = TRUE WHERE id = $1", [
-      id,
-    ]);
-    res.json({ success: true, message: "Client archived" });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to archive client" });
-  }
-});
 
 // --- SERVICE ROUTES ---
 
@@ -3475,245 +3144,6 @@ app.get(
 
 // In server.js
 
-app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
-  try {
-    // 1. Capture date parameters from the request
-    const { date, start, end } = req.query;
-    const visibilityClause = getVisibilityClause(req.user, "a");
-
-    let dateFilter = "";
-    const params = [req.shopId];
-
-    // 2. Build the dynamic date filter
-    if (date) {
-      params.push(date);
-      dateFilter = ` AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id)::date = $${params.length}::date`;
-    } else if (start && end) {
-      params.push(start, end);
-      dateFilter = ` AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) BETWEEN $${params.length - 1} AND $${params.length}`;
-    }
-
-    // 3. Non-super_admin users cannot retrieve appointments older than 3 months
-    const threeMonthClause =
-      req.user.role !== "super_admin"
-        ? ` AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) >= NOW() - INTERVAL '3 months'`
-        : "";
-
-    // 4. Plain "staff" (not frontdesk/admin/super_admin) can only ever see their
-    // own appointments, and never anything before today. Enforced here — not
-    // just hidden client-side — so it can't be bypassed by calling the API
-    // directly with a different date range or another staff member's id.
-    let staffOwnClause = "";
-    if (req.user.role === "staff") {
-      if (req.user.staffId) {
-        params.push(req.user.staffId);
-        staffOwnClause = ` AND EXISTS (SELECT 1 FROM appointment_services aps_staff WHERE aps_staff.appointment_id = a.id AND aps_staff.staff_id = $${params.length})`;
-      } else {
-        // No linked staff profile — nothing to show.
-        staffOwnClause = " AND FALSE";
-      }
-      staffOwnClause += ` AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) >= CURRENT_DATE`;
-    }
-
-    // A logged-in client can only ever see their own appointments — past and
-    // future both (unlike staff, who are future-only above), matching what
-    // they already see via /api/v1/clients/:id/full. Previously there was no
-    // client-role branch at all here, meaning a client JWT could list every
-    // appointment in the shop.
-    if (req.user.role === "client") {
-      if (req.user.clientId) {
-        params.push(req.user.clientId);
-        staffOwnClause = ` AND a.client_id = $${params.length}`;
-      } else {
-        staffOwnClause = " AND FALSE";
-      }
-    }
-
-    const { rows } = await pool.query(
-      `
-      SELECT 
-        a.id, 
-        a.version,
-        a.client_id, 
-        a.status, 
-        a.internal_notes, 
-        a.booking_notes, 
-        a.payment_status, 
-        a.is_block, 
-        a.is_eoppy,
-        a.save_receipt, 
-        -- As text ("2026-10-21"): a DATE sent as a JS Date becomes the day
-        -- before's 21:00/22:00 UTC (midnight in Athens), and the hover card
-        -- would show the previous day.
-        a.created_at::text AS created_at,
-        a.recurrence,
-        a.group_id,
-        a.discount_type,
-        a.discount_value,
-        a.discount_scope,
-        a.discount_code_id,
-        a.discount_code_name,
-        COALESCE(a.discount_amount, 0) as discount_amount,
-        c.first_name, 
-        c.last_name, 
-        c.phone as client_phone,
-        COALESCE(c.outstanding_balance, 0) as client_outstanding_balance,
-        COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0) as deposit_amount,
-        -- True only on a client's earliest-ever appointment (by created_at,
-        -- tie-broken by id) — powers the "new client" badge on the
-        -- scheduler's appointment hover card. NULL-safe: a client_id-less
-        -- block/hold naturally yields no match.
-        (
-          a.client_id IS NOT NULL AND a.id = (
-            SELECT a2.id FROM appointments a2
-            WHERE a2.client_id = a.client_id AND a2.shop_id = a.shop_id
-            ORDER BY a2.created_at ASC, a2.id ASC
-            LIMIT 1
-          )
-        ) as is_new_client,
-        (SELECT payment_method FROM transactions WHERE appointment_id = a.id ORDER BY created_at DESC LIMIT 1) as payment_method,
-        (
-          SELECT gc.purchase_payment_method FROM transactions t
-          JOIN gift_cards gc ON gc.id = t.gift_card_id
-          WHERE t.appointment_id = a.id AND t.payment_method = 'gift-card'
-          ORDER BY t.created_at DESC LIMIT 1
-        ) as gift_card_source_method,
-        (
-          COALESCE((SELECT SUM(COALESCE(aps2.price_override, s2.price)) FROM appointment_services aps2 JOIN services s2 ON aps2.service_id = s2.id WHERE aps2.appointment_id = a.id), 0) +
-          COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = a.id), 0)
-        ) as total_cost,
-        COALESCE((
-          SELECT json_agg(json_build_object(
-            'service_id', s.id,
-            'service_name', s.name,
-            'service_archived', COALESCE(s.is_active = false, false),
-            'service_color', s.color_code,
-            'category_color', sc.color_code,
-            'variation_name', aps.variation_name,
-            'price', COALESCE(aps.list_price, aps.price_override, s.price),
-            'duration_minutes', COALESCE(aps.duration_override, s.duration_minutes),
-            'staff_id', aps.staff_id,
-            'staff_name', st.name,
-            'start_time', aps.start_time
-          ) ORDER BY aps.start_time ASC)
-          FROM appointment_services aps
-          LEFT JOIN services s ON aps.service_id = s.id
-          LEFT JOIN service_categories sc ON sc.shop_id = s.shop_id AND sc.name = s.category
-          LEFT JOIN staff st ON aps.staff_id = st.id
-          WHERE aps.appointment_id = a.id
-        ), '[]') as services,
-        COALESCE((
-          SELECT json_agg(json_build_object(
-            'product_id', ps.inventory_id,
-            'quantity', ps.quantity,
-            'price', ROUND(COALESCE(ps.list_total, ps.total_price) / NULLIF(ps.quantity, 0), 2)
-          ))
-          FROM product_sales ps
-          WHERE ps.appointment_id = a.id
-        ), '[]') as products
-      FROM appointments a
-      LEFT JOIN clients c ON a.client_id = c.id
-      WHERE a.shop_id = $1 ${visibilityClause} ${dateFilter} ${threeMonthClause} ${staffOwnClause}
-      GROUP BY a.id, c.first_name, c.last_name, c.phone, c.outstanding_balance
-      ORDER BY (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) ASC
-    `,
-      params,
-    );
-
-    const formatted = rows.map((row) => ({
-      ...row,
-      start_time: row.services?.[0]?.start_time || row.created_at,
-      staff_id: row.services?.[0]?.staff_id,
-      current_appt_total: parseFloat(row.total_cost),
-      deposit_amount: parseFloat(row.deposit_amount),
-      // Staff-authored notes about a client should never reach the client's
-      // own portal view of their own appointment.
-      ...(req.user.role === "client" ? { internal_notes: null, products: [] } : {}),
-    }));
-
-    res.json(formatted);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-app.post("/api/v1/appointments", authenticateToken, async (req, res) => {
-  const idempotencyKey = req.headers["idempotency-key"] || null;
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-
-    const cached = await checkIdempotency(client, idempotencyKey, req.shopId);
-    if (cached) {
-      await client.query("ROLLBACK");
-      return res.status(cached.response_status).json(cached.response_body);
-    }
-
-    let bookingPayload = req.body;
-    if (!["admin", "super_admin", "frontdesk"].includes(req.user.role)) {
-      delete bookingPayload.allow_unavailable;
-      delete bookingPayload.allow_overtime;
-    }
-    if (req.user.role === "client") {
-      if (!req.user.clientId) {
-        throw new SelfBookingNotAllowedError("no_client_id");
-      }
-      bookingPayload = await sanitizeClientBookingPayload(
-        client,
-        req.body,
-        req.shopId,
-        req.user.clientId,
-      );
-    }
-
-    await assertNoNewOverlaps(client, req.shopId, bookingPayload);
-
-    const { firstAppointmentId, validClientId } = await createAppointmentSeries(
-      client,
-      bookingPayload,
-      req.shopId,
-    );
-
-    let newBalance = 0;
-    if (validClientId) {
-      newBalance = await recalculateClientBalance(client, validClientId);
-    }
-
-    const versionRes = await client.query("SELECT version FROM appointments WHERE id = $1", [firstAppointmentId]);
-    const responseBody = {
-      id: firstAppointmentId,
-      version: versionRes.rows[0] ? Number(versionRes.rows[0].version) : null,
-      success: true,
-      new_balance: newBalance,
-    };
-    await saveIdempotency(client, idempotencyKey, req.shopId, 200, responseBody);
-
-    await client.query("COMMIT");
-    res.json(responseBody);
-  } catch (err) {
-    await client.query("ROLLBACK");
-    if (err instanceof DiscountError) {
-      return res.status(400).json({ error: "invalid_discount", reason: err.reason });
-    }
-    if (err instanceof StaffUnavailableError) {
-      return res.status(422).json({ error: "staff_unavailable", reason: err.reason, staff_id: err.staffId });
-    }
-    if (err instanceof MissingStaffError) {
-      return res.status(422).json({ error: "staff_required" });
-    }
-    if (err instanceof SelfBookingNotAllowedError) {
-      return res.status(422).json({ error: err.message, reason: err.reason });
-    }
-    if (err instanceof OfflineConflictError) {
-      return res.status(409).json({ error: err.code, ...err.details });
-    }
-    console.error("Create Appointment Error:", err);
-    res.status(500).json({ error: "Failed to create appointment" });
-  } finally {
-    client.release();
-  }
-});
 app.get("/api/v1/unsubscribe", publicActionLimiter, async (req, res) => {
   const crypto = require("crypto");
 
@@ -3866,342 +3296,6 @@ app.get(
     }
   },
 );
-app.put("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
-  const { id } = req.params;
-  const { scope } = req.query;
-  const idempotencyKey = req.headers["idempotency-key"] || null;
-
-  // Clients never edit an appointment directly — confirm/cancel go through
-  // the dedicated /api/v1/portal/appointments/:id/{confirm,cancel} routes.
-  // Without this, a client JWT could rewrite any appointment in the shop.
-  if (req.user.role === "client") {
-    return res.status(403).json({ error: "forbidden" });
-  }
-  // Same overrides as on create: only these roles may book outside working
-  // hours (allow_overtime) or skip availability checks (allow_unavailable).
-  if (!["admin", "super_admin", "frontdesk"].includes(req.user.role)) {
-    delete req.body.allow_unavailable;
-    delete req.body.allow_overtime;
-  }
-
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-
-    const cached = await checkIdempotency(client, idempotencyKey, req.shopId);
-    if (cached) {
-      await client.query("ROLLBACK");
-      return res.status(cached.response_status).json(cached.response_body);
-    }
-
-    const validClientId = safeUUID(req.body.client_id);
-
-    if (scope !== "series") {
-      await assertBaseVersion(client, req.shopId, id, req.body);
-      await assertNoNewOverlaps(client, req.shopId, req.body, id);
-    }
-
-    if (scope === "series") {
-      const groupInfo = await getGroupDetails(client, id, req.shopId);
-      const isRecurringBody = !!req.body.recurrence;
-
-      if (groupInfo && groupInfo.group_id) {
-        // === Case 1: Existing Series (Delete Future & Recreate) ===
-        const currentApptStart = req.body.services[0]?.start_time;
-        await client.query(
-          `DELETE FROM appointments 
-           WHERE group_id = $1 AND shop_id = $2
-           AND id IN (
-             SELECT a.id FROM appointments a
-             JOIN appointment_services aps ON a.id = aps.appointment_id
-             WHERE a.group_id = $1 AND aps.start_time >= $3
-           )`,
-          [groupInfo.group_id, req.shopId, currentApptStart],
-        );
-
-        // createAppointmentSeries will create new rows.
-        // These rows default to reminder_sent = false automatically via DB schema.
-        await createAppointmentSeries(
-          client,
-          { ...req.body, group_id_override: groupInfo.group_id },
-          req.shopId,
-        );
-      } else if (isRecurringBody) {
-        // === Case 2: Convert Single -> Series (Update Current & Fill Future) ===
-        const crypto = require("crypto");
-        const newGroupId = crypto.randomUUID();
-        const recurrenceRule = JSON.stringify(req.body.recurrence);
-
-        // 1. Update the CURRENT appointment (the 'Single' one)
-        // We use performSingleUpdate to handle services/products/basic info
-        await performSingleUpdate(client, id, req.shopId, req.body);
-
-        // 2. Assign the new Group ID, Recurrence Rule to it and RESET reminder_sent
-        await client.query(
-          `UPDATE appointments 
-             SET group_id = $1, recurrence = $2, email_reminder_sent = false 
-             WHERE id = $3 AND shop_id = $4`,
-          [newGroupId, recurrenceRule, id, req.shopId],
-        );
-
-        // 3. Create the REST of the series
-        // The duplicate check in createAppointmentSeries will see the current appointment
-        // (which we just updated) and skip creating a duplicate for today,
-        // then proceed to create the future ones.
-        await createAppointmentSeries(
-          client,
-          { ...req.body, group_id_override: newGroupId },
-          req.shopId,
-        );
-      }
-    } else {
-      // === Case 3: Single Update ===
-      await performSingleUpdate(client, id, req.shopId, req.body);
-
-      // Reset flag to ensure that if the time was moved, a new reminder can trigger
-      await client.query(
-        `UPDATE appointments SET email_reminder_sent = false WHERE id = $1 AND shop_id = $2`,
-        [id, req.shopId],
-      );
-    }
-
-    let newBalance = 0;
-    if (validClientId) {
-      newBalance = await recalculateClientBalance(client, validClientId);
-    }
-
-    const versionRes = await client.query("SELECT version FROM appointments WHERE id = $1 AND shop_id = $2", [id, req.shopId]);
-    const responseBody = {
-      success: true,
-      new_balance: newBalance,
-      version: versionRes.rows[0] ? Number(versionRes.rows[0].version) : null,
-    };
-    await saveIdempotency(client, idempotencyKey, req.shopId, 200, responseBody);
-
-    await client.query("COMMIT");
-    res.json(responseBody);
-  } catch (err) {
-    await client.query("ROLLBACK");
-    if (err instanceof DiscountError) {
-      return res.status(400).json({ error: "invalid_discount", reason: err.reason });
-    }
-    if (err instanceof StaffUnavailableError) {
-      return res.status(422).json({ error: "staff_unavailable", reason: err.reason, staff_id: err.staffId });
-    }
-    if (err instanceof MissingStaffError) {
-      return res.status(422).json({ error: "staff_required" });
-    }
-    if (err instanceof OfflineConflictError) {
-      return res.status(409).json({ error: err.code, ...err.details });
-    }
-    console.error("Update Appointment Error:", err);
-    res.status(500).json({ error: "Update failed" });
-  } finally {
-    client.release();
-  }
-});
-
-// Staff-side quick cancel (soft — the appointment stays for history/reporting,
-// only its status changes). Deliberately separate from the general PUT
-// endpoint: that one requires resending the full services/products arrays or
-// it wipes them out, which is overkill for a one-click "cancel" action from a
-// summary view that doesn't have that data loaded. Mirrors the client
-// portal's own cancel endpoint, plus releasing any redeemed package visit
-// (the portal one doesn't — a pre-existing gap there, left alone since the
-// client portal is a separate, not-yet-shipped feature).
-app.post("/api/v1/appointments/:id/cancel", authenticateToken, async (req, res) => {
-  if (req.user.role === "client") return res.status(403).json({ error: "Forbidden" });
-  const { id } = req.params;
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    const check = await client.query(
-      `SELECT client_id FROM appointments
-       WHERE id = $1 AND shop_id = $2 AND status NOT IN ('cancelled', 'completed')`,
-      [id, req.shopId],
-    );
-    if (check.rows.length === 0) {
-      await client.query("ROLLBACK");
-      return res.status(404).json({ error: "Appointment not found or cannot be cancelled" });
-    }
-    const clientId = check.rows[0].client_id;
-
-    await client.query("UPDATE appointments SET status = 'cancelled' WHERE id = $1", [id]);
-    await releasePackageUsage(client, [id]);
-    await client.query(
-      `UPDATE product_inventory pi
-       SET stock_quantity = pi.stock_quantity + ps.quantity
-       FROM product_sales ps
-       WHERE ps.inventory_id = pi.id AND ps.appointment_id = $1`,
-      [id],
-    );
-    await client.query("DELETE FROM product_sales WHERE appointment_id = $1", [id]);
-
-    const newBalance = clientId ? await recalculateClientBalance(client, clientId) : undefined;
-    await client.query("COMMIT");
-    res.json({ success: true, new_balance: newBalance });
-  } catch (err) {
-    await client.query("ROLLBACK");
-    console.error("Staff appointment cancel error:", err);
-    res.status(500).json({ error: "Internal server error" });
-  } finally {
-    client.release();
-  }
-});
-
-app.delete("/api/v1/appointments/:id", authenticateToken, async (req, res) => {
-  const { id } = req.params;
-  const { scope } = req.query;
-  const idempotencyKey = req.headers["idempotency-key"] || null;
-
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-
-    const cached = await checkIdempotency(client, idempotencyKey, req.shopId);
-    if (cached) {
-      await client.query("ROLLBACK");
-      return res.status(cached.response_status).json(cached.response_body);
-    }
-
-    // Look up the client now — the row won't exist to query after deletion.
-    const affectedClientRes = await client.query(
-      "SELECT client_id FROM appointments WHERE id = $1 AND shop_id = $2",
-      [id, req.shopId],
-    );
-    // Already gone (deleted on another device, or a replayed offline delete):
-    // the outcome the caller wants, so report success rather than an error.
-    if (affectedClientRes.rows.length === 0) {
-      await client.query("ROLLBACK");
-      return res.json({ success: true, already_deleted: true });
-    }
-    const affectedClientId = affectedClientRes.rows[0]?.client_id || null;
-
-    // Collect the appointment ids being deleted so product stock can be restored
-    let deletedIds = [id];
-    let groupInfo = null;
-    if (scope === "series") {
-      groupInfo = await getGroupDetails(client, id, req.shopId);
-      if (groupInfo && groupInfo.group_id) {
-        const idsRes = await client.query(
-          `SELECT DISTINCT a.id FROM appointments a
-           JOIN appointment_services aps ON a.id = aps.appointment_id
-           WHERE a.group_id = $1 AND a.shop_id = $2 AND aps.start_time >= $3`,
-          [groupInfo.group_id, req.shopId, groupInfo.start_time],
-        );
-        deletedIds = idsRes.rows.map((r) => r.id);
-      }
-    }
-
-    // Visits paid with a prepaid package go back to the package
-    await releasePackageUsage(client, deletedIds);
-
-    // Restore stock for any product sales on the deleted appointments
-    await client.query(
-      `UPDATE product_inventory pi
-       SET stock_quantity = pi.stock_quantity + ps.quantity
-       FROM product_sales ps
-       WHERE ps.inventory_id = pi.id AND ps.appointment_id = ANY($1)`,
-      [deletedIds],
-    );
-    await client.query(
-      "DELETE FROM product_sales WHERE appointment_id = ANY($1)",
-      [deletedIds],
-    );
-
-    if (scope === "series" && groupInfo && groupInfo.group_id) {
-      await client.query(
-        `DELETE FROM appointments WHERE id = ANY($1) AND shop_id = $2`,
-        [deletedIds, req.shopId],
-      );
-    } else {
-      await client.query(
-        "DELETE FROM appointments WHERE id = $1 AND shop_id = $2",
-        [id, req.shopId],
-      );
-    }
-
-    let newBalance;
-    if (affectedClientId) {
-      newBalance = await recalculateClientBalance(client, affectedClientId);
-    }
-
-    const responseBody = { success: true, new_balance: newBalance };
-    await saveIdempotency(client, idempotencyKey, req.shopId, 200, responseBody);
-    await client.query("COMMIT");
-    res.json(responseBody);
-  } catch (err) {
-    console.error(err);
-    await client.query("ROLLBACK");
-    res.status(500).json({ error: "Internal server error" });
-  } finally {
-    client.release();
-  }
-});
-
-app.post("/api/v1/appointments/swap", authenticateToken, async (req, res) => {
-  const { appointment1_id, appointment2_id } = req.body;
-  if (!appointment1_id || !appointment2_id)
-    return res.status(400).json({ error: "Two appointment IDs required" });
-
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-
-    const q1 = await client.query(
-      `SELECT * FROM appointment_services WHERE appointment_id = $1 AND shop_id = $2 ORDER BY id`,
-      [appointment1_id, req.shopId],
-    );
-    const q2 = await client.query(
-      `SELECT * FROM appointment_services WHERE appointment_id = $1 AND shop_id = $2 ORDER BY id`,
-      [appointment2_id, req.shopId],
-    );
-
-    const s1 = q1.rows;
-    const s2 = q2.rows;
-
-    for (let i = 0; i < s1.length && i < s2.length; i++) {
-      // variation_name travels with the rest of the swapped bundle (same
-      // reasoning as list_price/price_override/duration_override above) —
-      // service_id doesn't change, only which appointment this row's
-      // time/price/duration/variation is now attached to.
-      await client.query(
-        `UPDATE appointment_services SET start_time=$1, staff_id=$2, duration_override=$3, price_override=$4, list_price=$6, variation_name=$7 WHERE id=$5`,
-        [
-          s2[i].start_time,
-          s2[i].staff_id,
-          s2[i].duration_override,
-          s2[i].price_override,
-          s1[i].id,
-          s2[i].list_price,
-          s2[i].variation_name,
-        ],
-      );
-      await client.query(
-        `UPDATE appointment_services SET start_time=$1, staff_id=$2, duration_override=$3, price_override=$4, list_price=$6, variation_name=$7 WHERE id=$5`,
-        [
-          s1[i].start_time,
-          s1[i].staff_id,
-          s1[i].duration_override,
-          s1[i].price_override,
-          s2[i].id,
-          s1[i].list_price,
-          s1[i].variation_name,
-        ],
-      );
-    }
-
-    await client.query("COMMIT");
-    res.json({ success: true });
-  } catch (err) {
-    console.error(err);
-    await client.query("ROLLBACK");
-    res.status(500).json({ error: "Swap failed" });
-  } finally {
-    client.release();
-  }
-});
-
 // --- TRANSACTIONS & FINANCIALS ---
 
 // --- Discount codes ---
@@ -4315,549 +3409,6 @@ app.get("/api/v1/discounts/usage", authenticateToken, requireAnalyticsAccess, as
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
-  const {
-    appointment_id,
-    appointment_ids, // string[] | undefined — explicit ordered list for a combined same-day payment; appointment_id must be one of its entries
-    client_id,
-    amount,
-    payment_method = "card",
-    gift_card_id,
-    redemptions, // [{ service_id, count }] — required when payment_method === 'membership'
-    amount2,
-    payment_method2,
-    gift_card_id2,
-    redemptions2,
-    package_purchases, // [{ package_type_id }] — sold alongside this payment, same leg1 method
-    gift_card_purchases, // [{ card_number, customer_name, initial_amount }] — same idea, for gift cards
-  } = req.body;
-
-  const hasPackagePurchases =
-    Array.isArray(package_purchases) && package_purchases.length > 0;
-  const hasGiftCardPurchases =
-    Array.isArray(gift_card_purchases) && gift_card_purchases.length > 0;
-  const hasExtras = hasPackagePurchases || hasGiftCardPurchases;
-
-  // Membership legs derive their own amount server-side from validated
-  // quota redemptions — the client never gets to assert an amount for them.
-  // An extras-only payment (service already fully paid, or amount = 0) is
-  // valid, so the amount requirement is waived when packages/gift cards are
-  // attached.
-  if (
-    payment_method !== "membership" &&
-    !hasExtras &&
-    (!amount || Number(amount) <= 0)
-  ) {
-    return res.status(400).json({ error: "Invalid payment amount" });
-  }
-  if (hasExtras && !["cash", "card", "bank-transfer"].includes(payment_method)) {
-    return res.status(400).json({ error: "Packages and gift cards can only be purchased with cash, card, or bank transfer" });
-  }
-  if (hasExtras && !canSellExtras(req.user)) {
-    return res.status(403).json({ error: "Not allowed to sell packages or gift cards" });
-  }
-  if (payment_method === "gift-card" && !gift_card_id) {
-    return res
-      .status(400)
-      .json({ error: "gift_card_id is required for gift-card payments" });
-  }
-  if (payment_method === "membership" && (!redemptions || !redemptions.length)) {
-    return res.status(400).json({ error: "redemptions is required for membership payments" });
-  }
-  const hasSecondLeg =
-    (amount2 !== undefined && amount2 !== null && Number(amount2) > 0) ||
-    (payment_method2 === "membership" && redemptions2 && redemptions2.length > 0);
-  if (hasSecondLeg) {
-    if (!payment_method2) {
-      return res
-        .status(400)
-        .json({ error: "payment_method2 is required when amount2 is set" });
-    }
-    if (payment_method2 === "gift-card" && !gift_card_id2) {
-      return res
-        .status(400)
-        .json({
-          error: "gift_card_id2 is required for a gift-card second payment",
-        });
-    }
-    if (payment_method2 === "membership" && (!redemptions2 || !redemptions2.length)) {
-      return res.status(400).json({ error: "redemptions2 is required for a membership second payment" });
-    }
-  }
-
-  // A combined same-day payment: explicit, caller-ordered list of every
-  // appointment this one payment covers (the primary appointment_id plus
-  // any selected same-day siblings). Validated up front — every id must be
-  // real, belong to this client+shop, and be active — so a bad id rejects
-  // the whole request before any DB write, rather than silently applying a
-  // partial payment. appointment_id (singular) is still always required and
-  // must be one of the list's entries, since membership redemption (below)
-  // only ever targets it specifically, never the rest of the list.
-  let validatedApptIds = null;
-  if (Array.isArray(appointment_ids) && appointment_ids.length > 0) {
-    const ids = appointment_ids.map(safeUUID);
-    if (ids.some((id) => !id)) {
-      return res.status(400).json({ error: "Invalid appointment_ids" });
-    }
-    if (!ids.includes(appointment_id)) {
-      return res.status(400).json({ error: "appointment_id must be included in appointment_ids" });
-    }
-    const checkRes = await pool.query(
-      `SELECT id FROM appointments WHERE id = ANY($1::uuid[]) AND client_id = $2 AND shop_id = $3
-         AND status NOT IN ('cancelled', 'no-show')`,
-      [ids, client_id, req.shopId],
-    );
-    if (checkRes.rows.length !== ids.length) {
-      return res.status(400).json({ error: "One or more appointments are invalid, cancelled, or belong to a different client" });
-    }
-    validatedApptIds = ids;
-  }
-
-  const idempotencyKey = req.headers["idempotency-key"] || null;
-  const client = await pool.connect();
-
-  // Processes ONE payment leg against the client's current owed appointments
-  // (current appointment first, then oldest debt first). Re-reads owed state
-  // fresh on every call, so calling it twice in sequence for a split payment
-  // naturally continues the FIFO allocation from where the first leg left off.
-  // Returns an error message string on failure, or null on success.
-  const processLeg = async ({
-    legAmount,
-    legMethod,
-    legGiftCardId,
-    splitGroupId,
-  }) => {
-    if (legMethod === "gift-card") {
-      const cardRes = await client.query(
-        `SELECT * FROM gift_cards WHERE id = $1 AND shop_id = $2`,
-        [legGiftCardId, req.shopId],
-      );
-      if (cardRes.rows.length === 0) return "Gift card not found";
-      const card = cardRes.rows[0];
-      if (new Date(card.expires_at) < new Date())
-        return "This gift card has expired";
-      if (Number(legAmount) > Number(card.remaining_balance) + 0.01) {
-        return `Amount exceeds the card's remaining balance (€${Number(card.remaining_balance).toFixed(2)})`;
-      }
-    }
-
-    const applyPaymentToAppointment = async (apptId, paymentAmount) => {
-      await client.query(
-        `INSERT INTO transactions (appointment_id, client_id, amount, payment_method, transaction_type, shop_id, gift_card_id, split_group_id, created_at)
-         VALUES ($1, $2, $3, $4, 'payment', $5, $6, $7, NOW())`,
-        [
-          apptId,
-          client_id,
-          paymentAmount,
-          legMethod,
-          req.shopId,
-          legGiftCardId || null,
-          splitGroupId,
-        ],
-      );
-
-      const priceRes = await client.query(
-        `SELECT
-           COALESCE((SELECT SUM(price_override) FROM appointment_services WHERE appointment_id = $1), 0)
-           + COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = $1), 0) as total_price`,
-        [apptId],
-      );
-      const totalPrice = Number(priceRes.rows[0].total_price);
-
-      const alreadyPaidRes = await client.query(
-        `SELECT COALESCE(SUM(amount), 0) as paid
-         FROM transactions WHERE appointment_id = $1`,
-        [apptId],
-      );
-      const totalPaid = Number(alreadyPaidRes.rows[0].paid);
-
-      const isFullyPaid = totalPaid >= totalPrice - 0.01;
-      await client.query(
-        `UPDATE appointments
-         SET payment_status = $1,
-             status = CASE WHEN status = 'completed' THEN 'completed' ELSE $2 END,
-             deposit_amount = deposit_amount + $3
-         WHERE id = $4 AND shop_id = $5`,
-        [
-          isFullyPaid ? "paid" : "partial",
-          isFullyPaid ? "completed" : "confirmed",
-          paymentAmount,
-          apptId,
-          req.shopId,
-        ],
-      );
-    };
-
-    // Explicit list this payment is clearly for — the single appointment_id
-    // when no combined-day list was given (degenerates to exactly today's
-    // single-row lookup), or appointment_id + its selected same-day siblings
-    // in caller-supplied order. Either way, paid down first before any
-    // remainder falls through to the old-debt FIFO loop below.
-    const explicitIds = validatedApptIds && validatedApptIds.length
-      ? validatedApptIds
-      : [appointment_id];
-
-    const explicitRowsRes = await client.query(
-      `SELECT
-         a.id,
-         COALESCE(SUM(aps.price_override), 0)
-           + COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = a.id), 0) as total_cost,
-         COALESCE((SELECT SUM(t2.amount) FROM transactions t2 WHERE t2.appointment_id = a.id), 0) as total_paid
-       FROM appointments a
-       JOIN appointment_services aps ON aps.appointment_id = a.id
-       WHERE a.id = ANY($1::uuid[]) AND a.shop_id = $2
-       GROUP BY a.id`,
-      [explicitIds, req.shopId],
-    );
-    // SQL's ANY() doesn't preserve array order — re-sort to match explicitIds
-    // so allocation happens in the caller-supplied order (primary first).
-    const explicitRowsById = new Map(
-      explicitRowsRes.rows.map((row) => [row.id, row]),
-    );
-    const explicitRows = explicitIds
-      .map((id) => explicitRowsById.get(id))
-      .filter(Boolean);
-
-    const explicitOwedTotal = explicitRows.reduce(
-      (sum, row) =>
-        sum + Math.max(0, Number(row.total_cost) - Number(row.total_paid)),
-      0,
-    );
-
-    // Other unpaid appointments (oldest first, March 1 2026+), excluding
-    // whatever's already covered by explicitRows above so nothing is ever
-    // double-paid. Completed appointments are included: marking one
-    // completed must not make its debt uncollectable (the balance formula
-    // counts it too).
-    const oldAppts = await client.query(
-      `SELECT
-         a.id,
-         COALESCE(SUM(aps.price_override), 0)
-           + COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = a.id), 0) as total_cost,
-         COALESCE((SELECT SUM(t2.amount) FROM transactions t2 WHERE t2.appointment_id = a.id), 0) as total_paid
-       FROM appointments a
-       JOIN appointment_services aps ON aps.appointment_id = a.id
-       WHERE a.client_id = $1
-         AND a.id != ALL($2::uuid[])
-         AND a.shop_id = $3
-         AND a.status != 'cancelled'
-         AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) >= '2026-03-01 00:00:00'
-       GROUP BY a.id
-       ORDER BY (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) ASC`,
-      [client_id, explicitIds, req.shopId],
-    );
-
-    const oldOwedTotal = oldAppts.rows.reduce(
-      (sum, row) =>
-        sum + Math.max(0, Number(row.total_cost) - Number(row.total_paid)),
-      0,
-    );
-    const totalOwed = explicitOwedTotal + oldOwedTotal;
-    if (Number(legAmount) > totalOwed + 0.01) {
-      return `Amount exceeds total owed (€${totalOwed.toFixed(2)}). Refresh and try again.`;
-    }
-
-    // Allocate: pay the explicit list first (caller-supplied order), then
-    // apply any remainder to old debt (FIFO).
-    let remaining = Number(legAmount);
-
-    for (const row of explicitRows) {
-      if (remaining <= 0.009) break;
-      const owed = Math.max(0, Number(row.total_cost) - Number(row.total_paid));
-      if (owed <= 0.009) continue;
-      const forThisAppt = Math.min(remaining, owed);
-      await applyPaymentToAppointment(row.id, forThisAppt);
-      remaining -= forThisAppt;
-    }
-
-    for (const row of oldAppts.rows) {
-      if (remaining <= 0.009) break;
-      const owed = Number(row.total_cost) - Number(row.total_paid);
-      if (owed <= 0.009) continue;
-
-      const forThisAppt = Math.min(remaining, owed);
-      await applyPaymentToAppointment(row.id, forThisAppt);
-      remaining -= forThisAppt;
-    }
-
-    if (legMethod === "gift-card") {
-      const deductRes = await client.query(
-        `UPDATE gift_cards SET remaining_balance = remaining_balance - $1
-         WHERE id = $2 AND remaining_balance >= $1
-         RETURNING id`,
-        [Number(legAmount), legGiftCardId],
-      );
-      if (deductRes.rows.length === 0) {
-        return "Gift card balance changed — please retry";
-      }
-    }
-
-    return null;
-  };
-
-  // Membership redemption is deliberately its own path rather than a variant
-  // of processLeg above: it only ever pays for services in THIS appointment
-  // (never old debt — quota is tied to specific covered services in this
-  // visit), and its "amount" is derived from validated quota usage, not
-  // asserted by the client. Mirrors applyPaymentToAppointment's bookkeeping
-  // (transactions row + appointment payment_status/deposit_amount) without
-  // touching the FIFO cash/card/gift-card logic above at all.
-  const processMembershipLeg = async (redemptionList, splitGroupId) => {
-    const membershipRes = await client.query(
-      `SELECT * FROM client_memberships WHERE client_id = $1 AND shop_id = $2 AND status = 'active'`,
-      [client_id, req.shopId],
-    );
-    if (membershipRes.rows.length === 0) return { error: "No active membership found for this client" };
-    const membership = membershipRes.rows[0];
-
-    const tierServicesRes = await client.query(
-      `SELECT service_id, quota_per_month FROM membership_tier_services WHERE tier_id = $1`,
-      [membership.tier_id],
-    );
-    const coverage = new Map(tierServicesRes.rows.map((r) => [r.service_id, r.quota_per_month]));
-
-    let totalAmount = 0;
-    const usageRowsToInsert = []; // { service_id }
-
-    for (const redemption of redemptionList) {
-      const { service_id, count } = redemption;
-      const qty = Number(count) || 0;
-      if (qty <= 0) continue;
-
-      if (!coverage.has(service_id)) {
-        return { error: "One of the selected services isn't covered by this membership" };
-      }
-      const quotaPerMonth = coverage.get(service_id);
-
-      if (quotaPerMonth !== null) {
-        const usedRes = await client.query(
-          `SELECT COUNT(*) FROM membership_usage
-           WHERE client_membership_id = $1 AND service_id = $2 AND used_at >= date_trunc('month', NOW())`,
-          [membership.id, service_id],
-        );
-        const usedThisMonth = parseInt(usedRes.rows[0].count);
-        if (usedThisMonth + qty > quotaPerMonth) {
-          return { error: "Not enough remaining membership quota for one of the selected services" };
-        }
-      }
-
-      const apptServicesRes = await client.query(
-        `SELECT id, COALESCE(price_override, (SELECT price FROM services WHERE id = $2)) as price
-         FROM appointment_services WHERE appointment_id = $1 AND service_id = $2
-         ORDER BY id LIMIT $3`,
-        [appointment_id, service_id, qty],
-      );
-      if (apptServicesRes.rows.length < qty) {
-        return { error: "This appointment doesn't have that many occurrences of one of the selected services" };
-      }
-
-      for (const row of apptServicesRes.rows) {
-        totalAmount += Number(row.price);
-        usageRowsToInsert.push({ service_id });
-      }
-    }
-
-    if (usageRowsToInsert.length === 0) {
-      return { error: "Nothing was selected to redeem via membership" };
-    }
-
-    for (const usage of usageRowsToInsert) {
-      await client.query(
-        `INSERT INTO membership_usage (client_membership_id, service_id, appointment_id, used_at)
-         VALUES ($1, $2, $3, NOW())`,
-        [membership.id, usage.service_id, appointment_id],
-      );
-    }
-
-    await client.query(
-      `INSERT INTO transactions (appointment_id, client_id, amount, payment_method, transaction_type, shop_id, split_group_id, created_at)
-       VALUES ($1, $2, $3, 'membership', 'payment', $4, $5, NOW())`,
-      [appointment_id, client_id, totalAmount, req.shopId, splitGroupId],
-    );
-
-    const priceRes = await client.query(
-      `SELECT
-         COALESCE((SELECT SUM(price_override) FROM appointment_services WHERE appointment_id = $1), 0)
-         + COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = $1), 0) as total_price`,
-      [appointment_id],
-    );
-    const totalPrice = Number(priceRes.rows[0].total_price);
-
-    const alreadyPaidRes = await client.query(
-      `SELECT COALESCE(SUM(amount), 0) as paid FROM transactions WHERE appointment_id = $1`,
-      [appointment_id],
-    );
-    const totalPaid = Number(alreadyPaidRes.rows[0].paid);
-    const isFullyPaid = totalPaid >= totalPrice - 0.01;
-
-    await client.query(
-      `UPDATE appointments
-       SET payment_status = $1,
-           status = CASE WHEN status = 'completed' THEN 'completed' ELSE $2 END,
-           deposit_amount = deposit_amount + $3
-       WHERE id = $4 AND shop_id = $5`,
-      [
-        isFullyPaid ? "paid" : "partial",
-        isFullyPaid ? "completed" : "confirmed",
-        totalAmount,
-        appointment_id,
-        req.shopId,
-      ],
-    );
-
-    return { error: null };
-  };
-
-  try {
-    await client.query("BEGIN");
-
-    const cached = await checkIdempotency(client, idempotencyKey, req.shopId);
-    if (cached) {
-      await client.query("ROLLBACK");
-      return res.status(cached.response_status).json(cached.response_body);
-    }
-
-    // A shared id links both rows of a split payment so reports can flag them
-    const splitGroupId = hasSecondLeg ? crypto.randomUUID() : null;
-
-    // Packages are sold in full immediately, independent of the FIFO debt
-    // cap below (same as the standalone sell-package endpoint) — a package
-    // purchase is its own sale, not part of what this appointment "owes".
-    let packageAmount = 0;
-    const purchasedPackages = [];
-    if (hasPackagePurchases) {
-      for (const item of package_purchases) {
-        const typeId = safeUUID(item?.package_type_id);
-        if (!typeId) {
-          await client.query("ROLLBACK");
-          return res.status(400).json({ error: "Invalid package_type_id" });
-        }
-        const t = await client.query(
-          "SELECT * FROM package_types WHERE id = $1 AND shop_id = $2 AND is_active = true",
-          [typeId, req.shopId],
-        );
-        if (!t.rows[0]) {
-          await client.query("ROLLBACK");
-          return res.status(404).json({ error: "Package type not found" });
-        }
-        const pt = t.rows[0];
-        const ins = await client.query(
-          `INSERT INTO client_packages
-             (shop_id, client_id, package_type_id, name, service_id, total_visits, price_paid, expires_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7,
-                   CASE WHEN $8::int IS NULL THEN NULL ELSE NOW() + ($8::int * INTERVAL '1 day') END)
-           RETURNING id`,
-          [req.shopId, client_id, pt.id, pt.name, pt.service_id, pt.visits, pt.price, pt.validity_days],
-        );
-        await client.query(
-          `INSERT INTO transactions (appointment_id, client_id, amount, payment_method, transaction_type, shop_id, created_at)
-           VALUES (NULL, $1, $2, $3, 'package_sale', $4, NOW())`,
-          [client_id, pt.price, payment_method, req.shopId],
-        );
-        packageAmount += Number(pt.price);
-        purchasedPackages.push({ id: ins.rows[0].id, name: pt.name });
-      }
-    }
-
-    // Gift cards sold alongside this payment — same "own sale, not part of
-    // the appointment's debt" treatment as packages above.
-    let giftCardAmount = 0;
-    const purchasedGiftCards = [];
-    if (hasGiftCardPurchases) {
-      for (const item of gift_card_purchases) {
-        const cardNumber = String(item?.card_number || "").trim();
-        const customerName = String(item?.customer_name || "").trim();
-        const initialAmount = Number(item?.initial_amount);
-        if (!cardNumber || !customerName || !(initialAmount > 0)) {
-          await client.query("ROLLBACK");
-          return res.status(400).json({
-            error: "Each gift card needs a card_number, customer_name and a positive initial_amount",
-          });
-        }
-        const ins = await client.query(
-          `INSERT INTO gift_cards
-             (card_number, client_id, customer_name, initial_amount, remaining_balance,
-              purchase_payment_method, shop_id, issued_at, expires_at, sold_by_staff_id)
-           VALUES ($1, $2, $3, $4, $4, $5, $6, NOW(), NOW() + INTERVAL '3 months', $7)
-           RETURNING id, card_number`,
-          [cardNumber, client_id || null, customerName, initialAmount, payment_method, req.shopId, req.user.staffId || null],
-        );
-        await client.query(
-          `INSERT INTO transactions
-             (appointment_id, client_id, amount, payment_method, transaction_type, shop_id, gift_card_id, created_at)
-           VALUES (NULL, $1, $2, $3, 'gift_card_sale', $4, $5, NOW())`,
-          [client_id || null, initialAmount, payment_method, req.shopId, ins.rows[0].id],
-        );
-        giftCardAmount += initialAmount;
-        purchasedGiftCards.push({ id: ins.rows[0].id, card_number: ins.rows[0].card_number });
-      }
-    }
-
-    // The service leg only ever covers the appointment's own debt cap, never
-    // the package/gift-card price — pass 0 when the caller's "amount" was extras-only.
-    const serviceLegAmount = Number(amount) || 0;
-
-    const leg1Error =
-      payment_method === "membership"
-        ? (await processMembershipLeg(redemptions, splitGroupId)).error
-        : await processLeg({
-            legAmount: serviceLegAmount,
-            legMethod: payment_method,
-            legGiftCardId: gift_card_id,
-            splitGroupId,
-          });
-    if (leg1Error) {
-      await client.query("ROLLBACK");
-      return res.status(400).json({ error: leg1Error });
-    }
-
-    if (hasSecondLeg) {
-      const leg2Error =
-        payment_method2 === "membership"
-          ? (await processMembershipLeg(redemptions2, splitGroupId)).error
-          : await processLeg({
-              legAmount: amount2,
-              legMethod: payment_method2,
-              legGiftCardId: gift_card_id2,
-              splitGroupId,
-            });
-      if (leg2Error) {
-        await client.query("ROLLBACK");
-        return res.status(400).json({ error: leg2Error });
-      }
-    }
-
-    // Recalculate client balance and return it so the frontend can update without guessing
-    const newBalance = await recalculateClientBalance(client, client_id);
-
-    // The appointment's version after the payment (it changes with every
-    // payment), so the booking dialog can keep editing without a false
-    // "changed meanwhile" conflict against its own payment.
-    const apptVersionRes = appointment_id && safeUUID(appointment_id)
-      ? await client.query("SELECT version FROM appointments WHERE id = $1", [appointment_id])
-      : { rows: [] };
-    const responseBody = {
-      success: true,
-      new_balance: newBalance,
-      appointment_version: apptVersionRes.rows[0] ? Number(apptVersionRes.rows[0].version) : null,
-      package_amount: Math.round(packageAmount * 100) / 100,
-      packages_purchased: purchasedPackages,
-      gift_card_amount: Math.round(giftCardAmount * 100) / 100,
-      gift_cards_purchased: purchasedGiftCards,
-    };
-    await saveIdempotency(client, idempotencyKey, req.shopId, 200, responseBody);
-
-    await client.query("COMMIT");
-    res.json(responseBody);
-  } catch (e) {
-    await client.query("ROLLBACK");
-    console.error("Payment error:", e);
-    res.status(500).json({ error: "Payment failed" });
-  } finally {
-    client.release();
   }
 });
 
@@ -5713,7 +4264,7 @@ io.use((socket, next) => {
   if (!token) return next(new Error("Authentication error"));
 
   jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
-    if (err) return next(new Error("Authentication error"));
+    if (err || !isSessionToken(user)) return next(new Error("Authentication error"));
     socket.user = user;
     next();
   });
@@ -6905,108 +5456,6 @@ const parseDebtResolution = (body) => {
 const clientInShop = async (db, clientId, shopId) =>
   (await db.query("SELECT 1 FROM clients WHERE id = $1 AND shop_id = $2", [clientId, shopId])).rowCount > 0;
 
-app.get("/api/v1/clients/:id/balance", authenticateToken, async (req, res) => {
-  if (req.user.role === "client") return res.status(403).json({ error: "Forbidden" });
-  const id = safeUUID(req.params.id);
-  if (!id) return res.status(400).json({ error: "Invalid id" });
-  try {
-    if (!(await clientInShop(pool, id, req.shopId))) return res.status(404).json({ error: "Not found" });
-    res.json({ balance: await recalculateClientBalance(pool, id) });
-  } catch (err) {
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-app.post("/api/v1/appointments/:id/resolve-debt", authenticateToken, requireShopAdminAccess, async (req, res) => {
-  const id = safeUUID(req.params.id);
-  const how = parseDebtResolution(req.body);
-  if (!id || !how) return res.status(400).json({ error: "mode must be payment (with payment_method) or write_off" });
-  const note = String(req.body.note || "").trim().slice(0, 500) || null;
-  const db = await pool.connect();
-  try {
-    await db.query("BEGIN");
-    const apptRes = await db.query(
-      `SELECT a.id, a.client_id,
-              COALESCE((SELECT SUM(COALESCE(aps.price_override, s.price)) FROM appointment_services aps
-                        JOIN services s ON s.id = aps.service_id WHERE aps.appointment_id = a.id), 0)
-                + COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = a.id), 0) AS cost,
-              COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0) AS paid
-       FROM appointments a
-       WHERE a.id = $1 AND a.shop_id = $2 AND a.status <> 'cancelled'
-       FOR UPDATE OF a`,
-      [id, req.shopId],
-    );
-    const appt = apptRes.rows[0];
-    if (!appt) {
-      await db.query("ROLLBACK");
-      return res.status(404).json({ error: "Appointment not found or cancelled" });
-    }
-    const owed = Math.round((Number(appt.cost) - Number(appt.paid)) * 100) / 100;
-    if (!(owed > 0)) {
-      await db.query("ROLLBACK");
-      return res.status(409).json({ error: "nothing_owed" });
-    }
-    await db.query(
-      `INSERT INTO transactions (appointment_id, client_id, amount, payment_method, transaction_type, shop_id, reason, created_by_user_id, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
-      [id, appt.client_id, owed, how.method, how.type, req.shopId, note, String(req.user.userId || "")],
-    );
-    await db.query(
-      `UPDATE appointments SET payment_status = 'paid', deposit_amount = $1, updated_at = NOW() WHERE id = $2`,
-      [Number(appt.cost), id],
-    );
-    const balance = appt.client_id ? await recalculateClientBalance(db, appt.client_id) : 0;
-    await db.query("COMMIT");
-    res.json({ success: true, amount: owed, new_balance: balance });
-  } catch (err) {
-    await db.query("ROLLBACK");
-    console.error("Resolve appointment debt error:", err);
-    res.status(500).json({ error: "Internal server error" });
-  } finally {
-    db.release();
-  }
-});
-
-app.get("/api/v1/clients/:id/debts", authenticateToken, requireShopAdminAccess, async (req, res) => {
-  const id = safeUUID(req.params.id);
-  if (!id) return res.status(400).json({ error: "Invalid id" });
-  try {
-    const { rows } = await pool.query(
-      `SELECT d.id, d.amount::float AS amount, to_char(d.debt_date, 'YYYY-MM-DD') AS debt_date, d.note,
-              GREATEST(0, d.amount - COALESCE((SELECT SUM(t.amount) FROM transactions t WHERE t.client_debt_id = d.id), 0))::float AS remaining
-       FROM client_debts d
-       WHERE d.client_id = $1 AND d.shop_id = $2
-       ORDER BY d.debt_date DESC, d.created_at DESC`,
-      [id, req.shopId],
-    );
-    res.json(rows);
-  } catch (err) {
-    console.error("List client debts error:", err);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-app.post("/api/v1/clients/:id/debts", authenticateToken, requireShopAdminAccess, async (req, res) => {
-  const id = safeUUID(req.params.id);
-  const amount = Math.round(Number(req.body.amount) * 100) / 100;
-  const date = String(req.body.debt_date || "");
-  const note = String(req.body.note || "").trim();
-  if (!id || !(amount > 0) || amount > 1e7) return res.status(400).json({ error: "amount must be a positive number" });
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: "debt_date must be YYYY-MM-DD" });
-  if (!note || note.length > 500) return res.status(400).json({ error: "note is required (max 500 characters)" });
-  try {
-    if (!(await clientInShop(pool, id, req.shopId))) return res.status(404).json({ error: "Not found" });
-    await pool.query(
-      `INSERT INTO client_debts (shop_id, client_id, amount, debt_date, note, created_by_user_id) VALUES ($1, $2, $3, $4, $5, $6)`,
-      [req.shopId, id, amount, date, note, String(req.user.userId || "")],
-    );
-    res.status(201).json({ success: true, new_balance: await recalculateClientBalance(pool, id) });
-  } catch (err) {
-    console.error("Add client debt error:", err);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
 app.post("/api/v1/client-debts/:id/resolve", authenticateToken, requireShopAdminAccess, async (req, res) => {
   const id = safeUUID(req.params.id);
   const how = parseDebtResolution(req.body);
@@ -7047,357 +5496,6 @@ app.post("/api/v1/client-debts/:id/resolve", authenticateToken, requireShopAdmin
   }
 });
 
-app.get(
-  "/api/v1/clients/:id/past-appointments",
-  authenticateToken,
-  async (req, res) => {
-    const { id } = req.params;
-    const limit = Math.min(parseInt(req.query.limit) || 10, 20);
-    const threeMonthClause =
-      req.user.role !== "super_admin"
-        ? "AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) >= NOW() - INTERVAL '3 months'"
-        : "";
-    // Filters for the booking sidebar. "completed" = the visit took place
-    // (including past bookings never marked completed); "unpaid" = not
-    // cancelled and still owing, partly paid included.
-    const STATUS_FILTERS = {
-      all: "",
-      completed: "AND a.status IN ('completed', 'new', 'confirmed', 'arrived', 'started')",
-      cancelled: "AND a.status = 'cancelled'",
-      "no-show": "AND a.status = 'no-show'",
-      unpaid: "AND a.status <> 'cancelled' AND x.owed > 0",
-    };
-    const statusClause = STATUS_FILTERS[req.query.status] ?? "";
-    try {
-      const { rows } = await pool.query(
-        `SELECT x.* FROM (
-           SELECT
-              a.id,
-              a.status,
-              (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) as start_time,
-              (SELECT string_agg(s.name, ', ')
-               FROM appointment_services aps
-               JOIN services s ON aps.service_id = s.id
-               WHERE aps.appointment_id = a.id) as service_names,
-              (SELECT string_agg(DISTINCT st.name, ', ')
-               FROM appointment_services aps
-               JOIN staff st ON aps.staff_id = st.id
-               WHERE aps.appointment_id = a.id) as staff_names,
-              GREATEST(0,
-                COALESCE((SELECT SUM(COALESCE(aps.price_override, s.price))
-                          FROM appointment_services aps JOIN services s ON s.id = aps.service_id
-                          WHERE aps.appointment_id = a.id), 0)
-                + COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = a.id), 0)
-                - COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0)
-              )::float AS owed
-           FROM appointments a
-           WHERE a.client_id = $1 AND a.shop_id = $2
-         ) x
-         JOIN appointments a ON a.id = x.id
-         WHERE x.start_time < NOW()
-           ${threeMonthClause}
-           ${statusClause}
-         ORDER BY x.start_time DESC
-         LIMIT $3`,
-        [id, req.shopId, limit],
-      );
-      res.json(rows);
-    } catch (err) {
-      console.error("Past appointments fetch error:", err);
-      res.status(500).json({ error: "Internal server error" });
-    }
-  },
-);
-
-app.get("/api/v1/clients/:id/full", authenticateToken, async (req, res) => {
-  const { id } = req.params;
-  if (req.user.role === "client") {
-    if (String(req.user.clientId) !== String(id)) {
-      console.log(
-        `Blocked access: User ${req.user.clientId} tried to view ${id}`,
-      );
-      return res
-        .status(403)
-        .json({ error: "Unauthorized to view this profile" });
-    }
-  }
-  try {
-    // 1. Fetch Client Details
-    const clientRes = await pool.query(
-      `SELECT * FROM clients WHERE id = $1 AND shop_id = $2`,
-      [id, req.shopId],
-    );
-
-    if (clientRes.rows.length === 0) {
-      return res.status(404).json({ error: "Client not found" });
-    }
-    const client = clientRes.rows[0];
-
-    // The cached balance is only refreshed on writes, but its formula is
-    // time-dependent (appointments crossing into the past start counting).
-    // Recalculate on read so the profile always shows the true balance.
-    client.outstanding_balance = await recalculateClientBalance(pool, id);
-
-    // 2. Fetch Appointment History
-    // FIX: logic calculates start_time from subquery and orders by it safely
-    // 2. Fetch Appointment History
-    const historyRes = await pool.query(
-      `SELECT 
-          a.id, 
-          a.status, 
-          a.deposit_amount,
-          a.created_at,
-          (
-            SELECT MIN(start_time) 
-            FROM appointment_services 
-            WHERE appointment_id = a.id
-          ) as start_time,
-          
-          COALESCE((
-            SELECT SUM(price_override) 
-            FROM appointment_services 
-            WHERE appointment_id = a.id
-          ), 0) as total_service_price,
-          
-          COALESCE((
-            SELECT SUM(total_price) 
-            FROM product_sales 
-            WHERE appointment_id = a.id
-          ), 0) as total_product_price,
-          
-          (
-            SELECT string_agg(s.name, ', ') 
-            FROM appointment_services aps 
-            JOIN services s ON aps.service_id = s.id 
-            WHERE aps.appointment_id = a.id
-          ) as service_names,
-
-          (
-            SELECT string_agg(DISTINCT st.name, ', ')
-            FROM appointment_services aps
-            JOIN staff st ON aps.staff_id = st.id
-            WHERE aps.appointment_id = a.id
-          ) as staff_names,
-
-          a.payment_status,
-
-          (
-            SELECT payment_method FROM transactions
-            WHERE appointment_id = a.id
-            ORDER BY created_at DESC LIMIT 1
-          ) as payment_method,
-
-          (
-            SELECT gc.purchase_payment_method FROM transactions t
-            JOIN gift_cards gc ON gc.id = t.gift_card_id
-            WHERE t.appointment_id = a.id AND t.payment_method = 'gift-card'
-            ORDER BY t.created_at DESC LIMIT 1
-          ) as gift_card_source_method
-
-        FROM appointments a
-        WHERE a.client_id = $1 AND a.shop_id = $2
-          ${req.user.role !== "super_admin" ? "AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) >= NOW() - INTERVAL '3 months'" : ""}
-        ORDER BY 5 DESC`, // 5 refers to start_time
-      [id, req.shopId],
-    );
-
-    // 3. Fetch File Metadata
-    const filesRes = await pool.query(
-      `SELECT id, file_name, file_type, file_size, uploaded_at 
-       FROM client_files 
-       WHERE client_id = $1 ORDER BY uploaded_at DESC`,
-      [id],
-    );
-
-    const walkInRes = await pool.query("SELECT walk_in_client_id FROM shops WHERE id = $1", [req.shopId]);
-    res.json({
-      client: {
-        ...client,
-        full_name: `${client.first_name} ${client.last_name}`,
-        is_walk_in: walkInRes.rows[0]?.walk_in_client_id === client.id,
-      },
-      history: historyRes.rows,
-      files: filesRes.rows,
-    });
-  } catch (err) {
-    console.error("Profile Fetch Error:", err);
-    // Return JSON error so frontend doesn't crash with SyntaxError
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-// A client's active appointments on one specific date, across every staff
-// member — not gated by the "staff" role's own-appointments-only visibility
-// on GET /api/v1/appointments (that restriction exists for the scheduler's
-// own general listing and is unrelated to this: checking a client out needs
-// to see their whole day even when it spans several staff members). Used by
-// the Payment tab's combined-day-payment checklist; the read is open to any
-// authenticated shop role, only the client-side "select + pay" action is
-// gated to admin/frontdesk/super_admin.
-app.get(
-  "/api/v1/clients/:clientId/appointments-on-date",
-  authenticateToken,
-  async (req, res) => {
-    const { clientId } = req.params;
-    const { date } = req.query; // YYYY-MM-DD, required
-    if (!safeUUID(clientId)) {
-      return res.status(400).json({ error: "Invalid clientId" });
-    }
-    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      return res.status(400).json({ error: "date (YYYY-MM-DD) is required" });
-    }
-    try {
-      const { rows } = await pool.query(
-        `SELECT
-           a.id, a.status, a.payment_status,
-           COALESCE((SELECT SUM(t.amount) FROM transactions t WHERE t.appointment_id = a.id), 0) as deposit_amount,
-           (
-             COALESCE((SELECT SUM(COALESCE(aps.price_override, s.price)) FROM appointment_services aps
-                       JOIN services s ON aps.service_id = s.id WHERE aps.appointment_id = a.id), 0)
-             + COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = a.id), 0)
-           ) as total_cost,
-           COALESCE((
-             SELECT json_agg(json_build_object(
-               'service_name', s.name,
-               'staff_name', st.name,
-               'start_time', aps.start_time
-             ) ORDER BY aps.start_time ASC)
-             FROM appointment_services aps
-             LEFT JOIN services s ON aps.service_id = s.id
-             LEFT JOIN staff st ON aps.staff_id = st.id
-             WHERE aps.appointment_id = a.id
-           ), '[]') as services
-         FROM appointments a
-         WHERE a.client_id = $1
-           AND a.shop_id = $2
-           AND a.status NOT IN ('cancelled', 'no-show')
-           AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id)::date = $3::date
-         ORDER BY (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) ASC`,
-        [clientId, req.shopId, date],
-      );
-      res.json(
-        rows.map((r) => ({
-          id: r.id,
-          status: r.status,
-          payment_status: r.payment_status,
-          deposit_amount: Number(r.deposit_amount),
-          total_cost: Number(r.total_cost),
-          owed: Math.max(0, Number(r.total_cost) - Number(r.deposit_amount)),
-          services: r.services,
-        })),
-      );
-    } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: "Internal server error" });
-    }
-  },
-);
-
-// UPLOAD CLIENT FILE (Saved as BLOB)
-app.post(
-  "/api/v1/clients/:id/files",
-  authenticateToken,
-  dbFileUpload.single("file"),
-  async (req, res) => {
-    const { id } = req.params;
-    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
-
-    try {
-      // Fix encoding for special characters
-      const originalName = Buffer.from(
-        req.file.originalname,
-        "latin1",
-      ).toString("utf8");
-
-      await pool.query(
-        `INSERT INTO client_files (client_id, file_name, file_type, file_size, file_data)
-       VALUES ($1, $2, $3, $4, $5)`,
-        [id, originalName, req.file.mimetype, req.file.size, req.file.buffer],
-      );
-
-      res.json({ success: true });
-    } catch (err) {
-      console.error("File Upload Error:", err);
-      res.status(500).json({ error: "Failed to upload file" });
-    }
-  },
-);
-
-// DOWNLOAD CLIENT FILE
-app.get(
-  "/api/v1/clients/files/:fileId",
-  authenticateToken,
-  async (req, res) => {
-    try {
-      const { fileId } = req.params;
-      let query = `
-      SELECT cf.file_data, cf.file_type, cf.file_name 
-      FROM client_files cf
-      JOIN clients c ON cf.client_id = c.id
-      WHERE cf.id = $1
-    `;
-      let params = [fileId];
-
-      // 2. Add Role-Based Security
-      if (req.user.role === "client") {
-        // CLIENTS: Must match the file ID AND their own clientId
-        query += ` AND cf.client_id = $2`;
-        params.push(req.user.clientId);
-      } else {
-        // STAFF/ADMIN: Must match the file ID AND the shop_id they belong to
-        query += ` AND c.shop_id = $2`;
-        params.push(req.shopId);
-      }
-
-      // 3. Execute the query AFTER building it
-      const { rows } = await pool.query(query, params);
-
-      if (rows.length === 0) {
-        return res
-          .status(404)
-          .json({ error: "File not found or access denied" });
-      }
-
-      const file = rows[0];
-      const encodedName = encodeURIComponent(file.file_name);
-
-      // 4. Send the file
-      res.setHeader(
-        "Content-Type",
-        file.file_type || "application/octet-stream",
-      );
-      res.setHeader(
-        "Content-Disposition",
-        `attachment; filename*=UTF-8''${encodedName}`,
-      );
-
-      res.send(file.file_data);
-    } catch (err) {
-      console.error("Download Error:", err);
-      res.status(500).json({ error: "Download failed" });
-    }
-  },
-);
-
-// DELETE CLIENT FILE
-app.delete(
-  "/api/v1/clients/files/:fileId",
-  authenticateToken,
-  async (req, res) => {
-    try {
-      await pool.query(
-        `DELETE FROM client_files cf
-       USING clients c
-       WHERE cf.client_id = c.id AND cf.id = $1 AND c.shop_id = $2`,
-        [req.params.fileId, req.shopId],
-      );
-      res.json({ success: true });
-    } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: "Delete failed" });
-    }
-  },
-);
 app.get("/api/v1/exercises", authenticateToken, async (req, res) => {
   try {
     const { rows } = await pool.query(
@@ -7427,55 +5525,6 @@ app.post("/api/v1/exercises", authenticateToken, async (req, res) => {
   }
 });
 
-// 3. Get Exercises Completed by Specific Client
-app.get(
-  "/api/v1/clients/:id/exercises",
-  authenticateToken,
-  async (req, res) => {
-    try {
-      const { rows } = await pool.query(
-        `SELECT exercise_id FROM client_exercises WHERE client_id = $1`,
-        [req.params.id],
-      );
-      // Return simple array of IDs: ['uuid-1', 'uuid-2']
-      res.json(rows.map((r) => r.exercise_id));
-    } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: "Internal server error" });
-    }
-  },
-);
-
-// 4. Toggle Exercise Status (Check/Uncheck)
-app.post(
-  "/api/v1/clients/:id/exercises/toggle",
-  authenticateToken,
-  async (req, res) => {
-    const { id } = req.params; // Client ID
-    const { exerciseId, completed } = req.body;
-
-    try {
-      if (completed) {
-        // Check: Insert record
-        await pool.query(
-          `INSERT INTO client_exercises (client_id, exercise_id) 
-         VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-          [id, exerciseId],
-        );
-      } else {
-        // Uncheck: Delete record
-        await pool.query(
-          `DELETE FROM client_exercises WHERE client_id = $1 AND exercise_id = $2`,
-          [id, exerciseId],
-        );
-      }
-      res.json({ success: true });
-    } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: "Failed to update exercise status" });
-    }
-  },
-);
 app.delete("/api/v1/exercises/:id", authenticateToken, async (req, res) => {
   const { id } = req.params;
 
@@ -7514,171 +5563,15 @@ const hexToRgba = (hex, alpha) => {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 };
 
-// Invite Endpoint
-app.post("/api/v1/clients/:id/invite", authenticateToken, async (req, res) => {
-  const { id } = req.params;
-  try {
-    const { rows } = await pool.query(
-      "SELECT * FROM clients WHERE id = $1 AND shop_id = $2",
-      [id, req.shopId],
-    );
-    if (rows.length === 0)
-      return res.status(404).json({ error: "Client not found" });
-    const client = rows[0];
-
-    if (!client.email)
-      return res
-        .status(400)
-        .json({ error: "Client does not have an email address" });
-
-    const userCheck = await pool.query(
-      "SELECT id FROM users WHERE client_id = $1",
-      [id],
-    );
-    if (userCheck.rows.length > 0)
-      return res.status(400).json({ error: "Client already has an account" });
-
-    // Fetch shop branding
-    const shopRes = await pool.query(
-      "SELECT name, reply_email, primary_color FROM shops WHERE id = $1",
-      [req.shopId],
-    );
-    const shopRow = shopRes.rows[0] || {};
-    const replyEmail = shopRow.reply_email || null;
-    const shopName = shopRow.name || req.user.shopName || process.env.APP_NAME || "Booking";
-    const brandColor = shopRow.primary_color || "#111827";
-    const brandTint = hexToRgba(brandColor, 0.08);
-    const brandTintBorder = hexToRgba(brandColor, 0.2);
-    const brandShadow = hexToRgba(brandColor, 0.3);
-
-    // Generate temporary token for signup
-    const inviteToken = jwt.sign(
-      { clientId: id, shopId: req.shopId, email: client.email },
-      process.env.JWT_SECRET,
-      { expiresIn: "48h" },
-    );
-
-    const signupUrl = `${process.env.FRONTEND_URL}/signup?token=${inviteToken}`;
-    const nodemailer = require("nodemailer");
-
-    const transporter = nodemailer.createTransport({
-      host: process.env.EMAIL_HOST,
-      port: process.env.EMAIL_PORT,
-      secure: process.env.EMAIL_PORT == 465,
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
-      family: 4,
-      connectionTimeout: 10000,
-      greetingTimeout: 10000,
-    });
-
-    await transporter.sendMail({
-      from: `"${shopName}" <${process.env.EMAIL_USER}>`,
-      ...(replyEmail && { replyTo: replyEmail }),
-      to: client.email,
-      subject: "Invitation to your Client Portal",
-      attachments: [
-        {
-          filename: "logo.png",
-          path: path.join(__dirname, "../client/static/logo for photos-02.png"),
-          cid: "brand-logo",
-        },
-      ],
-      html: `
-<!doctype html>
-<html>
-  <head>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet" />
-    <style>
-      /* Mobile responsiveness */
-      @media only screen and (max-width: 600px) {
-        .inner-padding { padding: 30px 15px !important; }
-        .button-stack { display: block !important; width: 100% !important; margin: 10px 0 !important; box-sizing: border-box !important; }
-      }
-      /* Hover effect for buttons */
-      .btn-hover:hover { opacity: 0.9 !important; transform: translateY(-2px); }
-    </style>
-  </head>
-  <body style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: ${brandTint}; padding: 40px 10px; margin: 0; -webkit-font-smoothing: antialiased;">
-    <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 32px; overflow: hidden; box-shadow: 0 20px 25px -5px ${hexToRgba(brandColor, 0.1)}, 0 10px 10px -5px rgba(0, 0, 0, 0.04);">
-
-      <div style="padding: 40px 40px 20px 40px; text-align: left">
-        <img src="cid:brand-logo" alt="${shopName}" width="48" height="48" style="width: 48px; height: 48px; object-fit: contain; margin-bottom: 16px;" />
-        <div style="display: inline-block; background-color: ${brandColor}; color: white; padding: 4px 12px; border-radius: 9999px; font-size: 12px; font-weight: 700; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 0.05em;">
-          Πρόσκληση
-        </div>
-        <h2 style="margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.025em;">
-          <span style="color: #111827">${shopName}</span><span style="color: ${brandColor}"> Portal</span>
-        </h2>
-      </div>
-
-      <div class="inner-padding" style="padding: 0 40px 40px 40px">
-        <h1 style="color: #111827; font-size: 32px; font-weight: 800; margin-bottom: 24px; line-height: 1.1; letter-spacing: -1px;">
-          Καλώς ήρθατε στο <span style="color: ${brandColor}">Online Portal</span> μας
-        </h1>
-
-        <p style="color: #4b5563; font-size: 16px; line-height: 1.6; margin-bottom: 16px;">
-          Γεια σας ${client.first_name},
-        </p>
-        <p style="color: #4b5563; font-size: 16px; line-height: 1.6">
-          Είμαστε ενθουσιασμένοι που σας προσκαλούμε στη νέα μας πλατφόρμα. Εδώ μπορείτε να διαχειρίζεστε τα ραντεβού σας και να έχετε πρόσβαση στα έγγραφά σας 24/7.
-        </p>
-
-        <div style="background-color: ${brandTint}; border-radius: 24px; padding: 30px; margin: 32px 0; border: 1px solid ${brandTintBorder};">
-          <ul style="color: #374151; font-size: 15px; padding-left: 0; list-style: none; margin: 0;">
-            <li style="margin-bottom: 12px; display: flex; align-items: center;">
-              <span style="color: ${brandColor}; margin-right: 12px; font-size: 18px;">📅</span>
-              <strong>Προβολή ραντεβού:</strong> Δείτε τα επόμενα ραντεβού σας.
-            </li>
-            <li style="margin-bottom: 12px; display: flex; align-items: center;">
-              <span style="color: ${brandColor}; margin-right: 12px; font-size: 18px;">🕒</span>
-              <strong>Ιστορικό:</strong> Πλήρης έλεγχος των επισκέψεών σας.
-            </li>
-            <li style="display: flex; align-items: center;">
-              <span style="color: ${brandColor}; margin-right: 12px; font-size: 18px;">📁</span>
-              <strong>Αρχεία:</strong> Κατεβάστε σημαντικά έγγραφα και οδηγίες.
-            </li>
-          </ul>
-        </div>
-
-        <div style="text-align: center; margin-top: 40px;">
-          <a href="${signupUrl}" class="btn-hover button-stack" style="display: inline-block; background-color: ${brandColor}; color: white; padding: 18px 40px; border-radius: 16px; text-decoration: none; font-weight: 700; font-size: 16px; transition: all 0.2s ease; box-shadow: 0 10px 15px -3px ${brandShadow};">
-            Ενεργοποίηση Λογαριασμού
-          </a>
-          <p style="color: #9ca3af; font-size: 12px; margin-top: 25px;">
-             Αυτός ο σύνδεσμος θα λήξει σε 48 ώρες για την ασφάλειά σας.
-          </p>
-        </div>
-      </div>
-
-      <div style="background-color: #fff; padding: 40px; text-align: center; border-top: 1px solid ${hexToRgba(brandColor, 0.1)};">
-        <p style="color: #111827; font-size: 16px; font-weight: 700; margin-bottom: 8px;">
-          ${shopName}<span style="color: ${brandColor}"> Booking</span>
-        </p>
-        <p style="color: #9ca3af; font-size: 12px; margin: 0;">
-          © ${new Date().getFullYear()} Powered by ${process.env.APP_NAME || "Booking"}
-        </p>
-      </div>
-    </div>
-  </body>
-</html>
-      `,
-    });
-
-    res.json({ success: true });
-  } catch (err) {
-    console.error("Invite Error:", err);
-    res.status(500).json({ error: "Failed to send invitation" });
-  }
-});
-
 // Signup Endpoint
 app.post("/api/v1/signup", signupLimiter, async (req, res) => {
   const { token, password } = req.body;
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    // Only an invite link signs up (a login token has a role, not an email).
+    if (isSessionToken(decoded) || !decoded.email || !decoded.clientId) {
+      return res.status(400).json({ error: "Invalid or expired invitation link" });
+    }
 
     const userCheck = await pool.query(
       "SELECT id FROM users WHERE username = $1",
@@ -8256,7 +6149,31 @@ app.get("/api/v1/availability", authenticateToken, async (req, res) => {
 // ==================== CONTESTS & GIFT CARDS SCHEMA ====================
 // Sequential IIFE: later steps (ALTER/indexes) depend on tables created earlier,
 // so these cannot run as independent fire-and-forget promises.
-(async () => {
+// Schema setup and other one-off work at startup. Each runs once the
+// database migrations are done (see the end of this file), all at the same
+// time, as they always have.
+const startupTasks = [];
+
+// One statement that adds `table.column` (if missing) with a foreign key to
+// `refTable(id)` (if the column has none yet). Plain "ADD COLUMN IF NOT EXISTS
+// … REFERENCES …" skips the column when it exists but still adds the
+// constraint, so it piled up a copy on every start (hundreds per table on the
+// dev database; migration 0003 removes those).
+const foreignKeyColumnSql = (table, column, type, refTable, onDelete) => `
+  DO $$
+  BEGIN
+    ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${column} ${type};
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_constraint c
+      JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ALL (c.conkey)
+      WHERE c.contype = 'f' AND c.conrelid = '${table}'::regclass AND a.attname = '${column}'
+    ) THEN
+      ALTER TABLE ${table} ADD CONSTRAINT ${table}_${column}_fkey
+        FOREIGN KEY (${column}) REFERENCES ${refTable}(id) ON DELETE ${onDelete};
+    END IF;
+  END $$`;
+
+startupTasks.push(async () => {
   try {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS contests (
@@ -8288,13 +6205,13 @@ app.get("/api/v1/availability", authenticateToken, async (req, res) => {
     `);
 
     await pool.query(
-      `ALTER TABLE transactions ADD COLUMN IF NOT EXISTS gift_card_id UUID REFERENCES gift_cards(id) ON DELETE SET NULL`,
+      foreignKeyColumnSql("transactions", "gift_card_id", "UUID", "gift_cards", "SET NULL"),
     );
     // Which staff member sold the card. NULL means "Frontdesk" (no specific
     // staff member attributed) — the app always sends an explicit value (a
     // staff id or null-for-frontdesk), this is just nullable at the DB level.
     await pool.query(
-      `ALTER TABLE gift_cards ADD COLUMN IF NOT EXISTS sold_by_staff_id UUID REFERENCES staff(id) ON DELETE SET NULL`,
+      foreignKeyColumnSql("gift_cards", "sold_by_staff_id", "UUID", "staff", "SET NULL"),
     );
     // Shared across the two rows created by a single "split" payment (e.g. part
     // gift-card + part cash in one visit), so reports can flag them as linked.
@@ -8349,7 +6266,7 @@ app.get("/api/v1/availability", authenticateToken, async (req, res) => {
     `);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_client_debts_client ON client_debts(client_id)`);
     await pool.query(
-      `ALTER TABLE transactions ADD COLUMN IF NOT EXISTS client_debt_id UUID REFERENCES client_debts(id) ON DELETE SET NULL`,
+      foreignKeyColumnSql("transactions", "client_debt_id", "UUID", "client_debts", "SET NULL"),
     );
     recalculateAllClientBalances().catch((err) => console.error("Startup balance recalculation failed:", err));
     // Lets a staff member keep their login/appointments without cluttering the
@@ -8510,7 +6427,7 @@ app.get("/api/v1/availability", authenticateToken, async (req, res) => {
   } catch (err) {
     console.error("Failed to run startup schema/index setup:", err);
   }
-})();
+});
 
 // ==================== OFFLINE-SYNC IDEMPOTENCY ====================
 // Backs the client's IndexedDB offline write queue: a queued
@@ -8518,7 +6435,7 @@ app.get("/api/v1/availability", authenticateToken, async (req, res) => {
 // same key is replayed (e.g. a flaky reconnect causes a retry after the
 // first attempt already succeeded), the cached response is returned instead
 // of re-running the write.
-(async () => {
+startupTasks.push(async () => {
   try {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS idempotency_keys (
@@ -8567,10 +6484,10 @@ app.get("/api/v1/availability", authenticateToken, async (req, res) => {
   } catch (err) {
     console.error("Failed to run idempotency_keys schema setup:", err);
   }
-})();
+});
 
 // ==================== WEB PUSH (client portal notifications) ====================
-(async () => {
+startupTasks.push(async () => {
   try {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS push_subscriptions (
@@ -8613,7 +6530,7 @@ app.get("/api/v1/availability", authenticateToken, async (req, res) => {
       "ALTER TABLE appointments ADD COLUMN IF NOT EXISTS discount_type VARCHAR(10)",
       "ALTER TABLE appointments ADD COLUMN IF NOT EXISTS discount_value NUMERIC(10,2)",
       "ALTER TABLE appointments ADD COLUMN IF NOT EXISTS discount_scope VARCHAR(10)",
-      "ALTER TABLE appointments ADD COLUMN IF NOT EXISTS discount_code_id UUID REFERENCES discount_codes(id) ON DELETE SET NULL",
+      foreignKeyColumnSql("appointments", "discount_code_id", "UUID", "discount_codes", "SET NULL"),
       "ALTER TABLE appointments ADD COLUMN IF NOT EXISTS discount_code_name VARCHAR(100)",
       "ALTER TABLE appointments ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(10,2) NOT NULL DEFAULT 0",
       "ALTER TABLE appointment_services ADD COLUMN IF NOT EXISTS list_price NUMERIC(10,2)",
@@ -8671,10 +6588,10 @@ app.get("/api/v1/availability", authenticateToken, async (req, res) => {
   } catch (err) {
     console.error("Failed to run push notification schema setup:", err);
   }
-})();
+});
 
 // ==================== PLATFORM / MULTI-TENANT ADMIN SCHEMA ====================
-(async () => {
+startupTasks.push(async () => {
   try {
     await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS plan VARCHAR(50) NOT NULL DEFAULT 'trial'`);
     await pool.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active'`);
@@ -8731,11 +6648,11 @@ app.get("/api/v1/availability", authenticateToken, async (req, res) => {
   } catch (err) {
     console.error("Failed to run platform-admin schema setup:", err);
   }
-})();
+});
 
 // ==================== MEMBERSHIP CLUB SCHEMA ====================
 // Sequential IIFE: later tables/columns reference earlier ones.
-(async () => {
+startupTasks.push(async () => {
   try {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS membership_tiers (
@@ -8824,13 +6741,13 @@ app.get("/api/v1/availability", authenticateToken, async (req, res) => {
   } catch (err) {
     console.error("Failed to run membership-club schema setup:", err);
   }
-})();
+});
 
 // ==================== PREPAID PACKAGES SCHEMA ====================
 // A package type ("5 Sauna visits — 100") is sold once to a client; each
 // redeemed visit is a package_usage row, so remaining visits are always
 // derived (total_visits - COUNT(usage)) and never drift.
-(async () => {
+startupTasks.push(async () => {
   try {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS package_types (
@@ -8880,22 +6797,22 @@ app.get("/api/v1/availability", authenticateToken, async (req, res) => {
   } catch (err) {
     console.error("Failed to run packages schema setup:", err);
   }
-})();
+});
 
 // One ordinary client per shop, reused for every walk-in booking (a fast
 // "save now, attribute to a real client later" flow) — deliberately just a
 // ref to a plain clients row, not a flagged/hidden pseudo-client: it shows up
 // in the client list/search/reports like anyone else, and its balance only
 // ever holds whatever hasn't been reassigned to a real client yet.
-(async () => {
+startupTasks.push(async () => {
   try {
     await pool.query(
-      `ALTER TABLE shops ADD COLUMN IF NOT EXISTS walk_in_client_id UUID REFERENCES clients(id) ON DELETE SET NULL`,
+      foreignKeyColumnSql("shops", "walk_in_client_id", "UUID", "clients", "SET NULL"),
     );
   } catch (err) {
     console.error("Failed to run walk-in client schema setup:", err);
   }
-})();
+});
 
 // ==================== SERVICE COMBOS SCHEMA ====================
 // A combo service (e.g. "Sport + Sauna") keeps its own price/duration but
@@ -8903,10 +6820,10 @@ app.get("/api/v1/availability", authenticateToken, async (req, res) => {
 // own schedule block when booked (e.g. a Sauna block, auto-assigned to
 // whichever staff member is that service's default). Replaces name-keyword
 // guessing with an explicit, admin-configured combination.
-(async () => {
+startupTasks.push(async () => {
   try {
     await pool.query(
-      `ALTER TABLE services ADD COLUMN IF NOT EXISTS default_staff_id UUID REFERENCES staff(id) ON DELETE SET NULL`,
+      foreignKeyColumnSql("services", "default_staff_id", "UUID", "staff", "SET NULL"),
     );
     await pool.query(`
       CREATE TABLE IF NOT EXISTS service_combo_components (
@@ -8923,7 +6840,7 @@ app.get("/api/v1/availability", authenticateToken, async (req, res) => {
   } catch (err) {
     console.error("Failed to run service combos schema setup:", err);
   }
-})();
+});
 
 // ==================== SERVICE VARIATIONS SCHEMA ====================
 // A service can optionally offer several named price/duration options (e.g.
@@ -8932,7 +6849,7 @@ app.get("/api/v1/availability", authenticateToken, async (req, res) => {
 // unchanged for services with no variations (the common case); when
 // variations exist, the booking picker offers them instead of the base
 // price, matching Fresha's "expand for options" pattern.
-(async () => {
+startupTasks.push(async () => {
   try {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS service_variations (
@@ -8950,7 +6867,7 @@ app.get("/api/v1/availability", authenticateToken, async (req, res) => {
   } catch (err) {
     console.error("Failed to run service variations schema setup:", err);
   }
-})();
+});
 
 // ==================== SERVICE CATEGORIES / MANUAL ORDERING SCHEMA ====================
 // `services.category` stays free text (unchanged everywhere it's already
@@ -8958,7 +6875,7 @@ app.get("/api/v1/availability", authenticateToken, async (req, res) => {
 // shop a place to store a drag-reorderable position, without a sweeping
 // refactor to a hard foreign key. `services.sort_order` is the equivalent for
 // ordering services within their own category.
-(async () => {
+startupTasks.push(async () => {
   try {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS service_categories (
@@ -9002,7 +6919,7 @@ app.get("/api/v1/availability", authenticateToken, async (req, res) => {
   } catch (err) {
     console.error("Failed to run service categories schema setup:", err);
   }
-})();
+});
 
 // Sets exactly which staff are eligible for `serviceId`, safely preserving
 // each staff member's existing eligibility for every OTHER service.
@@ -9068,7 +6985,7 @@ const setServiceStaffEligibility = async (dbClient, shopId, serviceId, staffIds)
 // Checkout price changes aren't a money movement by themselves (they just
 // change what's owed), so they don't belong in `transactions` — they get
 // their own small audit table instead, purely for the admin report.
-(async () => {
+startupTasks.push(async () => {
   try {
     await pool.query(`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS reason TEXT`);
     await pool.query(
@@ -9092,10 +7009,10 @@ const setServiceStaffEligibility = async (dbClient, shopId, serviceId, staffIds)
   } catch (err) {
     console.error("Failed to run refunds/price-adjustments schema setup:", err);
   }
-})();
+});
 
 // ==================== LANDING PAGE / DEMO REQUESTS SCHEMA ====================
-(async () => {
+startupTasks.push(async () => {
   try {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS demo_requests (
@@ -9112,7 +7029,7 @@ const setServiceStaffEligibility = async (dbClient, shopId, serviceId, staffIds)
   } catch (err) {
     console.error("Failed to run demo-requests schema setup:", err);
   }
-})();
+});
 
 // List all contests for the shop (admin)
 app.get("/api/v1/contests", authenticateToken, async (req, res) => {
@@ -9608,370 +7525,11 @@ app.delete("/api/v1/membership-tiers/:id", authenticateToken, async (req, res) =
 
 // ==================== CLIENT MEMBERSHIPS ====================
 
-// Current membership (any status, most recent) + per-covered-service usage
-// for the current calendar month. Quotas always reset on the 1st of the
-// month regardless of monthly/yearly billing — computed live, no reset job.
-app.get("/api/v1/clients/:id/membership", authenticateToken, async (req, res) => {
-  if (req.user.role === "client" && String(req.user.clientId) !== String(req.params.id)) {
-    return res.status(403).json({ error: "Unauthorized to view this membership" });
-  }
-  try {
-    const { rows } = await pool.query(
-      `SELECT cm.*, mt.name as tier_name, mt.monthly_price, mt.yearly_price, mt.grace_period_days
-       FROM client_memberships cm
-       JOIN membership_tiers mt ON mt.id = cm.tier_id
-       WHERE cm.client_id = $1 AND cm.shop_id = $2
-       ORDER BY cm.created_at DESC LIMIT 1`,
-      [req.params.id, req.shopId],
-    );
-    if (rows.length === 0) return res.json({ membership: null, usage: [] });
-
-    const membership = rows[0];
-    const { rows: usage } = await pool.query(
-      `SELECT mts.service_id, s.name as service_name, mts.quota_per_month,
-              COALESCE((
-                SELECT COUNT(*) FROM membership_usage mu
-                WHERE mu.client_membership_id = $1 AND mu.service_id = mts.service_id
-                  AND mu.used_at >= date_trunc('month', NOW())
-              ), 0) as used_this_month
-       FROM membership_tier_services mts
-       JOIN services s ON s.id = mts.service_id
-       WHERE mts.tier_id = $2`,
-      [membership.id, membership.tier_id],
-    );
-
-    res.json({
-      membership,
-      usage: usage.map((u) => ({
-        ...u,
-        used_this_month: parseInt(u.used_this_month),
-        remaining: u.quota_per_month === null ? null : Math.max(0, u.quota_per_month - parseInt(u.used_this_month)),
-      })),
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-// Assign/change a client's membership tier — admin only. Cancels any
-// existing active/paused enrollment and starts a fresh one. Payment is
-// recorded manually, same pattern as gift-card sales (no payment gateway).
-app.post("/api/v1/clients/:id/membership", authenticateToken, async (req, res) => {
-  if (req.user.role !== "admin" && req.user.role !== "super_admin") {
-    return res.status(403).json({ error: "Admins only" });
-  }
-  const { tier_id, billing_cycle, payment_method } = req.body;
-  if (!tier_id || !["monthly", "yearly"].includes(billing_cycle)) {
-    return res.status(400).json({ error: "tier_id and a valid billing_cycle are required" });
-  }
-
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-
-    const tierRes = await client.query(
-      `SELECT * FROM membership_tiers WHERE id = $1 AND shop_id = $2`,
-      [tier_id, req.shopId],
-    );
-    if (tierRes.rows.length === 0) {
-      await client.query("ROLLBACK");
-      return res.status(404).json({ error: "Tier not found" });
-    }
-    const tier = tierRes.rows[0];
-
-    await client.query(
-      `UPDATE client_memberships SET status = 'cancelled'
-       WHERE client_id = $1 AND status IN ('active', 'paused')`,
-      [req.params.id],
-    );
-
-    const periodInterval = billing_cycle === "yearly" ? "1 year" : "1 month";
-    const { rows } = await client.query(
-      `INSERT INTO client_memberships
-         (client_id, shop_id, tier_id, billing_cycle, status, started_at, current_period_start, current_period_end, last_payment_recorded_at)
-       VALUES ($1, $2, $3, $4, 'active', NOW(), NOW(), NOW() + $5::interval, NOW())
-       RETURNING *`,
-      [req.params.id, req.shopId, tier_id, billing_cycle, periodInterval],
-    );
-
-    const amount = billing_cycle === "yearly" ? tier.yearly_price : tier.monthly_price;
-    await client.query(
-      `INSERT INTO transactions (appointment_id, client_id, amount, payment_method, transaction_type, shop_id, created_at)
-       VALUES (NULL, $1, $2, $3, 'membership_sale', $4, NOW())`,
-      [req.params.id, amount, payment_method || "cash", req.shopId],
-    );
-
-    await client.query("COMMIT");
-    res.json(rows[0]);
-  } catch (err) {
-    await client.query("ROLLBACK");
-    console.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  } finally {
-    client.release();
-  }
-});
-
-// Renew the client's current (active or lapsed-within-grace) membership for
-// another billing cycle — admin only.
-app.post("/api/v1/clients/:id/membership/renew", authenticateToken, async (req, res) => {
-  if (req.user.role !== "admin" && req.user.role !== "super_admin") {
-    return res.status(403).json({ error: "Admins only" });
-  }
-  const { payment_method } = req.body;
-
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-
-    const { rows } = await client.query(
-      `SELECT cm.*, mt.monthly_price, mt.yearly_price
-       FROM client_memberships cm
-       JOIN membership_tiers mt ON mt.id = cm.tier_id
-       WHERE cm.client_id = $1 AND cm.shop_id = $2 AND cm.status IN ('active', 'expired')
-       ORDER BY cm.created_at DESC LIMIT 1`,
-      [req.params.id, req.shopId],
-    );
-    if (rows.length === 0) {
-      await client.query("ROLLBACK");
-      return res.status(404).json({ error: "No renewable membership found" });
-    }
-    const membership = rows[0];
-    const periodInterval = membership.billing_cycle === "yearly" ? "1 year" : "1 month";
-
-    const updated = await client.query(
-      `UPDATE client_memberships
-       SET status = 'active',
-           current_period_start = GREATEST(current_period_end, NOW()),
-           current_period_end = GREATEST(current_period_end, NOW()) + $2::interval,
-           last_payment_recorded_at = NOW(),
-           renewal_reminder_sent_at = NULL
-       WHERE id = $1
-       RETURNING *`,
-      [membership.id, periodInterval],
-    );
-
-    const amount = membership.billing_cycle === "yearly" ? membership.yearly_price : membership.monthly_price;
-    await client.query(
-      `INSERT INTO transactions (appointment_id, client_id, amount, payment_method, transaction_type, shop_id, created_at)
-       VALUES (NULL, $1, $2, $3, 'membership_sale', $4, NOW())`,
-      [req.params.id, amount, payment_method || "cash", req.shopId],
-    );
-
-    await client.query("COMMIT");
-    res.json(updated.rows[0]);
-  } catch (err) {
-    await client.query("ROLLBACK");
-    console.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  } finally {
-    client.release();
-  }
-});
-
-// Cancel a client's membership — admin only.
-app.delete("/api/v1/clients/:id/membership", authenticateToken, async (req, res) => {
-  if (req.user.role !== "admin" && req.user.role !== "super_admin") {
-    return res.status(403).json({ error: "Admins only" });
-  }
-  try {
-    const { rowCount } = await pool.query(
-      `UPDATE client_memberships SET status = 'cancelled'
-       WHERE client_id = $1 AND shop_id = $2 AND status IN ('active', 'paused')`,
-      [req.params.id, req.shopId],
-    );
-    if (rowCount === 0) return res.status(404).json({ error: "No active membership found" });
-    res.json({ success: true });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
 // ==================== PREPAID PACKAGES ====================
 const isAdminRole = (u) => u.role === "admin" || u.role === "super_admin";
 const canSellExtras = (u) => isAdminRole(u) || u.role === "frontdesk";
 
 // ==================== REFUNDS & CHECKOUT PRICE CHANGES ====================
-
-// A refund is an ordinary negative-amount transaction — every revenue/debt/
-// balance query already sums `amount`, so this nets out correctly everywhere
-// (Financials, Daily Report, client balance) with no other changes needed.
-app.post(
-  "/api/v1/appointments/:id/refund",
-  authenticateToken,
-  async (req, res) => {
-    if (!canSellExtras(req.user)) {
-      return res.status(403).json({ error: "Not authorized to issue refunds" });
-    }
-    const { id } = req.params;
-    const { amount, payment_method, reason } = req.body;
-    const refundAmount = round2(Number(amount));
-    if (!refundAmount || refundAmount <= 0) {
-      return res.status(400).json({ error: "amount must be a positive number" });
-    }
-    if (!["cash", "card", "bank-transfer"].includes(payment_method)) {
-      return res.status(400).json({ error: "Invalid payment_method" });
-    }
-    if (!reason?.trim()) {
-      return res.status(400).json({ error: "A reason is required" });
-    }
-
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      const apptRes = await client.query(
-        `SELECT client_id FROM appointments WHERE id = $1 AND shop_id = $2`,
-        [id, req.shopId],
-      );
-      if (apptRes.rows.length === 0) {
-        await client.query("ROLLBACK");
-        return res.status(404).json({ error: "Appointment not found" });
-      }
-      const clientId = apptRes.rows[0].client_id;
-
-      // Cap at what's currently net-collected on this appointment (already
-      // nets out any prior refunds, since those are negative rows too).
-      const netPaidRes = await client.query(
-        `SELECT COALESCE(SUM(amount), 0) AS net_paid FROM transactions WHERE appointment_id = $1`,
-        [id],
-      );
-      const netPaid = Number(netPaidRes.rows[0].net_paid);
-      if (refundAmount > netPaid + 0.001) {
-        await client.query("ROLLBACK");
-        return res.status(400).json({ error: "exceeds_amount_paid", net_paid: round2(netPaid) });
-      }
-
-      await client.query(
-        `INSERT INTO transactions
-          (appointment_id, client_id, amount, payment_method, transaction_type, reason, created_by_user_id, shop_id, created_at)
-         VALUES ($1, $2, $3, $4, 'refund', $5, $6, $7, NOW())`,
-        [id, clientId, -refundAmount, payment_method, reason.trim(), req.user.username, req.shopId],
-      );
-
-      let newBalance = 0;
-      if (clientId) newBalance = await recalculateClientBalance(client, clientId);
-
-      await client.query("COMMIT");
-      res.json({ success: true, new_balance: newBalance });
-    } catch (err) {
-      await client.query("ROLLBACK");
-      console.error(err);
-      res.status(500).json({ error: "Internal server error" });
-    } finally {
-      client.release();
-    }
-  },
-);
-
-// A manual checkout price change re-derives each service's price_override
-// from the new total, proportionally to what it currently carries (reusing
-// the same largest-remainder split the discount engine uses), and logs the
-// before/after + reason for the admin report — it isn't a money movement by
-// itself, so it doesn't create a transaction, only an audit row.
-app.post(
-  "/api/v1/appointments/:id/price-change",
-  authenticateToken,
-  async (req, res) => {
-    if (!canSellExtras(req.user)) {
-      return res.status(403).json({ error: "Not authorized to change prices" });
-    }
-    const { id } = req.params;
-    const { new_total, reason } = req.body;
-    const newTotal = round2(Number(new_total));
-    if (new_total == null || Number.isNaN(newTotal) || newTotal < 0) {
-      return res.status(400).json({ error: "new_total must be a non-negative number" });
-    }
-    if (!reason?.trim()) {
-      return res.status(400).json({ error: "A reason is required" });
-    }
-
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      const apptRes = await client.query(
-        `SELECT client_id FROM appointments WHERE id = $1 AND shop_id = $2`,
-        [id, req.shopId],
-      );
-      if (apptRes.rows.length === 0) {
-        await client.query("ROLLBACK");
-        return res.status(404).json({ error: "Appointment not found" });
-      }
-      const clientId = apptRes.rows[0].client_id;
-
-      const svcRes = await client.query(
-        `SELECT id, COALESCE(price_override, 0) AS price
-         FROM appointment_services WHERE appointment_id = $1 ORDER BY start_time`,
-        [id],
-      );
-      if (svcRes.rows.length === 0) {
-        await client.query("ROLLBACK");
-        return res.status(400).json({ error: "no_services_to_adjust" });
-      }
-
-      const amounts = svcRes.rows.map((r) => Number(r.price));
-      const oldTotal = round2(amounts.reduce((a, b) => a + b, 0));
-      const delta = round2(newTotal - oldTotal);
-
-      if (delta !== 0) {
-        // No existing price to proportion an increase against (e.g. a comped
-        // €0 visit) — put the entire new total on the last block rather than
-        // silently doing nothing.
-        if (oldTotal <= 0 && delta > 0) {
-          const lastIdx = svcRes.rows.length - 1;
-          await client.query(
-            `UPDATE appointment_services SET price_override = $1 WHERE id = $2`,
-            [newTotal, svcRes.rows[lastIdx].id],
-          );
-        } else {
-          const allocs = allocate(amounts, Math.abs(delta));
-          for (let i = 0; i < svcRes.rows.length; i++) {
-            const newPrice = round2(amounts[i] + (delta > 0 ? allocs[i] : -allocs[i]));
-            await client.query(
-              `UPDATE appointment_services SET price_override = $1 WHERE id = $2`,
-              [newPrice, svcRes.rows[i].id],
-            );
-          }
-        }
-      }
-
-      await client.query(
-        `INSERT INTO price_adjustments
-          (appointment_id, shop_id, old_total, new_total, reason, created_by_user_id, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-        [id, req.shopId, oldTotal, newTotal, reason.trim(), req.user.username],
-      );
-
-      let newBalance = 0;
-      if (clientId) newBalance = await recalculateClientBalance(client, clientId);
-
-      // Returned so the client can display the new per-service prices
-      // exactly as computed here, instead of re-deriving the same split
-      // client-side and risking drift from this endpoint's rounding.
-      const updatedServices = await client.query(
-        `SELECT service_id, staff_id, start_time, duration_override, price_override
-         FROM appointment_services WHERE appointment_id = $1 ORDER BY start_time`,
-        [id],
-      );
-
-      await client.query("COMMIT");
-      res.json({
-        success: true,
-        new_balance: newBalance,
-        old_total: oldTotal,
-        new_total: newTotal,
-        services: updatedServices.rows,
-      });
-    } catch (err) {
-      await client.query("ROLLBACK");
-      console.error(err);
-      res.status(500).json({ error: "Internal server error" });
-    } finally {
-      client.release();
-    }
-  },
-);
 
 // Backing report for the admin Financials "Payments Log" tab's new
 // Refunds & Price Changes section.
@@ -10141,72 +7699,6 @@ app.delete("/api/v1/package-types/:id", authenticateToken, requireShopAdminAcces
   }
 });
 
-// A client's packages (staff, or the client themselves).
-app.get("/api/v1/clients/:id/packages", authenticateToken, async (req, res) => {
-  if (req.user.role === "client" && String(req.user.clientId) !== String(req.params.id)) {
-    return res.status(403).json({ error: "Unauthorized to view these packages" });
-  }
-  try {
-    const list = await loadClientPackages(pool, req.shopId, req.params.id, {
-      activeOnly: req.query.active === "true",
-    });
-    res.json(list);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-// Sell a package to a client: records the package plus one 'package_sale'
-// transaction (revenue counted today; later visits are $0 'package' payments).
-app.post("/api/v1/clients/:id/packages", authenticateToken, async (req, res) => {
-  if (!canSellExtras(req.user)) return res.status(403).json({ error: "Not allowed" });
-  const { package_type_id, payment_method = "cash", note } = req.body;
-  if (!safeUUID(package_type_id)) return res.status(400).json({ error: "package_type_id is required" });
-  if (!["cash", "card", "bank-transfer"].includes(payment_method)) {
-    return res.status(400).json({ error: "Invalid payment method" });
-  }
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    const c = await client.query("SELECT 1 FROM clients WHERE id = $1 AND shop_id = $2", [req.params.id, req.shopId]);
-    if (!c.rows[0]) {
-      await client.query("ROLLBACK");
-      return res.status(404).json({ error: "Client not found" });
-    }
-    const t = await client.query(
-      "SELECT * FROM package_types WHERE id = $1 AND shop_id = $2 AND is_active = true",
-      [package_type_id, req.shopId],
-    );
-    if (!t.rows[0]) {
-      await client.query("ROLLBACK");
-      return res.status(404).json({ error: "Package type not found" });
-    }
-    const pt = t.rows[0];
-    const { rows } = await client.query(
-      `INSERT INTO client_packages
-         (shop_id, client_id, package_type_id, name, service_id, total_visits, price_paid, expires_at, note)
-       VALUES ($1, $2, $3, $4, $5, $6, $7,
-               CASE WHEN $8::int IS NULL THEN NULL ELSE NOW() + ($8::int * INTERVAL '1 day') END, $9)
-       RETURNING id`,
-      [req.shopId, req.params.id, pt.id, pt.name, pt.service_id, pt.visits, pt.price, pt.validity_days, note || null],
-    );
-    await client.query(
-      `INSERT INTO transactions (appointment_id, client_id, amount, payment_method, transaction_type, shop_id, created_at)
-       VALUES (NULL, $1, $2, $3, 'package_sale', $4, NOW())`,
-      [req.params.id, pt.price, payment_method, req.shopId],
-    );
-    await client.query("COMMIT");
-    res.status(201).json({ id: rows[0].id });
-  } catch (err) {
-    await client.query("ROLLBACK");
-    console.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  } finally {
-    client.release();
-  }
-});
-
 // Admin adjustments: change total visits / expiry / note, or cancel the package.
 app.put("/api/v1/client-packages/:id", authenticateToken, requireAnalyticsAccess, async (req, res) => {
   const { total_visits, expires_at, note, status } = req.body;
@@ -10238,99 +7730,6 @@ app.put("/api/v1/client-packages/:id", authenticateToken, requireAnalyticsAccess
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-// Use one visit of a package for a service line of this appointment.
-app.post("/api/v1/appointments/:id/package-redemptions", authenticateToken, async (req, res) => {
-  if (req.user.role === "client") return res.status(403).json({ error: "Forbidden" });
-  const packageId = safeUUID(req.body.client_package_id);
-  if (!packageId) return res.status(400).json({ error: "client_package_id is required" });
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    const apptRes = await client.query(
-      "SELECT id, client_id, status FROM appointments WHERE id = $1 AND shop_id = $2 AND is_block = false FOR UPDATE",
-      [req.params.id, req.shopId],
-    );
-    const appt = apptRes.rows[0];
-    if (!appt || !appt.client_id) {
-      await client.query("ROLLBACK");
-      return res.status(404).json({ error: "Appointment not found" });
-    }
-    const apptStatusBefore = appt.status;
-    const fail = async (code, msg) => {
-      await client.query("ROLLBACK");
-      return res.status(code).json({ error: msg });
-    };
-
-    const pkgRes = await client.query(
-      "SELECT * FROM client_packages WHERE id = $1 AND shop_id = $2 AND client_id = $3 FOR UPDATE",
-      [packageId, req.shopId, appt.client_id],
-    );
-    const pkg = pkgRes.rows[0];
-    if (!pkg) return fail(404, "Package not found for this client");
-    if (pkg.status !== "active") return fail(400, "This package is cancelled");
-    if (pkg.expires_at && new Date(pkg.expires_at) < new Date()) return fail(400, "This package has expired");
-    const usedRes = await client.query("SELECT COUNT(*)::int AS n FROM package_usage WHERE client_package_id = $1", [pkg.id]);
-    if (usedRes.rows[0].n >= pkg.total_visits) return fail(400, "No visits left on this package");
-
-    const lines = await client.query(
-      `SELECT COALESCE(price_override, (SELECT price FROM services WHERE id = $2)) AS price
-       FROM appointment_services WHERE appointment_id = $1 AND service_id = $2 ORDER BY id`,
-      [appt.id, pkg.service_id],
-    );
-    const already = await client.query(
-      "SELECT COUNT(*)::int AS n FROM package_usage WHERE appointment_id = $1 AND service_id = $2",
-      [appt.id, pkg.service_id],
-    );
-    if (already.rows[0].n >= lines.rows.length) {
-      return fail(400, "This appointment has no uncovered occurrence of that service");
-    }
-    const amount = Number(lines.rows[already.rows[0].n].price);
-
-    const txn = await client.query(
-      `INSERT INTO transactions (appointment_id, client_id, amount, payment_method, transaction_type, shop_id, created_at)
-       VALUES ($1, $2, $3, 'package', 'payment', $4, NOW()) RETURNING id`,
-      [appt.id, appt.client_id, amount, req.shopId],
-    );
-    await client.query(
-      `INSERT INTO package_usage (client_package_id, appointment_id, service_id, amount, transaction_id, used_at)
-       VALUES ($1, $2, $3, $4, $5, NOW())`,
-      [pkg.id, appt.id, pkg.service_id, amount, txn.rows[0].id],
-    );
-
-    const totals = await client.query(
-      `SELECT
-         COALESCE((SELECT SUM(price_override) FROM appointment_services WHERE appointment_id = $1), 0)
-         + COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = $1), 0) AS total_price,
-         COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = $1), 0) AS paid`,
-      [appt.id],
-    );
-    const fullyPaid = Number(totals.rows[0].paid) >= Number(totals.rows[0].total_price) - 0.01;
-    await client.query(
-      `UPDATE appointments
-       SET payment_status = $1,
-           status = CASE WHEN status = 'completed' THEN 'completed' ELSE $2 END
-       WHERE id = $3 AND shop_id = $4`,
-      [fullyPaid ? "paid" : "partial", fullyPaid ? "completed" : "confirmed", appt.id, req.shopId],
-    );
-
-    const newBalance = await recalculateClientBalance(client, appt.client_id);
-    await client.query("COMMIT");
-    res.json({
-      success: true,
-      new_balance: newBalance,
-      amount,
-      status: apptStatusBefore === "completed" || fullyPaid ? "completed" : "confirmed",
-      payment_status: fullyPaid ? "paid" : "partial",
-    });
-  } catch (err) {
-    await client.query("ROLLBACK");
-    console.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  } finally {
-    client.release();
   }
 });
 
@@ -10574,6 +7973,70 @@ app.get("/api/v1/reports/membership", authenticateToken, requireAnalyticsAccess,
   }
 });
 
+// ==================== Area routers ====================
+// Areas with a file of their own in server/routes/. Mounted here, after every
+// helper above is defined, and before the catch-all below. Their paths don't
+// overlap any route in this file, so the order is otherwise irrelevant.
+app.use(
+  "/api/v1/appointments",
+  require("./routes/appointments")({
+    DiscountError,
+    MissingStaffError,
+    OfflineConflictError,
+    SelfBookingNotAllowedError,
+    StaffUnavailableError,
+    allocate,
+    assertBaseVersion,
+    assertNoNewOverlaps,
+    authenticateToken,
+    canSellExtras,
+    checkIdempotency,
+    createAppointmentSeries,
+    getGroupDetails,
+    getVisibilityClause,
+    parseDebtResolution,
+    performSingleUpdate,
+    pool,
+    recalculateClientBalance,
+    releasePackageUsage,
+    requireShopAdminAccess,
+    round2,
+    safeUUID,
+    sanitizeClientBookingPayload,
+    saveIdempotency,
+  }),
+);
+app.use(
+  "/api/v1/transactions",
+  require("./routes/transactions")({
+    authenticateToken,
+    canSellExtras,
+    checkIdempotency,
+    pool,
+    recalculateClientBalance,
+    safeUUID,
+    saveIdempotency,
+  }),
+);
+app.use(
+  "/api/v1/clients",
+  require("./routes/clients")({
+    authenticateToken,
+    canSellExtras,
+    checkIdempotency,
+    clientInShop,
+    dbFileUpload,
+    hexToRgba,
+    loadClientPackages,
+    pool,
+    recalculateClientBalance,
+    requireShopAdminAccess,
+    safeUUID,
+    saveIdempotency,
+    walkInClientRow,
+  }),
+);
+
 app.get(/(.*)/, (req, res) => {
   if (req.path.startsWith("/api")) {
     return res.status(404).json({ error: "API Route Not Found" });
@@ -10587,11 +8050,25 @@ app.get(/(.*)/, (req, res) => {
   res.sendFile(path.join(distPath, "index.html"));
 });
 
+// Migrations first (server/migrate.js): if one fails, the server doesn't
+// start. Then the startup tasks above, and the server listens.
+const migrated = runMigrations();
+migrated
+  .then(() => Promise.all(startupTasks.map((task) => task().catch((err) => console.error("Startup task failed:", err)))))
+  .catch(() => {}); // a failed migration is reported below
+
 if (require.main === module) {
-  server.listen(PORT, "0.0.0.0", () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`Allowed Origins: ${allowedOrigins.join(", ")}`);
-  });
+  migrated
+    .then(() => {
+      server.listen(PORT, "0.0.0.0", () => {
+        console.log(`🚀 Server running on port ${PORT}`);
+        console.log(`Allowed Origins: ${allowedOrigins.join(", ")}`);
+      });
+    })
+    .catch((err) => {
+      console.error("Not starting:", err.message);
+      process.exit(1);
+    });
 }
 
 module.exports = { app, server, pool };

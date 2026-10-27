@@ -7,7 +7,11 @@ Installation Steps.pdf
 .vscode/settings.json
 .claude/
 *.sql
+# Migrations are part of the app.
+!server/migrations/*.sql
 server/tests/
 scripts/__pycache__/sync_bookings.cpython-312.pyc
 scripts/__pycache__/import_appointments.cpython-312.pyc
 scripts/backup_before_import_20260704_102527.dump
+# Database backups (client data), never committed.
+*.dump
