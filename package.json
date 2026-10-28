@@ -9,7 +9,7 @@
     "build": "vite build",
     "start": "node server/server.js",
     "typecheck": "vue-tsc --noEmit -p client",
-    "test": "npm run typecheck && vitest run && node --test tests/offline/server.test.mjs tests/server/auth.test.mjs tests/server/payments.test.mjs tests/server/capacity.test.mjs",
+    "test": "npm run typecheck && vitest run && node --test tests/offline/server.test.mjs tests/server/auth.test.mjs tests/server/payments.test.mjs tests/server/capacity.test.mjs tests/server/insights.test.mjs",
     "test:api-compare": "node tests/server/api-compare.mjs",
     "test:offline": "vitest run && node --test tests/offline/server.test.mjs",
     "test:offline:e2e": "npm run build && node --test --test-timeout=1200000 tests/offline/e2e.test.mjs"

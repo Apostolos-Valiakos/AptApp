@@ -3759,6 +3759,108 @@ app.get("/api/v1/reports/analytics", authenticateToken, requireAnalyticsAccess, 
   }
 });
 
+// Booking insights for the analytics page: when the shop is busiest, what is
+// booked most, who comes most, and regulars who stopped coming. Counts
+// bookings that happened or are coming (not cancelled / no-show, no time
+// blocks), each on the day and hour of its first service, in shop time.
+// Regulars not seen lately look at all history, not the period.
+app.get("/api/v1/reports/insights", authenticateToken, requireAnalyticsAccess, async (req, res) => {
+  const { from, to, excludeCash, excludeCard } = req.query;
+  const tz = process.env.TZ || "Europe/Athens";
+  const params = [req.shopId];
+  let range = "";
+  if (from) {
+    params.push(from);
+    range += ` AND fs.first_start >= $${params.length}`;
+  }
+  if (to) {
+    params.push(to);
+    range += ` AND fs.first_start <= $${params.length}`;
+  }
+  // One row per booking: its first start, number of services and value
+  // (services + products).
+  const booked = (extra = "") => `
+    SELECT a.id, a.client_id, a.created_at, fs.first_start,
+           (fs.first_start AT TIME ZONE '${tz}') AS local_start,
+           fs.services,
+           fs.service_value + COALESCE((SELECT SUM(ps.total_price) FROM product_sales ps WHERE ps.appointment_id = a.id), 0) AS value
+    FROM appointments a
+    JOIN LATERAL (
+      SELECT MIN(aps.start_time) AS first_start, COUNT(*) AS services,
+             SUM(COALESCE(aps.price_override, s.price, 0)) AS service_value
+      FROM appointment_services aps LEFT JOIN services s ON s.id = aps.service_id
+      WHERE aps.appointment_id = a.id
+    ) fs ON fs.first_start IS NOT NULL
+    WHERE a.shop_id = $1
+      AND a.status NOT IN ('cancelled', 'no-show', 'no_show')
+      AND NOT COALESCE(a.is_block, false)
+      ${getVisibilityClause(req.user, "a")}
+      ${buildRevenueExclusionClause(excludeCash, excludeCard, "a")}
+      ${extra}`;
+  const inPeriod = (query) => pool.query(`WITH b AS (${booked(range)}) ${query}`, params);
+  const clientName = "TRIM(COALESCE(c.last_name, '') || ' ' || COALESCE(c.first_name, ''))";
+  // The shop's walk-in client, and older ones named so, aren't real clients.
+  const notWalkIn = `c.id IS DISTINCT FROM (SELECT walk_in_client_id FROM shops WHERE id = $1)
+    AND NOT (COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, '')) ~* 'walk[- ]?in'`;
+  const topClients = (order) =>
+    inPeriod(`SELECT c.id, ${clientName} AS name, c.phone, COUNT(*)::int AS visits, ROUND(SUM(b.value), 2)::float AS value
+              FROM b JOIN clients c ON c.id = b.client_id
+              WHERE ${notWalkIn}
+              GROUP BY c.id ORDER BY ${order} LIMIT 10`);
+  try {
+    const [weekdays, busiestDate, heatmap, averages, services, byVisits, byValue, lapsed] = await Promise.all([
+      inPeriod(`SELECT EXTRACT(ISODOW FROM local_start)::int AS weekday, COUNT(*)::int AS bookings,
+                       COUNT(DISTINCT local_start::date)::int AS days
+                FROM b GROUP BY 1 ORDER BY 1`),
+      inPeriod(`SELECT local_start::date::text AS date, COUNT(*)::int AS bookings
+                FROM b GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 1`),
+      inPeriod(`SELECT EXTRACT(ISODOW FROM local_start)::int AS weekday, EXTRACT(HOUR FROM local_start)::int AS hour,
+                       COUNT(*)::int AS bookings
+                FROM b GROUP BY 1, 2`),
+      inPeriod(`SELECT COUNT(*)::int AS bookings,
+                       ROUND(AVG(value), 2)::float AS avg_value,
+                       ROUND(AVG(services), 1)::float AS avg_services,
+                       ROUND(AVG(GREATEST(local_start::date - created_at, 0)) FILTER (WHERE created_at IS NOT NULL), 1)::float AS avg_lead_days,
+                       ROUND(100.0 * AVG(CASE WHEN local_start::date <= created_at THEN 1 ELSE 0 END) FILTER (WHERE created_at IS NOT NULL))::int AS same_day_pct
+                FROM b`),
+      inPeriod(`SELECT s.name AS service_name, COUNT(DISTINCT b.id)::int AS bookings,
+                       ROUND(SUM(COALESCE(aps.price_override, s.price, 0)), 2)::float AS value
+                FROM b
+                JOIN appointment_services aps ON aps.appointment_id = b.id
+                JOIN services s ON s.id = aps.service_id
+                GROUP BY s.id, s.name ORDER BY 2 DESC, 3 DESC LIMIT 5`),
+      topClients("visits DESC, value DESC"),
+      topClients("value DESC, visits DESC"),
+      // 3+ past visits, the last over 60 days ago, nothing booked since.
+      pool.query(
+        `WITH b AS (${booked()})
+         SELECT c.id, ${clientName} AS name, c.phone,
+                COUNT(*)::int AS visits, MAX(b.local_start)::date::text AS last_visit
+         FROM b JOIN clients c ON c.id = b.client_id
+         WHERE ${notWalkIn}
+         GROUP BY c.id
+         HAVING COUNT(*) >= 3 AND MAX(b.first_start) < NOW() - INTERVAL '60 days'
+         ORDER BY visits DESC, MAX(b.first_start) DESC
+         LIMIT 30`,
+        [req.shopId],
+      ),
+    ]);
+    res.json({
+      weekdays: weekdays.rows,
+      busiest_date: busiestDate.rows[0] || null,
+      heatmap: heatmap.rows,
+      averages: averages.rows[0],
+      top_services: services.rows,
+      top_clients_by_visits: byVisits.rows,
+      top_clients_by_value: byValue.rows,
+      lapsed_regulars: lapsed.rows,
+    });
+  } catch (err) {
+    console.error("Insights report error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 app.get("/api/v1/reports/appointments", authenticateToken, requireAnalyticsAccess, async (req, res) => {
   const { from, to, excludeCash, excludeCard } = req.query;
   const params = [req.shopId];
