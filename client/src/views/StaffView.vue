@@ -197,6 +197,22 @@
             class="w-full"
           />
         </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{
+            t("staff.dialog.capacity")
+          }}</label>
+          <InputNumber
+            v-model="editingStaff.capacity"
+            :min="1"
+            :max="50"
+            showButtons
+            class="w-full"
+            data-testid="staff-capacity"
+          />
+          <div class="text-xs text-gray-400 mt-1">
+            {{ t("staff.dialog.capacityNote") }}
+          </div>
+        </div>
         <div class="md:col-span-2">
           <label class="block text-sm font-medium text-gray-700 mb-1">{{
             t("staff.dialog.servicesProvided")
@@ -577,6 +593,7 @@ const openNew = () => {
     last_name: "",
     service_ids: [],
     visible_in_calendar: true,
+    capacity: 1,
   };
   showDialog.value = true;
 };
@@ -588,6 +605,7 @@ const editStaff = (data: any) => {
     first_name: nameParts[0],
     last_name: nameParts.slice(1).join(" "),
     service_ids: data.service_ids || [],
+    capacity: data.capacity || 1,
   };
   showDialog.value = true;
 };

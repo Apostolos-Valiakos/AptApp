@@ -490,8 +490,8 @@ const createAppointmentSeries = async (client, data, shopId) => {
           await client.query(
             `INSERT INTO appointment_services (
               appointment_id, service_id, staff_id, start_time,
-              duration_override, price_override, shop_id, list_price, variation_name
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+              duration_override, price_override, shop_id, list_price, variation_name, persons
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
             [
               appointmentId,
               validServiceId,
@@ -502,6 +502,7 @@ const createAppointmentSeries = async (client, data, shopId) => {
               shopId,
               disc ? svc.list_price : null,
               svc.variation_name || null,
+              personsOf(svc),
             ],
           );
         }
@@ -647,8 +648,8 @@ const performSingleUpdate = async (client, id, shopId, body) => {
       if (safeUUID(svc.service_id)) {
         await client.query(
           `INSERT INTO appointment_services (
-            appointment_id, service_id, staff_id, start_time, duration_override, price_override, shop_id, list_price, variation_name
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            appointment_id, service_id, staff_id, start_time, duration_override, price_override, shop_id, list_price, variation_name, persons
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
           [
             id,
             safeUUID(svc.service_id),
@@ -659,6 +660,7 @@ const performSingleUpdate = async (client, id, shopId, body) => {
             shopId,
             disc ? svc.list_price : null,
             svc.variation_name || null,
+            personsOf(svc),
           ],
         );
       }
@@ -1009,12 +1011,120 @@ class OfflineConflictError extends Error {
     this.details = details;
   }
 }
+// Staff with more than one place at a time (staff.capacity, e.g. the sauna):
+// their id → { name, capacity }, for the staff in `services`.
+const sharedPlacesFor = async (client, shopId, services) => {
+  const ids = [...new Set((services || []).map((s) => safeUUID(s.staff_id)).filter(Boolean))];
+  if (ids.length === 0) return new Map();
+  const { rows } = await client.query(
+    "SELECT id, name, capacity FROM staff WHERE shop_id = $1 AND id = ANY($2::uuid[]) AND capacity > 1",
+    [shopId, ids],
+  );
+  return new Map(rows.map((r) => [String(r.id), { name: r.name, capacity: Number(r.capacity) }]));
+};
+const personsOf = (svc) => Math.max(1, parseInt(svc?.persons, 10) || 1);
+const rowMinutes = (svc) => Number(svc.duration_override || svc.duration_minutes) || 60;
+// The most persons present at one moment within [start, end), from rows
+// { start, end, persons } (ms).
+const peakPersons = (rows, start, end) => {
+  const points = [];
+  for (const r of rows) {
+    const from = Math.max(r.start, start);
+    const to = Math.min(r.end, end);
+    if (from < to) points.push([from, r.persons], [to, -r.persons]);
+  }
+  // At the same moment, someone leaving frees the place before the next one comes.
+  points.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  let now = 0;
+  let peak = 0;
+  for (const [, change] of points) {
+    now += change;
+    peak = Math.max(peak, now);
+  }
+  return peak;
+};
+// A booking that would put more persons in a shared place (the sauna, the
+// hammam) at once than it has places is refused as over_capacity, so the
+// screen can warn first; sent again with allow_over_capacity (or force, the
+// offline "keep mine") it goes through. Only new or changed rows count, so
+// editing something else on a booking that is already over doesn't ask again.
+const assertCapacity = async (client, shopId, body, ownAppointmentId = null) => {
+  if (body.allow_over_capacity || body.force || body.is_block) return;
+  const services = (body.services || []).filter((s) => safeUUID(s.staff_id) && s.start_time);
+  const places = await sharedPlacesFor(client, shopId, services);
+  if (places.size === 0) return;
+
+  const keyOf = (staffId, startMs, minutes, persons) => `${staffId}|${startMs}|${minutes}|${persons}`;
+  const unchanged = new Map();
+  if (ownAppointmentId) {
+    const { rows } = await client.query(
+      `SELECT aps.staff_id, aps.start_time, COALESCE(aps.duration_override, s.duration_minutes, 60) AS minutes, aps.persons
+       FROM appointment_services aps LEFT JOIN services s ON s.id = aps.service_id
+       WHERE aps.appointment_id = $1`,
+      [ownAppointmentId],
+    );
+    for (const r of rows) {
+      const key = keyOf(String(r.staff_id), new Date(r.start_time).getTime(), Number(r.minutes), Number(r.persons));
+      unchanged.set(key, (unchanged.get(key) || 0) + 1);
+    }
+  }
+
+  for (const svc of services) {
+    const staffId = safeUUID(svc.staff_id);
+    const place = places.get(String(staffId));
+    if (!place) continue;
+    const start = new Date(svc.start_time).getTime();
+    const end = start + rowMinutes(svc) * 60000;
+    const persons = personsOf(svc);
+    const key = keyOf(String(staffId), start, rowMinutes(svc), persons);
+    if (unchanged.get(key) > 0) {
+      unchanged.set(key, unchanged.get(key) - 1);
+      continue;
+    }
+    const { rows } = await client.query(
+      `SELECT aps.start_time, COALESCE(aps.duration_override, s.duration_minutes, 60) AS minutes, aps.persons
+       FROM appointment_services aps
+       JOIN appointments a ON a.id = aps.appointment_id
+       LEFT JOIN services s ON s.id = aps.service_id
+       WHERE a.shop_id = $1 AND aps.staff_id = $2
+         AND a.status NOT IN ('cancelled', 'no-show', 'no_show')
+         AND ($3::uuid IS NULL OR a.id <> $3::uuid)
+         AND aps.start_time < to_timestamp($5 / 1000.0)
+         AND aps.start_time + (COALESCE(aps.duration_override, s.duration_minutes, 60) || ' minutes')::interval > to_timestamp($4 / 1000.0)`,
+      [shopId, staffId, ownAppointmentId, start, end],
+    );
+    const others = rows.map((r) => {
+      const from = new Date(r.start_time).getTime();
+      return { start: from, end: from + Number(r.minutes) * 60000, persons: Number(r.persons) || 1 };
+    });
+    // The booking's own other rows in the same place count too.
+    for (const other of services) {
+      if (other === svc || String(safeUUID(other.staff_id)) !== String(staffId)) continue;
+      const from = new Date(other.start_time).getTime();
+      others.push({ start: from, end: from + rowMinutes(other) * 60000, persons: personsOf(other) });
+    }
+    const total = peakPersons(others, start, end) + persons;
+    if (total > place.capacity) {
+      throw new OfflineConflictError("over_capacity", {
+        staff_id: staffId,
+        staff_name: place.name,
+        capacity: place.capacity,
+        persons: total,
+        start_time: new Date(start).toISOString(),
+        end_time: new Date(end).toISOString(),
+      });
+    }
+  }
+};
+
 const assertNoNewOverlaps = async (client, shopId, body, ownAppointmentId = null) => {
   if (!Array.isArray(body.offline_known_overlaps) || body.force || body.is_block) return;
   const known = body.offline_known_overlaps.filter((x) => safeUUID(String(x)));
+  // Overlaps are normal in a shared place; assertCapacity covers those.
+  const places = await sharedPlacesFor(client, shopId, body.services);
   for (const svc of body.services || []) {
     const staffId = safeUUID(svc.staff_id);
-    if (!staffId || !svc.start_time) continue;
+    if (!staffId || !svc.start_time || places.has(String(staffId))) continue;
     const minutes = Number(svc.duration_override || svc.duration_minutes) || 60;
     const { rows } = await client.query(
       `SELECT DISTINCT a.id AS appointment_id, aps.start_time,
@@ -1425,6 +1535,12 @@ app.put("/api/v1/profile/password", authenticateToken, async (req, res) => {
 
 // --- STAFF ROUTES ---
 
+// Places at the same time from the staff form: 1–50, or null when not sent
+// (an older screen), which keeps what's stored.
+const placesInput = (value) => {
+  const n = parseInt(value, 10);
+  return Number.isFinite(n) ? Math.min(50, Math.max(1, n)) : null;
+};
 app.get("/api/v1/staff", authenticateToken, async (req, res) => {
   try {
     const { rows } = await pool.query(
@@ -1432,7 +1548,7 @@ app.get("/api/v1/staff", authenticateToken, async (req, res) => {
       SELECT
         st.id, st.name, st.color_code, st.hourly_rate, st.is_active,
         st.email, st.phone, st.specialty, st.shop_id, st.sort_order,
-        st.visible_in_calendar, st.working_hours_enabled,
+        st.visible_in_calendar, st.working_hours_enabled, st.capacity,
         COALESCE(
           json_agg(ss.service_id) FILTER (WHERE ss.service_id IS NOT NULL),
           '[]'
@@ -1464,6 +1580,7 @@ app.post("/api/v1/staff", authenticateToken, async (req, res) => {
     username,
     password,
     visible_in_calendar,
+    capacity,
   } = req.body;
   const name = first_name + " " + last_name;
   const client = await pool.connect();
@@ -1472,8 +1589,8 @@ app.post("/api/v1/staff", authenticateToken, async (req, res) => {
 
     // 1. Create Staff Entry
     const staffRes = await client.query(
-      "INSERT INTO staff (name, email, phone, shop_id, visible_in_calendar) VALUES ($1, $2, $3, $4, $5) RETURNING id",
-      [name, email, phone, req.shopId, visible_in_calendar ?? true],
+      "INSERT INTO staff (name, email, phone, shop_id, visible_in_calendar, capacity) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+      [name, email, phone, req.shopId, visible_in_calendar ?? true, placesInput(capacity) ?? 1],
     );
     const staffId = staffRes.rows[0].id;
 
@@ -1531,6 +1648,7 @@ app.put("/api/v1/staff/:id", authenticateToken, async (req, res) => {
     specialty,
     service_ids = [],
     visible_in_calendar,
+    capacity,
   } = req.body;
   const client = await pool.connect();
 
@@ -1540,9 +1658,10 @@ app.put("/api/v1/staff/:id", authenticateToken, async (req, res) => {
 
     await client.query(
       `UPDATE staff
-       SET name = $1, email = $2, phone = $3, hourly_rate = $4, specialty = $5, visible_in_calendar = $6
+       SET name = $1, email = $2, phone = $3, hourly_rate = $4, specialty = $5, visible_in_calendar = $6,
+           capacity = COALESCE($9, capacity)
        WHERE id = $7 AND shop_id = $8`,
-      [fullName, email, phone, hourly_rate, specialty, visible_in_calendar ?? true, id, req.shopId],
+      [fullName, email, phone, hourly_rate, specialty, visible_in_calendar ?? true, id, req.shopId, placesInput(capacity)],
     );
 
     await client.query(`DELETE FROM staff_services WHERE staff_id = $1`, [id]);
@@ -7987,6 +8106,7 @@ app.use(
     StaffUnavailableError,
     allocate,
     assertBaseVersion,
+    assertCapacity,
     assertNoNewOverlaps,
     authenticateToken,
     canSellExtras,

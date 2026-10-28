@@ -324,7 +324,7 @@ const conflictText = (w: QueuedWrite) => {
       time: new Date(clash.start_time).toLocaleString("el-GR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }),
     });
   }
-  const known = ["slot_taken", "stale_appointment", "appointment_missing", "depends_on_conflict", "missing_record", "has_payments"];
+  const known = ["slot_taken", "stale_appointment", "appointment_missing", "depends_on_conflict", "missing_record", "has_payments", "over_capacity"];
   return known.includes(code) ? t(`offline.conflict.${code}`) : w.lastError || code;
 };
 // Discarding drops a change for good (e.g. a booking), so ask first.

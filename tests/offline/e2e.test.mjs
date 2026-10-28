@@ -937,6 +937,191 @@ describe("offline mode in the browser", () => {
     await waitFor(() => svc() === `${ids.service2}@12:30,${ids.service}@${shifted}`, "both services moved 30 minutes");
   });
 
+  test("the sauna's overlapping bookings show as one card that opens, moves as a group and warns when full", async () => {
+    if (!appServer) await startAppServer();
+    const sauna = q(`SELECT id FROM staff WHERE shop_id = '${SHOP}' AND trim(name) = 'ΣΑΟΥΝΑ' LIMIT 1`);
+    assert.ok(sauna, "the dev data has ΣΑΟΥΝΑ");
+    assert.equal(q(`SELECT capacity FROM staff WHERE id = '${sauna}'`), "5", "5 places from the migration");
+    q(`UPDATE staff SET visible_in_calendar = true, is_active = true WHERE id = '${sauna}'`);
+    const saunaServices = q(`SELECT coalesce(string_agg(service_id::text, ','), '') FROM staff_services WHERE staff_id = '${sauna}'`);
+    const service =
+      q(`SELECT id FROM services sv WHERE shop_id = '${SHOP}' AND is_active AND duration_minutes BETWEEN 15 AND 60
+         AND NOT EXISTS (SELECT 1 FROM service_variations v WHERE v.service_id = sv.id)
+         ${saunaServices ? `AND id::text IN (${saunaServices.split(",").map((s) => `'${s}'`).join(",")})` : ""}
+         ORDER BY name LIMIT 1`) || ids.service;
+    const newClient = (last) =>
+      q(`INSERT INTO clients (first_name, last_name, phone, shop_id) VALUES ('Ε2Ε', '${last}', '6900000888', '${SHOP}') RETURNING id`).split("\n")[0];
+    const saunaBooking = async (hhmm, persons, clientId) => {
+      const r = await other("POST", "/api/v1/appointments", {
+        client_id: clientId,
+        status: "confirmed",
+        save_receipt: true,
+        allow_unavailable: true,
+        services: [{ service_id: service, staff_id: sauna, start_time: at(hhmm), duration_override: 60, price_override: 15, persons }],
+      });
+      assert.equal(r.status, 200, JSON.stringify(r.data));
+      return r.data.id;
+    };
+    // 14:00 ×2, 14:00 ×1 and 14:30 ×1: at most 4 there together.
+    const booked = [
+      await saunaBooking("14:00", 2, newClient("Σαουνίδου")),
+      await saunaBooking("14:00", 1, newClient("Σαουνάκης")),
+      await saunaBooking("14:30", 1, newClient("Σαουνόπουλος")),
+    ];
+    await reloadApp();
+
+    const group = () =>
+      page.evaluate((id) => {
+        // The earliest card of the sauna (another may form when someone moves out).
+        const el = [...document.querySelectorAll(`.fc-timegrid-col[data-resource-id="${id}"] .fc-event.fc-place-group`)].sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)[0];
+        if (!el) return null;
+        const badge = el.querySelector(".fc-place-group-badge");
+        return {
+          rows: el.querySelectorAll("[data-member]").length,
+          span: el.querySelector(".fc-place-group-span")?.textContent.trim(),
+          badge: badge?.textContent.trim(),
+          level: badge?.className,
+        };
+      }, sauna);
+    const shown = await waitFor(group, "the sauna's grouped card");
+    assert.equal(shown.rows, 3, "one line per booking");
+    assert.equal(shown.badge, "4/5");
+    assert.match(shown.level, /is-almost/, "amber one before full");
+    assert.equal((await cards()).filter((c) => booked.includes(c.id)).length, 0, "no separate cards");
+
+    // A name opens that booking.
+    const clickInGroup = async (selector) => {
+      const pt = await page.evaluate(
+        (id, sel) => {
+          const card = [...document.querySelectorAll(`.fc-timegrid-col[data-resource-id="${id}"] .fc-event.fc-place-group`)].sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)[0];
+          card.scrollIntoView({ block: "center", inline: "nearest" });
+          const r = card.querySelector(sel).getBoundingClientRect();
+          return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+        },
+        sauna,
+        selector,
+      );
+      // Hover first, as a person does: entering a card redraws the calendar
+      // (finer drag steps), which would swallow an instant click.
+      await page.mouse.move(pt.x, pt.y);
+      await sleep(400);
+      await page.mouse.click(pt.x, pt.y);
+    };
+    await clickInGroup('[data-member="0"] .fc-place-group-name');
+    await waitFor(dialogOpen, "the booking dialog");
+    assert.ok(await page.$('[data-testid="booking-delete"]'), "an existing booking");
+    await page.keyboard.press("Escape");
+    await waitFor(async () => !(await dialogOpen()), "the dialog to close");
+
+    // Opened: separate cards; a click elsewhere groups them again.
+    await clickInGroup('[data-group-action="expand"]');
+    await waitFor(
+      async () => (await page.$$(".fc-event.fc-group-open[data-appointment-id]")).length === 3,
+      "three separate cards",
+    );
+    await page.mouse.click(5, 5);
+    await waitFor(group, "grouped again");
+
+    // Anywhere but a name (here the badge) opens the group's dialog.
+    await clickInGroup(".fc-place-group-badge");
+    await page.waitForSelector('[data-testid="place-group-dialog"]', { visible: true });
+    assert.equal((await page.$$('[data-testid="place-group-booking"]')).length, 3, "the dialog lists the three bookings");
+    // A booking in it opens that booking.
+    await page.click('[data-testid="place-group-booking"]');
+    await waitFor(dialogOpen, "the booking dialog from the sauna dialog");
+    assert.ok(await page.$('[data-testid="booking-delete"]'), "an existing booking");
+    await waitFor(async () => !(await page.$('[data-testid="place-group-dialog"]')), "the sauna dialog closed");
+    await page.keyboard.press("Escape");
+    await waitFor(async () => !(await dialogOpen()), "the booking dialog to close");
+
+    // One person dragged out of the opened group, 2 hours later: the group
+    // closes, recounts without them, and they get a card of their own.
+    await clickInGroup('[data-group-action="expand"]');
+    const opened = `.fc-event.fc-group-open[data-appointment-id="${booked[2]}"]`;
+    await page.waitForSelector(opened, { visible: true });
+    const card = await (await page.$(opened)).boundingBox();
+    const step = await page.evaluate(() => document.querySelector(".fc-timegrid-slot-lane").getBoundingClientRect().height);
+    const cx = card.x + card.width / 2;
+    const cy = card.y + Math.min(10, card.height / 3);
+    await page.mouse.move(cx, cy);
+    await sleep(400); // hover first (see clickInGroup)
+    await page.mouse.down();
+    for (let i = 1; i <= 10; i++) await page.mouse.move(cx, cy + (8 * step * i) / 10, { steps: 2 });
+    await page.mouse.up();
+    await page.waitForSelector(".p-confirmdialog-accept-button", { visible: true, timeout: 10000 });
+    await page.click(".p-confirmdialog-accept-button");
+    await waitFor(
+      () => q(`SELECT to_char(start_time AT TIME ZONE 'Europe/Athens', 'HH24:MI') FROM appointment_services WHERE appointment_id = '${booked[2]}'`) === "16:30",
+      "the move saved",
+    );
+    const recounted = await waitFor(async () => {
+      const g = await group();
+      return !(await page.$(".fc-event.fc-group-open")) && g?.rows === 2 ? g : null;
+    }, "the group closed and recounted");
+    assert.equal(recounted.badge, "3/5", "2 + 1 persons left");
+    assert.equal(recounted.span, "14:00–15:00");
+    const own = await page.evaluate(
+      (id) => document.querySelectorAll(`.fc-timegrid-col[data-resource-id="${id}"] .fc-event.fc-place-group`).length,
+      sauna,
+    );
+    assert.equal(own, 2, "the moved person on a card of their own");
+
+    // Dragging the card moves all three, 30 minutes down.
+    const box = await page.evaluate((id) => {
+      const r = [...document.querySelectorAll(`.fc-timegrid-col[data-resource-id="${id}"] .fc-event.fc-place-group`)].sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)[0].querySelector(".fc-place-group-head").getBoundingClientRect();
+      // The header's left end (on narrow cards the time span there is hidden).
+      return { x: r.x + 6, y: r.y + r.height / 2 };
+    }, sauna);
+    const slotHeight = await page.evaluate(() => document.querySelector(".fc-timegrid-slot-lane").getBoundingClientRect().height);
+    await page.mouse.move(box.x, box.y);
+    await sleep(400); // hover first (see clickInGroup)
+    await page.mouse.down();
+    for (let i = 1; i <= 10; i++) await page.mouse.move(box.x, box.y + (2 * slotHeight * i) / 10, { steps: 2 });
+    await page.mouse.up();
+    await waitFor(
+      () => page.evaluate(() => /Μετακίνηση 2 |Move 2 /.test(document.querySelector(".p-confirmdialog")?.textContent || "")),
+      "the group move question (2 bookings left in it)",
+    );
+    await page.click(".p-confirmdialog-accept-button");
+    const startsOf = () =>
+      q(`SELECT string_agg(to_char(start_time AT TIME ZONE 'Europe/Athens', 'HH24:MI'), ',' ORDER BY start_time)
+         FROM appointment_services WHERE appointment_id IN (${booked.map((id) => `'${id}'`).join(",")})`);
+    await waitFor(() => startsOf() === "14:30,14:30,16:30", "the group's two moved 30 minutes, the one moved out stays");
+
+    // "+" books one more at the card's start; 3 more persons is over the places: asked, then booked anyway.
+    // Redrawn at the new time (the old card has 3 lines too).
+    await waitFor(async () => (await group())?.span === "14:30–15:30", "the moved group");
+    await clickInGroup('[data-group-action="add"]');
+    await waitFor(dialogOpen, "a new booking dialog");
+    await sleep(500);
+    const last = "Σαουνίδης";
+    newClient(last);
+    await pickClient(last);
+    await pickServices([service]);
+    await page.waitForSelector('[data-testid="service-persons"]', { visible: true });
+    for (let i = 0; i < 2; i++) {
+      await page.click('[data-testid="service-persons"] .p-inputnumber-increment-button');
+      await sleep(150);
+    }
+    await clickTestId("booking-save");
+    await waitFor(
+      () => page.evaluate(() => /θέσεις|places/i.test(document.querySelector(".p-confirmdialog")?.textContent || "")),
+      "the 'no places left' question",
+    );
+    await page.click(".p-confirmdialog-accept-button");
+    await waitFor(async () => !(await dialogOpen()), "the booking dialog to close", 15000);
+    assert.equal(
+      q(`SELECT s.persons FROM appointment_services s JOIN appointments a ON a.id = s.appointment_id JOIN clients c ON c.id = a.client_id
+         WHERE c.last_name = '${last}' AND s.staff_id = '${sauna}'`),
+      "3",
+      "booked for 3 persons",
+    );
+    const full = await waitFor(async () => ((await group())?.rows === 3 ? group() : null), "the new booking in the card");
+    // 3 at 14:30 plus 3 more.
+    assert.equal(full.badge, "6/5");
+    assert.match(full.level, /is-full/);
+  });
+
   test("logging out deletes the offline data, after warning about changes not synced yet", async () => {
     await goOffline();
     await reloadApp();

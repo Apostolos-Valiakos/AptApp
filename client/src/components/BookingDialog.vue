@@ -516,6 +516,7 @@ import { useToast } from "primevue/usetoast";
 import { fetchOrQueue } from "../offline/queue";
 import { knownOverlapIds } from "../offline/overlaps";
 import { isTempId } from "../offline/tempIds";
+import { askOverCapacity, personsOf, placesOf } from "../utils/capacity";
 import { formatMoney } from "../utils/format";
 import { useBookingTotals } from "../composables/useBookingTotals";
 import { appendNote, firstStartOf, sameDayAppointmentFor } from "../utils/sameDayGrouping";
@@ -1004,6 +1005,7 @@ const loadExistingAppointment = (val: any, resolvedStaffId: any) => {
         duration_override: s.duration_minutes || 60,
         price_override: Number(s.price || 0),
         variation_name: resolvedVariationName || null,
+        persons: personsOf(s),
         service_archived: !!s.service_archived,
         _label: resolvedVariationName
           ? `${catalogService?.name || s.service_name || ""} — ${resolvedVariationName}`
@@ -1187,6 +1189,7 @@ const onPriceChanged = (data: any) => {
       start_time: new Date(s.start_time),
       duration_override: s.duration_override,
       price_override: Number(s.price_override),
+      persons: personsOf(s),
     })));
     originalServices.value = snapshotServices(servicesList.value);
   }
@@ -1414,7 +1417,7 @@ const save = async (close = true): Promise<boolean> => {
 };
 
 /** Saves the booking; true once saved (or queued offline), false if it wasn't. */
-const executeSave = async (close = true, scope = "single"): Promise<boolean> => {
+const executeSave = async (close = true, scope = "single", allowOverCapacity = false): Promise<boolean> => {
   // Unblocking (toggling an existing block's button off) and editing a
   // block's time/duration are both time-off-only flows with no client/
   // service involved — skip the normal booking validations entirely.
@@ -1534,7 +1537,10 @@ const executeSave = async (close = true, scope = "single"): Promise<boolean> => 
       services: servicesList.value.map((s) => ({
         ...s,
         price_override: Number(s.price_override) || Number(s.price) || 0,
+        // Persons only mean something in a shared place (the sauna).
+        persons: placesOf((props.staff || []).find((m: any) => String(m.id) === String(s.staff_id))) > 1 ? personsOf(s) : 1,
       })),
+      ...(allowOverCapacity ? { allow_over_capacity: true } : {}),
       products: productsList.value,
       ...discountPayload(discount.value),
       ...(method === "PUT" && currentVersion.value != null && !isTempId(String(form.value.id))
@@ -1586,6 +1592,11 @@ const executeSave = async (close = true, scope = "single"): Promise<boolean> => 
     const data = await res.json();
 
     if (!res.ok) {
+      // A shared place (the sauna) would be over its places: ask, then book anyway.
+      if (data.error === "over_capacity") {
+        loading.value = false;
+        return (await askOverCapacity(confirm, t, data)) ? executeSave(close, scope, true) : false;
+      }
       if (data.error === "staff_unavailable") {
         throw new Error(t("booking.validation.staffUnavailable"));
       }

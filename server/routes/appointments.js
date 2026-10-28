@@ -13,6 +13,7 @@ module.exports = function appointmentsRouter({
   StaffUnavailableError,
   allocate,
   assertBaseVersion,
+  assertCapacity,
   assertNoNewOverlaps,
   authenticateToken,
   canSellExtras,
@@ -176,7 +177,8 @@ module.exports = function appointmentsRouter({
               'duration_minutes', COALESCE(aps.duration_override, s.duration_minutes),
               'staff_id', aps.staff_id,
               'staff_name', st.name,
-              'start_time', aps.start_time
+              'start_time', aps.start_time,
+              'persons', aps.persons
             ) ORDER BY aps.start_time ASC)
             FROM appointment_services aps
             LEFT JOIN services s ON aps.service_id = s.id
@@ -243,6 +245,11 @@ module.exports = function appointmentsRouter({
       }
 
       await assertNoNewOverlaps(client, req.shopId, bookingPayload);
+      // Repeats (a series, or the repeat-booking dialog's dates) aren't
+      // checked, nor client portal bookings yet.
+      if (req.user.role !== "client" && !bookingPayload.recurrence && !Array.isArray(bookingPayload.instance_starts)) {
+        await assertCapacity(client, req.shopId, bookingPayload);
+      }
 
       const { firstAppointmentId, validClientId } = await createAppointmentSeries(
         client,
@@ -295,6 +302,7 @@ module.exports = function appointmentsRouter({
       if (scope !== "series") {
         await assertBaseVersion(client, req.shopId, id, req.body);
         await assertNoNewOverlaps(client, req.shopId, req.body, id);
+        await assertCapacity(client, req.shopId, req.body, id);
       }
 
       if (scope === "series") {
@@ -727,7 +735,7 @@ module.exports = function appointmentsRouter({
         // exactly as computed here, instead of re-deriving the same split
         // client-side and risking drift from this endpoint's rounding.
         const updatedServices = await client.query(
-          `SELECT service_id, staff_id, start_time, duration_override, price_override
+          `SELECT service_id, staff_id, start_time, duration_override, price_override, persons
            FROM appointment_services WHERE appointment_id = $1 ORDER BY start_time`,
           [id],
         );
