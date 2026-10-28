@@ -100,3 +100,40 @@ test("a cancelled booking that was refunded leaves no credit", async () => {
   await call("POST", `/api/v1/appointments/${id}/cancel`, {});
   assert.equal(await balance(), before);
 });
+
+test("εξόφληση can settle part of a booking's debt, never more than owed", async () => {
+  const id = await book(); // 40 €
+  const settle = (body) => call("POST", `/api/v1/appointments/${id}/resolve-debt`, body);
+  const part = await settle({ mode: "payment", payment_method: "cash", amount: 15 });
+  assert.equal(part.status, 200, JSON.stringify(part.data));
+  assert.equal(part.data.amount, 15);
+  assert.equal(part.data.remaining, 25);
+  assert.equal(sql(DB, `SELECT payment_status FROM appointments WHERE id = '${id}'`), "partial");
+
+  const over = await settle({ mode: "payment", payment_method: "cash", amount: 30 });
+  assert.equal(over.status, 400);
+  assert.equal(over.data.error, "exceeds_owed");
+  assert.equal(over.data.owed, 25);
+  assert.equal((await settle({ mode: "payment", payment_method: "cash", amount: 0 })).data.error, "invalid_amount");
+
+  // A partial write-off, then the rest with no amount (all that's left).
+  assert.equal((await settle({ mode: "write_off", amount: 5 })).data.remaining, 20);
+  const rest = await settle({ mode: "payment", payment_method: "card" });
+  assert.equal(rest.data.amount, 20);
+  assert.equal(rest.data.remaining, 0);
+  assert.equal(sql(DB, `SELECT payment_status FROM appointments WHERE id = '${id}'`), "paid");
+  assert.equal(sql(DB, `SELECT sum(amount)::numeric(10,2) FROM transactions WHERE appointment_id = '${id}'`), "40.00");
+});
+
+test("and part of a manual debt", async () => {
+  const debt = await call("POST", `/api/v1/clients/${ids.client}/debts`, { amount: 100, debt_date: "2026-10-01", note: "partial test" });
+  assert.equal(debt.status, 201, JSON.stringify(debt.data));
+  const debtId = sql(DB, `SELECT id FROM client_debts WHERE client_id = '${ids.client}' AND note = 'partial test'`);
+  const settle = (body) => call("POST", `/api/v1/client-debts/${debtId}/resolve`, body);
+  const half = await settle({ mode: "payment", payment_method: "cash", amount: 50 });
+  assert.equal(half.status, 200, JSON.stringify(half.data));
+  assert.equal(half.data.remaining, 50);
+  assert.equal((await settle({ mode: "payment", payment_method: "cash", amount: 60 })).data.error, "exceeds_owed");
+  const remaining = (await call("GET", `/api/v1/clients/${ids.client}/debts`)).data.find((d) => d.id === debtId).remaining;
+  assert.equal(Number(remaining), 50);
+});

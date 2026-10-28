@@ -1122,6 +1122,69 @@ describe("offline mode in the browser", () => {
     assert.match(full.level, /is-full/);
   });
 
+  test("εξόφληση in the client's history settles part of a past booking's debt", async () => {
+    if (!appServer) await startAppServer();
+    const clientId = q(`INSERT INTO clients (first_name, last_name, phone, shop_id) VALUES ('Ε2Ε', 'Οφειλέτης', '6900000999', '${SHOP}') RETURNING id`).split("\n")[0];
+    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    const past = await other("POST", "/api/v1/appointments", {
+      client_id: clientId,
+      status: "completed",
+      save_receipt: true,
+      allow_unavailable: true,
+      services: [{ service_id: ids.service, staff_id: ids.staff, start_time: `${yesterday}T10:00:00${offset}`, duration_override: 60, price_override: 40 }],
+    });
+    assert.equal(past.status, 200, JSON.stringify(past.data));
+    // In another staff member's column, which no other test books, so no
+    // other card overlaps this one.
+    await reloadApp();
+    const sauna = q(`SELECT coalesce((SELECT id::text FROM staff WHERE shop_id = '${SHOP}' AND trim(name) = 'ΣΑΟΥΝΑ' LIMIT 1), '')`);
+    const column = await page.evaluate(
+      (skip) => [...document.querySelectorAll(".fc-timegrid-col[data-resource-id]")].map((c) => c.dataset.resourceId).find((id) => !skip.includes(id)),
+      [ids.staff, sauna],
+    );
+    const today = await other("POST", "/api/v1/appointments", {
+      client_id: clientId,
+      status: "confirmed",
+      save_receipt: true,
+      allow_unavailable: true,
+      services: [{ service_id: ids.service, staff_id: column, start_time: at("12:00"), duration_override: 60, price_override: 40 }],
+    });
+    assert.equal(today.status, 200, JSON.stringify(today.data));
+    await reloadApp();
+    await openCard(today.data.id);
+
+    // The history's "Εξόφληση" for yesterday's 40 € booking.
+    await waitFor(
+      () =>
+        page.evaluate(() => {
+          const btn = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Εξόφληση" && b.offsetParent);
+          btn?.click();
+          return !!btn;
+        }),
+      "the Εξόφληση button in the history",
+    );
+    await clickTestId("debt-amount");
+    await page.waitForSelector('[data-testid="debt-amount-input"] input', { visible: true });
+    await page.click('[data-testid="debt-amount-input"] input', { clickCount: 3 });
+    await page.keyboard.press("Backspace");
+    await page.type('[data-testid="debt-amount-input"] input', "15");
+    await page.keyboard.press("Enter");
+    await waitFor(
+      () =>
+        page.evaluate(() =>
+          [...document.querySelectorAll(".p-dialog")].some((d) => /θα μείνουν 25,00|25,00 € will remain/.test(d.textContent || "")),
+        ),
+      "what will remain shown",
+    );
+    await page.evaluate(() => {
+      const dialog = [...document.querySelectorAll(".p-dialog")].find((d) => d.querySelector('[data-testid="debt-amount"]'));
+      [...dialog.querySelectorAll("button")].find((b) => /Επιβεβαίωση|Confirm/.test(b.textContent))?.click();
+    });
+    await waitFor(() => q(`SELECT coalesce(sum(amount), 0)::numeric(10,2) FROM transactions WHERE appointment_id = '${past.data.id}'`) === "15.00", "15 € paid");
+    assert.equal(q(`SELECT payment_status FROM appointments WHERE id = '${past.data.id}'`), "partial");
+    await page.keyboard.press("Escape");
+  });
+
   test("logging out deletes the offline data, after warning about changes not synced yet", async () => {
     await goOffline();
     await reloadApp();

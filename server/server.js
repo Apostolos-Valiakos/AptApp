@@ -5674,6 +5674,15 @@ const parseDebtResolution = (body) => {
   return null;
 };
 
+// How much of what's owed to settle: `amount` from the body (part of it), or
+// everything when not sent. Null when it isn't a positive amount; above what's
+// owed is refused by the caller.
+const settleAmount = (body, owed) => {
+  if (body.amount === undefined || body.amount === null || body.amount === "") return owed;
+  const n = Math.round(Number(body.amount) * 100) / 100;
+  return n > 0 ? n : null;
+};
+
 const clientInShop = async (db, clientId, shopId) =>
   (await db.query("SELECT 1 FROM clients WHERE id = $1 AND shop_id = $2", [clientId, shopId])).rowCount > 0;
 
@@ -5700,14 +5709,19 @@ app.post("/api/v1/client-debts/:id/resolve", authenticateToken, requireShopAdmin
       await db.query("ROLLBACK");
       return res.status(409).json({ error: "nothing_owed" });
     }
+    const amount = settleAmount(req.body, remaining);
+    if (amount === null || amount > remaining + 0.001) {
+      await db.query("ROLLBACK");
+      return res.status(400).json({ error: amount === null ? "invalid_amount" : "exceeds_owed", owed: remaining });
+    }
     await db.query(
       `INSERT INTO transactions (appointment_id, client_id, client_debt_id, amount, payment_method, transaction_type, shop_id, created_by_user_id, created_at)
        VALUES (NULL, $1, $2, $3, $4, $5, $6, $7, NOW())`,
-      [debt.client_id, id, remaining, how.method, how.type, req.shopId, String(req.user.userId || "")],
+      [debt.client_id, id, amount, how.method, how.type, req.shopId, String(req.user.userId || "")],
     );
     const balance = await recalculateClientBalance(db, debt.client_id);
     await db.query("COMMIT");
-    res.json({ success: true, amount: remaining, new_balance: balance });
+    res.json({ success: true, amount, remaining: Math.round((remaining - amount) * 100) / 100, new_balance: balance });
   } catch (err) {
     await db.query("ROLLBACK");
     console.error("Resolve client debt error:", err);
@@ -8226,6 +8240,7 @@ app.use(
     safeUUID,
     sanitizeClientBookingPayload,
     saveIdempotency,
+    settleAmount,
   }),
 );
 app.use(

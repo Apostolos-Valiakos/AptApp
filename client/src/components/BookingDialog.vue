@@ -703,11 +703,12 @@ const refreshClientBalance = async (clientId: string) => {
 };
 
 // A payment or write-off made from the sidebar.
-const onDebtChanged = (e: { appointmentId?: string; amount: number; newBalance: number }) => {
+const onDebtChanged = (e: { appointmentId?: string; amount: number; remaining?: number; newBalance: number }) => {
   if (selectedClient.value) selectedClient.value.outstanding_balance = Number(e.newBalance) || 0;
   if (e.appointmentId && e.appointmentId === form.value.id) {
     form.value.deposit_amount = Number(form.value.deposit_amount || 0) + Number(e.amount || 0);
-    form.value.payment_status = "paid";
+    // Part of it settled: still partly unpaid.
+    form.value.payment_status = Number(e.remaining) > 0 ? "partial" : "paid";
   }
   emit("refresh");
 };

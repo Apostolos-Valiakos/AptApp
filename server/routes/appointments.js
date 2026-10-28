@@ -31,6 +31,7 @@ module.exports = function appointmentsRouter({
   safeUUID,
   sanitizeClientBookingPayload,
   saveIdempotency,
+  settleAmount,
 }) {
   const router = express.Router();
 
@@ -588,17 +589,23 @@ module.exports = function appointmentsRouter({
       if (!appt) throw new HttpError(404, { error: "Appointment not found or cancelled" });
       const owed = Math.round((Number(appt.cost) - Number(appt.paid)) * 100) / 100;
       if (!(owed > 0)) throw new HttpError(409, { error: "nothing_owed" });
+      // All of it, or part (`amount`), never more than what's owed.
+      const amount = settleAmount(req.body, owed);
+      if (amount === null) throw new HttpError(400, { error: "invalid_amount", owed });
+      if (amount > owed + 0.001) throw new HttpError(400, { error: "exceeds_owed", owed });
+      const paidNow = Math.round((Number(appt.paid) + amount) * 100) / 100;
+      const fullyPaid = paidNow >= Number(appt.cost) - 0.01;
       await db.query(
         `INSERT INTO transactions (appointment_id, client_id, amount, payment_method, transaction_type, shop_id, reason, created_by_user_id, created_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
-        [id, appt.client_id, owed, how.method, how.type, req.shopId, note, String(req.user.userId || "")],
+        [id, appt.client_id, amount, how.method, how.type, req.shopId, note, String(req.user.userId || "")],
       );
       await db.query(
-        `UPDATE appointments SET payment_status = 'paid', deposit_amount = $1, updated_at = NOW() WHERE id = $2`,
-        [Number(appt.cost), id],
+        `UPDATE appointments SET payment_status = $1, deposit_amount = $2, updated_at = NOW() WHERE id = $3`,
+        [fullyPaid ? "paid" : "partial", fullyPaid ? Number(appt.cost) : paidNow, id],
       );
       const balance = appt.client_id ? await recalculateClientBalance(db, appt.client_id) : 0;
-      return { success: true, amount: owed, new_balance: balance };
+      return { success: true, amount, remaining: Math.round((owed - amount) * 100) / 100, new_balance: balance };
     });
     res.json(result);
   }, { log: "Resolve appointment debt error:" }));
