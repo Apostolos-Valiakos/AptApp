@@ -130,6 +130,7 @@ module.exports = function appointmentsRouter({
           -- before's 21:00/22:00 UTC (midnight in Athens), and the hover card
           -- would show the previous day.
           a.created_at::text AS created_at,
+          a.booked_at,
           a.recurrence,
           a.group_id,
           a.discount_type,
@@ -143,15 +144,20 @@ module.exports = function appointmentsRouter({
           c.phone as client_phone,
           COALESCE(c.outstanding_balance, 0) as client_outstanding_balance,
           COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0) as deposit_amount,
-          -- True only on a client's earliest-ever appointment (by created_at,
-          -- tie-broken by id) — powers the "new client" badge on the
-          -- scheduler's appointment hover card. NULL-safe: a client_id-less
-          -- block/hold naturally yields no match.
+          -- True only on a client's first visit: their earliest booking by its
+          -- first service's start (not cancelled / no-show; ties by id). It
+          -- powers the "new client" badge on the hover card. The day a
+          -- booking was made can't decide it: two made the same day tie.
+          -- NULL-safe: a block/hold without a client yields no match.
           (
             a.client_id IS NOT NULL AND a.id = (
               SELECT a2.id FROM appointments a2
+              JOIN LATERAL (
+                SELECT MIN(start_time) AS first_start FROM appointment_services WHERE appointment_id = a2.id
+              ) f2 ON f2.first_start IS NOT NULL
               WHERE a2.client_id = a.client_id AND a2.shop_id = a.shop_id
-              ORDER BY a2.created_at ASC, a2.id ASC
+                AND a2.status NOT IN ('cancelled', 'no-show', 'no_show')
+              ORDER BY f2.first_start ASC, a2.id ASC
               LIMIT 1
             )
           ) as is_new_client,

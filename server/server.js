@@ -330,9 +330,16 @@ const createAppointmentSeries = async (client, data, shopId) => {
     instance_starts,
     allow_unavailable,
     allow_overtime,
+    booked_at,
   } = data;
 
   assertServicesHaveStaff(services, is_block);
+  // When it was booked: now, or when it was made offline (sent by the sync
+  // queue) if that's a sensible past moment.
+  const bookedAt = (() => {
+    const d = booked_at ? new Date(booked_at) : null;
+    return d && !Number.isNaN(d.getTime()) && d <= new Date() && d > new Date(Date.now() - 60 * 86400000) ? d.toISOString() : null;
+  })();
 
   const crypto = require("crypto");
   const groupId =
@@ -433,9 +440,9 @@ const createAppointmentSeries = async (client, data, shopId) => {
         shop_id, created_at, updated_at,
         group_id, recurrence,
         discount_type, discount_value, discount_scope, discount_code_id,
-        discount_code_name, discount_amount
+        discount_code_name, discount_amount, booked_at
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW(), $11, $12,
-        $13, $14, $15, $16, $17, $18) 
+        $13, $14, $15, $16, $17, $18, COALESCE($19::timestamptz, NOW())) 
       RETURNING id`,
       [
         is_block ? null : validClientId,
@@ -456,6 +463,7 @@ const createAppointmentSeries = async (client, data, shopId) => {
         disc ? discountInput.codeId : null,
         disc ? discountInput.codeName : null,
         disc ? disc.discountAmount : 0,
+        bookedAt,
       ],
     );
     const appointmentId = apptRes.rows[0].id;

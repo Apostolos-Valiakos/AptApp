@@ -1559,6 +1559,8 @@ const executeSave = async (close = true, scope = "single", allowOverCapacity = f
       createsId: method === "POST" ? "id" : undefined,
       offlineExtras: {
         offline_known_overlaps: knownOverlapIds(calendarStoreForOverlaps.events, payload.services, form.value.id),
+        // Made offline: when it was really booked, not when it syncs.
+        ...(method === "POST" ? { booked_at: new Date().toISOString() } : {}),
       },
     });
 

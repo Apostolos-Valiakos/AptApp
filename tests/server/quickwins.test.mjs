@@ -58,3 +58,37 @@ test("a malformed id answers 400 invalid_id, not 500", async () => {
   assert.equal(r.status, 404);
 });
 
+test("'new client' marks the first visit, whatever order the bookings were made in", async () => {
+  const clientId = newClient("Badge");
+  // Made first, but for a later day; then one for earlier the same day: both
+  // have the same created_at date, which used to decide by chance.
+  const later = await book(clientId, at("12:00", "2027-07-20"));
+  const first = await book(clientId, at("10:00"));
+  const cancelledEarlier = await book(clientId, at("09:00", "2027-07-10"));
+  await call("POST", `/api/v1/appointments/${cancelledEarlier}/cancel`);
+  const shown = async (day) => (await call("GET", `/api/v1/appointments?date=${day}`)).data;
+  const badge = async (id, day) => (await shown(day)).find((a) => a.id === id)?.is_new_client;
+  assert.equal(await badge(first, DAY), true, "the earliest visit");
+  assert.equal(await badge(later, "2027-07-20"), false);
+  assert.equal(await badge(cancelledEarlier, "2027-07-10"), false, "a cancelled one doesn't count");
+});
+
+test("a booking records when it was made; offline, when it was made offline", async () => {
+  const clientId = newClient("BookedAt");
+  const before = Date.now();
+  const now = await book(clientId, at("13:00"));
+  const row = (id) => sql(DB, `SELECT extract(epoch FROM booked_at) * 1000 FROM appointments WHERE id = '${id}'`);
+  assert.ok(Math.abs(Number(row(now)) - before) < 60000, "about now");
+
+  const madeOffline = new Date(Date.now() - 3 * 3600000).toISOString();
+  const offline = await book(newClient("Offline"), at("14:00"), { booked_at: madeOffline });
+  assert.equal(Math.round(Number(row(offline)) / 1000), Math.round(Date.parse(madeOffline) / 1000));
+
+  // Not in the future, nor months back: then it's now.
+  const future = await book(newClient("Future"), at("15:00"), { booked_at: new Date(Date.now() + 86400000).toISOString() });
+  assert.ok(Math.abs(Number(row(future)) - Date.now()) < 60000);
+
+  const listed = (await call("GET", `/api/v1/appointments?date=${DAY}`)).data.find((a) => a.id === offline);
+  assert.ok(listed.booked_at, "sent to the calendar");
+});
+

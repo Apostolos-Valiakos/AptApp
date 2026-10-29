@@ -162,7 +162,20 @@ const paymentText = computed(() => {
   return `${label} ${amount}`;
 });
 
+// When it was booked: date and time when recorded (booked_at, since late
+// October 2026), else just the date (created_at, a DATE column).
 const bookedOnText = computed(() => {
+  const bookedAt = props.appointment.booked_at ? new Date(props.appointment.booked_at) : null;
+  if (bookedAt && !Number.isNaN(bookedAt.getTime())) {
+    return new Intl.DateTimeFormat(locale.value === "el" ? "el-GR" : "en-GB", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(bookedAt);
+  }
   if (!props.appointment.created_at) return "—";
   const d = new Date(props.appointment.created_at);
   if (Number.isNaN(d.getTime())) return "—";

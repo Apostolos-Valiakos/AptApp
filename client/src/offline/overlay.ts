@@ -96,6 +96,7 @@ export function applyPendingWrites(appointments: any[], writes: QueuedWrite[], c
             save_receipt: w.body?.save_receipt !== false,
             group_id: null,
             recurrence: w.body?.recurrence ?? null,
+            booked_at: w.body?.booked_at ?? null,
             ...clientFields(w.body?.client_id, ctx),
             deposit_amount: 0,
             payment_method: null,
