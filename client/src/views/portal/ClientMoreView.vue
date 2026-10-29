@@ -224,31 +224,6 @@
       </div>
     </div>
 
-    <!-- Save as an App -->
-    <div
-      v-if="showInstallCard"
-      class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 flex items-center justify-between gap-3"
-    >
-      <div class="flex items-center gap-2 min-w-0">
-        <i class="pi pi-mobile text-[var(--p-primary-color)]"></i>
-        <div class="min-w-0">
-          <p class="font-bold text-gray-800 text-sm truncate">
-            {{ t("portal.install.title") }}
-          </p>
-          <p v-if="!installIsActionable" class="text-xs text-gray-400">
-            {{ installSubtitle }}
-          </p>
-        </div>
-      </div>
-      <Button
-        v-if="installIsActionable"
-        :label="t('portal.install.button')"
-        size="small"
-        outlined
-        @click="handleInstallClick"
-      />
-    </div>
-
     <!-- Turn On Notifications -->
     <div
       v-if="showNotificationsCard"
@@ -280,18 +255,6 @@
   </div>
 
   <Dialog
-    v-model:visible="showManualInstallDialog"
-    modal
-    :header="t('portal.install.iosTitle')"
-    :style="{ width: '340px', maxWidth: '90vw' }"
-  >
-    <p class="text-sm text-gray-600">
-      {{ isIOS ? t("portal.install.iosInstructions", { icon: "" }) : t("portal.install.braveInstructions") }}
-      <i :class="isIOS ? 'pi pi-upload' : 'pi pi-ellipsis-v'" class="text-[var(--p-primary-600)]"></i>
-    </p>
-  </Dialog>
-
-  <Dialog
     v-model:visible="showQrModal"
     modal
     :header="t('portal.membership.qrNote')"
@@ -317,41 +280,24 @@ import Dialog from "primevue/dialog";
 import ToggleSwitch from "primevue/toggleswitch";
 import { useToast } from "primevue/usetoast";
 import QRCode from "qrcode";
-import { usePwaInstall } from "../../composables/usePwaInstall";
 import { usePushNotifications } from "../../composables/usePushNotifications";
 
 const { t } = useI18n();
 const router = useRouter();
 const authStore = useAuthStore();
 const toast = useToast();
-const { canInstall, promptInstall, isIOS, isStandalone, status: pwaStatus } = usePwaInstall();
 const {
   isSupported: pushSupported,
+  availableHere: pushAvailableHere,
   permission: pushPermission,
   subscribe: subscribeToPush,
 } = usePushNotifications();
-
-const showInstallCard = computed(() => pwaStatus() !== "installed");
-const installIsActionable = computed(() =>
-  ["ready", "manual"].includes(pwaStatus()),
-);
-const installSubtitle = computed(() => {
-  switch (pwaStatus()) {
-    case "insecure-context":
-      return t("portal.install.unavailableInsecure");
-    case "not-yet-eligible":
-      return t("portal.install.unavailableNotYet");
-    default:
-      return "";
-  }
-});
-const showManualInstallDialog = ref(false);
 
 const showNotificationsCard = computed(
   () =>
     pushSupported &&
     pushPermission.value !== "granted" &&
-    (!isIOS || isStandalone),
+    pushAvailableHere,
 );
 
 const handleEnableNotifications = async () => {
@@ -365,17 +311,6 @@ const handleEnableNotifications = async () => {
       life: 6000,
     });
   }
-};
-
-const handleInstallClick = async () => {
-  if (canInstall.value) {
-    const outcome = await promptInstall();
-    if (outcome === "accepted") {
-      toast.add({ severity: "success", detail: t("portal.install.installedToast"), life: 3000 });
-    }
-    return;
-  }
-  showManualInstallDialog.value = true;
 };
 
 const clientData = ref<any>(null);

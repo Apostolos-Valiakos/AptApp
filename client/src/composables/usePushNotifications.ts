@@ -17,6 +17,16 @@ const urlBase64ToUint8Array = (base64String: string) => {
   return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
 };
 
+// iOS only allows push subscriptions once the site has been added to the home
+// screen (from Safari's share menu); in a regular Safari tab asking would
+// just fail, so it isn't offered there. Newer iPads say they're a Mac; a "Mac"
+// with a touch screen is one.
+const isIPadAsMac = navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+const isIOS = (/iphone|ipad|ipod/i.test(navigator.userAgent) || isIPadAsMac) && !(window as any).MSStream;
+const isStandalone =
+  window.matchMedia?.("(display-mode: standalone)").matches || (window.navigator as any).standalone === true;
+const availableHere = !isIOS || isStandalone;
+
 export type SubscribeResult =
   | "subscribed"
   | "unsupported"
@@ -79,5 +89,5 @@ export function usePushNotifications() {
     }
   };
 
-  return { isSupported, permission, subscribe };
+  return { isSupported, availableHere, permission, subscribe };
 }

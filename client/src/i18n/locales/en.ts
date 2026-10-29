@@ -965,17 +965,6 @@ export default {
       noUpcoming: 'You have no upcoming appointments.',
       seeAll: 'See all',
     },
-    install: {
-      title: 'Save as an App',
-      subtitle: 'Add this to your home screen for quick access.',
-      button: 'Save as an App',
-      iosTitle: 'Add to Home Screen',
-      iosInstructions: 'Tap the Share icon {icon} below, then choose "Add to Home Screen".',
-      braveInstructions: 'Open the menu (the icon below) and choose "Add to Home Screen" or "Install app".',
-      installedToast: 'App saved to your home screen!',
-      unavailableInsecure: 'Needs a secure (https) connection — ask the shop to check their setup.',
-      unavailableNotYet: "Not available yet — try reloading this page once (it usually appears right after).",
-    },
     notifications: {
       title: 'Turn On Notifications',
       subtitle: 'Get reminders for your appointments and news from us.',
