@@ -1297,9 +1297,12 @@ const cardFilterCache = new Map();
 // email address and must never open the API or the live socket.
 const isSessionToken = (user) => !!user && typeof user.role === "string" && user.typ !== "invite";
 
+// The login travels only in the Authorization header. A ?token= in the URL
+// used to work too (for file links), but URLs end up in server logs, browser
+// history and referrers; files are now fetched with the header instead.
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers["authorization"];
-  const token = (authHeader && authHeader.split(" ")[1]) || req.query.token;
+  const token = authHeader && authHeader.split(" ")[1];
 
   if (!token) return res.sendStatus(401);
 

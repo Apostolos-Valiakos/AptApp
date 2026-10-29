@@ -177,6 +177,7 @@
 </template>
 
 <script setup lang="ts">
+import { api, ifRefused, withMessage } from "../api/http";
 import { formatMoney } from "../utils/format";
 import { ref, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
@@ -195,7 +196,6 @@ const tierDialog = ref(false);
 const isEdit = ref(false);
 const editingId = ref<string | null>(null);
 
-const token = () => localStorage.getItem("token");
 
 const emptyForm = () => ({
   name: "",
@@ -212,20 +212,14 @@ const form = ref<any>(emptyForm());
 const fetchTiers = async () => {
   loading.value = true;
   try {
-    const res = await fetch("/api/v1/membership-tiers", {
-      headers: { Authorization: `Bearer ${token()}` },
-    });
-    if (res.ok) tiers.value = await res.json();
+    tiers.value = await api.get("/api/v1/membership-tiers").catch(ifRefused(tiers.value));
   } finally {
     loading.value = false;
   }
 };
 
 const fetchServices = async () => {
-  const res = await fetch("/api/v1/services", {
-    headers: { Authorization: `Bearer ${token()}` },
-  });
-  if (res.ok) allServices.value = await res.json();
+  allServices.value = await api.get("/api/v1/services").catch(ifRefused(allServices.value));
 };
 
 onMounted(() => {
@@ -272,15 +266,7 @@ const saveTier = async () => {
       color: `#${form.value.color}`,
       services: form.value.services.filter((s: any) => s.service_id),
     };
-    const res = await fetch(url, {
-      method,
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || "Failed to save tier");
-    }
+    await api.request(method, url, payload).catch(withMessage("Failed to save tier"));
     toast.add({
       severity: "success",
       summary: t("common.success"),
@@ -304,14 +290,7 @@ const confirmDeleteTier = (tier: any) => {
     acceptClass: "p-button-danger",
     accept: async () => {
       try {
-        const res = await fetch(`/api/v1/membership-tiers/${tier.id}`, {
-          method: "DELETE",
-          headers: { Authorization: `Bearer ${token()}` },
-        });
-        if (!res.ok) {
-          const err = await res.json();
-          throw new Error(err.error || "Failed to delete");
-        }
+        await api.del(`/api/v1/membership-tiers/${tier.id}`).catch(withMessage("Failed to delete"));
         tiers.value = tiers.value.filter((t) => t.id !== tier.id);
         toast.add({ severity: "success", summary: t("membershipTiers.toast.deleted"), life: 3000 });
       } catch (e: any) {

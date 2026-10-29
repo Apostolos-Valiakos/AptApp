@@ -373,6 +373,7 @@ import MultiSelect from "primevue/multiselect";
 import draggable from "vuedraggable";
 import { groupServicesByCategory } from "../utils/serviceGroups";
 import { resolveServiceColor } from "../utils/serviceColors";
+import { api, ApiError } from "../api/http";
 
 const { t } = useI18n();
 
@@ -543,12 +544,8 @@ watch(hasVariations, (val) => {
 });
 
 const fetchStaff = async () => {
-  const token = localStorage.getItem("token");
   try {
-    const res = await fetch("/api/v1/staff", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (res.ok) staffList.value = await res.json();
+    staffList.value = await api.get("/api/v1/staff");
   } catch (err) {
     // Non-critical — the default-staff dropdown and eligibility grid just stay empty.
   }
@@ -571,18 +568,9 @@ const categoryOptions = computed(() =>
 );
 
 const fetchServices = async () => {
-  const token = localStorage.getItem("token");
   try {
-    const res = await fetch("/api/v1/services", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (res.ok) {
-      services.value = await res.json();
-      rebuildGroups();
-    } else if (res.status === 401) {
-      console.error("Unauthorized");
-    }
-    loading.value = false;
+    services.value = await api.get("/api/v1/services");
+    rebuildGroups();
   } catch (err) {
     toast.add({
       severity: "error",
@@ -590,22 +578,18 @@ const fetchServices = async () => {
       detail: t('services.toast.loadFailed'),
       life: 3000,
     });
+  } finally {
+    // Also when it fails (the spinner used to stay on).
+    loading.value = false;
   }
 };
 
-const token = () => localStorage.getItem("token");
-
 const saveCategoryColor = async (name: string, color: string | null) => {
   try {
-    const res = await fetch("/api/v1/service-categories/color", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
-      body: JSON.stringify({
-        name,
-        color_code: color ? `#${color.replace(/^#/, "")}` : null,
-      }),
+    await api.put("/api/v1/service-categories/color", {
+      name,
+      color_code: color ? `#${color.replace(/^#/, "")}` : null,
     });
-    if (!res.ok) throw new Error();
     fetchServices();
   } catch {
     toast.add({ severity: "error", summary: t("common.error"), detail: t("services.toast.saveFailed"), life: 3000 });
@@ -614,12 +598,7 @@ const saveCategoryColor = async (name: string, color: string | null) => {
 
 const onCategoryDragEnd = async () => {
   try {
-    const res = await fetch("/api/v1/service-categories/reorder", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
-      body: JSON.stringify({ order: groupedServices.value.map((g) => g.label) }),
-    });
-    if (!res.ok) throw new Error();
+    await api.put("/api/v1/service-categories/reorder", { order: groupedServices.value.map((g) => g.label) });
   } catch (err) {
     toast.add({ severity: "error", summary: t("common.error"), detail: t("services.toast.reorderFailed"), life: 3000 });
     fetchServices();
@@ -628,12 +607,7 @@ const onCategoryDragEnd = async () => {
 
 const onServiceDragEnd = async (group: { items: any[] }) => {
   try {
-    const res = await fetch("/api/v1/services/reorder", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
-      body: JSON.stringify({ order: group.items.map((s) => s.id) }),
-    });
-    if (!res.ok) throw new Error();
+    await api.put("/api/v1/services/reorder", { order: group.items.map((s) => s.id) });
   } catch (err) {
     toast.add({ severity: "error", summary: t("common.error"), detail: t("services.toast.reorderFailed"), life: 3000 });
     fetchServices();
@@ -698,14 +672,8 @@ const saveService = async () => {
   const method = editingService.value.id ? "PUT" : "POST";
 
   try {
-    await fetch(url, {
-      method,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token()}`,
-      },
-      body: JSON.stringify(payload),
-    });
+    // A refusal now shows as an error (it used to say "saved" regardless).
+    await api.request(method, url, payload);
     toast.add({
       severity: "success",
       summary: t('common.success'),
@@ -736,12 +704,7 @@ const confirmDelete = (service: any) => {
 
 const deleteService = async (service: any) => {
   try {
-    const res = await fetch(`/api/v1/services/${service.id}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${token()}` },
-    });
-    if (!res.ok) throw new Error("Delete failed");
-    const { archived } = await res.json();
+    const { archived } = await api.del(`/api/v1/services/${service.id}`);
     toast.add({
       severity: "success",
       summary: t('common.success'),

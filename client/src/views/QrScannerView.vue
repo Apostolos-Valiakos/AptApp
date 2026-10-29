@@ -140,6 +140,7 @@
 </template>
 
 <script setup lang="ts">
+import { api, ApiError } from "../api/http";
 import { formatMoney } from "../utils/format";
 import { ref, onUnmounted } from "vue";
 import { useI18n } from "vue-i18n";
@@ -154,24 +155,13 @@ const scanError = ref("");
 const result = ref<any>(null);
 let html5QrCode: Html5Qrcode | null = null;
 
-const token = () => localStorage.getItem("token");
 
 const handleDecoded = async (decodedText: string) => {
   await stopScanning();
   try {
-    const res = await fetch("/api/v1/qr/scan", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
-      body: JSON.stringify({ token: decodedText }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      scanError.value = data.error || t("qrScanner.notFound");
-      return;
-    }
-    result.value = data;
-  } catch {
-    scanError.value = t("qrScanner.scanFailed");
+    result.value = await api.post("/api/v1/qr/scan", { token: decodedText });
+  } catch (e) {
+    scanError.value = e instanceof ApiError ? e.data?.error || t("qrScanner.notFound") : t("qrScanner.scanFailed");
   }
 };
 

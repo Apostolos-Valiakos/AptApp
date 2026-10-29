@@ -271,6 +271,7 @@
 </template>
 
 <script setup lang="ts">
+import { api, withMessage } from "../api/http";
 import { ref, onMounted, computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
@@ -321,12 +322,7 @@ const formatDate = (d: string) =>
 const fetchData = async () => {
   tableLoading.value = true;
   try {
-    const token = localStorage.getItem("token");
-    const res = await fetch("/api/v1/platform/shops", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error("Request failed");
-    shops.value = await res.json();
+    shops.value = await api.get("/api/v1/platform/shops");
   } catch (err) {
     console.error(err);
     toast.add({
@@ -372,7 +368,6 @@ const saveShop = async () => {
   }
 
   loading.value = true;
-  const token = localStorage.getItem("token");
   const url = editingShop.value.id
     ? `/api/v1/platform/shops/${editingShop.value.id}`
     : "/api/v1/platform/shops";
@@ -385,16 +380,7 @@ const saveShop = async () => {
   }
 
   try {
-    const res = await fetch(url, {
-      method,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(body),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Failed");
+    await api.request(method, url, body).catch(withMessage("Failed"));
 
     toast.add({
       severity: "success",
@@ -431,12 +417,7 @@ const openAdminsDialog = async (shop: any) => {
   showAdminsDialog.value = true;
   adminsLoading.value = true;
   try {
-    const token = localStorage.getItem("token");
-    const res = await fetch(`/api/v1/platform/shops/${shop.id}/admins`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error("Failed");
-    shopAdmins.value = await res.json();
+    shopAdmins.value = await api.get(`/api/v1/platform/shops/${shop.id}/admins`);
   } catch (err) {
     console.error(err);
     shopAdmins.value = [];
@@ -448,21 +429,13 @@ const openAdminsDialog = async (shop: any) => {
 const createAdmin = async () => {
   if (!newAdminUsername.value || !newAdminPassword.value) return;
   loading.value = true;
-  const token = localStorage.getItem("token");
   try {
-    const res = await fetch(`/api/v1/platform/shops/${adminsTarget.value.id}/admins`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
+    await api
+      .post(`/api/v1/platform/shops/${adminsTarget.value.id}/admins`, {
         username: newAdminUsername.value,
         password: newAdminPassword.value,
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Failed");
+      })
+      .catch(withMessage("Failed"));
 
     toast.add({
       severity: "success",
@@ -494,17 +467,8 @@ const toggleAdminActive = (admin: any) => {
     header: t("common.confirmDelete"),
     icon: "pi pi-exclamation-triangle",
     accept: async () => {
-      const token = localStorage.getItem("token");
       try {
-        const res = await fetch(`/api/v1/platform/admins/${admin.id}`, {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ is_active: !admin.is_active }),
-        });
-        if (!res.ok) throw new Error("Failed");
+        await api.put(`/api/v1/platform/admins/${admin.id}`, { is_active: !admin.is_active });
         toast.add({
           severity: "success",
           summary: t("common.success"),
@@ -547,21 +511,12 @@ const confirmResetPassword = async () => {
     return;
   }
   loading.value = true;
-  const token = localStorage.getItem("token");
   try {
-    const res = await fetch(
-      `/api/v1/platform/admins/${resetPasswordTarget.value.id}/reset-password`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ newPassword: resetPasswordValue.value }),
-      },
-    );
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Failed");
+    await api
+      .post(`/api/v1/platform/admins/${resetPasswordTarget.value.id}/reset-password`, {
+        newPassword: resetPasswordValue.value,
+      })
+      .catch(withMessage("Failed"));
 
     toast.add({
       severity: "success",
@@ -589,14 +544,8 @@ const confirmImpersonate = (shop: any) => {
     header: t("platform.shops.tooltips.viewAs"),
     icon: "pi pi-sign-in",
     accept: async () => {
-      const token = localStorage.getItem("token");
       try {
-        const res = await fetch(`/api/v1/platform/impersonate/${shop.id}`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Failed");
+        const data = await api.post(`/api/v1/platform/impersonate/${shop.id}`).catch(withMessage("Failed"));
 
         authStore.startImpersonation(data.token, data.user);
         toast.add({

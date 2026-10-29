@@ -19,13 +19,12 @@ const requestPath = (input: RequestInfo | URL) => {
   return url.replace(/^https?:\/\/[^/]+/, "");
 };
 
-// The token a request was sent with: Authorization header or ?token= query.
+// The token a request was sent with (the Authorization header; the server
+// no longer takes one in the URL).
 const sentToken = (input: RequestInfo | URL, init?: RequestInit): string | null => {
   const headers = new Headers(init?.headers || (input instanceof Request ? input.headers : undefined));
   const auth = headers.get("Authorization");
-  if (auth?.startsWith("Bearer ")) return auth.slice(7);
-  const query = requestPath(input).split("?")[1];
-  return query ? new URLSearchParams(query).get("token") : null;
+  return auth?.startsWith("Bearer ") ? auth.slice(7) : null;
 };
 
 const RELOAD_KEY = "chunkReloadAt";

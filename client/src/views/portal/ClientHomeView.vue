@@ -215,33 +215,18 @@ const nextAppointment = computed(() => {
 
 onMounted(async () => {
   try {
-    const contestRes = await fetch("/api/v1/contests/active", {
-      headers: { Authorization: `Bearer ${authStore.token}` },
-    });
-    if (contestRes.ok) {
-      activeContest.value = (await contestRes.json()) ?? null;
-    }
+    activeContest.value = (await api.get("/api/v1/contests/active")) ?? null;
   } catch {}
 
   try {
-    const shopRes = await fetch("/api/v1/shop", {
-      headers: { Authorization: `Bearer ${authStore.token}` },
-    });
-    if (shopRes.ok) {
-      const data = await shopRes.json();
-      shopPhone.value = data?.phone || "";
-    }
+    const data = await api.get("/api/v1/shop");
+    shopPhone.value = data?.phone || "";
   } catch {}
 
   try {
-    const res = await fetch(`/api/v1/clients/${authStore.clientId}/full`, {
-      headers: { Authorization: `Bearer ${authStore.token}` },
-    });
-    if (res.ok) {
-      const data = await res.json();
-      clientData.value = data.client;
-      history.value = data.history || [];
-    }
+    const data = await api.get(`/api/v1/clients/${authStore.clientId}/full`);
+    clientData.value = data.client;
+    history.value = data.history || [];
   } catch {
   } finally {
     loading.value = false;

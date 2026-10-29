@@ -857,6 +857,7 @@
 </template>
 
 <script setup lang="ts">
+import { api, ApiError, ifRefused, saveBlob } from "../api/http";
 import { formatMoney } from "../utils/format";
 import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useI18n } from "vue-i18n";
@@ -955,8 +956,6 @@ const setToday = () => {
 
 const fetchAllReports = async () => {
   loading.value = true;
-  const token = localStorage.getItem("token");
-  const headers = { Authorization: `Bearer ${token}` };
 
   const params = new URLSearchParams();
 
@@ -982,74 +981,59 @@ const fetchAllReports = async () => {
   const qs = params.toString() ? `?${params.toString()}` : "";
 
   try {
+    // Without these the page can't show anything; the others may be refused
+    // (e.g. for a role that doesn't see them) and are then left as they were.
+    const optional = (url: string) => api.get(url).catch(ifRefused(null));
     const [
-      finRes,
-      salesRes,
-      staffRes,
-      payRes,
-      apptRes,
-      anaRes,
-      insightsRes,
-      serviceSumRes,
-      productsRes,
-      productUsageRes,
-      giftCardsRes,
-      priceAdjustmentsRes,
+      finData,
+      salesData,
+      staffData,
+      payData,
+      apptData,
+      anaData,
+      insightsData,
+      serviceSumData,
+      productsData,
+      productUsageData,
+      giftCardsData,
+      priceAdjustmentsData,
     ] = await Promise.all([
-      fetch(`/api/v1/reports/finances${qs}`, { headers }),
-      fetch(`/api/v1/reports/sales${qs}`, { headers }),
-      fetch(`/api/v1/reports/staff${qs}`, { headers }),
-      fetch(`/api/v1/reports/payments${qs}`, { headers }),
-      fetch(`/api/v1/reports/appointments${qs}`, { headers }),
-      fetch(`/api/v1/reports/analytics${qs}`, { headers }),
-      fetch(`/api/v1/reports/insights${qs}`, { headers }),
-      fetch(`/api/v1/reports/service-summary${qs}`, { headers }),
-      fetch(`/api/v1/reports/products${qs}`, { headers }),
-      fetch(`/api/v1/reports/product-usage${qs}`, { headers }),
-      fetch(`/api/v1/reports/gift-cards${qs}`, { headers }),
-      fetch(`/api/v1/reports/price-adjustments${qs}`, { headers }),
+      api.get(`/api/v1/reports/finances${qs}`),
+      api.get(`/api/v1/reports/sales${qs}`),
+      optional(`/api/v1/reports/staff${qs}`),
+      api.get(`/api/v1/reports/payments${qs}`),
+      optional(`/api/v1/reports/appointments${qs}`),
+      api.get(`/api/v1/reports/analytics${qs}`),
+      optional(`/api/v1/reports/insights${qs}`),
+      api.get(`/api/v1/reports/service-summary${qs}`),
+      optional(`/api/v1/reports/products${qs}`),
+      optional(`/api/v1/reports/product-usage${qs}`),
+      optional(`/api/v1/reports/gift-cards${qs}`),
+      optional(`/api/v1/reports/price-adjustments${qs}`),
     ]);
-
-    if (finRes.status === 401) throw new Error("unauthorized");
-
-    if (
-      !finRes.ok ||
-      !salesRes.ok ||
-      !anaRes.ok ||
-      !payRes.ok
-    ) {
-      throw new Error("loadFailed");
-    }
-    if (!serviceSumRes.ok) throw new Error("loadFailed");
-
-    const finData = await finRes.json();
-    const salesData = await salesRes.json();
-    const anaData = await anaRes.json();
 
     finances.value = finData;
     salesReport.value = salesData.details || [];
     analytics.value = anaData;
-    staffReport.value = await staffRes.json();
-    paymentsReport.value = await payRes.json();
-    if (priceAdjustmentsRes.ok) {
-      priceAdjustmentsReport.value = await priceAdjustmentsRes.json();
+    staffReport.value = staffData ?? [];
+    paymentsReport.value = payData;
+    if (priceAdjustmentsData) {
+      priceAdjustmentsReport.value = priceAdjustmentsData;
     }
-    appointmentsReport.value = await apptRes.json();
-    insights.value = insightsRes.ok ? await insightsRes.json() : null;
-    serviceSummaryReport.value = await serviceSumRes.json();
-    if (productsRes.ok) {
-      const productsData = await productsRes.json();
+    appointmentsReport.value = apptData ?? [];
+    insights.value = insightsData;
+    serviceSummaryReport.value = serviceSumData;
+    if (productsData) {
       productsReport.value = productsData.details || [];
       productsSummary.value = productsData.summary || {
         total_revenue: 0,
         total_units: 0,
       };
     }
-    if (productUsageRes.ok) {
-      productUsageReport.value = await productUsageRes.json();
+    if (productUsageData) {
+      productUsageReport.value = productUsageData;
     }
-    if (giftCardsRes.ok) {
-      const giftCardsData = await giftCardsRes.json();
+    if (giftCardsData) {
       giftCardsReport.value = giftCardsData.details || [];
       giftCardsSummary.value = giftCardsData.summary || {
         total_revenue: 0,
@@ -1060,7 +1044,7 @@ const fetchAllReports = async () => {
   } catch (err: any) {
     console.error(err);
     const toastKey =
-      err.message === "unauthorized"
+      err instanceof ApiError && err.status === 401
         ? "analytics.toast.unauthorized"
         : "analytics.toast.loadFailed";
     toast.add({
@@ -1195,13 +1179,7 @@ const exportPaymentsCSV = () => {
     ];
   });
   const csv = [headers, ...rows].map((r) => r.join(",")).join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `payments-export-${new Date().toISOString().split("T")[0]}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+  saveBlob(new Blob([csv], { type: "text/csv;charset=utf-8;" }), `payments-export-${new Date().toISOString().split("T")[0]}.csv`);
 };
 
 // Payment method badge helper

@@ -512,6 +512,7 @@
 </template>
 
 <script setup lang="ts">
+import { api, ApiError, ifRefused, withMessage } from "../api/http";
 import { ref, onMounted, computed } from "vue";
 import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
@@ -564,15 +565,7 @@ const newTimeOff = ref<any>({
 const fetchData = async () => {
   tableLoading.value = true;
   try {
-    const token = localStorage.getItem("token");
-    const headers = { Authorization: `Bearer ${token}` };
-    const [staffRes, servicesRes] = await Promise.all([
-      fetch("/api/v1/staff", { headers }),
-      fetch("/api/v1/services", { headers }),
-    ]);
-    if (!staffRes.ok || !servicesRes.ok) throw new Error("Request failed");
-    staff.value = await staffRes.json();
-    services.value = await servicesRes.json();
+    [staff.value, services.value] = await Promise.all([api.get("/api/v1/staff"), api.get("/api/v1/services")]);
   } catch (err) {
     console.error(err);
     toast.add({
@@ -613,22 +606,13 @@ const editStaff = (data: any) => {
 const saveStaff = async () => {
   // ... (Keep existing save logic, ensure you add Authorization header) ...
   loading.value = true;
-  const token = localStorage.getItem("token");
   const url = editingStaff.value.id
     ? `/api/v1/staff/${editingStaff.value.id}`
     : "/api/v1/staff";
   const method = editingStaff.value.id ? "PUT" : "POST";
 
   try {
-    const res = await fetch(url, {
-      method,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(editingStaff.value),
-    });
-    if (!res.ok) throw new Error("Failed");
+    await api.request(method, url, editingStaff.value);
     toast.add({
       severity: "success",
       summary: t("common.success"),
@@ -662,24 +646,9 @@ const createLogin = async () => {
   if (!newLogin.value.username || !newLogin.value.password) return;
 
   loading.value = true;
-  const token = localStorage.getItem("token");
 
   try {
-    const res = await fetch(
-      `/api/v1/staff/${loginStaffTarget.value.id}/login`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(newLogin.value),
-      },
-    );
-
-    const data = await res.json();
-
-    if (!res.ok) throw new Error(data.error || "Failed");
+    await api.post(`/api/v1/staff/${loginStaffTarget.value.id}/login`, newLogin.value).catch(withMessage("Failed"));
 
     toast.add({
       severity: "success",
@@ -733,15 +702,8 @@ const openTimeOffDialog = async (staffMember: any) => {
 
 const fetchTimeOffEntries = async () => {
   timeOffLoading.value = true;
-  const token = localStorage.getItem("token");
   try {
-    const res = await fetch(
-      `/api/v1/staff/${timeOffTarget.value.id}/time-off`,
-      {
-        headers: { Authorization: `Bearer ${token}` },
-      },
-    );
-    timeOffEntries.value = res.ok ? await res.json() : [];
+    timeOffEntries.value = await api.get(`/api/v1/staff/${timeOffTarget.value.id}/time-off`).catch(ifRefused([]));
   } finally {
     timeOffLoading.value = false;
   }
@@ -779,7 +741,6 @@ const cancelAddTimeOff = () => {
 
 const saveTimeOff = async (force = false) => {
   timeOffSaving.value = true;
-  const token = localStorage.getItem("token");
   const isLeave = addMode.value === "leave";
 
   const payload: any = {
@@ -797,20 +758,17 @@ const saveTimeOff = async (force = false) => {
   }
 
   try {
-    const res = await fetch(
-      `/api/v1/staff/${timeOffTarget.value.id}/time-off`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(payload),
-      },
-    );
+    // Overlapping bookings: 409 with the list, asked about before forcing.
+    const conflict = await api
+      .post(`/api/v1/staff/${timeOffTarget.value.id}/time-off`, payload)
+      .then(() => null)
+      .catch((e) => {
+        if (e instanceof ApiError && e.status === 409) return e.data || {};
+        throw e;
+      });
 
-    if (res.status === 409) {
-      const data = await res.json();
+    if (conflict) {
+      const data = conflict;
       const list = (data.conflicts || [])
         .map(
           (c: any) =>
@@ -819,7 +777,7 @@ const saveTimeOff = async (force = false) => {
         .join("\n");
       confirm.require({
         message: t("staff.timeOff.conflictMessage", {
-          count: data.conflicts.length,
+          count: (data.conflicts || []).length,
           list,
         }),
         header: t("staff.timeOff.conflictHeader"),
@@ -829,8 +787,6 @@ const saveTimeOff = async (force = false) => {
       });
       return;
     }
-
-    if (!res.ok) throw new Error("Failed");
 
     toast.add({
       severity: "success",
@@ -854,16 +810,8 @@ const saveTimeOff = async (force = false) => {
 };
 
 const deleteTimeOffEntry = async (entryId: string) => {
-  const token = localStorage.getItem("token");
   try {
-    const res = await fetch(
-      `/api/v1/staff/${timeOffTarget.value.id}/time-off/${entryId}`,
-      {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      },
-    );
-    if (!res.ok) throw new Error("Failed");
+    await api.del(`/api/v1/staff/${timeOffTarget.value.id}/time-off/${entryId}`);
     timeOffEntries.value = timeOffEntries.value.filter((e) => e.id !== entryId);
     toast.add({
       severity: "success",
@@ -893,14 +841,8 @@ const confirmDelete = (staff: any) => {
 };
 
 const deleteStaff = async (staff: any) => {
-  const token = localStorage.getItem("token");
   try {
-    const res = await fetch(`/api/v1/staff/${staff.id}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    if (!res.ok) throw new Error("Failed to delete");
+    await api.del(`/api/v1/staff/${staff.id}`);
 
     toast.add({
       severity: "success",

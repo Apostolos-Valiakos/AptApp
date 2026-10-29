@@ -366,6 +366,7 @@
 </template>
 
 <script setup lang="ts">
+import { api, ifRefused, withMessage } from "../api/http";
 import { ref, onMounted, computed, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
@@ -389,7 +390,6 @@ const clients = ref<any[]>([]);
 const loading = ref(true);
 const dialogVisible = ref(false); // For creating NEW clients
 const search = ref("");
-const token = localStorage.getItem("token");
 
 // NEW: State for the Profile Dialog
 const profileVisible = ref(false);
@@ -437,11 +437,7 @@ const fetchClients = async () => {
     });
     if (search.value.trim()) params.append("search", search.value.trim());
 
-    const res = await fetch(`/api/v1/clients?${params}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error("Request failed");
-    const data = await res.json();
+    const data = await api.get(`/api/v1/clients?${params}`);
     clients.value = data.clients || [];
     totalClients.value = data.total || 0;
   } catch (err) {
@@ -477,11 +473,8 @@ const exportExcel = async () => {
   // Export ALL matching clients (not just the current page)
   const params = new URLSearchParams();
   if (search.value.trim()) params.append("search", search.value.trim());
-  const res = await fetch(`/api/v1/clients?${params}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) return;
-  const allClients = await res.json();
+  const allClients = await api.get(`/api/v1/clients?${params}`).catch(ifRefused(null));
+  if (!allClients) return;
 
   const data = allClients.map((c: any) => ({
     Όνομα: c.first_name || "",
@@ -516,13 +509,7 @@ const inviteClient = async (client: any) => {
   }
 
   try {
-    const res = await fetch(`/api/v1/clients/${client.id}/invite`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Failed to invite client");
+    await api.post(`/api/v1/clients/${client.id}/invite`).catch(withMessage("Failed to invite client"));
 
     toast.add({
       severity: "success",
@@ -579,16 +566,7 @@ const saveClient = async () => {
 
   // Since we use ClientProfileDialog for edits, this is strictly for POST (Create)
   try {
-    const res = await fetch("/api/v1/clients", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(editingClient.value),
-    });
-
-    if (!res.ok) throw new Error("Failed to save");
+    await api.post("/api/v1/clients", editingClient.value).catch(withMessage("Failed to save"));
 
     toast.add({
       severity: "success",
@@ -622,16 +600,7 @@ const confirmDelete = (client: any) => {
 
 const deleteClient = async (client: any) => {
   try {
-    const res = await fetch(`/api/v1/clients/${client.id}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    const data = await res.json().catch(() => ({}));
-
-    if (!res.ok) {
-      throw new Error(data.error || "Failed to delete client");
-    }
+    await api.del(`/api/v1/clients/${client.id}`).catch(withMessage("Failed to delete client"));
 
     toast.add({
       severity: "success",

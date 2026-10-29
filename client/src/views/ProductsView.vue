@@ -249,6 +249,7 @@
 </template>
 
 <script setup lang="ts">
+import { api, ApiError } from "../api/http";
 import { formatMoney } from "../utils/format";
 import { ref, onMounted } from "vue";
 import { useRouter } from "vue-router";
@@ -359,22 +360,20 @@ const removeVariationRow = (index: number) => {
 
 const saveProduct = async () => {
   try {
-    const token = localStorage.getItem("token");
     const method = isEdit.value ? "PUT" : "POST";
     const url = isEdit.value
       ? `/api/v1/products/${newProduct.value.id}`
       : "/api/v1/products";
 
-    const res = await fetch(url, {
-      method: method,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(newProduct.value),
-    });
+    const refused = await api
+      .request(method, url, newProduct.value)
+      .then(() => null)
+      .catch((e) => {
+        if (e instanceof ApiError) return e;
+        throw e;
+      });
 
-    if (res.ok) {
+    if (!refused) {
       toast.add({
         severity: "success",
         summary: t('common.success'),
@@ -384,11 +383,10 @@ const saveProduct = async () => {
       productDialog.value = false;
       await productStore.fetchProducts();
     } else {
-      const errorData = await res.json();
       toast.add({
         severity: "error",
         summary: t('common.error'),
-        detail: errorData.error || t('products.toast.saveFailed'),
+        detail: refused.data?.error || t('products.toast.saveFailed'),
         life: 3000,
       });
     }
@@ -411,23 +409,14 @@ const confirmDeleteProduct = (product: Product) => {
     accept: async () => {
       if (!product.id) return;
       try {
-        const token = localStorage.getItem("token");
-        const res = await fetch(`/api/v1/products/${product.id}`, {
-          method: "DELETE",
-          headers: { Authorization: `Bearer ${token}` },
+        await api.del(`/api/v1/products/${product.id}`);
+        toast.add({
+          severity: "success",
+          summary: t('common.success'),
+          detail: t('products.toast.deleted'),
+          life: 3000,
         });
-
-        if (res.ok) {
-          toast.add({
-            severity: "success",
-            summary: t('common.success'),
-            detail: t('products.toast.deleted'),
-            life: 3000,
-          });
-          await productStore.fetchProducts();
-        } else {
-          throw new Error("Failed to delete");
-        }
+        await productStore.fetchProducts();
       } catch (err) {
         toast.add({
           severity: "error",

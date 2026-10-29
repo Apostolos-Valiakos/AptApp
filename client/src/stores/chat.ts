@@ -1,3 +1,4 @@
+import { api, ApiError, withMessage } from "../api/http";
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { io, Socket } from "socket.io-client";
@@ -275,11 +276,7 @@ export const useChatStore = defineStore("chat", () => {
 
   const fetchChannels = async () => {
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch("/api/v1/chat/channels", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
+      const data = await api.get("/api/v1/chat/channels");
       channels.value = Array.isArray(data) ? data : [];
     } catch (err) {
       console.error("Error fetching channels:", err);
@@ -290,21 +287,13 @@ export const useChatStore = defineStore("chat", () => {
   // Fetch messages for a channel
   const fetchMessages = async (channelId: string) => {
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(
-        `/api/v1/chat/channels/${channelId}/messages?limit=50`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-
       // SAFETY CHECK 1: If server errors, stop here.
-      if (!res.ok) {
-        console.error("Failed to fetch messages:", res.statusText);
-        return;
-      }
-
-      const data = await res.json();
+      const data = await api.get(`/api/v1/chat/channels/${channelId}/messages?limit=50`).catch((e) => {
+        if (!(e instanceof ApiError)) throw e;
+        console.error("Failed to fetch messages:", e.status);
+        return undefined;
+      });
+      if (data === undefined) return;
 
       // SAFETY CHECK 2: Ensure data is actually an array before filtering
       if (Array.isArray(data)) {
@@ -429,21 +418,7 @@ export const useChatStore = defineStore("chat", () => {
       const formData = new FormData();
       formData.append("file", file);
 
-      const token = localStorage.getItem("token");
-      const res = await fetch("/api/v1/chat/upload", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        body: formData,
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || "Upload failed");
-      }
-
-      return await res.json();
+      return await api.upload("/api/v1/chat/upload", formData).catch(withMessage("Upload failed"));
     } catch (err) {
       console.error("Error uploading file:", err);
       throw err;
@@ -456,30 +431,12 @@ export const useChatStore = defineStore("chat", () => {
     memberIds: string[]
   ) => {
     try {
-      const token = localStorage.getItem("token");
-
       // Safety check: Ensure all IDs are strings and not numbers/objects
       const cleanMemberIds = memberIds.map((id) => String(id));
 
-      const res = await fetch("/api/v1/chat/channels", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          name,
-          description,
-          memberIds: cleanMemberIds,
-        }),
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || "Failed to create channel");
-      }
-
-      const newChannel = await res.json();
+      const newChannel = await api
+        .post("/api/v1/chat/channels", { name, description, memberIds: cleanMemberIds })
+        .catch(withMessage("Failed to create channel"));
       channels.value.unshift(newChannel);
       return newChannel;
     } catch (err) {

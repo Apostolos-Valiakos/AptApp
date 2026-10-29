@@ -276,6 +276,7 @@
 </template>
 
 <script setup lang="ts">
+import { api, ApiError } from "../api/http";
 import { ref, onMounted, onUnmounted, watch, computed, nextTick, defineAsyncComponent } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { useAuthStore } from "../stores/auth";
@@ -535,17 +536,12 @@ const isAdminOrAbove = computed(
 const toggleCashFilterAsAdmin = async () => {
   const newHidden = !settingsStore.hideCashPaid;
   try {
-    const token = localStorage.getItem("token");
-    const res = await fetch("/api/v1/shop/cash-filter", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ hidden: newHidden }),
+    const data = await api.post("/api/v1/shop/cash-filter", { hidden: newHidden }).catch((e) => {
+      if (!(e instanceof ApiError)) throw e;
+      toast.add({ severity: "warn", summary: t("common.error"), detail: e.data?.error, life: 4000 });
+      return null;
     });
-    const data = await res.json();
-    if (!res.ok) {
-      toast.add({ severity: "warn", summary: t("common.error"), detail: data.error, life: 4000 });
-      return;
-    }
+    if (!data) return;
     // The server's own broadcast will also confirm this for every connected
     // tab (including this one) — setting it locally too avoids waiting on it.
     settingsStore.setHideCashPaid(newHidden);
@@ -603,12 +599,7 @@ watch(
 const resyncFilterState = async () => {
   if (!authStore.isAuthenticated || authStore.isClient) return;
   try {
-    const token = localStorage.getItem("token");
-    const res = await fetch("/api/v1/shop/filter-state", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) return;
-    const data = await res.json();
+    const data = await api.get("/api/v1/shop/filter-state");
     if (data.cashLocked) {
       settingsStore.setCashLockedByShop(true, data.cashLockedBy);
     } else {

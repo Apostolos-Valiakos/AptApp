@@ -92,3 +92,10 @@ test("a booking records when it was made; offline, when it was made offline", as
   assert.ok(listed.booked_at, "sent to the calendar");
 });
 
+test("the login works only in the header, never as ?token= in the URL", async () => {
+  const tok = token(ids.admin, "admin");
+  const viaQuery = await fetch(`http://localhost:${PORT}/api/v1/staff?token=${tok}`);
+  assert.equal(viaQuery.status, 401);
+  const viaHeader = await fetch(`http://localhost:${PORT}/api/v1/staff`, { headers: { Authorization: `Bearer ${tok}` } });
+  assert.equal(viaHeader.status, 200);
+});

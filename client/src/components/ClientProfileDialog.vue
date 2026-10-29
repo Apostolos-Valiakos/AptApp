@@ -391,14 +391,13 @@
                 </div>
               </div>
               <div class="flex gap-1">
-                <a
+                <Button
                   v-if="isShopAdmin"
-                  :href="`/api/v1/clients/files/${file.id}?token=${token}`"
-                  target="_blank"
-                  class="p-button p-component p-button-icon-only p-button-text p-button-rounded p-button-secondary"
-                >
-                  <span class="pi pi-download"></span>
-                </a>
+                  icon="pi pi-download"
+                  class="p-button-text p-button-secondary p-button-rounded"
+                  :loading="downloadingFileId === file.id"
+                  @click="downloadFile(file)"
+                />
                 <Button
                   icon="pi pi-eye"
                   class="p-button-text p-button-secondary p-button-rounded"
@@ -423,6 +422,7 @@
 </template>
 
 <script setup lang="ts">
+import { api, ApiError, ifRefused, saveBlob, withMessage } from "../api/http";
 import { formatMoney } from "../utils/format";
 import { ref, watch, computed } from "vue";
 import Exercises from "./Exercises.vue";
@@ -449,7 +449,6 @@ const isVisible = computed({
   set: (val) => emit("update:visible", val),
 });
 
-const token = localStorage.getItem("token");
 const activeTab = ref("Info");
 const loading = ref(false);
 const saving = ref(false);
@@ -521,10 +520,7 @@ const fetchClientData = async () => {
   if (!props.clientId) return;
   loading.value = true;
   try {
-    const res = await fetch(`/api/v1/clients/${props.clientId}/full`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const data = await res.json();
+    const data = await api.get(`/api/v1/clients/${props.clientId}/full`);
     clientData.value = data.client;
     history.value = data.history;
     files.value = data.files;
@@ -559,10 +555,7 @@ const fetchMembership = async () => {
   if (!props.clientId) return;
   membershipLoading.value = true;
   try {
-    const res = await fetch(`/api/v1/clients/${props.clientId}/membership`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const data = await res.json();
+    const data = await api.get(`/api/v1/clients/${props.clientId}/membership`);
     membership.value = data.membership;
     membershipUsage.value = data.usage || [];
     showAssignMembership.value = false;
@@ -572,22 +565,17 @@ const fetchMembership = async () => {
 };
 
 const fetchAllTiers = async () => {
-  const res = await fetch("/api/v1/membership-tiers", {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (res.ok) allTiers.value = (await res.json()).filter((t: any) => t.is_active);
+  const tiers = await api.get("/api/v1/membership-tiers").catch(ifRefused(null));
+  if (tiers) allTiers.value = tiers.filter((t: any) => t.is_active);
 };
 
 const assignMembership = async () => {
   if (!assignForm.value.tier_id) return;
   membershipActionLoading.value = true;
   try {
-    const res = await fetch(`/api/v1/clients/${props.clientId}/membership`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify(assignForm.value),
-    });
-    if (!res.ok) throw new Error((await res.json()).error || t('clientProfile.membership.toasts.assignFailed'));
+    await api
+      .post(`/api/v1/clients/${props.clientId}/membership`, assignForm.value)
+      .catch(withMessage(t('clientProfile.membership.toasts.assignFailed')));
     toast.add({ severity: "success", summary: t('clientProfile.membership.toasts.assigned'), life: 3000 });
     await fetchMembership();
   } catch (e: any) {
@@ -600,12 +588,9 @@ const assignMembership = async () => {
 const renewMembership = async () => {
   membershipActionLoading.value = true;
   try {
-    const res = await fetch(`/api/v1/clients/${props.clientId}/membership/renew`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ payment_method: "cash" }),
-    });
-    if (!res.ok) throw new Error((await res.json()).error || t('clientProfile.membership.toasts.renewFailed'));
+    await api
+      .post(`/api/v1/clients/${props.clientId}/membership/renew`, { payment_method: "cash" })
+      .catch(withMessage(t('clientProfile.membership.toasts.renewFailed')));
     toast.add({ severity: "success", summary: t('clientProfile.membership.toasts.renewed'), life: 3000 });
     await fetchMembership();
   } catch (e: any) {
@@ -623,11 +608,9 @@ const confirmCancelMembership = () => {
     acceptClass: "p-button-danger",
     accept: async () => {
       try {
-        const res = await fetch(`/api/v1/clients/${props.clientId}/membership`, {
-          method: "DELETE",
-          headers: { Authorization: `Bearer ${token}` },
+        await api.del(`/api/v1/clients/${props.clientId}/membership`).catch((e) => {
+          throw e instanceof ApiError ? new Error(t('clientProfile.membership.toasts.cancelFailed')) : e;
         });
-        if (!res.ok) throw new Error(t('clientProfile.membership.toasts.cancelFailed'));
         toast.add({ severity: "success", summary: t('clientProfile.membership.toasts.cancelled'), life: 3000 });
         await fetchMembership();
       } catch (e: any) {
@@ -664,19 +647,17 @@ const saveClientInfo = async () => {
       payload.date_of_birth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     }
 
-    const res = await fetch(`/api/v1/clients/${props.clientId}`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(payload),
-    });
-    if (res.ok) {
+    const saved = await api
+      .put(`/api/v1/clients/${props.clientId}`, payload)
+      .then(() => true)
+      .catch((e) => {
+        if (!(e instanceof ApiError)) throw e;
+        if (e.status === 409) toast.add({ severity: "warn", summary: t("clientProfile.walkInLocked"), life: 6000 });
+        return false;
+      });
+    if (saved) {
       clientData.value = { ...clientData.value, ...payload };
       emit("refresh");
-    } else if (res.status === 409) {
-      toast.add({ severity: "warn", summary: t("clientProfile.walkInLocked"), life: 6000 });
     }
   } finally {
     saving.value = false;
@@ -692,12 +673,11 @@ const handleFileUpload = async (event: any) => {
   formData.append("file", file);
 
   try {
-    const res = await fetch(`/api/v1/clients/${props.clientId}/files`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-      body: formData,
-    });
-    if (res.ok) {
+    const uploaded = await api
+      .upload(`/api/v1/clients/${props.clientId}/files`, formData)
+      .then(() => true)
+      .catch(ifRefused(false));
+    if (uploaded) {
       await fetchClientData();
     } else {
       toast.add({
@@ -722,11 +702,7 @@ const deleteFile = (fileId: number) => {
     acceptClass: "p-button-danger",
     accept: async () => {
       try {
-        const res = await fetch(`/api/v1/clients/files/${fileId}`, {
-          method: "DELETE",
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) throw new Error("Request failed");
+        await api.del(`/api/v1/clients/files/${fileId}`);
         files.value = files.value.filter((f: any) => f.id !== fileId);
       } catch (e) {
         toast.add({
@@ -769,16 +745,29 @@ const getStatusColor = (s: string) => {
   };
   return map[s] || "bg-gray-100";
 };
+// Downloads a file under its own name, with the login in the request header
+// (not ?token= in a link).
+const downloadingFileId = ref<any>(null);
+const downloadFile = async (file: any) => {
+  downloadingFileId.value = file.id;
+  try {
+    saveBlob(await api.blob(`/api/v1/clients/files/${file.id}`), file.file_name || "file");
+  } catch {
+    toast.add({
+      severity: "error",
+      summary: t('clientProfile.files.previewFailedSummary'),
+      detail: t('clientProfile.files.previewFailedDetail'),
+      life: 3000,
+    });
+  } finally {
+    downloadingFileId.value = null;
+  }
+};
+
 const viewFile = async (file: any) => {
   viewingFileId.value = file.id;
   try {
-    const response = await fetch(`/api/v1/clients/files/${file.id}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    if (!response.ok) throw new Error("Failed to fetch file");
-
-    const blob = await response.blob();
+    const blob = await api.blob(`/api/v1/clients/files/${file.id}`);
     const fileType = file.file_type || "application/pdf";
     const newBlob = new Blob([blob], { type: fileType });
 
@@ -787,9 +776,10 @@ const viewFile = async (file: any) => {
     // Open the tab
     window.open(blobUrl, "_blank");
 
+    // Kept a minute: freed after 100 ms, a slow tab could find it gone.
     setTimeout(() => {
       window.URL.revokeObjectURL(blobUrl);
-    }, 100);
+    }, 60000);
   } catch (err) {
     toast.add({
       severity: "error",

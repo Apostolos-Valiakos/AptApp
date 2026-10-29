@@ -174,6 +174,7 @@
 </template>
 
 <script setup lang="ts">
+import { api } from "../api/http";
 import { ref, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
@@ -193,14 +194,9 @@ const loadingNotifications = ref(false);
 
 const fetchNotifications = async () => {
   try {
-    const res = await fetch("/api/v1/portal/notifications", {
-      headers: { Authorization: `Bearer ${authStore.token}` },
-    });
-    if (res.ok) {
-      const data = await res.json();
-      notifications.value = data.items || [];
-      unreadCount.value = data.unread_count || 0;
-    }
+    const data = await api.get("/api/v1/portal/notifications");
+    notifications.value = data.items || [];
+    unreadCount.value = data.unread_count || 0;
   } catch {}
 };
 
@@ -213,10 +209,7 @@ const openNotifications = async () => {
 
 const markAllRead = async () => {
   try {
-    await fetch("/api/v1/portal/notifications/read-all", {
-      method: "PUT",
-      headers: { Authorization: `Bearer ${authStore.token}` },
-    });
+    await api.put("/api/v1/portal/notifications/read-all");
     notifications.value = notifications.value.map((n) => ({
       ...n,
       read_at: n.read_at || new Date().toISOString(),
@@ -228,10 +221,7 @@ const markAllRead = async () => {
 const openNotification = async (n: any) => {
   if (!n.read_at) {
     try {
-      await fetch(`/api/v1/portal/notifications/${n.id}/read`, {
-        method: "PUT",
-        headers: { Authorization: `Bearer ${authStore.token}` },
-      });
+      await api.put(`/api/v1/portal/notifications/${n.id}/read`);
       n.read_at = new Date().toISOString();
       unreadCount.value = Math.max(0, unreadCount.value - 1);
     } catch {}
@@ -284,14 +274,9 @@ onMounted(async () => {
   }
 
   try {
-    const res = await fetch("/api/v1/shop", {
-      headers: { Authorization: `Bearer ${authStore.token}` },
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (data?.name) shopName.value = data.name;
-      if (data?.id) setShopManifest(data.id);
-    }
+    const data = await api.get("/api/v1/shop");
+    if (data?.name) shopName.value = data.name;
+    if (data?.id) setShopManifest(data.id);
   } catch {}
   fetchNotifications();
 

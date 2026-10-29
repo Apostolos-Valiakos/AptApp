@@ -186,8 +186,8 @@
 
                     <div v-else-if="message.message_type === 'file'">
                       <a
-                        :href="resolveImageUrl(message)"
-                        target="_blank"
+                        href="#"
+                        @click.prevent="downloadChatFile(message)"
                         class="flex items-center gap-3 p-2 bg-black/5 rounded hover:bg-black/10 transition text-inherit no-underline"
                       >
                         <i class="pi pi-file text-xl"></i>
@@ -348,7 +348,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch, nextTick } from "vue";
+import { api, saveBlob } from "../api/http";
+import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from "vue";
 import { useChatStore } from "../stores/chat";
 import { useAuthStore } from "../stores/auth";
 import { useToast } from "primevue/usetoast";
@@ -409,11 +410,7 @@ onUnmounted(() => {
 
 const fetchShopUsers = async () => {
   try {
-    const token = localStorage.getItem("token");
-    const res = await fetch("/api/v1/chat/shop-users", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const data = await res.json();
+    const data = await api.get("/api/v1/chat/shop-users");
     shopUsers.value = Array.isArray(data) ? data : [];
   } catch (err) {
     console.error("Error fetching shop users:", err);
@@ -570,15 +567,41 @@ const resolveImageUrl = (message: any) => {
     return message.file_url;
   }
   if (message.id && !String(message.id).startsWith("temp-")) {
-    const token = localStorage.getItem("token");
-
-    const baseUrl =
-      (import.meta.env.VITE_API_BASE_URL as string) || window.location.origin;
-
-    return `${baseUrl}/api/v1/chat/file/${message.id}?token=${token}`;
+    const id = String(message.id);
+    const local = chatFileUrls.get(id);
+    if (local) return local;
+    if (!chatFilesAsked.has(id)) {
+      chatFilesAsked.add(id);
+      api
+        .blob(chatFileUrl(id))
+        .then((data) => chatFileUrls.set(id, URL.createObjectURL(data)))
+        .catch(() => {});
+    }
   }
   return "";
 };
+
+// Chat files come with the login in the request header (never ?token= in a
+// link): an image is fetched once and shown from a local copy; a file is
+// fetched when clicked and saved under its own name.
+const chatFileUrl = (id: string) =>
+  `${(import.meta.env.VITE_API_BASE_URL as string) || window.location.origin}/api/v1/chat/file/${id}`;
+const chatFileUrls = reactive(new Map<string, string>());
+const chatFilesAsked = new Set<string>();
+const downloadChatFile = async (message: any) => {
+  if (!message) return;
+  if (message.file_url && /^(blob|data):/.test(message.file_url)) {
+    window.open(message.file_url, "_blank");
+    return;
+  }
+  if (!message.id || String(message.id).startsWith("temp-")) return;
+  try {
+    saveBlob(await api.blob(chatFileUrl(String(message.id))), message.file_name || "file");
+  } catch {
+    toast.add({ severity: "error", summary: t("common.error"), life: 3000 });
+  }
+};
+onUnmounted(() => chatFileUrls.forEach((url) => URL.revokeObjectURL(url)));
 
 watch(
   () => chatStore.activeMessages,

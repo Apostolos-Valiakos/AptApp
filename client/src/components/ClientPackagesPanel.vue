@@ -114,6 +114,7 @@
 </template>
 
 <script setup lang="ts">
+import { api, withMessage } from "../api/http";
 import { formatMoney } from "../utils/format";
 import { ref, reactive, computed, onMounted, watch } from "vue";
 import { useI18n } from "vue-i18n";
@@ -145,17 +146,12 @@ const adjustForm = reactive<{ total_visits: number; expires_at: Date | null; not
   note: "",
 });
 
-const headers = () => ({
-  "Content-Type": "application/json",
-  Authorization: `Bearer ${localStorage.getItem("token")}`,
-});
 
 const load = async () => {
   if (!props.clientId) return;
   loading.value = true;
   try {
-    const res = await fetch(`/api/v1/clients/${props.clientId}/packages`, { headers: headers() });
-    packages.value = res.ok ? await res.json() : [];
+    packages.value = await api.get(`/api/v1/clients/${props.clientId}/packages`);
   } catch {
     packages.value = [];
   } finally {
@@ -190,13 +186,7 @@ const openAdjust = (p: any) => {
 const patch = async (body: any) => {
   saving.value = true;
   try {
-    const res = await fetch(`/api/v1/client-packages/${adjusting.value.id}`, {
-      method: "PUT",
-      headers: headers(),
-      body: JSON.stringify(body),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || t("packages.failed"));
+    await api.put(`/api/v1/client-packages/${adjusting.value.id}`, body).catch(withMessage(t("packages.failed")));
     showAdjust.value = false;
     await load();
   } catch (e: any) {

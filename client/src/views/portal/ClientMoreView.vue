@@ -268,6 +268,7 @@
 </template>
 
 <script setup lang="ts">
+import { api, withMessage } from "../../api/http";
 import { ref, computed, onMounted, reactive, nextTick } from "vue";
 import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
@@ -350,30 +351,19 @@ const renderLargeQr = () => {
 
 onMounted(async () => {
   try {
-    const res = await fetch(`/api/v1/clients/${authStore.clientId}/full`, {
-      headers: { Authorization: `Bearer ${authStore.token}` },
-    });
-    if (res.ok) {
-      const data = await res.json();
-      clientData.value = data.client;
-      editProfileForm.first_name = data.client?.first_name || "";
-      editProfileForm.last_name = data.client?.last_name || "";
-      editProfileForm.email = data.client?.email || "";
-      editProfileForm.phone = data.client?.phone || "";
-      receiveEmails.value = data.client?.receive_emails ?? true;
-    }
+    const data = await api.get(`/api/v1/clients/${authStore.clientId}/full`);
+    clientData.value = data.client;
+    editProfileForm.first_name = data.client?.first_name || "";
+    editProfileForm.last_name = data.client?.last_name || "";
+    editProfileForm.email = data.client?.email || "";
+    editProfileForm.phone = data.client?.phone || "";
+    receiveEmails.value = data.client?.receive_emails ?? true;
   } catch {}
 
   try {
-    const memRes = await fetch(
-      `/api/v1/clients/${authStore.clientId}/membership`,
-      { headers: { Authorization: `Bearer ${authStore.token}` } },
-    );
-    if (memRes.ok) {
-      const memData = await memRes.json();
-      membership.value = memData.membership;
-      membershipUsage.value = memData.usage || [];
-    }
+    const memData = await api.get(`/api/v1/clients/${authStore.clientId}/membership`);
+    membership.value = memData.membership;
+    membershipUsage.value = memData.usage || [];
   } catch {
   } finally {
     membershipLoading.value = false;
@@ -401,15 +391,7 @@ const saveProfile = async () => {
   }
   isSavingProfile.value = true;
   try {
-    const res = await fetch("/api/v1/portal/profile", {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${authStore.token}`,
-      },
-      body: JSON.stringify(editProfileForm),
-    });
-    if (!res.ok) throw new Error((await res.json()).error || "Failed");
+    await api.put("/api/v1/portal/profile", editProfileForm).catch(withMessage("Failed"));
     toast.add({
       severity: "success",
       summary: "Saved",
@@ -428,18 +410,9 @@ const changePassword = async () => {
   if (passwordForm.newPass !== passwordForm.confirm) return;
   isSavingPassword.value = true;
   try {
-    const res = await fetch("/api/v1/portal/password", {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${authStore.token}`,
-      },
-      body: JSON.stringify({
-        currentPassword: passwordForm.current,
-        newPassword: passwordForm.newPass,
-      }),
-    });
-    if (!res.ok) throw new Error((await res.json()).error || "Failed");
+    await api
+      .put("/api/v1/portal/password", { currentPassword: passwordForm.current, newPassword: passwordForm.newPass })
+      .catch(withMessage("Failed"));
     toast.add({ severity: "success", summary: "Password updated", life: 3000 });
     passwordForm.current = "";
     passwordForm.newPass = "";
@@ -454,14 +427,7 @@ const changePassword = async () => {
 
 const saveNotificationPreference = async () => {
   try {
-    await fetch("/api/v1/portal/notifications", {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${authStore.token}`,
-      },
-      body: JSON.stringify({ receive_emails: receiveEmails.value }),
-    });
+    await api.put("/api/v1/portal/notifications", { receive_emails: receiveEmails.value });
   } catch {}
 };
 

@@ -192,6 +192,7 @@
 </template>
 
 <script setup lang="ts">
+import { api, ifRefused, withMessage } from "../api/http";
 import { formatMoney } from "../utils/format";
 import { ref, computed, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
@@ -233,15 +234,11 @@ const form = ref<any>({
   sold_by_staff_id: null,
 });
 
-const token = () => localStorage.getItem("token");
 
 const fetchGiftCards = async () => {
   loading.value = true;
   try {
-    const res = await fetch("/api/v1/gift-cards", {
-      headers: { Authorization: `Bearer ${token()}` },
-    });
-    if (res.ok) giftCards.value = await res.json();
+    giftCards.value = await api.get("/api/v1/gift-cards").catch(ifRefused(giftCards.value));
   } finally {
     loading.value = false;
   }
@@ -256,13 +253,8 @@ const soldByOptions = computed(() => [
 
 const fetchStaff = async () => {
   try {
-    const res = await fetch("/api/v1/staff", {
-      headers: { Authorization: `Bearer ${token()}` },
-    });
-    if (res.ok) {
-      const data = await res.json();
-      staffList.value = data.filter((s: any) => s.is_active);
-    }
+    const data = await api.get("/api/v1/staff");
+    staffList.value = data.filter((s: any) => s.is_active);
   } catch {
     // non-critical — the dropdown just falls back to "Frontdesk" only
   }
@@ -334,18 +326,7 @@ const saveCard = async () => {
   try {
     const url = isEdit.value ? `/api/v1/gift-cards/${editingId.value}` : "/api/v1/gift-cards";
     const method = isEdit.value ? "PUT" : "POST";
-    const res = await fetch(url, {
-      method,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token()}`,
-      },
-      body: JSON.stringify(form.value),
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || "Failed to save gift card");
-    }
+    await api.request(method, url, form.value).catch(withMessage("Failed to save gift card"));
     toast.add({
       severity: "success",
       summary: t("common.success"),
@@ -369,11 +350,7 @@ const confirmDeleteCard = (card: any) => {
     acceptClass: "p-button-danger",
     accept: async () => {
       try {
-        const res = await fetch(`/api/v1/gift-cards/${card.id}`, {
-          method: "DELETE",
-          headers: { Authorization: `Bearer ${token()}` },
-        });
-        if (!res.ok) throw new Error("Failed to delete");
+        await api.del(`/api/v1/gift-cards/${card.id}`);
         giftCards.value = giftCards.value.filter((c) => c.id !== card.id);
         toast.add({ severity: "success", summary: t("giftCards.toast.deleted"), life: 3000 });
       } catch {

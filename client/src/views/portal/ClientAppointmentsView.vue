@@ -360,6 +360,7 @@
 </template>
 
 <script setup lang="ts">
+import { api, ApiError, withMessage } from "../../api/http";
 import { formatMoney } from "../../utils/format";
 import { ref, computed, watch, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -416,13 +417,8 @@ const pastAppointments = computed(() => {
 const fetchHistory = async () => {
   loadingHistory.value = true;
   try {
-    const res = await fetch(`/api/v1/clients/${authStore.clientId}/full`, {
-      headers: { Authorization: `Bearer ${authStore.token}` },
-    });
-    if (res.ok) {
-      const data = await res.json();
-      history.value = data.history || [];
-    }
+    const data = await api.get(`/api/v1/clients/${authStore.clientId}/full`);
+    history.value = data.history || [];
   } catch {
   } finally {
     loadingHistory.value = false;
@@ -440,11 +436,7 @@ const confirmCancel = (appt: any) => {
 
 const cancelAppointment = async (appt: any) => {
   try {
-    const res = await fetch(`/api/v1/portal/appointments/${appt.id}/cancel`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${authStore.token}` },
-    });
-    if (!res.ok) throw new Error((await res.json()).error || "Failed to cancel");
+    await api.post(`/api/v1/portal/appointments/${appt.id}/cancel`).catch(withMessage("Failed to cancel"));
     history.value = history.value.map((a: any) =>
       a.id === appt.id ? { ...a, status: "cancelled" } : a,
     );
@@ -456,11 +448,7 @@ const cancelAppointment = async (appt: any) => {
 
 const confirmAppointment = async (appt: any) => {
   try {
-    const res = await fetch(`/api/v1/portal/appointments/${appt.id}/confirm`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${authStore.token}` },
-    });
-    if (!res.ok) throw new Error((await res.json()).error || "Failed to confirm");
+    await api.post(`/api/v1/portal/appointments/${appt.id}/confirm`).catch(withMessage("Failed to confirm"));
     history.value = history.value.map((a: any) =>
       a.id === appt.id ? { ...a, status: "confirmed" } : a,
     );
@@ -529,17 +517,13 @@ const formattedSelectedSlot = computed(() => {
 const fetchServices = async () => {
   loadingServices.value = true;
   try {
-    const res = await fetch("/api/v1/portal/services", {
-      headers: { Authorization: `Bearer ${authStore.token}` },
+    // 404: the shop has self-booking off.
+    const list = await api.get("/api/v1/portal/services").catch((e) => {
+      if (e instanceof ApiError && e.status === 404) selfBookingAvailable.value = false;
+      throw e;
     });
-    if (res.status === 404) {
-      selfBookingAvailable.value = false;
-      return;
-    }
-    if (res.ok) {
-      services.value = await res.json();
-      selfBookingAvailable.value = true;
-    }
+    services.value = list;
+    selfBookingAvailable.value = true;
   } catch {
   } finally {
     loadingServices.value = false;
@@ -552,11 +536,7 @@ const selectService = async (svc: any) => {
   step.value = 2;
   loadingStaff.value = true;
   try {
-    const res = await fetch(
-      `/api/v1/portal/staff?service_id=${encodeURIComponent(svc.id)}`,
-      { headers: { Authorization: `Bearer ${authStore.token}` } },
-    );
-    if (res.ok) staffOptions.value = await res.json();
+    staffOptions.value = await api.get(`/api/v1/portal/staff?service_id=${encodeURIComponent(svc.id)}`);
   } catch {
   } finally {
     loadingStaff.value = false;
@@ -575,16 +555,10 @@ const fetchSlots = async () => {
   selectedSlot.value = null;
   try {
     const dateStr = toDateInputValue(selectedDate.value);
-    const res = await fetch(
+    const data = await api.get(
       `/api/v1/availability?service_id=${encodeURIComponent(selectedService.value.id)}&staff_id=${encodeURIComponent(selectedStaff.value.id)}&date=${dateStr}`,
-      { headers: { Authorization: `Bearer ${authStore.token}` } },
     );
-    if (res.ok) {
-      const data = await res.json();
-      slots.value = data.slots || [];
-    } else {
-      slots.value = [];
-    }
+    slots.value = data.slots || [];
   } catch {
     slots.value = [];
   } finally {
@@ -622,25 +596,22 @@ const submitBooking = async () => {
       typeof crypto.randomUUID === "function"
         ? crypto.randomUUID()
         : `${Date.now()}-${Math.random()}`;
-    const res = await fetch("/api/v1/appointments", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${authStore.token}`,
-        "Idempotency-Key": idempotencyKey,
-      },
-      body: JSON.stringify({
-        booking_notes: bookingNotes.value,
-        services: [
-          {
-            service_id: selectedService.value.id,
-            staff_id: selectedStaff.value.id,
-            start_time: selectedSlot.value,
-          },
-        ],
-      }),
-    });
-    if (!res.ok) throw new Error((await res.json()).error || "Failed");
+    await api
+      .post(
+        "/api/v1/appointments",
+        {
+          booking_notes: bookingNotes.value,
+          services: [
+            {
+              service_id: selectedService.value.id,
+              staff_id: selectedStaff.value.id,
+              start_time: selectedSlot.value,
+            },
+          ],
+        },
+        { headers: { "Idempotency-Key": idempotencyKey } },
+      )
+      .catch(withMessage("Failed"));
     toast.add({ severity: "success", summary: t("portal.book.success"), life: 3000 });
     resetBooking();
     activeTab.value = "myAppointments";

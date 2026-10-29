@@ -304,6 +304,7 @@
 </template>
 
 <script setup lang="ts">
+import { api, ApiError, ifRefused } from "../api/http";
 import { ref, computed, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
@@ -448,11 +449,7 @@ const weeklyHoursLabel = (staffId: any) => {
 // === Shop hours reference row ===
 const shopHours = ref<{ day_of_week: number; start_time: string; end_time: string }[]>([]);
 const loadShopHours = async () => {
-  const token = localStorage.getItem("token");
-  const res = await fetch("/api/v1/shop-hours", {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  shopHours.value = res.ok ? await res.json() : [];
+  shopHours.value = await api.get("/api/v1/shop-hours").catch(ifRefused([]));
 };
 const shopHoursLabel = (dow: number) => {
   const row = shopHours.value.find((d) => d.day_of_week === dow);
@@ -494,20 +491,22 @@ const saveWeek = async (
   const schedule = week
     .filter((d) => d.ranges.length > 0)
     .map((d) => ({ day_of_week: d.day_of_week, ranges: d.ranges }));
-  const token = localStorage.getItem("token");
   try {
-    const res = await fetch(`/api/v1/staff/${staffId}/working-hours`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({
+    // Bookings outside the new hours: 409 with the list, asked about before forcing.
+    const conflict = await api
+      .post(`/api/v1/staff/${staffId}/working-hours`, {
         enabled: true,
         effective_from: toDateStr(monday),
         schedule,
         force,
-      }),
-    });
-    if (res.status === 409) {
-      const data = await res.json();
+      })
+      .then(() => null)
+      .catch((e) => {
+        if (e instanceof ApiError && e.status === 409) return e.data || {};
+        throw e;
+      });
+    if (conflict) {
+      const data = conflict;
       const list = (data.conflicts || [])
         .map(
           (c: any) =>
@@ -516,7 +515,7 @@ const saveWeek = async (
         .join("\n");
       return new Promise((resolve) => {
         confirm.require({
-          message: t("staff.workingHours.conflictMessage", { count: data.conflicts.length, list }),
+          message: t("staff.workingHours.conflictMessage", { count: (data.conflicts || []).length, list }),
           header: t("staff.workingHours.conflictHeader"),
           icon: "pi pi-exclamation-triangle",
           acceptClass: "p-button-warning",
@@ -526,7 +525,6 @@ const saveWeek = async (
         });
       });
     }
-    if (!res.ok) throw new Error("Failed");
     toast.add({ severity: "success", summary: t("common.success"), detail: t("staff.workingHours.saved"), life: 3000 });
     await calendarStore.refreshWorkingHours();
     return true;
@@ -651,13 +649,8 @@ const saveEditWeek = async () => {
 const clearWeekVersion = async () => {
   const staff = popupStaff.value;
   if (!staff) return;
-  const token = localStorage.getItem("token");
   try {
-    const res = await fetch(
-      `/api/v1/staff/${staff.id}/working-hours/${toDateStr(weekMonday.value)}`,
-      { method: "DELETE", headers: { Authorization: `Bearer ${token}` } },
-    );
-    if (!res.ok) throw new Error("Failed");
+    await api.del(`/api/v1/staff/${staff.id}/working-hours/${toDateStr(weekMonday.value)}`);
     toast.add({ severity: "success", summary: t("common.success"), detail: t("staff.workingHours.saved"), life: 3000 });
     await calendarStore.refreshWorkingHours();
     editWeekVisible.value = false;
@@ -685,17 +678,11 @@ const toggleShopDay = (day: any) => {
 };
 const saveShopHours = async () => {
   shopHoursSaving.value = true;
-  const token = localStorage.getItem("token");
   const days = shopHoursForm.value
     .filter((d) => d.open)
     .map((d) => ({ day_of_week: d.day_of_week, start_time: toTimeStr(d.start_time), end_time: toTimeStr(d.end_time) }));
   try {
-    const res = await fetch("/api/v1/shop-hours", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ days }),
-    });
-    if (!res.ok) throw new Error("Failed");
+    await api.put("/api/v1/shop-hours", { days });
     toast.add({ severity: "success", summary: t("common.success"), detail: t("staff.workingHours.saved"), life: 3000 });
     await loadShopHours();
     shopHoursVisible.value = false;

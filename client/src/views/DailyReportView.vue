@@ -99,6 +99,7 @@
 </template>
 
 <script setup lang="ts">
+import { api, withMessage } from "../api/http";
 import { formatMoney } from "../utils/format";
 import { ref, computed, onMounted, watch } from "vue";
 import { useI18n } from "vue-i18n";
@@ -126,11 +127,7 @@ const load = async () => {
     const params = new URLSearchParams();
     if (settingsStore.hideCashPaid) params.append("excludeCash", "true");
     if (settingsStore.hideCardPaid) params.append("excludeCard", "true");
-    const res = await fetch(`/api/v1/reports/daily?${params}`, {
-      headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
-    });
-    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Failed");
-    data.value = await res.json();
+    data.value = await api.get(`/api/v1/reports/daily?${params}`).catch(withMessage("Failed"));
   } catch (e: any) {
     toast.add({ severity: "error", summary: t("common.error"), detail: e.message, life: 3500 });
   } finally {
