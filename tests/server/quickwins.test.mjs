@@ -92,6 +92,30 @@ test("a booking records when it was made; offline, when it was made offline", as
   assert.ok(listed.booked_at, "sent to the calendar");
 });
 
+test("renaming a category renames it on its services and keeps its colour", async () => {
+  sql(DB, `UPDATE services SET category = 'Rename Me' WHERE id = '${ids.service}'`);
+  sql(DB, `INSERT INTO service_categories (shop_id, name, sort_order, color_code) VALUES ('${SHOP}', 'Rename Me', 99, '#123456')
+           ON CONFLICT (shop_id, name) DO UPDATE SET color_code = '#123456'`);
+  const r = await call("PUT", "/api/v1/service-categories/rename", { from: "Rename Me", to: "Renamed" });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.equal(r.data.services, 1);
+  assert.equal(sql(DB, `SELECT category FROM services WHERE id = '${ids.service}'`), "Renamed");
+  assert.equal(sql(DB, `SELECT color_code FROM service_categories WHERE shop_id = '${SHOP}' AND name = 'Renamed'`), "#123456");
+  assert.equal(sql(DB, `SELECT count(*) FROM service_categories WHERE shop_id = '${SHOP}' AND name = 'Rename Me'`), "0");
+});
+
+test("a name another category has (any case) is refused; staff can't rename", async () => {
+  sql(DB, `INSERT INTO service_categories (shop_id, name, sort_order) VALUES ('${SHOP}', 'Taken Name', 98) ON CONFLICT DO NOTHING`);
+  const r = await call("PUT", "/api/v1/service-categories/rename", { from: "Renamed", to: "taken name" });
+  assert.equal(r.status, 409);
+  assert.equal(r.data.error, "category_exists");
+  assert.equal(sql(DB, `SELECT category FROM services WHERE id = '${ids.service}'`), "Renamed", "nothing changed");
+  if (ids.staffUser) {
+    const asStaff = await api(PORT, token(ids.staffUser, "staff"))("PUT", "/api/v1/service-categories/rename", { from: "Renamed", to: "X" });
+    assert.equal(asStaff.status, 403);
+  }
+});
+
 test("the login works only in the header, never as ?token= in the URL", async () => {
   const tok = token(ids.admin, "admin");
   const viaQuery = await fetch(`http://localhost:${PORT}/api/v1/staff?token=${tok}`);

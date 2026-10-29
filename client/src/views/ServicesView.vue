@@ -76,6 +76,15 @@
               <i class="pi pi-bars category-drag-handle cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500"></i>
               <h3 class="font-bold text-gray-900">{{ group.label }}</h3>
               <span class="text-xs text-gray-400">({{ group.items.length }})</span>
+              <button
+                type="button"
+                class="text-gray-400 hover:text-gray-700"
+                v-tooltip="t('services.renameCategory.button')"
+                data-testid="rename-category"
+                @click="openRenameCategory(group.label)"
+              >
+                <i class="pi pi-pencil text-xs"></i>
+              </button>
               <div class="ml-auto flex items-center gap-2">
                 <ColorPicker
                   :modelValue="resolveServiceColor(null, group.items[0]?.category_color_code).replace('#', '')"
@@ -134,6 +143,36 @@
         </draggable>
       </div>
     </template>
+
+    <!-- Rename a category (and it on all its services) -->
+    <Dialog
+      v-model:visible="renameCategory.visible"
+      :header="t('services.renameCategory.title')"
+      modal
+      :style="{ width: '24rem', maxWidth: '95vw' }"
+    >
+      <label class="block text-sm font-medium text-gray-700 mb-1">{{ t("services.renameCategory.newName") }}</label>
+      <InputText
+        v-model="renameCategory.to"
+        class="w-full"
+        autofocus
+        maxlength="100"
+        data-testid="rename-category-input"
+        @keydown.enter="saveRenameCategory"
+      />
+      <p class="text-xs text-gray-400 mt-2">{{ t("services.renameCategory.note") }}</p>
+      <template #footer>
+        <Button :label="t('common.cancel')" text @click="renameCategory.visible = false" />
+        <Button
+          :label="t('common.save')"
+          icon="pi pi-check"
+          :loading="renameCategory.saving"
+          :disabled="!renameCategory.to.trim() || renameCategory.to.trim() === renameCategory.from"
+          data-testid="rename-category-save"
+          @click="saveRenameCategory"
+        />
+      </template>
+    </Dialog>
 
     <!-- Edit / Add Dialog -->
     <Dialog
@@ -593,6 +632,33 @@ const saveCategoryColor = async (name: string, color: string | null) => {
     fetchServices();
   } catch {
     toast.add({ severity: "error", summary: t("common.error"), detail: t("services.toast.saveFailed"), life: 3000 });
+  }
+};
+
+const renameCategory = ref({ visible: false, from: "", to: "", saving: false });
+const openRenameCategory = (name: string) => {
+  renameCategory.value = { visible: true, from: name, to: name, saving: false };
+};
+const saveRenameCategory = async () => {
+  const { from } = renameCategory.value;
+  const to = renameCategory.value.to.trim();
+  if (!to || to === from) return;
+  renameCategory.value.saving = true;
+  try {
+    await api.put("/api/v1/service-categories/rename", { from, to });
+    renameCategory.value.visible = false;
+    toast.add({ severity: "success", summary: t("services.renameCategory.done", { name: to }), life: 3000 });
+    fetchServices();
+  } catch (e) {
+    const exists = e instanceof ApiError && e.data?.error === "category_exists";
+    toast.add({
+      severity: "error",
+      summary: t("common.error"),
+      detail: t(exists ? "services.renameCategory.exists" : "services.toast.saveFailed"),
+      life: 4000,
+    });
+  } finally {
+    renameCategory.value.saving = false;
   }
 };
 

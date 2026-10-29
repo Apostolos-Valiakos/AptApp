@@ -18,6 +18,7 @@ const http = require("http");
 const jwt = require("jsonwebtoken");
 const pool = require("./db");
 const { runMigrations } = require("./migrate");
+const { HttpError, withTransaction, asyncHandler } = require("./http");
 const path = require("path");
 const cors = require("cors");
 const helmet = require("helmet");
@@ -2801,6 +2802,33 @@ app.get("/api/v1/service-categories", authenticateToken, async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
+// Renaming a category renames it on all its services too, so it keeps its
+// colour and position (both stored by name in service_categories). A name
+// another category already has (ignoring case) is refused.
+app.put("/api/v1/service-categories/rename", authenticateToken, requireShopAdminAccess, asyncHandler(async (req, res) => {
+  const from = String(req.body.from || "").trim();
+  const to = String(req.body.to || "").trim().slice(0, 100);
+  if (!from || !to) return res.status(400).json({ error: "from and to are required" });
+  if (from === to) return res.json({ success: true, services: 0 });
+  const result = await withTransaction(async (db) => {
+    const taken = await db.query(
+      `SELECT 1 FROM (
+         SELECT name FROM service_categories WHERE shop_id = $1
+         UNION SELECT category FROM services WHERE shop_id = $1 AND category IS NOT NULL
+       ) n WHERE lower(trim(name)) = lower($2) AND trim(name) <> $3`,
+      [req.shopId, to, from],
+    );
+    if (taken.rowCount > 0) throw new HttpError(409, { error: "category_exists" });
+    await db.query("UPDATE service_categories SET name = $3 WHERE shop_id = $1 AND name = $2", [req.shopId, from, to]);
+    const services = await db.query(
+      "UPDATE services SET category = $3 WHERE shop_id = $1 AND trim(category) = $2",
+      [req.shopId, from, to],
+    );
+    return { success: true, services: services.rowCount };
+  });
+  res.json(result);
+}, { log: "Rename category error:" }));
 
 app.put("/api/v1/service-categories/color", authenticateToken, async (req, res) => {
   const { name, color_code } = req.body;

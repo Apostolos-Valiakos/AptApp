@@ -500,6 +500,14 @@ export default {
     archivedTooltip: 'Service deleted (kept for past bookings)',
     categoryColorTooltip: 'Category colour (applies to services without their own colour)',
     clearCategoryColor: 'Remove category colour',
+    renameCategory: {
+      button: "Rename category",
+      title: "Rename category",
+      newName: "New name",
+      note: "Changes on all its services; its colour and position stay.",
+      done: "The category is now \"{name}\"",
+      exists: "A category with this name already exists.",
+    },
     confirmDelete: 'Delete "{name}"? If it has past bookings it is archived instead, so their history is kept.',
     duration: {
       hoursMinutes: '{h}h {m}m',
