@@ -71,7 +71,7 @@
           @click="canGoPrev && calendarApi?.prev()"
           :disabled="!canGoPrev"
           class="p-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-          title="Previous"
+          :title="t('scheduler.nav.previous')"
         >
           <i class="pi pi-chevron-left text-sm"></i>
         </button>
@@ -79,12 +79,12 @@
           @click="calendarApi?.today()"
           class="px-3 py-1.5 text-xs font-bold text-[var(--p-primary-700)] bg-[var(--p-primary-50)] hover:bg-[var(--p-primary-100)] rounded-lg transition-colors"
         >
-          Today
+          {{ t("scheduler.nav.today") }}
         </button>
         <button
           @click="calendarApi?.next()"
           class="p-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-800 transition-colors"
-          title="Next"
+          :title="t('scheduler.nav.next')"
         >
           <i class="pi pi-chevron-right text-sm"></i>
         </button>
@@ -170,7 +170,7 @@
           <button
             @click="zoomOut"
             class="p-1.5 rounded-md text-gray-500 hover:bg-white hover:shadow-sm hover:text-gray-800 transition-all"
-            title="Zoom Out"
+            :title="t('scheduler.nav.zoomOut')"
           >
             <i class="pi pi-minus text-xs"></i>
           </button>
@@ -178,7 +178,7 @@
           <button
             @click="zoomIn"
             class="p-1.5 rounded-md text-gray-500 hover:bg-white hover:shadow-sm hover:text-gray-800 transition-all"
-            title="Zoom In"
+            :title="t('scheduler.nav.zoomIn')"
           >
             <i class="pi pi-plus text-xs"></i>
           </button>
@@ -201,14 +201,14 @@
           <button
             @click="openSwapDialog"
             class="p-2 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-800 transition-colors flex-shrink-0"
-            title="Swap Appointments"
+            :title="t('scheduler.nav.swap')"
           >
             <i class="pi pi-arrow-right-arrow-left text-sm"></i>
           </button>
           <button
             @click="reorderDialogVisible = true"
             class="p-2 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-800 transition-colors flex-shrink-0"
-            title="Reorder Staff"
+            :title="t('scheduler.nav.reorderStaff')"
           >
             <i class="pi pi-sort-alt text-sm"></i>
           </button>
@@ -301,7 +301,7 @@
             class="flex items-center gap-2 bg-white rounded-full px-4 py-2 shadow-md border border-gray-100"
           >
             <i class="pi pi-spin pi-spinner text-[var(--p-primary-color)]"></i>
-            <span class="text-xs font-medium text-gray-500">Loading…</span>
+            <span class="text-xs font-medium text-gray-500">{{ t("common.loading") }}</span>
           </div>
         </div>
       </transition>
@@ -327,16 +327,16 @@
           >
             <i class="pi pi-users text-2xl"></i>
           </div>
-          <h3 class="text-lg font-bold text-gray-900 mb-2">No Team Members</h3>
+          <h3 class="text-lg font-bold text-gray-900 mb-2">{{ t("scheduler.noStaff.title") }}</h3>
           <p class="text-sm text-gray-500 mb-6">
-            Add staff members to start scheduling appointments.
+            {{ t("scheduler.noStaff.text") }}
           </p>
           <a
             href="/app/staff"
             class="inline-flex items-center gap-2 bg-[var(--p-primary-color)] text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:brightness-105 transition-all"
           >
             <i class="pi pi-plus text-xs"></i>
-            Add Staff
+            {{ t("scheduler.noStaff.addStaff") }}
           </a>
         </div>
       </div>

@@ -849,6 +849,12 @@ export default {
     },
   },
   profile: {
+    contestToast: {
+      required: "Required",
+      requiredDetail: "Fill in a name and a period.",
+      saved: "Saved",
+      deleted: "Deleted",
+    },
     title: 'Account Settings',
     subtitle: 'Manage your personal details and preferences',
     noShopAssigned: 'No Shop Assigned',
@@ -1051,6 +1057,18 @@ export default {
       status: 'Status',
     },
     toast: {
+      required: "Required",
+      nameRequired: "First and last name are required.",
+      failed: "Failed",
+      saved: "Saved",
+      profileUpdated: "Profile updated.",
+      passwordUpdated: "Password updated",
+      cancelled: "Cancelled",
+      appointmentCancelled: "Appointment cancelled.",
+      confirmed: "Confirmed",
+      appointmentConfirmed: "Appointment confirmed.",
+      cancelFailed: "Failed to cancel",
+      confirmFailed: "Failed to confirm",
       downloadFailed: 'Download failed',
       fileIdMissing: 'File ID is missing',
     },
@@ -1635,6 +1653,20 @@ export default {
     },
   },
   scheduler: {
+    nav: {
+      zoomOut: "Zoom out",
+      zoomIn: "Zoom in",
+      swap: "Swap appointments",
+      reorderStaff: "Reorder staff",
+      previous: "Previous",
+      next: "Next",
+      today: "Today",
+    },
+    noStaff: {
+      title: "No team members",
+      text: "Add staff members to start scheduling appointments.",
+      addStaff: "Add staff",
+    },
     dockCalendar: "Pin the calendar next to the schedule",
     undockCalendar: "Unpin the calendar",
     mobile: {

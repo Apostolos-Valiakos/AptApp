@@ -874,6 +874,12 @@ export default {
     },
   },
   profile: {
+    contestToast: {
+      required: "Απαιτείται",
+      requiredDetail: "Συμπληρώστε όνομα και περίοδο.",
+      saved: "Αποθηκεύτηκε",
+      deleted: "Διαγράφηκε",
+    },
     title: "Ρυθμίσεις Λογαριασμού",
     subtitle:
       "Διαχειριστείτε τα προσωπικά σας στοιχεία και τις προτιμήσεις σας",
@@ -1082,6 +1088,18 @@ export default {
       status: "Κατάσταση",
     },
     toast: {
+      required: "Απαιτείται",
+      nameRequired: "Το όνομα και το επώνυμο είναι υποχρεωτικά.",
+      failed: "Δεν έγινε",
+      saved: "Αποθηκεύτηκε",
+      profileUpdated: "Το προφίλ σας ενημερώθηκε.",
+      passwordUpdated: "Ο κωδικός άλλαξε",
+      cancelled: "Ακυρώθηκε",
+      appointmentCancelled: "Το ραντεβού ακυρώθηκε.",
+      confirmed: "Επιβεβαιώθηκε",
+      appointmentConfirmed: "Το ραντεβού επιβεβαιώθηκε.",
+      cancelFailed: "Η ακύρωση δεν έγινε",
+      confirmFailed: "Η επιβεβαίωση δεν έγινε",
       downloadFailed: "Αποτυχία λήψης",
       fileIdMissing: "Λείπει το αναγνωριστικό αρχείου",
     },
@@ -1688,6 +1706,20 @@ export default {
     },
   },
   scheduler: {
+    nav: {
+      zoomOut: "Σμίκρυνση",
+      zoomIn: "Μεγέθυνση",
+      swap: "Ανταλλαγή ραντεβού",
+      reorderStaff: "Σειρά προσωπικού",
+      previous: "Προηγούμενη",
+      next: "Επόμενη",
+      today: "Σήμερα",
+    },
+    noStaff: {
+      title: "Δεν υπάρχει προσωπικό",
+      text: "Προσθέστε μέλη του προσωπικού για να κλείνετε ραντεβού.",
+      addStaff: "Προσθήκη προσωπικού",
+    },
     dockCalendar: "Καρφίτσωμα ημερολογίου δίπλα στο πρόγραμμα",
     undockCalendar: "Ξεκαρφίτσωμα ημερολογίου",
     mobile: {

@@ -436,25 +436,25 @@ const confirmCancel = (appt: any) => {
 
 const cancelAppointment = async (appt: any) => {
   try {
-    await api.post(`/api/v1/portal/appointments/${appt.id}/cancel`).catch(withMessage("Failed to cancel"));
+    await api.post(`/api/v1/portal/appointments/${appt.id}/cancel`).catch(withMessage(t("portal.toast.cancelFailed")));
     history.value = history.value.map((a: any) =>
       a.id === appt.id ? { ...a, status: "cancelled" } : a,
     );
-    toast.add({ severity: "success", summary: "Cancelled", detail: "Appointment cancelled.", life: 3000 });
+    toast.add({ severity: "success", summary: t("portal.toast.cancelled"), detail: t("portal.toast.appointmentCancelled"), life: 3000 });
   } catch (e: any) {
-    toast.add({ severity: "error", summary: "Error", detail: e.message, life: 3000 });
+    toast.add({ severity: "error", summary: t("common.error"), detail: e.message, life: 3000 });
   }
 };
 
 const confirmAppointment = async (appt: any) => {
   try {
-    await api.post(`/api/v1/portal/appointments/${appt.id}/confirm`).catch(withMessage("Failed to confirm"));
+    await api.post(`/api/v1/portal/appointments/${appt.id}/confirm`).catch(withMessage(t("portal.toast.confirmFailed")));
     history.value = history.value.map((a: any) =>
       a.id === appt.id ? { ...a, status: "confirmed" } : a,
     );
-    toast.add({ severity: "success", summary: "Confirmed", detail: "Appointment confirmed.", life: 3000 });
+    toast.add({ severity: "success", summary: t("portal.toast.confirmed"), detail: t("portal.toast.appointmentConfirmed"), life: 3000 });
   } catch (e: any) {
-    toast.add({ severity: "error", summary: "Error", detail: e.message, life: 3000 });
+    toast.add({ severity: "error", summary: t("common.error"), detail: e.message, life: 3000 });
   }
 };
 
@@ -611,7 +611,7 @@ const submitBooking = async () => {
         },
         { headers: { "Idempotency-Key": idempotencyKey } },
       )
-      .catch(withMessage("Failed"));
+      .catch(withMessage(t("portal.toast.failed")));
     toast.add({ severity: "success", summary: t("portal.book.success"), life: 3000 });
     resetBooking();
     activeTab.value = "myAppointments";

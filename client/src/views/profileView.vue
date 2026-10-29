@@ -1563,8 +1563,8 @@ const saveContest = async () => {
   if (!contestForm.name || !contestForm.start_date || !contestForm.end_date) {
     toast.add({
       severity: "warn",
-      summary: "Απαιτείται",
-      detail: "Συμπληρώστε όνομα και περίοδο.",
+      summary: t("profile.contestToast.required"),
+      detail: t("profile.contestToast.requiredDetail"),
       life: 3000,
     });
     return;
@@ -1582,14 +1582,14 @@ const saveContest = async () => {
       ? `/api/v1/contests/${editingContest.value.id}`
       : "/api/v1/contests";
     const method = editingContest.value ? "PUT" : "POST";
-    await api.upload(url, fd, method).catch(withMessage("Failed"));
+    await api.upload(url, fd, method).catch(withMessage(t("profile.toast.saveFailed")));
     contestDialogVisible.value = false;
     await fetchContests();
-    toast.add({ severity: "success", summary: "Αποθηκεύτηκε", life: 2000 });
+    toast.add({ severity: "success", summary: t("profile.contestToast.saved"), life: 2000 });
   } catch (e: any) {
     toast.add({
       severity: "error",
-      summary: "Σφάλμα",
+      summary: t("common.error"),
       detail: e.message,
       life: 3000,
     });
@@ -1600,13 +1600,13 @@ const saveContest = async () => {
 
 const deleteContest = async (id: number) => {
   try {
-    await api.del(`/api/v1/contests/${id}`).catch(withMessage("Failed"));
+    await api.del(`/api/v1/contests/${id}`).catch(withMessage(t("profile.toast.saveFailed")));
     contests.value = contests.value.filter((c) => c.id !== id);
-    toast.add({ severity: "success", summary: "Διαγράφηκε", life: 2000 });
+    toast.add({ severity: "success", summary: t("profile.contestToast.deleted"), life: 2000 });
   } catch (e: any) {
     toast.add({
       severity: "error",
-      summary: "Σφάλμα",
+      summary: t("common.error"),
       detail: e.message,
       life: 3000,
     });

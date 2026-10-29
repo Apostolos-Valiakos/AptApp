@@ -383,24 +383,24 @@ const saveProfile = async () => {
   if (!editProfileForm.first_name || !editProfileForm.last_name) {
     toast.add({
       severity: "warn",
-      summary: "Required",
-      detail: "First and last name are required",
+      summary: t("portal.toast.required"),
+      detail: t("portal.toast.nameRequired"),
       life: 3000,
     });
     return;
   }
   isSavingProfile.value = true;
   try {
-    await api.put("/api/v1/portal/profile", editProfileForm).catch(withMessage("Failed"));
+    await api.put("/api/v1/portal/profile", editProfileForm).catch(withMessage(t("portal.toast.failed")));
     toast.add({
       severity: "success",
-      summary: "Saved",
-      detail: "Profile updated.",
+      summary: t("portal.toast.saved"),
+      detail: t("portal.toast.profileUpdated"),
       life: 3000,
     });
     showEditProfile.value = false;
   } catch (e: any) {
-    toast.add({ severity: "error", summary: "Error", detail: e.message, life: 3000 });
+    toast.add({ severity: "error", summary: t("common.error"), detail: e.message, life: 3000 });
   } finally {
     isSavingProfile.value = false;
   }
@@ -412,14 +412,14 @@ const changePassword = async () => {
   try {
     await api
       .put("/api/v1/portal/password", { currentPassword: passwordForm.current, newPassword: passwordForm.newPass })
-      .catch(withMessage("Failed"));
-    toast.add({ severity: "success", summary: "Password updated", life: 3000 });
+      .catch(withMessage(t("portal.toast.failed")));
+    toast.add({ severity: "success", summary: t("portal.toast.passwordUpdated"), life: 3000 });
     passwordForm.current = "";
     passwordForm.newPass = "";
     passwordForm.confirm = "";
     showChangePassword.value = false;
   } catch (e: any) {
-    toast.add({ severity: "error", summary: "Error", detail: e.message, life: 3000 });
+    toast.add({ severity: "error", summary: t("common.error"), detail: e.message, life: 3000 });
   } finally {
     isSavingPassword.value = false;
   }

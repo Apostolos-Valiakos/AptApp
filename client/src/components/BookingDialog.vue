@@ -401,7 +401,7 @@
               </label> -->
               <Button
                 v-if="currentTab !== 'Payment'"
-                label="Πληρωμή"
+                :label="t('booking.tabs.payment')"
                 data-testid="booking-payment-tab"
                 @click="currentTab = 'Payment'"
                 severity="success"
