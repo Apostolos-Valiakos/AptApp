@@ -266,7 +266,8 @@
     <!-- ===== DOCKED DATE CALENDAR (pinned from the date popup) ===== -->
     <aside
       v-if="calendarDocked"
-      class="docked-date-picker flex-shrink-0 w-[272px] border-r border-gray-100 bg-white overflow-y-auto overflow-x-hidden"
+      class="docked-date-picker flex-shrink-0 bg-white overflow-y-auto overflow-x-hidden"
+      :style="{ width: `${dockedWidth}px` }"
       data-testid="docked-calendar"
     >
       <div class="flex justify-end px-2 pt-2">
@@ -288,6 +289,27 @@
         @date-select="onDatePicked"
       />
     </aside>
+    <!-- Drag to resize the docked calendar -->
+    <div
+      v-if="calendarDocked"
+      class="dock-resizer"
+      :class="{ 'is-dragging': resizingDock }"
+      role="separator"
+      aria-orientation="vertical"
+      tabindex="0"
+      :aria-label="t('scheduler.resizeCalendar')"
+      :aria-valuenow="dockedWidth"
+      :aria-valuemin="DOCKED_MIN_WIDTH"
+      :title="t('scheduler.resizeCalendar')"
+      data-testid="docked-resizer"
+      @pointerdown="startDockResize"
+      @pointermove="moveDockResize"
+      @pointerup="endDockResize"
+      @pointercancel="endDockResize"
+      @dblclick="setDockedWidth(DOCKED_DEFAULT_WIDTH, true)"
+      @keydown.left.prevent="setDockedWidth(dockedWidth - 16, true)"
+      @keydown.right.prevent="setDockedWidth(dockedWidth + 16, true)"
+    ></div>
 
     <!-- ===== CALENDAR AREA ===== -->
     <div class="flex-1 min-w-0 overflow-auto relative">
@@ -545,6 +567,26 @@ const readDocked = () => {
   }
 };
 const calendarDocked = ref(readDocked());
+// Its width comes from dragging the line beside it; each device remembers that too.
+const DOCKED_WIDTH_KEY = "scheduler.calendarDockedWidth";
+const DOCKED_DEFAULT_WIDTH = 272;
+const DOCKED_MIN_WIDTH = 200;
+const DOCKED_MAX_WIDTH = 560;
+const clampDockedWidth = (width: number) => {
+  // At least half the window stays for the schedule (on a phone, the default width).
+  const roomy = Math.max(DOCKED_DEFAULT_WIDTH, Math.floor(window.innerWidth / 2));
+  return Math.round(Math.max(DOCKED_MIN_WIDTH, Math.min(DOCKED_MAX_WIDTH, roomy, width)));
+};
+const readDockedWidth = () => {
+  try {
+    const saved = Number(localStorage.getItem(DOCKED_WIDTH_KEY));
+    return clampDockedWidth(saved || DOCKED_DEFAULT_WIDTH);
+  } catch {
+    return DOCKED_DEFAULT_WIDTH;
+  }
+};
+const dockedWidth = ref(readDockedWidth());
+const resizingDock = ref(false);
 /** The docked calendar's selection: follows the day the schedule shows. */
 const dockedDate = ref<Date | null>(new Date());
 const todayDate = computed(() => {
@@ -825,6 +867,50 @@ const dockCalendar = async (docked: boolean) => {
   await nextTick();
   calendarApi.value?.updateSize();
 };
+
+// The schedule beside it re-measures at most once a frame while dragging.
+let dockResizeFrame = 0;
+const setDockedWidth = (width: number, save = false) => {
+  dockedWidth.value = clampDockedWidth(width);
+  if (!dockResizeFrame) {
+    dockResizeFrame = requestAnimationFrame(async () => {
+      dockResizeFrame = 0;
+      await nextTick();
+      calendarApi.value?.updateSize();
+    });
+  }
+  if (save) {
+    try {
+      localStorage.setItem(DOCKED_WIDTH_KEY, String(dockedWidth.value));
+    } catch {}
+  }
+};
+let dockDragStartX = 0;
+let dockDragStartWidth = 0;
+const startDockResize = (e: PointerEvent) => {
+  e.preventDefault();
+  (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  dockDragStartX = e.clientX;
+  dockDragStartWidth = dockedWidth.value;
+  resizingDock.value = true;
+};
+const moveDockResize = (e: PointerEvent) => {
+  if (resizingDock.value) setDockedWidth(dockDragStartWidth + e.clientX - dockDragStartX);
+};
+const endDockResize = () => {
+  if (!resizingDock.value) return;
+  resizingDock.value = false;
+  setDockedWidth(dockedWidth.value, true);
+};
+
+// A narrower window can leave too little room for the width chosen earlier.
+const fitDockedWidth = () => {
+  if (calendarDocked.value && dockedWidth.value !== clampDockedWidth(dockedWidth.value)) {
+    setDockedWidth(dockedWidth.value);
+  }
+};
+onMounted(() => window.addEventListener("resize", fitDockedWidth));
+onUnmounted(() => window.removeEventListener("resize", fitDockedWidth));
 
 const toggleDatePicker = () => {
   if (calendarDocked.value) return; // already on screen
@@ -2572,12 +2658,79 @@ onMounted(async () => {
   width: 100%;
   table-layout: fixed;
 }
-.docked-date-picker .p-datepicker-day-cell {
-  padding: 0.125rem;
+/* The month header gives way too, so the narrowest width still shows all seven days. */
+.docked-date-picker .p-datepicker-calendar-container,
+.docked-date-picker .p-datepicker-calendar {
+  width: 100%;
+  min-width: 0;
 }
+.docked-date-picker .p-datepicker-header {
+  padding-inline: 0;
+  gap: 0;
+}
+.docked-date-picker .p-datepicker-title {
+  min-width: 0;
+  gap: 0.25rem;
+  white-space: nowrap;
+}
+.docked-date-picker .p-datepicker-title button {
+  padding-inline: 0.125rem;
+}
+/* Long Greek month names still fit beside the arrows when the column is narrow. */
+.docked-date-picker {
+  container-type: inline-size;
+}
+@container (max-width: 240px) {
+  .docked-date-picker .p-datepicker-title button {
+    font-size: 0.8125rem;
+  }
+}
+.docked-date-picker .p-datepicker-prev-button,
+.docked-date-picker .p-datepicker-next-button {
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+}
+.docked-date-picker .p-datepicker-day-cell,
+.docked-date-picker .p-datepicker-weekday-cell {
+  padding: 0.125rem;
+  min-width: 0;
+}
+/* The days grow and shrink with the column. */
 .docked-date-picker .p-datepicker-day {
-  width: 2rem;
-  height: 2rem;
+  width: 100%;
+  max-width: 3rem;
+  height: auto;
+  aspect-ratio: 1;
+  margin: 0 auto;
+}
+/* The line between the docked calendar and the schedule: thin to look at,
+   wider to grab, and it takes touch drags instead of scrolling the page. */
+.dock-resizer {
+  position: relative;
+  z-index: 20;
+  flex-shrink: 0;
+  width: 9px;
+  margin: 0 -4px;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+}
+.dock-resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 1px;
+  background: #f3f4f6;
+  transition: background-color 0.15s, box-shadow 0.15s;
+}
+.dock-resizer:hover::after,
+.dock-resizer:focus-visible::after,
+.dock-resizer.is-dragging::after {
+  background: var(--p-primary-color);
+  box-shadow: 0 0 0 1px var(--p-primary-color);
 }
 .fc {
   --fc-border-color: #f3f4f6;

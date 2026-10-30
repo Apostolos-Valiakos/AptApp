@@ -1696,6 +1696,7 @@ export default {
     },
     dockCalendar: "Pin the calendar next to the schedule",
     undockCalendar: "Unpin the calendar",
+    resizeCalendar: "Drag to change the width; double-click for the original",
     mobile: {
       today: 'Today',
       menu: 'More options',
