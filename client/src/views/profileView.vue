@@ -585,7 +585,7 @@
 
         <!-- Client Self-Booking (admin only) -->
         <div
-          v-if="isShopAdmin"
+          v-if="authStore.isAnalyticsAllowed"
           class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8"
         >
           <div class="flex justify-between items-center">
@@ -605,11 +605,11 @@
           </div>
         </div>
 
-        <DiscountCodesAdmin v-if="isShopAdmin" />
+        <DiscountCodesAdmin v-if="authStore.isAnalyticsAllowed" />
 
         <!-- Push Broadcast (admin only) -->
         <div
-          v-if="isShopAdmin"
+          v-if="authStore.isAnalyticsAllowed"
           class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8"
         >
           <div class="mb-6">
@@ -767,7 +767,7 @@
 
         <!-- ── Contests (admin only) ── -->
         <div
-          v-if="isShopAdmin"
+          v-if="authStore.isAnalyticsAllowed"
           class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8"
         >
           <div class="flex items-center justify-between mb-6">
@@ -1487,7 +1487,7 @@ onMounted(() => {
   if (themeStore.primaryColor) {
     pickerColor.value = themeStore.primaryColor.replace("#", "");
   }
-  if (isShopAdmin.value) {
+  if (authStore.isAnalyticsAllowed) {
     fetchContests();
     fetchRecentBroadcasts();
   }
