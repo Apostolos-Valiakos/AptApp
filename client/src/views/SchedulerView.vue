@@ -174,7 +174,7 @@
           >
             <i class="pi pi-minus text-xs"></i>
           </button>
-          <span class="text-xs font-medium text-gray-400 px-1.5">Zoom</span>
+          <span class="text-xs font-medium text-gray-400 px-1.5">{{ t("scheduler.zoom") }}</span>
           <button
             @click="zoomIn"
             class="p-1.5 rounded-md text-gray-500 hover:bg-white hover:shadow-sm hover:text-gray-800 transition-all"
@@ -645,18 +645,18 @@ const toggleFitStaff = () => {
 
 // --- Status filter ---
 const statusFilter = ref<"all" | "active" | "cancelled">("all");
-const statusFilterOptions: { label: string; value: "all" | "active" | "cancelled"; icon: string }[] = [
-  { label: "All", value: "all", icon: "" },
-  { label: "Active", value: "active", icon: "pi pi-check-circle" },
-  { label: "Cancelled", value: "cancelled", icon: "pi pi-times-circle" },
-];
+const statusFilterOptions = computed<{ label: string; value: "all" | "active" | "cancelled"; icon: string }[]>(() => [
+  { label: t("scheduler.filter.all"), value: "all", icon: "" },
+  { label: t("scheduler.filter.active"), value: "active", icon: "pi pi-check-circle" },
+  { label: t("scheduler.filter.cancelled"), value: "cancelled", icon: "pi pi-times-circle" },
+]);
 
 // --- View options ---
-const viewOptions = [
-  { label: "Day", value: "resourceTimeGridDay" },
-  { label: "Week", value: "resourceTimeGridWeek" },
-  { label: "Month", value: "dayGridMonth" },
-];
+const viewOptions = computed(() => [
+  { label: t("scheduler.view.day"), value: "resourceTimeGridDay" },
+  { label: t("scheduler.view.week"), value: "resourceTimeGridWeek" },
+  { label: t("scheduler.view.month"), value: "dayGridMonth" },
+]);
 
 const calendarApi = computed(() => fullCalendar.value?.getApi());
 
@@ -1309,7 +1309,7 @@ const timeOffBackgroundEvents = computed(() => {
             new Date(`${startDateStr}T00:00:00`).getTime()) /
             86400000,
         ) + 1;
-      const durationLabel = days === 1 ? "1 ημέρα" : `${days} ημέρες`;
+      const durationLabel = days === 1 ? t("scheduler.timeOff.oneDay") : t("scheduler.timeOff.days", { count: days });
 
       return {
         id: `timeoff_${entry.id}`,
@@ -1318,13 +1318,13 @@ const timeOffBackgroundEvents = computed(() => {
         backgroundColor: "rgba(239, 68, 68, 0.15)",
         start: startDateStr,
         end: endDateExclusive(entry.end_date),
-        title: `Άδεια (${durationLabel})`,
+        title: `${t("scheduler.timeOff.leave")} (${durationLabel})`,
         extendedProps: {
           isTimeOff: true,
           timeOffType: "leave",
           reason: entry.reason,
           durationLabel,
-          typeLabel: "Άδεια",
+          typeLabel: t("scheduler.timeOff.leave"),
         },
       };
     });
@@ -1350,7 +1350,7 @@ const breakBlockEvents = computed(() => {
       return {
         id: `timeoff_${entry.id}`,
         resourceId: entry.staff_id?.toString(),
-        title: `Αποκλεισμός (${minutes} λεπτά)`,
+        title: t("scheduler.timeOff.block", { minutes }),
         start: `${startDateStr}T${entry.start_time}`,
         end: `${startDateStr}T${entry.end_time}`,
         backgroundColor: "#9ca3af",

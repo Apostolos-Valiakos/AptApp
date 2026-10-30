@@ -868,6 +868,28 @@ export default {
     },
   },
   profile: {
+    uploadPhoto: "Upload photo",
+    contests: {
+      title: "Contests",
+      subtitle: "Manage contests for clients.",
+      addNew: "New",
+      empty: "No contests yet.",
+      active: "Active",
+      upcoming: "Upcoming",
+      ended: "Ended",
+      editTitle: "Edit Contest",
+      newTitle: "New Contest",
+      name: "Name",
+      namePlaceholder: "e.g. Summer Contest",
+      description: "Description",
+      descriptionPlaceholder: "Contest description...",
+      start: "Start",
+      end: "End",
+      image: "Image",
+      pickImage: "Click to choose an image",
+      changeImage: "Click to change",
+      create: "Create",
+    },
     contestToast: {
       required: "Required",
       requiredDetail: "Fill in a name and a period.",
@@ -983,6 +1005,19 @@ export default {
     },
   },
   portal: {
+    contestLabel: "Contest",
+    account: {
+      firstName: "First Name",
+      lastName: "Last Name",
+      email: "Email",
+      phone: "Phone",
+      saveChanges: "Save Changes",
+      currentPassword: "Current Password",
+      newPassword: "New Password",
+      confirmPassword: "Confirm New Password",
+      passwordMismatch: "Passwords do not match",
+      updatePassword: "Update Password",
+    },
     greeting: 'Welcome, {name}!',
     subtitle: 'View your appointments and documents here.',
     nav: {
@@ -1685,6 +1720,28 @@ export default {
     },
   },
   scheduler: {
+    filter: {
+      all: "All",
+      active: "Active",
+      cancelled: "Cancelled",
+    },
+    view: {
+      day: "Day",
+      week: "Week",
+      month: "Month",
+    },
+    zoom: "Zoom",
+    timeOff: {
+      leave: "Leave",
+      oneDay: "1 day",
+      days: "{count} days",
+      block: "Blocked ({minutes} min)",
+    },
+    reorder: {
+      title: "Reorder Staff",
+      save: "Save Order",
+    },
+    mySchedule: "My Schedule",
     nav: {
       zoomOut: "Zoom out",
       zoomIn: "Zoom in",

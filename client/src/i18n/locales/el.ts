@@ -893,6 +893,28 @@ export default {
     },
   },
   profile: {
+    uploadPhoto: "Ανέβασμα φωτογραφίας",
+    contests: {
+      title: "Διαγωνισμοί",
+      subtitle: "Διαχείριση διαγωνισμών για πελάτες.",
+      addNew: "Νέος",
+      empty: "Δεν υπάρχουν διαγωνισμοί ακόμα.",
+      active: "Ενεργός",
+      upcoming: "Προσεχώς",
+      ended: "Έληξε",
+      editTitle: "Επεξεργασία Διαγωνισμού",
+      newTitle: "Νέος Διαγωνισμός",
+      name: "Όνομα",
+      namePlaceholder: "π.χ. Καλοκαιρινός Διαγωνισμός",
+      description: "Περιγραφή",
+      descriptionPlaceholder: "Περιγραφή του διαγωνισμού...",
+      start: "Έναρξη",
+      end: "Λήξη",
+      image: "Εικόνα",
+      pickImage: "Κλικ για επιλογή εικόνας",
+      changeImage: "Κλικ για αλλαγή",
+      create: "Δημιουργία",
+    },
     contestToast: {
       required: "Απαιτείται",
       requiredDetail: "Συμπληρώστε όνομα και περίοδο.",
@@ -1014,6 +1036,19 @@ export default {
     },
   },
   portal: {
+    contestLabel: "Διαγωνισμός",
+    account: {
+      firstName: "Όνομα",
+      lastName: "Επώνυμο",
+      email: "Email",
+      phone: "Τηλέφωνο",
+      saveChanges: "Αποθήκευση αλλαγών",
+      currentPassword: "Τρέχων κωδικός",
+      newPassword: "Νέος κωδικός",
+      confirmPassword: "Επιβεβαίωση νέου κωδικού",
+      passwordMismatch: "Οι κωδικοί δεν ταιριάζουν",
+      updatePassword: "Αλλαγή κωδικού",
+    },
     greeting: "Καλώς ήρθατε, {name}!",
     subtitle: "Εδώ μπορείτε να δείτε τα ραντεβού σας και τα έγγραφά σας.",
     nav: {
@@ -1738,6 +1773,28 @@ export default {
     },
   },
   scheduler: {
+    filter: {
+      all: "Όλα",
+      active: "Ενεργά",
+      cancelled: "Ακυρωμένα",
+    },
+    view: {
+      day: "Ημέρα",
+      week: "Εβδομάδα",
+      month: "Μήνας",
+    },
+    zoom: "Ζουμ",
+    timeOff: {
+      leave: "Άδεια",
+      oneDay: "1 ημέρα",
+      days: "{count} ημέρες",
+      block: "Αποκλεισμός ({minutes} λεπτά)",
+    },
+    reorder: {
+      title: "Σειρά προσωπικού",
+      save: "Αποθήκευση σειράς",
+    },
+    mySchedule: "Το πρόγραμμά μου",
     nav: {
       zoomOut: "Σμίκρυνση",
       zoomIn: "Μεγέθυνση",

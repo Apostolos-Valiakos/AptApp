@@ -9,7 +9,7 @@
       <div
         class="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50"
       >
-        <h3 class="font-bold text-gray-800 text-lg">Reorder Staff</h3>
+        <h3 class="font-bold text-gray-800 text-lg">{{ t("scheduler.reorder.title") }}</h3>
         <button
           @click="$emit('update:visible', false)"
           class="text-gray-400 hover:text-gray-600 transition-colors"
@@ -73,13 +73,13 @@
           @click="$emit('update:visible', false)"
           class="px-4 py-2 text-gray-600 font-medium hover:bg-gray-200 rounded-lg transition-colors"
         >
-          Cancel
+          {{ t("common.cancel") }}
         </button>
         <button
           @click="saveOrder"
           class="px-6 py-2 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-700 shadow-lg shadow-primary-200 transition-all active:scale-95"
         >
-          Save Order
+          {{ t("scheduler.reorder.save") }}
         </button>
       </div>
     </div>
@@ -88,6 +88,9 @@
 
 <script setup lang="ts">
 import { ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
+
+const { t } = useI18n();
 
 const props = defineProps<{
   visible: boolean;

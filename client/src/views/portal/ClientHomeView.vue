@@ -23,7 +23,7 @@
           <i class="pi pi-trophy text-yellow-300"></i>
           <span
             class="text-xs font-semibold uppercase tracking-widest text-yellow-200"
-            >Διαγωνισμός</span
+            >{{ t("portal.contestLabel") }}</span
           >
         </div>
         <h2 class="text-lg font-bold text-white">{{ activeContest.name }}</h2>

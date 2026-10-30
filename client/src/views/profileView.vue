@@ -52,7 +52,7 @@
                 <label
                   v-if="profile.staff_id"
                   class="absolute bottom-0 right-0 w-7 h-7 bg-[var(--p-primary-color)] rounded-full flex items-center justify-center cursor-pointer shadow-md hover:brightness-110 transition-all"
-                  title="Upload photo"
+                  :title="t('profile.uploadPhoto')"
                 >
                   <i class="pi pi-camera text-white text-xs"></i>
                   <input
@@ -408,7 +408,7 @@
                     : 'text-gray-700'
                 "
               >
-                Εργοθεραπεία
+                {{ t("common.services.ergotherapia") }}
               </span>
               <ToggleSwitch v-model="shopForm.ergotherapia" @click.stop />
             </div>
@@ -440,7 +440,7 @@
                     : 'text-gray-700'
                 "
               >
-                Φυσιοθεραπεία
+                {{ t("common.services.physiotherapia") }}
               </span>
               <ToggleSwitch v-model="shopForm.physiotherapia" @click.stop />
             </div>
@@ -472,7 +472,7 @@
                     : 'text-gray-700'
                 "
               >
-                Λογοθεραπεία
+                {{ t("common.services.logotherapia") }}
               </span>
               <ToggleSwitch v-model="shopForm.logotherapia" @click.stop />
             </div>
@@ -772,13 +772,13 @@
         >
           <div class="flex items-center justify-between mb-6">
             <div>
-              <h3 class="text-lg font-bold text-gray-900">Διαγωνισμοί</h3>
+              <h3 class="text-lg font-bold text-gray-900">{{ t("profile.contests.title") }}</h3>
               <p class="text-sm text-gray-500">
-                Διαχείριση διαγωνισμών για πελάτες.
+                {{ t("profile.contests.subtitle") }}
               </p>
             </div>
             <Button
-              label="Νέος"
+              :label="t('profile.contests.addNew')"
               icon="pi pi-plus"
               size="small"
               class="!bg-[var(--p-primary-color)] border-none !text-white"
@@ -802,7 +802,7 @@
             class="text-center py-10 text-gray-400"
           >
             <i class="pi pi-trophy text-4xl mb-3 block"></i>
-            <p class="text-sm">Δεν υπάρχουν διαγωνισμοί ακόμα.</p>
+            <p class="text-sm">{{ t("profile.contests.empty") }}</p>
           </div>
 
           <!-- Contest list -->
@@ -843,10 +843,10 @@
                   >
                     {{
                       contestStatus(c) === "active"
-                        ? "Ενεργός"
+                        ? t("profile.contests.active")
                         : contestStatus(c) === "upcoming"
-                          ? "Προσεχώς"
-                          : "Έληξε"
+                          ? t("profile.contests.upcoming")
+                          : t("profile.contests.ended")
                     }}
                   </span>
                 </div>
@@ -883,36 +883,36 @@
   <!-- Contest create / edit dialog -->
   <Dialog
     v-model:visible="contestDialogVisible"
-    :header="editingContest ? 'Επεξεργασία Διαγωνισμού' : 'Νέος Διαγωνισμός'"
+    :header="editingContest ? t('profile.contests.editTitle') : t('profile.contests.newTitle')"
     :style="{ width: '580px', maxWidth: '105vw' }"
     modal
   >
     <div class="space-y-4 pt-2">
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1"
-          >Όνομα *</label
+          >{{ t("profile.contests.name") }} *</label
         >
         <InputText
           v-model="contestForm.name"
           class="w-full"
-          placeholder="π.χ. Καλοκαιρινός Διαγωνισμός"
+          :placeholder="t('profile.contests.namePlaceholder')"
         />
       </div>
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1"
-          >Περιγραφή</label
+          >{{ t("profile.contests.description") }}</label
         >
         <Textarea
           v-model="contestForm.description"
           class="w-full"
           rows="3"
-          placeholder="Περιγραφή του διαγωνισμού..."
+          :placeholder="t('profile.contests.descriptionPlaceholder')"
         />
       </div>
       <div class="grid grid-cols-2 gap-4">
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1"
-            >Έναρξη *</label
+            >{{ t("profile.contests.start") }} *</label
           >
           <DatePicker
             v-model="contestForm.start_date"
@@ -923,7 +923,7 @@
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1"
-            >Λήξη *</label
+            >{{ t("profile.contests.end") }} *</label
           >
           <DatePicker
             v-model="contestForm.end_date"
@@ -935,7 +935,7 @@
       </div>
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1"
-          >Εικόνα</label
+          >{{ t("profile.contests.image") }}</label
         >
         <div
           class="border-2 border-dashed border-gray-200 rounded-xl p-4 text-center cursor-pointer hover:border-[var(--p-primary-color)] transition-colors"
@@ -948,10 +948,10 @@
           />
           <div v-else class="text-gray-400 py-4">
             <i class="pi pi-image text-3xl block mb-2"></i>
-            <span class="text-sm">Κλικ για επιλογή εικόνας</span>
+            <span class="text-sm">{{ t("profile.contests.pickImage") }}</span>
           </div>
           <p v-if="contestImagePreview" class="text-xs text-gray-400">
-            Κλικ για αλλαγή
+            {{ t("profile.contests.changeImage") }}
           </p>
         </div>
         <input
@@ -964,9 +964,9 @@
       </div>
     </div>
     <template #footer>
-      <Button label="Ακύρωση" text @click="contestDialogVisible = false" />
+      <Button :label="t('common.cancel')" text @click="contestDialogVisible = false" />
       <Button
-        :label="editingContest ? 'Αποθήκευση' : 'Δημιουργία'"
+        :label="editingContest ? t('common.save') : t('profile.contests.create')"
         icon="pi pi-check"
         class="!bg-[var(--p-primary-color)] border-none"
         :loading="isSavingContest"

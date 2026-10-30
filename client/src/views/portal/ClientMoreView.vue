@@ -87,19 +87,19 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label class="block text-xs font-medium text-gray-500 mb-1"
-              >First Name</label
+              >{{ t("portal.account.firstName") }}</label
             >
             <InputText v-model="editProfileForm.first_name" class="w-full" />
           </div>
           <div>
             <label class="block text-xs font-medium text-gray-500 mb-1"
-              >Last Name</label
+              >{{ t("portal.account.lastName") }}</label
             >
             <InputText v-model="editProfileForm.last_name" class="w-full" />
           </div>
           <div>
             <label class="block text-xs font-medium text-gray-500 mb-1"
-              >Email</label
+              >{{ t("portal.account.email") }}</label
             >
             <InputText
               v-model="editProfileForm.email"
@@ -109,14 +109,14 @@
           </div>
           <div>
             <label class="block text-xs font-medium text-gray-500 mb-1"
-              >Phone</label
+              >{{ t("portal.account.phone") }}</label
             >
             <InputText v-model="editProfileForm.phone" class="w-full" />
           </div>
         </div>
         <div class="flex justify-end">
           <Button
-            label="Save Changes"
+            :label="t('portal.account.saveChanges')"
             size="small"
             :loading="isSavingProfile"
             @click="saveProfile"
@@ -147,7 +147,7 @@
       <div v-if="showChangePassword" class="mt-4 space-y-4">
         <div>
           <label class="block text-xs font-medium text-gray-500 mb-1"
-            >Current Password</label
+            >{{ t("portal.account.currentPassword") }}</label
           >
           <Password
             v-model="passwordForm.current"
@@ -159,7 +159,7 @@
         </div>
         <div>
           <label class="block text-xs font-medium text-gray-500 mb-1"
-            >New Password</label
+            >{{ t("portal.account.newPassword") }}</label
           >
           <Password
             v-model="passwordForm.newPass"
@@ -170,7 +170,7 @@
         </div>
         <div>
           <label class="block text-xs font-medium text-gray-500 mb-1"
-            >Confirm New Password</label
+            >{{ t("portal.account.confirmPassword") }}</label
           >
           <Password
             v-model="passwordForm.confirm"
@@ -184,12 +184,12 @@
               passwordForm.confirm && passwordForm.newPass !== passwordForm.confirm
             "
             class="text-red-500 block mt-1"
-            >Passwords do not match</small
+            >{{ t("portal.account.passwordMismatch") }}</small
           >
         </div>
         <div class="flex justify-end">
           <Button
-            label="Update Password"
+            :label="t('portal.account.updatePassword')"
             size="small"
             :loading="isSavingPassword"
             :disabled="
