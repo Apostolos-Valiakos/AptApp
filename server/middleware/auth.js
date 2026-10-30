@@ -7,6 +7,21 @@ const jwt = require("jsonwebtoken");
 // actually triggers a force-logout (see POST /api/v1/shop/force-logout).
 const forceLogoutCache = new Map();
 
+// The same for one person (users.sessions_revoked_at, userId -> ms timestamp):
+// removing someone's access ends the logins they already hold.
+const userRevokedCache = new Map();
+const isUserRevoked = (user) => {
+  const revokedAt = userRevokedCache.get(user.userId);
+  return !!revokedAt && user.iat * 1000 < revokedAt;
+};
+/** Ends live connections too; call once the change is committed. */
+const revokeUserSessions = (io, userId, revokedAt) => {
+  userRevokedCache.set(userId, new Date(revokedAt).getTime());
+  for (const socket of io.sockets.sockets.values()) {
+    if (socket.user?.userId === userId) socket.disconnect(true);
+  }
+};
+
 // Login tokens (login, impersonation, refreshed after "disconnect all")
 // always carry a role. Other tokens signed with the same secret — the client
 // invite link ({ typ: "invite", clientId, shopId, email }) — only prove an
@@ -26,6 +41,7 @@ const authenticateToken = (req, res, next) => {
     // 401 (not 403) so the app can tell an expired or invalid session apart
     // from "not allowed" and send the user back to the login page.
     if (err || !isSessionToken(user)) return res.status(401).json({ error: "invalid_token" });
+    if (isUserRevoked(user)) return res.status(401).json({ error: "session_revoked" });
 
     if (user.shopId) {
       const forcedAt = forceLogoutCache.get(user.shopId);
@@ -68,6 +84,9 @@ const canSellExtras = (u) => isAdminRole(u) || u.role === "frontdesk";
 
 module.exports = {
   forceLogoutCache,
+  userRevokedCache,
+  isUserRevoked,
+  revokeUserSessions,
   isSessionToken,
   authenticateToken,
   requireAnalyticsAccess,

@@ -23,7 +23,7 @@ const { checkIdempotency, saveIdempotency } = require("./domain/idempotency");
 const { releasePackageUsage, loadClientPackages } = require("./domain/packages");
 const { parseDebtResolution, settleAmount } = require("./domain/debts");
 const { StaffUnavailableError, MissingStaffError, getGroupDetails, DiscountError, createAppointmentSeries, performSingleUpdate, SelfBookingNotAllowedError, sanitizeClientBookingPayload, OfflineConflictError, assertCapacity, assertNoNewOverlaps, assertBaseVersion } = require("./domain/bookings");
-const { forceLogoutCache, isSessionToken, authenticateToken, requireAnalyticsAccess, notForClients, requireShopAdminAccess, isAdminRole, canSellExtras } = require("./middleware/auth");
+const { forceLogoutCache, userRevokedCache, revokeUserSessions, isSessionToken, authenticateToken, requireAnalyticsAccess, notForClients, requireShopAdminAccess, isAdminRole, canSellExtras } = require("./middleware/auth");
 const path = require("path");
 const cors = require("cors");
 const helmet = require("helmet");
@@ -286,6 +286,12 @@ const atStartup = async () => {
     for (const s of forcedShops) {
       forceLogoutCache.set(s.id, new Date(s.force_logout_at).getTime());
     }
+    const { rows: revokedUsers } = await pool.query(
+      `SELECT id, sessions_revoked_at FROM users WHERE sessions_revoked_at IS NOT NULL`,
+    );
+    for (const u of revokedUsers) {
+      userRevokedCache.set(u.id, new Date(u.sessions_revoked_at).getTime());
+    }
   } catch (err) {
     console.error("Failed to run the startup steps:", err);
   }
@@ -364,6 +370,8 @@ app.use(
   "/api/v1",
   require("./routes/staff")({
     authenticateToken,
+    io,
+    revokeUserSessions,
     dbFileUpload,
     notForClients,
     requireShopAdminAccess,
@@ -394,6 +402,8 @@ app.use(
   "/api/v1",
   require("./routes/platform")({
     authenticateToken,
+    io,
+    revokeUserSessions,
   }),
 );
 app.use(

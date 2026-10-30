@@ -7,6 +7,8 @@ const pool = require("../db");
 const bcrypt = require("bcrypt");
 
 module.exports = function staffRouter({
+  io,
+  revokeUserSessions,
   authenticateToken,
   dbFileUpload,
   notForClients,
@@ -138,11 +140,23 @@ module.exports = function staffRouter({
     res.json(answer);
   }, { message: "Failed to update staff" }));
 
+  // Removing a staff member ends their login as well. Admins can be on the
+  // calendar too: removing them from it leaves their account alone.
   router.delete("/staff/:id", authenticateToken, requireShopAdminAccess, asyncHandler(async (req, res) => {
-    await pool.query(
-      "UPDATE staff SET is_active = false WHERE id = $1 AND shop_id = $2",
-      [req.params.id, req.shopId],
-    );
+    const revoked = await withTransaction(async (client) => {
+      await client.query(
+        "UPDATE staff SET is_active = false WHERE id = $1 AND shop_id = $2",
+        [req.params.id, req.shopId],
+      );
+      const { rows } = await client.query(
+        `UPDATE users SET is_active = false, sessions_revoked_at = NOW()
+         WHERE staff_id = $1 AND shop_id = $2 AND role NOT IN ('admin', 'super_admin')
+         RETURNING id, sessions_revoked_at`,
+        [req.params.id, req.shopId],
+      );
+      return rows;
+    });
+    for (const user of revoked) revokeUserSessions(io, user.id, user.sessions_revoked_at);
     res.json({ success: true });
   }));
 

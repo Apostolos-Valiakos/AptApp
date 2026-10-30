@@ -1,6 +1,6 @@
 // The live connection (socket.io): its login check, and what happens on it —
 // shop rooms, chat, typing, and the cash/card filter broadcasts.
-const { isSessionToken } = require("./middleware/auth");
+const { isSessionToken, isUserRevoked } = require("./middleware/auth");
 const jwt = require("jsonwebtoken");
 const pool = require("./db");
 
@@ -11,7 +11,7 @@ module.exports = function attachSockets(io, { cardFilterCache, cashFilterCache }
     if (!token) return next(new Error("Authentication error"));
 
     jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
-      if (err || !isSessionToken(user)) return next(new Error("Authentication error"));
+      if (err || !isSessionToken(user) || isUserRevoked(user)) return next(new Error("Authentication error"));
       socket.user = user;
       next();
     });

@@ -119,3 +119,71 @@ test("products on replaced bookings go back into stock before being sold again",
   assert.equal(r.status, 200, JSON.stringify(r.data));
   assert.equal(stock(), 100 - sold, "same stock as before the edit, not sold twice");
 });
+
+// --- Removing staff ---
+const staffLogin = (label) => {
+  const staffId = q(`INSERT INTO staff (name, shop_id, is_active) VALUES ('${label}', '${SHOP}', true) RETURNING id`).split("\n")[0];
+  const username = `${label}_${Date.now()}`;
+  const hash = bcrypt.hashSync("removed-pass", 4);
+  const userId = q(`INSERT INTO users (username, password, role, staff_id, shop_id, is_active)
+                    VALUES ('${username}', '${hash}', 'staff', '${staffId}', '${SHOP}', true) RETURNING id`).split("\n")[0];
+  return { staffId, username, userId };
+};
+const logIn = (username) =>
+  fetch(`${URL_BASE}/api/v1/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password: "removed-pass" }),
+  }).then((r) => r.status);
+
+test("a removed staff member can't log in, and the login they hold stops working at once", async () => {
+  const { staffId, username, userId } = staffLogin("Leaver");
+  assert.equal(await logIn(username), 200);
+  const heldToken = token(userId, "staff");
+  const held = api(PORT, heldToken);
+  assert.equal((await held("GET", "/api/v1/clients?limit=1")).status, 200);
+
+  const socket = io(URL_BASE, { auth: { token: heldToken }, transports: ["websocket"], reconnection: false });
+  await new Promise((resolve) => socket.on("connect", resolve));
+  const closed = new Promise((resolve) => socket.on("disconnect", resolve));
+
+  await sleep(1100); // tokens carry whole seconds
+  assert.equal((await call("DELETE", `/api/v1/staff/${staffId}`)).status, 200);
+
+  await closed;
+  assert.equal(await logIn(username), 403);
+  const r = await held("GET", "/api/v1/clients?limit=1");
+  assert.equal(r.status, 401);
+  assert.equal(r.data.error, "session_revoked");
+
+  const again = io(URL_BASE, { auth: { token: heldToken }, transports: ["websocket"], reconnection: false });
+  const refused = await new Promise((resolve) => {
+    again.on("connect", () => resolve(false));
+    again.on("connect_error", () => resolve(true));
+  });
+  again.close();
+  assert.equal(refused, true);
+});
+
+test("the revocation survives a restart", async () => {
+  const { staffId, userId } = staffLogin("Restart");
+  const heldToken = token(userId, "staff");
+  await sleep(1100);
+  await call("DELETE", `/api/v1/staff/${staffId}`);
+  server.stop();
+  await sleep(500);
+  server = await startServer(uri, PORT);
+  call = api(PORT, token(ids.admin, "admin"));
+  assert.equal((await api(PORT, heldToken)("GET", "/api/v1/clients?limit=1")).status, 401);
+});
+
+test("removing an admin from the calendar leaves their account alone", async () => {
+  const staffId = q(`INSERT INTO staff (name, shop_id, is_active) VALUES ('Boss', '${SHOP}', true) RETURNING id`).split("\n")[0];
+  const userId = q(`INSERT INTO users (username, password, role, staff_id, shop_id, is_active)
+                    VALUES ('boss_${Date.now()}', 'x', 'admin', '${staffId}', '${SHOP}', true) RETURNING id`).split("\n")[0];
+  const held = token(userId, "admin");
+  await sleep(1100);
+  await call("DELETE", `/api/v1/staff/${staffId}`);
+  assert.equal(q(`SELECT is_active FROM users WHERE id = '${userId}'`), "t");
+  assert.equal((await api(PORT, held)("GET", "/api/v1/clients?limit=1")).status, 200);
+});

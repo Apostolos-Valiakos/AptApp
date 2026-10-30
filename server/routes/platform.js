@@ -8,6 +8,8 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 
 module.exports = function platformRouter({
+  io,
+  revokeUserSessions,
   authenticateToken,
 }) {
   const router = express.Router();
@@ -276,12 +278,14 @@ module.exports = function platformRouter({
         return res.status(400).json({ error: "is_active (boolean) is required" });
       }
       const { rows } = await pool.query(
-        `UPDATE users SET is_active = $1 WHERE id = $2 AND role = 'admin' RETURNING shop_id, username`,
+        `UPDATE users SET is_active = $1, sessions_revoked_at = CASE WHEN $1 THEN sessions_revoked_at ELSE NOW() END
+         WHERE id = $2 AND role = 'admin' RETURNING shop_id, username, sessions_revoked_at`,
         [is_active, req.params.userId],
       );
       if (rows.length === 0) {
         return res.status(404).json({ error: "Admin not found" });
       }
+      if (!is_active) revokeUserSessions(io, req.params.userId, rows[0].sessions_revoked_at);
 
       await logPlatformActivity(
         pool,
