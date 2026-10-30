@@ -69,6 +69,10 @@ export const startServer = async (dbUri, port, script = "server/server.js") => {
   let log = "";
   child.stdout.on("data", (d) => (log += d));
   child.stderr.on("data", (d) => (log += d));
+  // A test server that dies by itself (not stopped by the test): say why.
+  child.on("exit", (code, signal) => {
+    if (signal !== "SIGTERM") console.error(`[test server :${port} exited: ${code ?? signal}]\n${log.slice(-3000)}`);
+  });
   for (let i = 0; i < 80; i++) {
     try {
       const r = await fetch(`http://localhost:${port}/health`);
@@ -89,11 +93,21 @@ export const token = (userId, role) => {
   return require("jsonwebtoken").sign({ userId, role, shopId: SHOP }, process.env.JWT_SECRET);
 };
 
+// The tests' synchronous psql calls can stall this process past the server's
+// 5-second keep-alive, so a request may go out on a connection the server has
+// just closed. It never reached the server, so it's sent once more.
+const closedBeforeSent = (err) => err?.cause?.code === "UND_ERR_SOCKET" || err?.cause?.code === "ECONNRESET";
+
 export const api = (port, tok) => async (method, url, body, headers = {}) => {
-  const res = await fetch(`http://localhost:${port}${url}`, {
-    method,
-    headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json", ...headers },
-    body: body === undefined ? undefined : JSON.stringify(body),
+  const send = () =>
+    fetch(`http://localhost:${port}${url}`, {
+      method,
+      headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json", ...headers },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  const res = await send().catch((err) => {
+    if (closedBeforeSent(err)) return send();
+    throw new Error(`${method} ${url}: ${err.message} (${err.cause?.code || err.cause?.message || "no cause"})`);
   });
   let data = null;
   try {

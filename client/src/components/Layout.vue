@@ -243,7 +243,7 @@
               {{ t("offline.keepMine") }}
             </button>
             <button
-              v-else-if="!['depends_on_conflict', 'missing_record', 'appointment_missing', 'has_payments'].includes(w.conflict?.code || '')"
+              v-else-if="!['depends_on_conflict', 'missing_record', 'appointment_missing', 'has_payments', 'series_has_payments'].includes(w.conflict?.code || '')"
               @click="retryQueuedWrite(w.id)"
               class="px-3 py-1 rounded-full text-xs font-semibold border border-[var(--p-primary-400)] text-[var(--p-primary-700)] hover:bg-[var(--p-primary-50)]"
             >
@@ -276,6 +276,7 @@
 </template>
 
 <script setup lang="ts">
+import { api, ApiError } from "../api/http";
 import { ref, onMounted, onUnmounted, watch, computed, nextTick, defineAsyncComponent } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { useAuthStore } from "../stores/auth";
@@ -324,7 +325,7 @@ const conflictText = (w: QueuedWrite) => {
       time: new Date(clash.start_time).toLocaleString("el-GR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }),
     });
   }
-  const known = ["slot_taken", "stale_appointment", "appointment_missing", "depends_on_conflict", "missing_record", "has_payments"];
+  const known = ["series_has_payments", "slot_taken", "stale_appointment", "appointment_missing", "depends_on_conflict", "missing_record", "has_payments", "over_capacity"];
   return known.includes(code) ? t(`offline.conflict.${code}`) : w.lastError || code;
 };
 // Discarding drops a change for good (e.g. a booking), so ask first.
@@ -535,17 +536,12 @@ const isAdminOrAbove = computed(
 const toggleCashFilterAsAdmin = async () => {
   const newHidden = !settingsStore.hideCashPaid;
   try {
-    const token = localStorage.getItem("token");
-    const res = await fetch("/api/v1/shop/cash-filter", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ hidden: newHidden }),
+    const data = await api.post("/api/v1/shop/cash-filter", { hidden: newHidden }).catch((e) => {
+      if (!(e instanceof ApiError)) throw e;
+      toast.add({ severity: "warn", summary: t("common.error"), detail: e.data?.error, life: 4000 });
+      return null;
     });
-    const data = await res.json();
-    if (!res.ok) {
-      toast.add({ severity: "warn", summary: t("common.error"), detail: data.error, life: 4000 });
-      return;
-    }
+    if (!data) return;
     // The server's own broadcast will also confirm this for every connected
     // tab (including this one) — setting it locally too avoids waiting on it.
     settingsStore.setHideCashPaid(newHidden);
@@ -603,12 +599,7 @@ watch(
 const resyncFilterState = async () => {
   if (!authStore.isAuthenticated || authStore.isClient) return;
   try {
-    const token = localStorage.getItem("token");
-    const res = await fetch("/api/v1/shop/filter-state", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) return;
-    const data = await res.json();
+    const data = await api.get("/api/v1/shop/filter-state");
     if (data.cashLocked) {
       settingsStore.setCashLockedByShop(true, data.cashLockedBy);
     } else {

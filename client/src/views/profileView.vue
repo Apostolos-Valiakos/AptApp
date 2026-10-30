@@ -52,7 +52,7 @@
                 <label
                   v-if="profile.staff_id"
                   class="absolute bottom-0 right-0 w-7 h-7 bg-[var(--p-primary-color)] rounded-full flex items-center justify-center cursor-pointer shadow-md hover:brightness-110 transition-all"
-                  title="Upload photo"
+                  :title="t('profile.uploadPhoto')"
                 >
                   <i class="pi pi-camera text-white text-xs"></i>
                   <input
@@ -408,7 +408,7 @@
                     : 'text-gray-700'
                 "
               >
-                Εργοθεραπεία
+                {{ t("common.services.ergotherapia") }}
               </span>
               <ToggleSwitch v-model="shopForm.ergotherapia" @click.stop />
             </div>
@@ -440,7 +440,7 @@
                     : 'text-gray-700'
                 "
               >
-                Φυσιοθεραπεία
+                {{ t("common.services.physiotherapia") }}
               </span>
               <ToggleSwitch v-model="shopForm.physiotherapia" @click.stop />
             </div>
@@ -472,7 +472,7 @@
                     : 'text-gray-700'
                 "
               >
-                Λογοθεραπεία
+                {{ t("common.services.logotherapia") }}
               </span>
               <ToggleSwitch v-model="shopForm.logotherapia" @click.stop />
             </div>
@@ -585,7 +585,7 @@
 
         <!-- Client Self-Booking (admin only) -->
         <div
-          v-if="isShopAdmin"
+          v-if="authStore.isAnalyticsAllowed"
           class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8"
         >
           <div class="flex justify-between items-center">
@@ -605,11 +605,11 @@
           </div>
         </div>
 
-        <DiscountCodesAdmin v-if="isShopAdmin" />
+        <DiscountCodesAdmin v-if="authStore.isAnalyticsAllowed" />
 
         <!-- Push Broadcast (admin only) -->
         <div
-          v-if="isShopAdmin"
+          v-if="authStore.isAnalyticsAllowed"
           class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8"
         >
           <div class="mb-6">
@@ -767,18 +767,18 @@
 
         <!-- ── Contests (admin only) ── -->
         <div
-          v-if="isShopAdmin"
+          v-if="authStore.isAnalyticsAllowed"
           class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8"
         >
           <div class="flex items-center justify-between mb-6">
             <div>
-              <h3 class="text-lg font-bold text-gray-900">Διαγωνισμοί</h3>
+              <h3 class="text-lg font-bold text-gray-900">{{ t("profile.contests.title") }}</h3>
               <p class="text-sm text-gray-500">
-                Διαχείριση διαγωνισμών για πελάτες.
+                {{ t("profile.contests.subtitle") }}
               </p>
             </div>
             <Button
-              label="Νέος"
+              :label="t('profile.contests.addNew')"
               icon="pi pi-plus"
               size="small"
               class="!bg-[var(--p-primary-color)] border-none !text-white"
@@ -802,7 +802,7 @@
             class="text-center py-10 text-gray-400"
           >
             <i class="pi pi-trophy text-4xl mb-3 block"></i>
-            <p class="text-sm">Δεν υπάρχουν διαγωνισμοί ακόμα.</p>
+            <p class="text-sm">{{ t("profile.contests.empty") }}</p>
           </div>
 
           <!-- Contest list -->
@@ -843,10 +843,10 @@
                   >
                     {{
                       contestStatus(c) === "active"
-                        ? "Ενεργός"
+                        ? t("profile.contests.active")
                         : contestStatus(c) === "upcoming"
-                          ? "Προσεχώς"
-                          : "Έληξε"
+                          ? t("profile.contests.upcoming")
+                          : t("profile.contests.ended")
                     }}
                   </span>
                 </div>
@@ -883,36 +883,36 @@
   <!-- Contest create / edit dialog -->
   <Dialog
     v-model:visible="contestDialogVisible"
-    :header="editingContest ? 'Επεξεργασία Διαγωνισμού' : 'Νέος Διαγωνισμός'"
+    :header="editingContest ? t('profile.contests.editTitle') : t('profile.contests.newTitle')"
     :style="{ width: '580px', maxWidth: '105vw' }"
     modal
   >
     <div class="space-y-4 pt-2">
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1"
-          >Όνομα *</label
+          >{{ t("profile.contests.name") }} *</label
         >
         <InputText
           v-model="contestForm.name"
           class="w-full"
-          placeholder="π.χ. Καλοκαιρινός Διαγωνισμός"
+          :placeholder="t('profile.contests.namePlaceholder')"
         />
       </div>
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1"
-          >Περιγραφή</label
+          >{{ t("profile.contests.description") }}</label
         >
         <Textarea
           v-model="contestForm.description"
           class="w-full"
           rows="3"
-          placeholder="Περιγραφή του διαγωνισμού..."
+          :placeholder="t('profile.contests.descriptionPlaceholder')"
         />
       </div>
       <div class="grid grid-cols-2 gap-4">
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1"
-            >Έναρξη *</label
+            >{{ t("profile.contests.start") }} *</label
           >
           <DatePicker
             v-model="contestForm.start_date"
@@ -923,7 +923,7 @@
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1"
-            >Λήξη *</label
+            >{{ t("profile.contests.end") }} *</label
           >
           <DatePicker
             v-model="contestForm.end_date"
@@ -935,7 +935,7 @@
       </div>
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1"
-          >Εικόνα</label
+          >{{ t("profile.contests.image") }}</label
         >
         <div
           class="border-2 border-dashed border-gray-200 rounded-xl p-4 text-center cursor-pointer hover:border-[var(--p-primary-color)] transition-colors"
@@ -948,10 +948,10 @@
           />
           <div v-else class="text-gray-400 py-4">
             <i class="pi pi-image text-3xl block mb-2"></i>
-            <span class="text-sm">Κλικ για επιλογή εικόνας</span>
+            <span class="text-sm">{{ t("profile.contests.pickImage") }}</span>
           </div>
           <p v-if="contestImagePreview" class="text-xs text-gray-400">
-            Κλικ για αλλαγή
+            {{ t("profile.contests.changeImage") }}
           </p>
         </div>
         <input
@@ -964,9 +964,9 @@
       </div>
     </div>
     <template #footer>
-      <Button label="Ακύρωση" text @click="contestDialogVisible = false" />
+      <Button :label="t('common.cancel')" text @click="contestDialogVisible = false" />
       <Button
-        :label="editingContest ? 'Αποθήκευση' : 'Δημιουργία'"
+        :label="editingContest ? t('common.save') : t('profile.contests.create')"
         icon="pi pi-check"
         class="!bg-[var(--p-primary-color)] border-none"
         :loading="isSavingContest"
@@ -979,6 +979,7 @@
 </template>
 
 <script setup lang="ts">
+import { api, ifRefused, withMessage } from "../api/http";
 import { ref, onMounted, computed, reactive, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
@@ -1104,38 +1105,29 @@ const isValidSecurityForm = computed(
 
 const fetchProfile = async () => {
   isLoadingProfile.value = true;
-  const token = localStorage.getItem("token");
   try {
-    const res = await fetch("/api/v1/profile", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const data = await api.get("/api/v1/profile");
+    profile.value = data;
 
-    if (res.ok) {
-      const data = await res.json();
-      profile.value = data;
-
-      // Parse Name
-      const nameParts = (data.staff_name || data.username).split(" ");
-      profileForm.firstName = nameParts[0] || "";
-      profileForm.lastName = nameParts.slice(1).join(" ") || "";
-      profileForm.email = data.staff_email || "";
-      profileForm.phone = data.staff_phone || "";
-      shopForm.ergotherapia = data.ergotherapia;
-      shopForm.physiotherapia = data.physiotherapia;
-      shopForm.logotherapia = data.logotherapia;
-      replyEmailForm.value = data.shop_reply_email || "";
-      contactForm.phone = data.shop_phone || "";
-      contactForm.address = data.shop_address || "";
-      contactForm.website = data.shop_website || "";
-      calSettings.slotMinTime = data.slot_min_time || "07:00";
-      calSettings.slotMaxTime = data.slot_max_time || "23:00";
-      calSettings.showWeekends = data.show_weekends ?? true;
-      calSettings.reminderHoursBefore = data.reminder_hours_before ?? 24;
-      selfBookingEnabled.value = data.self_booking_enabled ?? false;
-      staffPhotoUrl.value = data.staff_photo_url || "";
-    } else {
-      throw new Error("Failed to load profile");
-    }
+    // Parse Name
+    const nameParts = (data.staff_name || data.username).split(" ");
+    profileForm.firstName = nameParts[0] || "";
+    profileForm.lastName = nameParts.slice(1).join(" ") || "";
+    profileForm.email = data.staff_email || "";
+    profileForm.phone = data.staff_phone || "";
+    shopForm.ergotherapia = data.ergotherapia;
+    shopForm.physiotherapia = data.physiotherapia;
+    shopForm.logotherapia = data.logotherapia;
+    replyEmailForm.value = data.shop_reply_email || "";
+    contactForm.phone = data.shop_phone || "";
+    contactForm.address = data.shop_address || "";
+    contactForm.website = data.shop_website || "";
+    calSettings.slotMinTime = data.slot_min_time || "07:00";
+    calSettings.slotMaxTime = data.slot_max_time || "23:00";
+    calSettings.showWeekends = data.show_weekends ?? true;
+    calSettings.reminderHoursBefore = data.reminder_hours_before ?? 24;
+    selfBookingEnabled.value = data.self_booking_enabled ?? false;
+    staffPhotoUrl.value = data.staff_photo_url || "";
   } catch (e) {
     console.error(e);
     toast.add({
@@ -1162,37 +1154,22 @@ const copyToClipboard = (text: string) => {
 
 const updateProfile = async () => {
   isSavingProfile.value = true;
-  const token = localStorage.getItem("token");
-
   try {
-    const res = await fetch("/api/v1/profile", {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        firstName: profileForm.firstName,
-        lastName: profileForm.lastName,
-        email: profileForm.email,
-        phone: profileForm.phone,
-      }),
+    await api.put("/api/v1/profile", {
+      firstName: profileForm.firstName,
+      lastName: profileForm.lastName,
+      email: profileForm.email,
+      phone: profileForm.phone,
     });
-
-    if (res.ok) {
-      toast.add({
-        severity: "success",
-        summary: t("common.success"),
-        detail: t("profile.toast.profileUpdated"),
-        life: 3000,
-      });
-      // Refresh local data display
-      profile.value.staff_name = `${profileForm.firstName} ${profileForm.lastName}`;
-      profile.value.staff_email = profileForm.email;
-    } else {
-      const err = await res.json();
-      throw new Error(err.error || "Update failed");
-    }
+    toast.add({
+      severity: "success",
+      summary: t("common.success"),
+      detail: t("profile.toast.profileUpdated"),
+      life: 3000,
+    });
+    // Refresh local data display
+    profile.value.staff_name = `${profileForm.firstName} ${profileForm.lastName}`;
+    profile.value.staff_email = profileForm.email;
   } catch (e: any) {
     toast.add({
       severity: "error",
@@ -1206,25 +1183,12 @@ const updateProfile = async () => {
 };
 const updateShopServices = async () => {
   isSavingProfile.value = true;
-  const token = localStorage.getItem("token");
-
   try {
-    const res = await fetch("/api/v1/shop/services", {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        ergotherapia: shopForm.ergotherapia,
-        physiotherapia: shopForm.physiotherapia,
-        logotherapia: shopForm.logotherapia,
-      }),
+    await api.put("/api/v1/shop/services", {
+      ergotherapia: shopForm.ergotherapia,
+      physiotherapia: shopForm.physiotherapia,
+      logotherapia: shopForm.logotherapia,
     });
-
-    const data = await res.json();
-
-    if (!res.ok) throw new Error(data.error || "Failed to update services");
 
     toast.add({
       severity: "success",
@@ -1245,18 +1209,10 @@ const updateShopServices = async () => {
 };
 const saveReplyEmail = async () => {
   isSavingReplyEmail.value = true;
-  const token = localStorage.getItem("token");
   try {
-    const res = await fetch("/api/v1/shop/reply-email", {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ reply_email: replyEmailForm.value || null }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || t("profile.toast.saveFailed"));
+    await api
+      .put("/api/v1/shop/reply-email", { reply_email: replyEmailForm.value || null })
+      .catch(withMessage(t("profile.toast.saveFailed")));
     toast.add({
       severity: "success",
       summary: t("common.success"),
@@ -1279,24 +1235,11 @@ const saveReplyEmail = async () => {
 const updatePassword = async () => {
   if (!isValidSecurityForm.value) return;
   isSavingPassword.value = true;
-  const token = localStorage.getItem("token");
-
   try {
-    const res = await fetch("/api/v1/profile/password", {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        currentPassword: security.currentPassword,
-        newPassword: security.newPassword,
-      }),
+    await api.put("/api/v1/profile/password", {
+      currentPassword: security.currentPassword,
+      newPassword: security.newPassword,
     });
-
-    const data = await res.json();
-
-    if (!res.ok) throw new Error(data.error || "Failed to update password");
 
     toast.add({
       severity: "success",
@@ -1323,21 +1266,14 @@ const updatePassword = async () => {
 
 const saveContact = async () => {
   isSavingContact.value = true;
-  const token = localStorage.getItem("token");
   try {
-    const res = await fetch("/api/v1/shop/contact", {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
+    await api
+      .put("/api/v1/shop/contact", {
         phone: contactForm.phone,
         address: contactForm.address,
         website: contactForm.website,
-      }),
-    });
-    if (!res.ok) throw new Error((await res.json()).error || t("profile.toast.saveFailed"));
+      })
+      .catch(withMessage(t("profile.toast.saveFailed")));
     toast.add({
       severity: "success",
       summary: t("common.success"),
@@ -1358,22 +1294,15 @@ const saveContact = async () => {
 
 const saveCalendarSettings = async () => {
   isSavingCalSettings.value = true;
-  const token = localStorage.getItem("token");
   try {
-    const res = await fetch("/api/v1/shop/calendar-settings", {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
+    await api
+      .put("/api/v1/shop/calendar-settings", {
         slot_min_time: calSettings.slotMinTime,
         slot_max_time: calSettings.slotMaxTime,
         show_weekends: calSettings.showWeekends,
         reminder_hours_before: calSettings.reminderHoursBefore,
-      }),
-    });
-    if (!res.ok) throw new Error((await res.json()).error || t("profile.toast.saveFailed"));
+      })
+      .catch(withMessage(t("profile.toast.saveFailed")));
     toast.add({
       severity: "success",
       summary: t("common.success"),
@@ -1396,17 +1325,10 @@ const saveSelfBooking = async (value: boolean) => {
   isSavingSelfBooking.value = true;
   const previous = selfBookingEnabled.value;
   selfBookingEnabled.value = value;
-  const token = localStorage.getItem("token");
   try {
-    const res = await fetch("/api/v1/shop/self-booking", {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ self_booking_enabled: value }),
-    });
-    if (!res.ok) throw new Error((await res.json()).error || t("profile.toast.saveFailed"));
+    await api
+      .put("/api/v1/shop/self-booking", { self_booking_enabled: value })
+      .catch(withMessage(t("profile.toast.saveFailed")));
     toast.add({
       severity: "success",
       summary: t("common.success"),
@@ -1433,29 +1355,15 @@ const broadcastForm = reactive({ title: "", body: "" });
 const recentBroadcasts = ref<any[]>([]);
 
 const fetchRecentBroadcasts = async () => {
-  const token = localStorage.getItem("token");
   try {
-    const res = await fetch("/api/v1/broadcasts", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (res.ok) recentBroadcasts.value = await res.json();
+    recentBroadcasts.value = await api.get("/api/v1/broadcasts").catch(ifRefused(recentBroadcasts.value));
   } catch {}
 };
 
 const sendBroadcast = async () => {
   isSendingBroadcast.value = true;
-  const token = localStorage.getItem("token");
   try {
-    const res = await fetch("/api/v1/broadcasts", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(broadcastForm),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || t("profile.toast.saveFailed"));
+    const data = await api.post("/api/v1/broadcasts", broadcastForm).catch(withMessage(t("profile.toast.saveFailed")));
     toast.add({
       severity: "success",
       summary: t("profile.broadcast.sent"),
@@ -1475,19 +1383,14 @@ const sendBroadcast = async () => {
 const uploadPhoto = async (e: Event) => {
   const file = (e.target as HTMLInputElement).files?.[0];
   if (!file) return;
-  const token = localStorage.getItem("token");
   const staffId = profile.value.staff_id;
   if (!staffId) return;
   const formData = new FormData();
   formData.append("photo", file);
   try {
-    const res = await fetch(`/api/v1/staff/${staffId}/photo`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-      body: formData,
-    });
-    if (!res.ok) throw new Error((await res.json()).error || t("profile.toast.uploadFailed"));
-    const data = await res.json();
+    const data = await api
+      .upload(`/api/v1/staff/${staffId}/photo`, formData)
+      .catch(withMessage(t("profile.toast.uploadFailed")));
     staffPhotoUrl.value = data.photo_url;
     toast.add({ severity: "success", summary: t("profile.toast.photoUpdated"), life: 2000 });
   } catch (e: any) {
@@ -1506,7 +1409,6 @@ const handleLogout = () => logoutAndClear("/login");
 // --- Force Logout Everyone (super_admin only) ---
 const forcingLogout = ref(false);
 const releasingLock = ref(false);
-const authToken = () => localStorage.getItem("token");
 
 const confirmForceLogout = () => {
   confirm.require({
@@ -1521,12 +1423,7 @@ const confirmForceLogout = () => {
 const forceLogout = async () => {
   forcingLogout.value = true;
   try {
-    const res = await fetch("/api/v1/shop/force-logout", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${authToken()}` },
-    });
-    if (!res.ok) throw new Error("Request failed");
-    const data = await res.json();
+    const data = await api.post("/api/v1/shop/force-logout");
 
     // Keep the calling admin's own session alive with a fresh token, and
     // reflect the lock immediately in this session too (the broadcast only
@@ -1555,11 +1452,7 @@ const forceLogout = async () => {
 const releaseLock = async () => {
   releasingLock.value = true;
   try {
-    const res = await fetch("/api/v1/shop/release-cash-lock", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${authToken()}` },
-    });
-    if (!res.ok) throw new Error("Request failed");
+    await api.post("/api/v1/shop/release-cash-lock");
 
     settingsStore.setCashLockedByShop(false);
 
@@ -1594,7 +1487,7 @@ onMounted(() => {
   if (themeStore.primaryColor) {
     pickerColor.value = themeStore.primaryColor.replace("#", "");
   }
-  if (isShopAdmin.value) {
+  if (authStore.isAnalyticsAllowed) {
     fetchContests();
     fetchRecentBroadcasts();
   }
@@ -1635,12 +1528,8 @@ const formatDate = (d: string) =>
 
 const fetchContests = async () => {
   isLoadingContests.value = true;
-  const token = localStorage.getItem("token");
   try {
-    const res = await fetch("/api/v1/contests", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (res.ok) contests.value = await res.json();
+    contests.value = await api.get("/api/v1/contests").catch(ifRefused(contests.value));
   } finally {
     isLoadingContests.value = false;
   }
@@ -1674,14 +1563,13 @@ const saveContest = async () => {
   if (!contestForm.name || !contestForm.start_date || !contestForm.end_date) {
     toast.add({
       severity: "warn",
-      summary: "Απαιτείται",
-      detail: "Συμπληρώστε όνομα και περίοδο.",
+      summary: t("profile.contestToast.required"),
+      detail: t("profile.contestToast.requiredDetail"),
       life: 3000,
     });
     return;
   }
   isSavingContest.value = true;
-  const token = localStorage.getItem("token");
   const fd = new FormData();
   fd.append("name", contestForm.name);
   fd.append("description", contestForm.description || "");
@@ -1694,19 +1582,14 @@ const saveContest = async () => {
       ? `/api/v1/contests/${editingContest.value.id}`
       : "/api/v1/contests";
     const method = editingContest.value ? "PUT" : "POST";
-    const res = await fetch(url, {
-      method,
-      headers: { Authorization: `Bearer ${token}` },
-      body: fd,
-    });
-    if (!res.ok) throw new Error((await res.json()).error || "Failed");
+    await api.upload(url, fd, method).catch(withMessage(t("profile.toast.saveFailed")));
     contestDialogVisible.value = false;
     await fetchContests();
-    toast.add({ severity: "success", summary: "Αποθηκεύτηκε", life: 2000 });
+    toast.add({ severity: "success", summary: t("profile.contestToast.saved"), life: 2000 });
   } catch (e: any) {
     toast.add({
       severity: "error",
-      summary: "Σφάλμα",
+      summary: t("common.error"),
       detail: e.message,
       life: 3000,
     });
@@ -1716,19 +1599,14 @@ const saveContest = async () => {
 };
 
 const deleteContest = async (id: number) => {
-  const token = localStorage.getItem("token");
   try {
-    const res = await fetch(`/api/v1/contests/${id}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error((await res.json()).error || "Failed");
+    await api.del(`/api/v1/contests/${id}`).catch(withMessage(t("profile.toast.saveFailed")));
     contests.value = contests.value.filter((c) => c.id !== id);
-    toast.add({ severity: "success", summary: "Διαγράφηκε", life: 2000 });
+    toast.add({ severity: "success", summary: t("profile.contestToast.deleted"), life: 2000 });
   } catch (e: any) {
     toast.add({
       severity: "error",
-      summary: "Σφάλμα",
+      summary: t("common.error"),
       detail: e.message,
       life: 3000,
     });

@@ -34,6 +34,7 @@ const toDisplayServices = (services: any[], ctx: OverlayContext) =>
         duration_minutes: minutesOf(s, cat),
         staff_id: s.staff_id,
         start_time: new Date(s.start_time).toISOString(),
+        persons: Math.max(1, Number(s.persons) || 1),
       };
     })
     .sort((a, b) => a.start_time.localeCompare(b.start_time));
@@ -95,6 +96,7 @@ export function applyPendingWrites(appointments: any[], writes: QueuedWrite[], c
             save_receipt: w.body?.save_receipt !== false,
             group_id: null,
             recurrence: w.body?.recurrence ?? null,
+            booked_at: w.body?.booked_at ?? null,
             ...clientFields(w.body?.client_id, ctx),
             deposit_amount: 0,
             payment_method: null,

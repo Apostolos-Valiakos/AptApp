@@ -76,6 +76,7 @@
 </template>
 
 <script setup lang="ts">
+import { api, ApiError } from "../api/http";
 import { formatMoney } from "../utils/format";
 import { ref, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
@@ -86,11 +87,11 @@ const report = ref<any>(null);
 
 onMounted(async () => {
   try {
-    const token = localStorage.getItem("token");
-    const res = await fetch("/api/v1/reports/membership", {
-      headers: { Authorization: `Bearer ${token}` },
+    // A refusal leaves the report empty, as before; a network failure isn't hidden.
+    report.value = await api.get("/api/v1/reports/membership").catch((e) => {
+      if (e instanceof ApiError) return report.value;
+      throw e;
     });
-    if (res.ok) report.value = await res.json();
   } finally {
     loading.value = false;
   }

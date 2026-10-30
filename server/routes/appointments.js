@@ -13,6 +13,7 @@ module.exports = function appointmentsRouter({
   StaffUnavailableError,
   allocate,
   assertBaseVersion,
+  assertCapacity,
   assertNoNewOverlaps,
   authenticateToken,
   canSellExtras,
@@ -30,6 +31,7 @@ module.exports = function appointmentsRouter({
   safeUUID,
   sanitizeClientBookingPayload,
   saveIdempotency,
+  settleAmount,
 }) {
   const router = express.Router();
 
@@ -128,6 +130,7 @@ module.exports = function appointmentsRouter({
           -- before's 21:00/22:00 UTC (midnight in Athens), and the hover card
           -- would show the previous day.
           a.created_at::text AS created_at,
+          a.booked_at,
           a.recurrence,
           a.group_id,
           a.discount_type,
@@ -141,15 +144,20 @@ module.exports = function appointmentsRouter({
           c.phone as client_phone,
           COALESCE(c.outstanding_balance, 0) as client_outstanding_balance,
           COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0) as deposit_amount,
-          -- True only on a client's earliest-ever appointment (by created_at,
-          -- tie-broken by id) — powers the "new client" badge on the
-          -- scheduler's appointment hover card. NULL-safe: a client_id-less
-          -- block/hold naturally yields no match.
+          -- True only on a client's first visit: their earliest booking by its
+          -- first service's start (not cancelled / no-show; ties by id). It
+          -- powers the "new client" badge on the hover card. The day a
+          -- booking was made can't decide it: two made the same day tie.
+          -- NULL-safe: a block/hold without a client yields no match.
           (
             a.client_id IS NOT NULL AND a.id = (
               SELECT a2.id FROM appointments a2
+              JOIN LATERAL (
+                SELECT MIN(start_time) AS first_start FROM appointment_services WHERE appointment_id = a2.id
+              ) f2 ON f2.first_start IS NOT NULL
               WHERE a2.client_id = a.client_id AND a2.shop_id = a.shop_id
-              ORDER BY a2.created_at ASC, a2.id ASC
+                AND a2.status NOT IN ('cancelled', 'no-show', 'no_show')
+              ORDER BY f2.first_start ASC, a2.id ASC
               LIMIT 1
             )
           ) as is_new_client,
@@ -176,7 +184,8 @@ module.exports = function appointmentsRouter({
               'duration_minutes', COALESCE(aps.duration_override, s.duration_minutes),
               'staff_id', aps.staff_id,
               'staff_name', st.name,
-              'start_time', aps.start_time
+              'start_time', aps.start_time,
+              'persons', aps.persons
             ) ORDER BY aps.start_time ASC)
             FROM appointment_services aps
             LEFT JOIN services s ON aps.service_id = s.id
@@ -243,6 +252,11 @@ module.exports = function appointmentsRouter({
       }
 
       await assertNoNewOverlaps(client, req.shopId, bookingPayload);
+      // Repeats (a series, or the repeat-booking dialog's dates) aren't
+      // checked, nor client portal bookings yet.
+      if (req.user.role !== "client" && !bookingPayload.recurrence && !Array.isArray(bookingPayload.instance_starts)) {
+        await assertCapacity(client, req.shopId, bookingPayload);
+      }
 
       const { firstAppointmentId, validClientId } = await createAppointmentSeries(
         client,
@@ -291,10 +305,12 @@ module.exports = function appointmentsRouter({
       if (cached) return { status: cached.response_status, body: cached.response_body };
 
       const validClientId = safeUUID(req.body.client_id);
+      let replacementId = null;
 
       if (scope !== "series") {
         await assertBaseVersion(client, req.shopId, id, req.body);
         await assertNoNewOverlaps(client, req.shopId, req.body, id);
+        await assertCapacity(client, req.shopId, req.body, id);
       }
 
       if (scope === "series") {
@@ -303,25 +319,39 @@ module.exports = function appointmentsRouter({
 
         if (groupInfo && groupInfo.group_id) {
           // === Case 1: Existing Series (Delete Future & Recreate) ===
-          const currentApptStart = req.body.services[0]?.start_time;
-          await client.query(
-            `DELETE FROM appointments 
-             WHERE group_id = $1 AND shop_id = $2
-             AND id IN (
-               SELECT a.id FROM appointments a
-               JOIN appointment_services aps ON a.id = aps.appointment_id
-               WHERE a.group_id = $1 AND aps.start_time >= $3
-             )`,
-            [groupInfo.group_id, req.shopId, currentApptStart],
+          // From this booking on, by whichever is earlier: where it was, or
+          // where it's going (moved later, its old slot must go too).
+          const idsRes = await client.query(
+            `SELECT DISTINCT a.id FROM appointments a
+             JOIN appointment_services aps ON a.id = aps.appointment_id
+             WHERE a.group_id = $1 AND a.shop_id = $2
+               AND aps.start_time >= LEAST($3::timestamptz, (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = $4))`,
+            [groupInfo.group_id, req.shopId, req.body.services[0]?.start_time, id],
           );
+          const replacedIds = idsRes.rows.map((r) => r.id);
+
+          // A booking with money on it isn't replaced, for the same reason it
+          // isn't deleted: its payments would be left linked to nothing.
+          const paidRes = await client.query(
+            "SELECT appointment_id FROM transactions WHERE appointment_id = ANY($1) LIMIT 1",
+            [replacedIds],
+          );
+          if (paidRes.rows.length > 0) {
+            throw new HttpError(409, { error: "series_has_payments", appointment_id: paidRes.rows[0].appointment_id });
+          }
+
+          await releaseBookingExtras(client, replacedIds);
+          await client.query("DELETE FROM appointments WHERE id = ANY($1) AND shop_id = $2", [replacedIds, req.shopId]);
 
           // createAppointmentSeries will create new rows.
           // These rows default to reminder_sent = false automatically via DB schema.
-          await createAppointmentSeries(
+          const { firstAppointmentId } = await createAppointmentSeries(
             client,
             { ...req.body, group_id_override: groupInfo.group_id },
             req.shopId,
           );
+          // This booking is one of the rows replaced: the caller carries on with its new id.
+          replacementId = firstAppointmentId;
         } else if (isRecurringBody) {
           // === Case 2: Convert Single -> Series (Update Current & Fill Future) ===
           const newGroupId = crypto.randomUUID();
@@ -365,8 +395,9 @@ module.exports = function appointmentsRouter({
         newBalance = await recalculateClientBalance(client, validClientId);
       }
 
-      const versionRes = await client.query("SELECT version FROM appointments WHERE id = $1 AND shop_id = $2", [id, req.shopId]);
+      const versionRes = await client.query("SELECT version FROM appointments WHERE id = $1 AND shop_id = $2", [replacementId || id, req.shopId]);
       const responseBody = {
+        ...(replacementId ? { id: replacementId } : {}),
         success: true,
         new_balance: newBalance,
         version: versionRes.rows[0] ? Number(versionRes.rows[0].version) : null,
@@ -415,6 +446,20 @@ module.exports = function appointmentsRouter({
     });
     res.json({ success: true, new_balance: newBalance });
   }, { log: "Staff appointment cancel error:" }));
+
+  // Before bookings' rows are removed: package visits go back to the package,
+  // and products sold on them back into stock.
+  const releaseBookingExtras = async (client, appointmentIds) => {
+    await releasePackageUsage(client, appointmentIds);
+    await client.query(
+      `UPDATE product_inventory pi
+       SET stock_quantity = pi.stock_quantity + ps.quantity
+       FROM product_sales ps
+       WHERE ps.inventory_id = pi.id AND ps.appointment_id = ANY($1)`,
+      [appointmentIds],
+    );
+    await client.query("DELETE FROM product_sales WHERE appointment_id = ANY($1)", [appointmentIds]);
+  };
 
   router.delete("/:id", authenticateToken, asyncHandler(async (req, res) => {
     const { id } = req.params;
@@ -467,21 +512,7 @@ module.exports = function appointmentsRouter({
         throw new HttpError(409, { error: "has_payments", appointment_id: paidRes.rows[0].appointment_id });
       }
 
-      // Visits paid with a prepaid package go back to the package
-      await releasePackageUsage(client, deletedIds);
-
-      // Restore stock for any product sales on the deleted appointments
-      await client.query(
-        `UPDATE product_inventory pi
-         SET stock_quantity = pi.stock_quantity + ps.quantity
-         FROM product_sales ps
-         WHERE ps.inventory_id = pi.id AND ps.appointment_id = ANY($1)`,
-        [deletedIds],
-      );
-      await client.query(
-        "DELETE FROM product_sales WHERE appointment_id = ANY($1)",
-        [deletedIds],
-      );
+      await releaseBookingExtras(client, deletedIds);
 
       if (scope === "series" && groupInfo && groupInfo.group_id) {
         await client.query(
@@ -580,17 +611,23 @@ module.exports = function appointmentsRouter({
       if (!appt) throw new HttpError(404, { error: "Appointment not found or cancelled" });
       const owed = Math.round((Number(appt.cost) - Number(appt.paid)) * 100) / 100;
       if (!(owed > 0)) throw new HttpError(409, { error: "nothing_owed" });
+      // All of it, or part (`amount`), never more than what's owed.
+      const amount = settleAmount(req.body, owed);
+      if (amount === null) throw new HttpError(400, { error: "invalid_amount", owed });
+      if (amount > owed + 0.001) throw new HttpError(400, { error: "exceeds_owed", owed });
+      const paidNow = Math.round((Number(appt.paid) + amount) * 100) / 100;
+      const fullyPaid = paidNow >= Number(appt.cost) - 0.01;
       await db.query(
         `INSERT INTO transactions (appointment_id, client_id, amount, payment_method, transaction_type, shop_id, reason, created_by_user_id, created_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
-        [id, appt.client_id, owed, how.method, how.type, req.shopId, note, String(req.user.userId || "")],
+        [id, appt.client_id, amount, how.method, how.type, req.shopId, note, String(req.user.userId || "")],
       );
       await db.query(
-        `UPDATE appointments SET payment_status = 'paid', deposit_amount = $1, updated_at = NOW() WHERE id = $2`,
-        [Number(appt.cost), id],
+        `UPDATE appointments SET payment_status = $1, deposit_amount = $2, updated_at = NOW() WHERE id = $3`,
+        [fullyPaid ? "paid" : "partial", fullyPaid ? Number(appt.cost) : paidNow, id],
       );
       const balance = appt.client_id ? await recalculateClientBalance(db, appt.client_id) : 0;
-      return { success: true, amount: owed, new_balance: balance };
+      return { success: true, amount, remaining: Math.round((owed - amount) * 100) / 100, new_balance: balance };
     });
     res.json(result);
   }, { log: "Resolve appointment debt error:" }));
@@ -727,7 +764,7 @@ module.exports = function appointmentsRouter({
         // exactly as computed here, instead of re-deriving the same split
         // client-side and risking drift from this endpoint's rounding.
         const updatedServices = await client.query(
-          `SELECT service_id, staff_id, start_time, duration_override, price_override
+          `SELECT service_id, staff_id, start_time, duration_override, price_override, persons
            FROM appointment_services WHERE appointment_id = $1 ORDER BY start_time`,
           [id],
         );

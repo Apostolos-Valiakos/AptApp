@@ -20,11 +20,13 @@
         </div>
         <div class="flex gap-2">
           <Button
+            v-if="isShopAdmin"
             icon="pi pi-file-excel"
+            :label="t('clients.export.button')"
             severity="secondary"
             outlined
-            v-tooltip.top="'Εξαγωγή Excel'"
-            @click="exportExcel"
+            data-testid="clients-export"
+            @click="openExport"
           />
           <Button
             :label="t('clients.addNew')"
@@ -161,6 +163,42 @@
         </Column>
       </DataTable>
     </div>
+
+    <!-- Excel export: the columns to include -->
+    <Dialog
+      v-model:visible="exportVisible"
+      :header="t('clients.export.title')"
+      modal
+      class="w-full max-w-lg"
+      data-testid="clients-export-dialog"
+    >
+      <p class="text-sm text-gray-500 mb-3">{{ t("clients.export.intro") }}</p>
+      <div class="flex gap-3 mb-3 text-sm">
+        <button type="button" class="font-semibold text-[var(--p-primary-700)] hover:underline" data-testid="export-all" @click="chosenColumns = exportColumns.map((c) => c.key)">
+          {{ t("clients.export.selectAll") }}
+        </button>
+        <button type="button" class="font-semibold text-[var(--p-primary-700)] hover:underline" data-testid="export-none" @click="chosenColumns = []">
+          {{ t("clients.export.clearAll") }}
+        </button>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <label v-for="c in exportColumns" :key="c.key" class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+          <Checkbox v-model="chosenColumns" :value="c.key" :data-testid="`export-col-${c.key}`" />
+          {{ c.label }}
+        </label>
+      </div>
+      <template #footer>
+        <Button :label="t('common.cancel')" severity="secondary" text @click="exportVisible = false" />
+        <Button
+          icon="pi pi-file-excel"
+          :label="t('clients.export.download')"
+          :disabled="!chosenColumns.length"
+          :loading="exporting"
+          data-testid="export-download"
+          @click="exportExcel"
+        />
+      </template>
+    </Dialog>
 
     <!-- New Client Dialog -->
     <Dialog
@@ -366,6 +404,7 @@
 </template>
 
 <script setup lang="ts">
+import { api, ifRefused, withMessage } from "../api/http";
 import { ref, onMounted, computed, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
@@ -374,6 +413,7 @@ import { useConfirm } from "primevue/useconfirm";
 import { useAuthStore } from "../stores/auth";
 import { useSettingsStore } from "../stores/settings";
 import { storeToRefs } from "pinia";
+import { toLocalDateStr } from "../utils/staffAvailability";
 import ClientProfileDialog from "../components/ClientProfileDialog.vue"; // Ensure correct path
 
 const { t } = useI18n();
@@ -389,7 +429,6 @@ const clients = ref<any[]>([]);
 const loading = ref(true);
 const dialogVisible = ref(false); // For creating NEW clients
 const search = ref("");
-const token = localStorage.getItem("token");
 
 // NEW: State for the Profile Dialog
 const profileVisible = ref(false);
@@ -437,11 +476,7 @@ const fetchClients = async () => {
     });
     if (search.value.trim()) params.append("search", search.value.trim());
 
-    const res = await fetch(`/api/v1/clients?${params}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error("Request failed");
-    const data = await res.json();
+    const data = await api.get(`/api/v1/clients?${params}`);
     clients.value = data.clients || [];
     totalClients.value = data.total || 0;
   } catch (err) {
@@ -473,30 +508,58 @@ watch(search, () => {
   }, 300);
 });
 
+// Excel export: every client, with the columns picked in the dialog (in this
+// order). Service columns only for the services the shop has turned on.
+const exportVisible = ref(false);
+const exporting = ref(false);
+const chosenColumns = ref<any>(null);
+const dmy = (iso: string | null) => (iso ? iso.split("-").reverse().join("/") : "");
+const yesNo = (v: boolean) => t(v ? "clients.export.yes" : "clients.export.no");
+const exportColumns = computed(() => [
+  { key: "first_name", label: t("clients.dialog.firstName"), value: (c: any) => c.first_name || "" },
+  { key: "last_name", label: t("clients.dialog.lastName"), value: (c: any) => c.last_name || "" },
+  { key: "email", label: t("common.email"), value: (c: any) => c.email || "" },
+  { key: "phone", label: t("common.phone"), value: (c: any) => c.phone || "" },
+  { key: "date_of_birth", label: t("clients.export.dateOfBirth"), value: (c: any) => dmy(c.date_of_birth) },
+  { key: "balance", label: t("clients.export.balance"), value: (c: any) => Number(c.outstanding_balance || 0) },
+  { key: "visits", label: t("clients.export.visits"), value: (c: any) => c.visits },
+  { key: "last_visit", label: t("clients.export.lastVisit"), value: (c: any) => dmy(c.last_visit) },
+  { key: "no_shows", label: t("clients.export.noShows"), value: (c: any) => c.no_shows },
+  { key: "receive_emails", label: t("clients.export.receiveEmails"), value: (c: any) => yesNo(c.receive_emails) },
+  ...["ergotherapia", "physiotherapia", "logotherapia"]
+    .filter((s) => shopSettings.value?.[s])
+    .map((s) => ({ key: s, label: t(`common.services.${s}`), value: (c: any) => yesNo(c[s]) })),
+  { key: "notes", label: t("common.notes"), value: (c: any) => c.notes || "" },
+  {
+    key: "custom_fields",
+    label: t("clients.dialog.customDetails"),
+    value: (c: any) => (c.custom_fields || []).map((f: any) => `${f.title}: ${f.value}`).join("; "),
+  },
+]);
+const openExport = () => {
+  if (!chosenColumns.value) chosenColumns.value = exportColumns.value.map((c) => c.key);
+  exportVisible.value = true;
+};
 const exportExcel = async () => {
-  // Export ALL matching clients (not just the current page)
-  const params = new URLSearchParams();
-  if (search.value.trim()) params.append("search", search.value.trim());
-  const res = await fetch(`/api/v1/clients?${params}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) return;
-  const allClients = await res.json();
-
-  const data = allClients.map((c: any) => ({
-    Όνομα: c.first_name || "",
-    Επώνυμο: c.last_name || "",
-    Email: c.email || "",
-    Τηλέφωνο: c.phone || "",
-    Υπόλοιπο: c.outstanding_balance ?? 0,
-    "Σύνολο πωλήσεων": c.total_sales ?? 0,
-    "No-shows": c.no_show_count ?? 0,
-  }));
-  const XLSX = await import("xlsx");
-  const ws = XLSX.utils.json_to_sheet(data);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Πελάτες");
-  XLSX.writeFile(wb, `clients_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  exporting.value = true;
+  try {
+    const all = await api.get("/api/v1/clients/export");
+    const columns = exportColumns.value.filter((c) => chosenColumns.value.includes(c.key));
+    const rows = all.map((client: any) => Object.fromEntries(columns.map((c) => [c.label, c.value(client)])));
+    const XLSX = await import("xlsx");
+    const ws = XLSX.utils.json_to_sheet(rows, { header: columns.map((c) => c.label) });
+    ws["!cols"] = columns.map((c) => ({
+      wch: Math.min(40, Math.max(c.label.length, ...rows.map((r: any) => String(r[c.label]).length)) + 2),
+    }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, t("clients.export.sheetName"));
+    XLSX.writeFile(wb, `clients_${toLocalDateStr(new Date())}.xlsx`);
+    exportVisible.value = false;
+  } catch {
+    toast.add({ severity: "error", summary: t("common.error"), detail: t("clients.export.failed"), life: 4000 });
+  } finally {
+    exporting.value = false;
+  }
 };
 
 // NEW: Open the full profile dialog
@@ -516,13 +579,7 @@ const inviteClient = async (client: any) => {
   }
 
   try {
-    const res = await fetch(`/api/v1/clients/${client.id}/invite`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Failed to invite client");
+    await api.post(`/api/v1/clients/${client.id}/invite`).catch(withMessage("Failed to invite client"));
 
     toast.add({
       severity: "success",
@@ -579,16 +636,7 @@ const saveClient = async () => {
 
   // Since we use ClientProfileDialog for edits, this is strictly for POST (Create)
   try {
-    const res = await fetch("/api/v1/clients", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(editingClient.value),
-    });
-
-    if (!res.ok) throw new Error("Failed to save");
+    await api.post("/api/v1/clients", editingClient.value).catch(withMessage("Failed to save"));
 
     toast.add({
       severity: "success",
@@ -622,16 +670,7 @@ const confirmDelete = (client: any) => {
 
 const deleteClient = async (client: any) => {
   try {
-    const res = await fetch(`/api/v1/clients/${client.id}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    const data = await res.json().catch(() => ({}));
-
-    if (!res.ok) {
-      throw new Error(data.error || "Failed to delete client");
-    }
+    await api.del(`/api/v1/clients/${client.id}`).catch(withMessage("Failed to delete client"));
 
     toast.add({
       severity: "success",

@@ -137,6 +137,7 @@
 </template>
 
 <script setup lang="ts">
+import { api } from "../api/http";
 import { formatMoney } from "../utils/format";
 import { ref, computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
@@ -177,19 +178,13 @@ const fullName = computed(() =>
   client.value ? `${client.value.first_name || ""} ${client.value.last_name || ""}`.trim() : "",
 );
 
-const headers = () => ({
-  "Content-Type": "application/json",
-  Authorization: `Bearer ${localStorage.getItem("token")}`,
-});
 
 const load = async () => {
   if (!props.clientId) return;
   loading.value = true;
   editingNotes.value = false;
   try {
-    const res = await fetch(`/api/v1/clients/${props.clientId}/full`, { headers: headers() });
-    if (!res.ok) throw new Error();
-    const data = await res.json();
+    const data = await api.get(`/api/v1/clients/${props.clientId}/full`);
     client.value = data.client;
     history.value = (data.history || []).slice().sort(
       (a: any, b: any) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime(),
@@ -218,23 +213,18 @@ const saveNotes = async () => {
   savingNotes.value = true;
   try {
     const c = client.value;
-    const res = await fetch(`/api/v1/clients/${props.clientId}`, {
-      method: "PUT",
-      headers: headers(),
-      body: JSON.stringify({
-        first_name: c.first_name,
-        last_name: c.last_name,
-        email: c.email,
-        phone: c.phone,
-        notes: notesDraft.value,
-        custom_fields: c.custom_fields || [],
-        ergotherapia: c.ergotherapia,
-        physiotherapia: c.physiotherapia,
-        logotherapia: c.logotherapia,
-        date_of_birth: c.date_of_birth,
-      }),
+    await api.put(`/api/v1/clients/${props.clientId}`, {
+      first_name: c.first_name,
+      last_name: c.last_name,
+      email: c.email,
+      phone: c.phone,
+      notes: notesDraft.value,
+      custom_fields: c.custom_fields || [],
+      ergotherapia: c.ergotherapia,
+      physiotherapia: c.physiotherapia,
+      logotherapia: c.logotherapia,
+      date_of_birth: c.date_of_birth,
     });
-    if (!res.ok) throw new Error();
     client.value.notes = notesDraft.value;
     editingNotes.value = false;
   } catch {
@@ -318,8 +308,7 @@ const cancelNextAppointment = () => {
     acceptClass: "p-button-danger",
     accept: async () => {
       try {
-        const res = await fetch(`/api/v1/appointments/${appt.id}/cancel`, { method: "POST", headers: headers() });
-        if (!res.ok) throw new Error();
+        await api.post(`/api/v1/appointments/${appt.id}/cancel`);
         toast.add({ severity: "success", summary: t("clientQuickProfile.cancelled"), life: 2500 });
         emit("changed");
         await load();

@@ -5,6 +5,7 @@ export interface ServiceSnapshot {
   start_time: number;
   duration: number;
   price: number;
+  persons: number;
 }
 
 export const snapshotServices = (list: any[]): ServiceSnapshot[] =>
@@ -14,6 +15,7 @@ export const snapshotServices = (list: any[]): ServiceSnapshot[] =>
     start_time: s.start_time ? new Date(s.start_time).getTime() : 0,
     duration: Number(s.duration_override ?? s.duration_minutes ?? 0),
     price: Number(s.price_override ?? s.price ?? 0),
+    persons: Math.max(1, Number(s.persons) || 1),
   }));
 
 interface Lookups {
@@ -83,6 +85,8 @@ export const describeServiceChanges = (
       lines.push(
         `${prefix}${t("booking.changeConfirm.price")}: ${formatMoney(b.price)} → ${formatMoney(a.price)}`,
       );
+    if (b.persons !== a.persons)
+      lines.push(`${prefix}${t("booking.changeConfirm.persons")}: ${b.persons} → ${a.persons}`);
   }
   return lines;
 };

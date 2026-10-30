@@ -7,8 +7,8 @@
 // existing database (anything with an appointments table) already has it, so
 // there it is recorded as applied without running.
 //
-// The older schema statements in server.js still run on every start, after
-// the migrations; new schema changes go here.
+// All schema changes go here. (The statements that used to run on every start
+// became 0006_startup_schema.sql.)
 const fs = require("fs");
 const path = require("path");
 const pool = require("./db");

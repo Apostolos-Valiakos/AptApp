@@ -76,6 +76,15 @@
               <i class="pi pi-bars category-drag-handle cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500"></i>
               <h3 class="font-bold text-gray-900">{{ group.label }}</h3>
               <span class="text-xs text-gray-400">({{ group.items.length }})</span>
+              <button
+                type="button"
+                class="text-gray-400 hover:text-gray-700"
+                v-tooltip="t('services.renameCategory.button')"
+                data-testid="rename-category"
+                @click="openRenameCategory(group.label)"
+              >
+                <i class="pi pi-pencil text-xs"></i>
+              </button>
               <div class="ml-auto flex items-center gap-2">
                 <ColorPicker
                   :modelValue="resolveServiceColor(null, group.items[0]?.category_color_code).replace('#', '')"
@@ -134,6 +143,36 @@
         </draggable>
       </div>
     </template>
+
+    <!-- Rename a category (and it on all its services) -->
+    <Dialog
+      v-model:visible="renameCategory.visible"
+      :header="t('services.renameCategory.title')"
+      modal
+      :style="{ width: '24rem', maxWidth: '95vw' }"
+    >
+      <label class="block text-sm font-medium text-gray-700 mb-1">{{ t("services.renameCategory.newName") }}</label>
+      <InputText
+        v-model="renameCategory.to"
+        class="w-full"
+        autofocus
+        maxlength="100"
+        data-testid="rename-category-input"
+        @keydown.enter="saveRenameCategory"
+      />
+      <p class="text-xs text-gray-400 mt-2">{{ t("services.renameCategory.note") }}</p>
+      <template #footer>
+        <Button :label="t('common.cancel')" text @click="renameCategory.visible = false" />
+        <Button
+          :label="t('common.save')"
+          icon="pi pi-check"
+          :loading="renameCategory.saving"
+          :disabled="!renameCategory.to.trim() || renameCategory.to.trim() === renameCategory.from"
+          data-testid="rename-category-save"
+          @click="saveRenameCategory"
+        />
+      </template>
+    </Dialog>
 
     <!-- Edit / Add Dialog -->
     <Dialog
@@ -373,6 +412,7 @@ import MultiSelect from "primevue/multiselect";
 import draggable from "vuedraggable";
 import { groupServicesByCategory } from "../utils/serviceGroups";
 import { resolveServiceColor } from "../utils/serviceColors";
+import { api, ApiError } from "../api/http";
 
 const { t } = useI18n();
 
@@ -543,12 +583,8 @@ watch(hasVariations, (val) => {
 });
 
 const fetchStaff = async () => {
-  const token = localStorage.getItem("token");
   try {
-    const res = await fetch("/api/v1/staff", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (res.ok) staffList.value = await res.json();
+    staffList.value = await api.get("/api/v1/staff");
   } catch (err) {
     // Non-critical — the default-staff dropdown and eligibility grid just stay empty.
   }
@@ -571,18 +607,9 @@ const categoryOptions = computed(() =>
 );
 
 const fetchServices = async () => {
-  const token = localStorage.getItem("token");
   try {
-    const res = await fetch("/api/v1/services", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (res.ok) {
-      services.value = await res.json();
-      rebuildGroups();
-    } else if (res.status === 401) {
-      console.error("Unauthorized");
-    }
-    loading.value = false;
+    services.value = await api.get("/api/v1/services");
+    rebuildGroups();
   } catch (err) {
     toast.add({
       severity: "error",
@@ -590,36 +617,54 @@ const fetchServices = async () => {
       detail: t('services.toast.loadFailed'),
       life: 3000,
     });
+  } finally {
+    // Also when it fails (the spinner used to stay on).
+    loading.value = false;
   }
 };
 
-const token = () => localStorage.getItem("token");
-
 const saveCategoryColor = async (name: string, color: string | null) => {
   try {
-    const res = await fetch("/api/v1/service-categories/color", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
-      body: JSON.stringify({
-        name,
-        color_code: color ? `#${color.replace(/^#/, "")}` : null,
-      }),
+    await api.put("/api/v1/service-categories/color", {
+      name,
+      color_code: color ? `#${color.replace(/^#/, "")}` : null,
     });
-    if (!res.ok) throw new Error();
     fetchServices();
   } catch {
     toast.add({ severity: "error", summary: t("common.error"), detail: t("services.toast.saveFailed"), life: 3000 });
   }
 };
 
+const renameCategory = ref({ visible: false, from: "", to: "", saving: false });
+const openRenameCategory = (name: string) => {
+  renameCategory.value = { visible: true, from: name, to: name, saving: false };
+};
+const saveRenameCategory = async () => {
+  const { from } = renameCategory.value;
+  const to = renameCategory.value.to.trim();
+  if (!to || to === from) return;
+  renameCategory.value.saving = true;
+  try {
+    await api.put("/api/v1/service-categories/rename", { from, to });
+    renameCategory.value.visible = false;
+    toast.add({ severity: "success", summary: t("services.renameCategory.done", { name: to }), life: 3000 });
+    fetchServices();
+  } catch (e) {
+    const exists = e instanceof ApiError && e.data?.error === "category_exists";
+    toast.add({
+      severity: "error",
+      summary: t("common.error"),
+      detail: t(exists ? "services.renameCategory.exists" : "services.toast.saveFailed"),
+      life: 4000,
+    });
+  } finally {
+    renameCategory.value.saving = false;
+  }
+};
+
 const onCategoryDragEnd = async () => {
   try {
-    const res = await fetch("/api/v1/service-categories/reorder", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
-      body: JSON.stringify({ order: groupedServices.value.map((g) => g.label) }),
-    });
-    if (!res.ok) throw new Error();
+    await api.put("/api/v1/service-categories/reorder", { order: groupedServices.value.map((g) => g.label) });
   } catch (err) {
     toast.add({ severity: "error", summary: t("common.error"), detail: t("services.toast.reorderFailed"), life: 3000 });
     fetchServices();
@@ -628,12 +673,7 @@ const onCategoryDragEnd = async () => {
 
 const onServiceDragEnd = async (group: { items: any[] }) => {
   try {
-    const res = await fetch("/api/v1/services/reorder", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
-      body: JSON.stringify({ order: group.items.map((s) => s.id) }),
-    });
-    if (!res.ok) throw new Error();
+    await api.put("/api/v1/services/reorder", { order: group.items.map((s) => s.id) });
   } catch (err) {
     toast.add({ severity: "error", summary: t("common.error"), detail: t("services.toast.reorderFailed"), life: 3000 });
     fetchServices();
@@ -698,14 +738,8 @@ const saveService = async () => {
   const method = editingService.value.id ? "PUT" : "POST";
 
   try {
-    await fetch(url, {
-      method,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token()}`,
-      },
-      body: JSON.stringify(payload),
-    });
+    // A refusal now shows as an error (it used to say "saved" regardless).
+    await api.request(method, url, payload);
     toast.add({
       severity: "success",
       summary: t('common.success'),
@@ -736,12 +770,7 @@ const confirmDelete = (service: any) => {
 
 const deleteService = async (service: any) => {
   try {
-    const res = await fetch(`/api/v1/services/${service.id}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${token()}` },
-    });
-    if (!res.ok) throw new Error("Delete failed");
-    const { archived } = await res.json();
+    const { archived } = await api.del(`/api/v1/services/${service.id}`);
     toast.add({
       severity: "success",
       summary: t('common.success'),

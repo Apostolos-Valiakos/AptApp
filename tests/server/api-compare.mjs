@@ -134,6 +134,112 @@ const scenario = (ids) => {
   add("invite (no email on file)", "admin", "POST", "/api/v1/clients/$client1/invite", {});
   add("delete client", "admin", "DELETE", "/api/v1/clients/$client1");
   add("no token", null, "GET", "/api/v1/appointments");
+
+  // --- the areas moved out of server.js: reads
+  const range = "from=2026-10-01T00:00:00%2B03:00&to=2026-10-31T23:59:59%2B02:00";
+  for (const [label, url] of [
+    ["profile", "/api/v1/profile"],
+    ["staff list", "/api/v1/staff"],
+    ["time off", "/api/v1/time-off"],
+    ["staff time off", `/api/v1/staff/${ids.staff}/time-off`],
+    ["working hours", "/api/v1/working-hours"],
+    ["services", "/api/v1/services"],
+    ["service categories", "/api/v1/service-categories"],
+    ["products", "/api/v1/products"],
+    ["exercises", "/api/v1/exercises"],
+    ["gift cards", "/api/v1/gift-cards"],
+    ["gift card search", "/api/v1/gift-cards/search?q=1"],
+    ["membership tiers", "/api/v1/membership-tiers"],
+    ["package types", "/api/v1/package-types"],
+    ["discount codes", "/api/v1/discount-codes"],
+    ["discount usage", "/api/v1/discounts/usage"],
+    ["financials", `/api/v1/financials?${range}`],
+    ["report daily", "/api/v1/reports/daily"],
+    ["report analytics", `/api/v1/reports/analytics?${range}`],
+    ["report insights", `/api/v1/reports/insights?${range}`],
+    ["report appointments", `/api/v1/reports/appointments?${range}`],
+    ["report clients", `/api/v1/reports/clients?${range}`],
+    ["report sales", `/api/v1/reports/sales?${range}`],
+    ["report products", `/api/v1/reports/products?${range}`],
+    ["report gift cards", `/api/v1/reports/gift-cards?${range}`],
+    ["report staff", `/api/v1/reports/staff?${range}`],
+    ["report payments", `/api/v1/reports/payments?${range}`],
+    ["report finances", `/api/v1/reports/finances?${range}`],
+    ["report service summary", `/api/v1/reports/service-summary?${range}`],
+    ["report product usage", `/api/v1/reports/product-usage?${range}`],
+    ["report price adjustments", `/api/v1/reports/price-adjustments?${range}`],
+    ["report membership", "/api/v1/reports/membership"],
+    ["expenses", `/api/v1/expenses?from=2026-01-01&to=2026-12-31`],
+    ["shop", "/api/v1/shop"],
+    ["shop filter state", "/api/v1/shop/filter-state"],
+    ["shop hours", "/api/v1/shop-hours"],
+    ["contests", "/api/v1/contests"],
+    ["active contest", "/api/v1/contests/active"],
+    ["chat channels", "/api/v1/chat/channels"],
+    ["chat users", "/api/v1/chat/shop-users"],
+    ["broadcasts", "/api/v1/broadcasts"],
+    ["recipes", "/api/v1/product-usage/recipes"],
+    ["stocktakes", `/api/v1/product-inventory/${ids.inventory}/stocktakes`],
+    ["availability", `/api/v1/availability?service_id=${ids.service}&staff_id=${ids.staff}&date=2027-02-11`],
+  ]) add(label, "admin", "GET", url);
+  add("daily report as staff", "staff", "GET", "/api/v1/reports/daily");
+  add("financials as staff", "staff", "GET", `/api/v1/financials?${range}`);
+  add("platform shops", "super_admin", "GET", "/api/v1/platform/shops");
+  add("demo requests", "super_admin", "GET", "/api/v1/platform/demo-requests");
+  // the portal, as a client
+  add("portal services", "client", "GET", "/api/v1/portal/services");
+  add("portal staff", "client", "GET", `/api/v1/portal/staff?service_id=${ids.service}`);
+  add("portal notifications", "client", "GET", "/api/v1/portal/notifications");
+  add("portal push key", "client", "GET", "/api/v1/push/vapid-public-key");
+  add("portal shop", "client", "GET", "/api/v1/shop");
+  add("portal contest", "client", "GET", "/api/v1/contests/active");
+  add("portal availability", "client", "GET", `/api/v1/availability?service_id=${ids.service}&staff_id=${ids.staff}&date=2027-02-11`);
+
+  // --- writes, each on a record made here
+  add("create staff", "admin", "POST", "/api/v1/staff", { first_name: "Compare", last_name: "Staff", email: "", phone: "" });
+  add("edit staff", "admin", "PUT", "/api/v1/staff/$staff1", { first_name: "Compare", last_name: "Edited", email: "", phone: "", service_ids: [] });
+  add("staff time off add", "admin", "POST", "/api/v1/staff/$staff1/time-off", { type: "break", start_date: "2027-02-12", end_date: "2027-02-12", start_time: "10:00", end_time: "11:00", reason: "compare" });
+  add("staff time off after", "admin", "GET", "/api/v1/staff/$staff1/time-off");
+  add("staff time off delete", "admin", "DELETE", "/api/v1/staff/$staff1/time-off/$timeoff1");
+  add("working hours set", "admin", "POST", "/api/v1/staff/$staff1/working-hours", {
+    enabled: true, effective_from: "2027-02-08", schedule: [{ day_of_week: 1, ranges: [{ start_time: "09:00", end_time: "17:00" }] }],
+  });
+  add("working hours delete", "admin", "DELETE", "/api/v1/staff/$staff1/working-hours/2027-02-08");
+  add("create service", "admin", "POST", "/api/v1/services", { name: "Compare Service", duration_minutes: 30, price: 25, category: "Compare" });
+  add("edit service", "admin", "PUT", "/api/v1/services/$service1", { name: "Compare Service", duration_minutes: 45, price: 30, category: "Compare" });
+  add("category colour", "admin", "PUT", "/api/v1/service-categories/color", { name: "Compare", color_code: "#123456" });
+  add("rename category", "admin", "PUT", "/api/v1/service-categories/rename", { from: "Compare", to: "Compared" });
+  add("delete service", "admin", "DELETE", "/api/v1/services/$service1");
+  add("create product", "admin", "POST", "/api/v1/products", { name: "Compare Product", description: "", variations: [{ name: "50ml", price: 10, stock_quantity: 3 }] });
+  add("delete product", "admin", "DELETE", "/api/v1/products/$product1");
+  add("create expense", "admin", "POST", "/api/v1/expenses", { amount: 12.5, expense_date: "2026-10-20", description: "compare", payment_method: "cash" });
+  add("edit expense", "admin", "PUT", "/api/v1/expenses/$expense1", { amount: 13, expense_date: "2026-10-20", description: "compare 2", payment_method: "card" });
+  add("delete expense", "admin", "DELETE", "/api/v1/expenses/$expense1");
+  add("create discount code", "admin", "POST", "/api/v1/discount-codes", { name: "COMPARE10", percentage: 10 });
+  add("edit discount code", "admin", "PUT", "/api/v1/discount-codes/$discount1", { is_active: false });
+  add("delete discount code", "admin", "DELETE", "/api/v1/discount-codes/$discount1");
+  add("create tier", "admin", "POST", "/api/v1/membership-tiers", { name: "Compare Tier", monthly_price: 20, yearly_price: 200, color: "#abcdef", grace_period_days: 3, services: [] });
+  add("delete tier", "admin", "DELETE", "/api/v1/membership-tiers/$tier1");
+  add("create package type", "admin", "POST", "/api/v1/package-types", { name: "Compare Pack", service_id: ids.service, visits: 5, price: 100, validity_days: 90 });
+  add("delete package type", "admin", "DELETE", "/api/v1/package-types/$packagetype1");
+  add("create exercise", "admin", "POST", "/api/v1/exercises", { name: "Compare Exercise", category: "Compare", description: "" });
+  add("delete exercise", "admin", "DELETE", "/api/v1/exercises/$exercise1");
+  add("create gift card", "admin", "POST", "/api/v1/gift-cards", { card_number: "CMP-0001", customer_name: "Compare", initial_amount: 50, purchase_payment_method: "cash", sold_by_staff_id: null });
+  add("delete gift card", "admin", "DELETE", "/api/v1/gift-cards/$giftcard1");
+  add("create channel", "admin", "POST", "/api/v1/chat/channels", { name: "Compare", description: "", memberIds: [] });
+  add("edit profile", "admin", "PUT", "/api/v1/profile", { firstName: "Compare", lastName: "Admin", email: "", phone: "" });
+  add("delete staff", "admin", "DELETE", "/api/v1/staff/$staff1");
+
+  // --- roles: what a client and plain staff may do outside the portal
+  add("client: staff list", "client", "GET", "/api/v1/staff");
+  add("client: products", "client", "GET", "/api/v1/products");
+  add("client: chat", "client", "GET", "/api/v1/chat/channels");
+  add("client: create service", "client", "POST", "/api/v1/services", { name: "Client Service", duration_minutes: 30, price: 1, category: "X" });
+  add("client: shop contact", "client", "PUT", "/api/v1/shop/contact", { phone: "1", address: "", website: "" });
+  add("staff: create service", "staff", "POST", "/api/v1/services", { name: "Staff Service", duration_minutes: 30, price: 1, category: "X" });
+  add("staff: create product", "staff", "POST", "/api/v1/products", { name: "Staff Product", description: "", variations: [] });
+  add("staff: services list", "staff", "GET", "/api/v1/services");
+  add("staff: reorder staff", "staff", "POST", "/api/v1/staff/reorder", { orders: [] });
   return steps;
 };
 
@@ -190,6 +296,7 @@ const ids = {
   staff: sql(db, `SELECT id FROM staff WHERE shop_id='${SHOP}' ORDER BY id LIMIT 1`),
   service: sql(db, `SELECT id FROM services WHERE shop_id='${SHOP}' AND is_active AND price > 0 ORDER BY id LIMIT 1`),
   exercise: sql(db, `SELECT coalesce((SELECT id::text FROM exercises ORDER BY id LIMIT 1), '')`),
+  inventory: sql(db, `SELECT coalesce((SELECT pi.id::text FROM product_inventory pi JOIN products p ON p.id = pi.product_id WHERE p.shop_id = '${SHOP}' ORDER BY pi.id LIMIT 1), '')`),
   tier: sql(db, `SELECT coalesce((SELECT id::text FROM membership_tiers WHERE shop_id='${SHOP}' ORDER BY id LIMIT 1), '')`),
   packageType: sql(db, `SELECT coalesce((SELECT id::text FROM package_types WHERE shop_id='${SHOP}' AND is_active ORDER BY id LIMIT 1), '')`),
 };
@@ -256,7 +363,7 @@ try {
   const vars = { ref: {}, cur: {} };
   for (const step of scenario(ids)) {
     for (const name of ["ref", "cur"]) {
-      const fill = (v) => JSON.parse(JSON.stringify(v ?? null).replace(/\$(client1|appt1|appt2|file1)/g, (m, k) => vars[name][k] ?? m));
+      const fill = (v) => JSON.parse(JSON.stringify(v ?? null).replace(/\$([a-z]+1)\b/g, (m, k) => vars[name][k] ?? m));
       const r = step.body?.__form
         ? await upload(PORTS[name], tokens[step.who], fill(step.url), step.body.__form)
         : await api(PORTS[name], step.who ? tokens[step.who] : "")(
@@ -266,6 +373,13 @@ try {
       if (step.label === "create client") vars[name].client1 = r.data?.client?.id;
       if (step.label === "book") vars[name].appt1 = r.data?.id;
       if (step.label === "book second") vars[name].appt2 = r.data?.id;
+      // Records made by the area requests: their id for the later steps.
+      const made = {
+        "create staff": "staff1", "staff time off add": "timeoff1", "create service": "service1", "create product": "product1",
+        "create expense": "expense1", "create discount code": "discount1", "create tier": "tier1",
+        "create package type": "packagetype1", "create exercise": "exercise1", "create gift card": "giftcard1",
+      }[step.label];
+      if (made) vars[name][made] = r.data?.id ?? r.data?.productId;
       results[name].push({ label: step.label, status: r.status, data: normalize(r.data, known) });
     }
   }
@@ -283,14 +397,31 @@ const { ref, cur } = results;
 // Appointment lists come in start-time order; appointments starting at the
 // same moment had no defined order before (now: by id), so compare those
 // lists by start time, then id.
-const byStart = (list) =>
-  Array.isArray(list) && list.every((x) => x && "start_time" in x && "id" in x)
-    ? [...list].sort((x, y) => String(x.start_time).localeCompare(String(y.start_time)) || String(x.id).localeCompare(String(y.id)))
+// Lists of records made at the same moment (payments, by created_at) have no
+// defined order among those either, so they're compared the same way.
+const byStart = (list) => {
+  if (!Array.isArray(list) || list.length === 0) return list;
+  const timeKey = ["start_time", "created_at"].find((k) => list.every((x) => x && typeof x === "object" && k in x && "id" in x));
+  return timeKey
+    ? [...list].sort((x, y) => String(x[timeKey]).localeCompare(String(y[timeKey])) || String(x.id).localeCompare(String(y.id), undefined, { numeric: true }))
     : list;
+};
 for (const side of [ref, cur]) for (const r of side) r.data = byStart(r.data);
+// Reports list rows with equal sort values in no defined order: for them,
+// the same rows in another order isn't a difference (arrays sorted, deeply).
+const rowsSorted = (v) =>
+  Array.isArray(v)
+    ? v.map(rowsSorted).map((x) => JSON.stringify(x)).sort()
+    : v && typeof v === "object"
+      ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, rowsSorted(x)]))
+      : v;
+const orderFree = (label) => label === "financials" || label.startsWith("report ") || label.startsWith("daily report");
 let differences = 0;
 for (let i = 0; i < ref.length; i++) {
-  if (JSON.stringify(ref[i]) !== JSON.stringify(cur[i])) {
+  const same = orderFree(ref[i].label)
+    ? JSON.stringify(rowsSorted(ref[i])) === JSON.stringify(rowsSorted(cur[i]))
+    : JSON.stringify(ref[i]) === JSON.stringify(cur[i]);
+  if (!same) {
     differences++;
     console.log(`✗ ${ref[i].label}: ${ref[i].status} vs ${cur[i].status}`);
     console.log(`  first difference at ${firstDiff(ref[i].data, cur[i].data)}`);

@@ -401,6 +401,11 @@ run by hand:
 - The first start after the October 2026 update applies `0002` (indexes the
   calendar relies on) and `0003` (removes duplicate constraints that earlier
   starts had piled up — a few seconds on a large `transactions` table).
+- `0004` adds places and persons (sets 5 places for ΣΑΟΥΝΑ and ΧΑΜΜΑΜ), `0005`
+  adds `booked_at`, and `0006` holds the schema statements that used to run on
+  every start (all safe on a database that already has them).
+- Rolling the code back after these is safe: they only add to the schema, and
+  the older code still runs on it.
 
 `RUN_JOBS=0` in the environment turns off the scheduled jobs (reminder
 emails, push reminders, membership renewals). Leave it unset in production;

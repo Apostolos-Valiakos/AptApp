@@ -171,6 +171,23 @@
           />
         </div>
       </div>
+
+      <!-- A shared place (the sauna, the hammam) takes several persons; one
+           row can be for a few of them together. -->
+      <div v-if="placesFor(service.staff_id) > 1" class="mt-4 flex items-center gap-3">
+        <label class="text-xs text-gray-500">{{ t("bookingServices.persons") }}</label>
+        <InputNumber
+          :modelValue="personsOf(service)"
+          :min="1"
+          :max="99"
+          showButtons
+          buttonLayout="horizontal"
+          class="p-inputtext-sm"
+          inputClass="w-12 text-center"
+          data-testid="service-persons"
+          @update:modelValue="(v: number | null) => (service.persons = v || 1)"
+        />
+      </div>
     </div>
       </div>
       </template>
@@ -209,6 +226,7 @@ import ServicePickerDialog, { type PickedService } from "./ServicePickerDialog.v
 import draggable from "vuedraggable";
 import TimeDropdown from "./TimeDropdown.vue";
 import { pinStartTimes } from "../../utils/serviceSequence";
+import { personsOf, placesOf } from "../../utils/capacity";
 const { t } = useI18n();
 const authStore = useAuthStore();
 const isShopAdmin = authStore.isShopAdmin;
@@ -256,6 +274,8 @@ const overtimeNote = (service: any) => {
     ? t("bookingServices.overtimeNote", { hours })
     : t("bookingServices.overtimeNoteDayOff");
 };
+
+const placesFor = (staffId: any) => placesOf(props.staff.find((s: any) => String(s.id) === String(staffId)));
 
 const isStaffMissing = (service: any) =>
   props.requireStaff && !!service.service_id && !service.staff_id;

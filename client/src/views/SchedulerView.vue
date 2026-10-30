@@ -71,7 +71,7 @@
           @click="canGoPrev && calendarApi?.prev()"
           :disabled="!canGoPrev"
           class="p-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-          title="Previous"
+          :title="t('scheduler.nav.previous')"
         >
           <i class="pi pi-chevron-left text-sm"></i>
         </button>
@@ -79,12 +79,12 @@
           @click="calendarApi?.today()"
           class="px-3 py-1.5 text-xs font-bold text-[var(--p-primary-700)] bg-[var(--p-primary-50)] hover:bg-[var(--p-primary-100)] rounded-lg transition-colors"
         >
-          Today
+          {{ t("scheduler.nav.today") }}
         </button>
         <button
           @click="calendarApi?.next()"
           class="p-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-800 transition-colors"
-          title="Next"
+          :title="t('scheduler.nav.next')"
         >
           <i class="pi pi-chevron-right text-sm"></i>
         </button>
@@ -170,15 +170,15 @@
           <button
             @click="zoomOut"
             class="p-1.5 rounded-md text-gray-500 hover:bg-white hover:shadow-sm hover:text-gray-800 transition-all"
-            title="Zoom Out"
+            :title="t('scheduler.nav.zoomOut')"
           >
             <i class="pi pi-minus text-xs"></i>
           </button>
-          <span class="text-xs font-medium text-gray-400 px-1.5">Zoom</span>
+          <span class="text-xs font-medium text-gray-400 px-1.5">{{ t("scheduler.zoom") }}</span>
           <button
             @click="zoomIn"
             class="p-1.5 rounded-md text-gray-500 hover:bg-white hover:shadow-sm hover:text-gray-800 transition-all"
-            title="Zoom In"
+            :title="t('scheduler.nav.zoomIn')"
           >
             <i class="pi pi-plus text-xs"></i>
           </button>
@@ -201,14 +201,14 @@
           <button
             @click="openSwapDialog"
             class="p-2 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-800 transition-colors flex-shrink-0"
-            title="Swap Appointments"
+            :title="t('scheduler.nav.swap')"
           >
             <i class="pi pi-arrow-right-arrow-left text-sm"></i>
           </button>
           <button
             @click="reorderDialogVisible = true"
             class="p-2 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-800 transition-colors flex-shrink-0"
-            title="Reorder Staff"
+            :title="t('scheduler.nav.reorderStaff')"
           >
             <i class="pi pi-sort-alt text-sm"></i>
           </button>
@@ -266,7 +266,8 @@
     <!-- ===== DOCKED DATE CALENDAR (pinned from the date popup) ===== -->
     <aside
       v-if="calendarDocked"
-      class="docked-date-picker flex-shrink-0 w-[272px] border-r border-gray-100 bg-white overflow-y-auto overflow-x-hidden"
+      class="docked-date-picker flex-shrink-0 bg-white overflow-y-auto overflow-x-hidden"
+      :style="{ width: `${dockedWidth}px` }"
       data-testid="docked-calendar"
     >
       <div class="flex justify-end px-2 pt-2">
@@ -288,6 +289,27 @@
         @date-select="onDatePicked"
       />
     </aside>
+    <!-- Drag to resize the docked calendar -->
+    <div
+      v-if="calendarDocked"
+      class="dock-resizer"
+      :class="{ 'is-dragging': resizingDock }"
+      role="separator"
+      aria-orientation="vertical"
+      tabindex="0"
+      :aria-label="t('scheduler.resizeCalendar')"
+      :aria-valuenow="dockedWidth"
+      :aria-valuemin="DOCKED_MIN_WIDTH"
+      :title="t('scheduler.resizeCalendar')"
+      data-testid="docked-resizer"
+      @pointerdown="startDockResize"
+      @pointermove="moveDockResize"
+      @pointerup="endDockResize"
+      @pointercancel="endDockResize"
+      @dblclick="setDockedWidth(DOCKED_DEFAULT_WIDTH, true)"
+      @keydown.left.prevent="setDockedWidth(dockedWidth - 16, true)"
+      @keydown.right.prevent="setDockedWidth(dockedWidth + 16, true)"
+    ></div>
 
     <!-- ===== CALENDAR AREA ===== -->
     <div class="flex-1 min-w-0 overflow-auto relative">
@@ -301,7 +323,7 @@
             class="flex items-center gap-2 bg-white rounded-full px-4 py-2 shadow-md border border-gray-100"
           >
             <i class="pi pi-spin pi-spinner text-[var(--p-primary-color)]"></i>
-            <span class="text-xs font-medium text-gray-500">Loading…</span>
+            <span class="text-xs font-medium text-gray-500">{{ t("common.loading") }}</span>
           </div>
         </div>
       </transition>
@@ -327,16 +349,16 @@
           >
             <i class="pi pi-users text-2xl"></i>
           </div>
-          <h3 class="text-lg font-bold text-gray-900 mb-2">No Team Members</h3>
+          <h3 class="text-lg font-bold text-gray-900 mb-2">{{ t("scheduler.noStaff.title") }}</h3>
           <p class="text-sm text-gray-500 mb-6">
-            Add staff members to start scheduling appointments.
+            {{ t("scheduler.noStaff.text") }}
           </p>
           <a
             href="/app/staff"
             class="inline-flex items-center gap-2 bg-[var(--p-primary-color)] text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:brightness-105 transition-all"
           >
             <i class="pi pi-plus text-xs"></i>
-            Add Staff
+            {{ t("scheduler.noStaff.addStaff") }}
           </a>
         </div>
       </div>
@@ -361,6 +383,14 @@
       :appointments="calendarStore.events"
       :staff="calendarStore.resources"
       @swap="handleSwap"
+    />
+
+    <PlaceGroupDialog
+      v-model:visible="placeDialogVisible"
+      v-model:index="placeDialogIndex"
+      :groups="placeDialogGroups"
+      @add="onPlaceGroupAdd"
+      @open="onPlaceGroupOpen"
     />
 
     <AppointmentHoverCard
@@ -422,6 +452,7 @@ import { useAuthStore } from "../stores/auth";
 import elLocale from "@fullcalendar/core/locales/el";
 import StaffReorderDialog from "../components/StaffReorderDialog.vue";
 import AppointmentHoverCard from "../components/AppointmentHoverCard.vue";
+import PlaceGroupDialog, { type PlaceGroup } from "../components/PlaceGroupDialog.vue";
 import {
   isStaffAvailable,
   toLocalDateStr,
@@ -435,6 +466,7 @@ import { api as http, ApiError } from "../api/http"; // (`api` in this file is F
 import { fetchOrQueue } from "../offline/queue";
 import { knownOverlapIds } from "../offline/overlaps";
 import { isTempId } from "../offline/tempIds";
+import { askOverCapacity, hhmm, occupancyFrom, overCapacityMessage, overlapGroups, peakPersons, personsOf, placesOf } from "../utils/capacity";
 
 const reorderDialogVisible = ref(false);
 const authStore = useAuthStore();
@@ -535,6 +567,26 @@ const readDocked = () => {
   }
 };
 const calendarDocked = ref(readDocked());
+// Its width comes from dragging the line beside it; each device remembers that too.
+const DOCKED_WIDTH_KEY = "scheduler.calendarDockedWidth";
+const DOCKED_DEFAULT_WIDTH = 272;
+const DOCKED_MIN_WIDTH = 200;
+const DOCKED_MAX_WIDTH = 560;
+const clampDockedWidth = (width: number) => {
+  // At least half the window stays for the schedule (on a phone, the default width).
+  const roomy = Math.max(DOCKED_DEFAULT_WIDTH, Math.floor(window.innerWidth / 2));
+  return Math.round(Math.max(DOCKED_MIN_WIDTH, Math.min(DOCKED_MAX_WIDTH, roomy, width)));
+};
+const readDockedWidth = () => {
+  try {
+    const saved = Number(localStorage.getItem(DOCKED_WIDTH_KEY));
+    return clampDockedWidth(saved || DOCKED_DEFAULT_WIDTH);
+  } catch {
+    return DOCKED_DEFAULT_WIDTH;
+  }
+};
+const dockedWidth = ref(readDockedWidth());
+const resizingDock = ref(false);
 /** The docked calendar's selection: follows the day the schedule shows. */
 const dockedDate = ref<Date | null>(new Date());
 const todayDate = computed(() => {
@@ -545,6 +597,15 @@ const todayDate = computed(() => {
 
 // --- Appointment hover card ---
 const hoveredAppointment = ref<any>(null);
+// Shared places (ΣΑΟΥΝΑ, ΧΑΜΜΑΜ: staff with more than one place) in the day
+// view show overlapping bookings as one card (see placeGroupEvents). One
+// group at a time can be opened into separate cards, to drag one person.
+const expandedGroupKey = ref<string | null>(null);
+// Clicking a grouped card (not a name or a button) opens its dialog; the
+// arrows there step through that place's groups of the day.
+const placeDialogVisible = ref(false);
+const placeDialogResourceId = ref<string | null>(null);
+const placeDialogIndex = ref(0);
 // The hover card must never show while dragging/resizing or while the
 // "confirm changes" dialog is open (it would sit on top of the dialog).
 let dragInProgress = false;
@@ -584,18 +645,18 @@ const toggleFitStaff = () => {
 
 // --- Status filter ---
 const statusFilter = ref<"all" | "active" | "cancelled">("all");
-const statusFilterOptions: { label: string; value: "all" | "active" | "cancelled"; icon: string }[] = [
-  { label: "All", value: "all", icon: "" },
-  { label: "Active", value: "active", icon: "pi pi-check-circle" },
-  { label: "Cancelled", value: "cancelled", icon: "pi pi-times-circle" },
-];
+const statusFilterOptions = computed<{ label: string; value: "all" | "active" | "cancelled"; icon: string }[]>(() => [
+  { label: t("scheduler.filter.all"), value: "all", icon: "" },
+  { label: t("scheduler.filter.active"), value: "active", icon: "pi pi-check-circle" },
+  { label: t("scheduler.filter.cancelled"), value: "cancelled", icon: "pi pi-times-circle" },
+]);
 
 // --- View options ---
-const viewOptions = [
-  { label: "Day", value: "resourceTimeGridDay" },
-  { label: "Week", value: "resourceTimeGridWeek" },
-  { label: "Month", value: "dayGridMonth" },
-];
+const viewOptions = computed(() => [
+  { label: t("scheduler.view.day"), value: "resourceTimeGridDay" },
+  { label: t("scheduler.view.week"), value: "resourceTimeGridWeek" },
+  { label: t("scheduler.view.month"), value: "dayGridMonth" },
+]);
 
 const calendarApi = computed(() => fullCalendar.value?.getApi());
 
@@ -807,6 +868,50 @@ const dockCalendar = async (docked: boolean) => {
   calendarApi.value?.updateSize();
 };
 
+// The schedule beside it re-measures at most once a frame while dragging.
+let dockResizeFrame = 0;
+const setDockedWidth = (width: number, save = false) => {
+  dockedWidth.value = clampDockedWidth(width);
+  if (!dockResizeFrame) {
+    dockResizeFrame = requestAnimationFrame(async () => {
+      dockResizeFrame = 0;
+      await nextTick();
+      calendarApi.value?.updateSize();
+    });
+  }
+  if (save) {
+    try {
+      localStorage.setItem(DOCKED_WIDTH_KEY, String(dockedWidth.value));
+    } catch {}
+  }
+};
+let dockDragStartX = 0;
+let dockDragStartWidth = 0;
+const startDockResize = (e: PointerEvent) => {
+  e.preventDefault();
+  (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  dockDragStartX = e.clientX;
+  dockDragStartWidth = dockedWidth.value;
+  resizingDock.value = true;
+};
+const moveDockResize = (e: PointerEvent) => {
+  if (resizingDock.value) setDockedWidth(dockDragStartWidth + e.clientX - dockDragStartX);
+};
+const endDockResize = () => {
+  if (!resizingDock.value) return;
+  resizingDock.value = false;
+  setDockedWidth(dockedWidth.value, true);
+};
+
+// A narrower window can leave too little room for the width chosen earlier.
+const fitDockedWidth = () => {
+  if (calendarDocked.value && dockedWidth.value !== clampDockedWidth(dockedWidth.value)) {
+    setDockedWidth(dockedWidth.value);
+  }
+};
+onMounted(() => window.addEventListener("resize", fitDockedWidth));
+onUnmounted(() => window.removeEventListener("resize", fitDockedWidth));
+
 const toggleDatePicker = () => {
   if (calendarDocked.value) return; // already on screen
   if (!showDatePicker.value)
@@ -895,6 +1000,71 @@ const calendarResources = computed(() => {
   }));
 });
 
+const placesById = computed(() => new Map(calendarStore.resources.map((r: any) => [String(r.id), placesOf(r)])));
+
+// The day view's cards in a shared place: bookings that overlap become one
+// card that says how many are there together (see placeGroupHtml), except
+// the opened group (expandedGroupKey), which stays as separate cards.
+// Cancelled and no-show bookings keep their own cards.
+const placeGroupEvents = (events: any[]) => {
+  const byPlace = new Map<string, any[]>();
+  const result: any[] = [];
+  for (const e of events) {
+    const status = e.extendedProps.fullAppointment?.status;
+    const inPlace = (placesById.value.get(String(e.resourceId)) || 1) > 1;
+    if (inPlace && e.start && e.end && !["cancelled", "no-show", "no_show"].includes(status)) {
+      if (!byPlace.has(e.resourceId)) byPlace.set(e.resourceId, []);
+      byPlace.get(e.resourceId)!.push(e);
+    } else {
+      result.push(e);
+    }
+  }
+  for (const [resourceId, list] of byPlace) {
+    const capacity = placesById.value.get(String(resourceId)) || 1;
+    const items = list.map((e) => ({ e, start: new Date(e.start).getTime(), end: new Date(e.end).getTime() }));
+    for (const group of overlapGroups(items)) {
+      const key = `${resourceId}|${group.map((g) => g.e.id).sort().join(",")}`;
+      if (key === expandedGroupKey.value) {
+        result.push(
+          ...group.map(({ e }) => ({
+            ...e,
+            classNames: [...e.classNames, "fc-group-open"],
+            extendedProps: { ...e.extendedProps, groupKey: key },
+          })),
+        );
+        continue;
+      }
+      const start = Math.min(...group.map((g) => g.start));
+      const end = Math.max(...group.map((g) => g.end));
+      const members = group.map(({ e, start, end }) => ({ ...e.extendedProps, start, end }));
+      const offline = members.some((m) => m.offlineState === "conflict")
+        ? "fc-offline-conflict"
+        : members.some((m) => m.offlineState)
+          ? "fc-offline-pending"
+          : null;
+      result.push({
+        id: `group_${key}`,
+        resourceId,
+        start: new Date(start).toISOString(),
+        end: new Date(end).toISOString(),
+        backgroundColor: "#ffffff",
+        borderColor: "transparent",
+        textColor: "#1f2937",
+        durationEditable: false,
+        classNames: ["fresha-event", "fc-place-group", ...(offline ? [offline] : [])],
+        extendedProps: {
+          isPlaceGroup: true,
+          groupKey: key,
+          capacity,
+          peak: peakPersons(members, start, end),
+          members,
+        },
+      });
+    }
+  }
+  return result;
+};
+
 const calendarEvents = computed(() => {
   const appointments = calendarStore.events;
   if (!Array.isArray(appointments)) return [];
@@ -934,7 +1104,9 @@ const calendarEvents = computed(() => {
       return;
 
     appt.services.forEach((svc: any, index: number) => {
-      const bgColor = resolveServiceColor(svc.service_color, svc.category_color);
+      // A completed appointment's card is white, whatever its service colour.
+      const isCompleted = appt.status === "completed";
+      const bgColor = isCompleted ? "#ffffff" : resolveServiceColor(svc.service_color, svc.category_color);
       const duration = svc.duration_minutes || 60;
       const endTime = svc.start_time
         ? new Date(
@@ -963,10 +1135,13 @@ const calendarEvents = computed(() => {
         svc.service_name ||
         "Service";
 
+      const persons = personsOf(svc);
+      const serviceLabel = persons > 1 ? `${displayedServiceName} ×${persons}` : displayedServiceName;
+
       events.push({
         id: `${appt.id}_${index}`,
         resourceId: svc.staff_id?.toString(),
-        title: `${appt.first_name} - ${displayedServiceName}`,
+        title: `${appt.first_name} - ${serviceLabel}`,
         start: svc.start_time,
         end: endTime,
         backgroundColor: bgColor,
@@ -976,6 +1151,7 @@ const calendarEvents = computed(() => {
         // red when the server refused them (see the sync banner).
         classNames: [
           "fresha-event",
+          ...(isCompleted ? ["fc-completed"] : []),
           ...(appt._offline === "conflict" ? ["fc-offline-conflict"] : appt._offline ? ["fc-offline-pending"] : []),
         ],
         extendedProps: {
@@ -995,7 +1171,8 @@ const calendarEvents = computed(() => {
           // short appointments — leaves more room for the service name
           // before truncating than the full "Surname Firstname" would.
           client_surname: appt.last_name || appt.first_name || "Unknown",
-          service_name: displayedServiceName,
+          service_name: serviceLabel,
+          persons,
           serviceArchived: !!svc.service_archived,
           // Same client + same service + same start time = one booking split
           // across several staff members (shown as separate boxes, one per
@@ -1038,9 +1215,10 @@ const calendarEvents = computed(() => {
     "#bbf7d0", // green-200
     "#fecaca", // red-200
   ];
+  const shown = currentView.value === "resourceTimeGridDay" ? placeGroupEvents(events) : events;
   const eventsByResource: Record<string, any[]> = {};
-  events.forEach((e) => {
-    if (!e.resourceId || !e.start || !e.end) return;
+  shown.forEach((e) => {
+    if (!e.resourceId || !e.start || !e.end || e.extendedProps.isPlaceGroup) return;
     (eventsByResource[e.resourceId] ||= []).push(e);
   });
   Object.values(eventsByResource).forEach((group) => {
@@ -1053,7 +1231,7 @@ const calendarEvents = computed(() => {
       for (let i = active.length - 1; i >= 0; i--) {
         if (new Date(active[i].end).getTime() <= startMs) active.splice(i, 1);
       }
-      if (active.length > 0) {
+      if (active.length > 0 && e.extendedProps.fullAppointment?.status !== "completed") {
         const usedColors = new Set(active.map((a) => a.backgroundColor));
         const accent =
           OVERLAP_ACCENT_COLORS.find((c) => !usedColors.has(c)) ||
@@ -1064,8 +1242,50 @@ const calendarEvents = computed(() => {
     });
   });
 
-  return events;
+  return shown;
 });
+
+// The open dialog's place: its grouped cards on the shown day, in time order.
+const placeDialogGroups = computed<(PlaceGroup & { key: string })[]>(() => {
+  const resourceId = placeDialogResourceId.value;
+  if (!resourceId) return [];
+  const name = calendarStore.resources.find((r: any) => String(r.id) === String(resourceId))?.name || "";
+  return calendarEvents.value
+    .filter((e: any) => e.extendedProps?.isPlaceGroup && String(e.resourceId) === String(resourceId))
+    .map((e: any) => ({
+      key: e.extendedProps.groupKey,
+      resourceName: name,
+      capacity: e.extendedProps.capacity,
+      peak: e.extendedProps.peak,
+      start: new Date(e.start).getTime(),
+      end: new Date(e.end).getTime(),
+      members: e.extendedProps.members,
+    }))
+    .sort((a: any, b: any) => a.start - b.start);
+});
+// After a reload the list may be shorter: stay on a group that exists.
+watch(placeDialogGroups, (list) => {
+  if (placeDialogIndex.value > list.length - 1) placeDialogIndex.value = Math.max(0, list.length - 1);
+  if (placeDialogVisible.value && list.length === 0) placeDialogVisible.value = false;
+});
+const openPlaceDialog = (resourceId: string, groupKey: string) => {
+  hideHoverCard();
+  placeDialogResourceId.value = String(resourceId);
+  placeDialogIndex.value = Math.max(0, placeDialogGroups.value.findIndex((g) => g.key === groupKey));
+  placeDialogVisible.value = true;
+};
+// A booking clicked in the dialog: its booking dialog instead.
+const onPlaceGroupOpen = (appointment: any) => {
+  placeDialogVisible.value = false;
+  selectedAppointment.value = appointment;
+  dialogVisible.value = true;
+};
+const onPlaceGroupAdd = (start: Date) => {
+  const resourceId = placeDialogResourceId.value;
+  const name = placeDialogGroups.value[0]?.resourceName || "";
+  placeDialogVisible.value = false;
+  openNewBooking(start, new Date(start.getTime() + 60 * 60000), resourceId, name);
+};
 
 // Multi-day leave only — still a non-interactive background tint, since a
 // leave period isn't a single clickable slot the way a break block is.
@@ -1089,7 +1309,7 @@ const timeOffBackgroundEvents = computed(() => {
             new Date(`${startDateStr}T00:00:00`).getTime()) /
             86400000,
         ) + 1;
-      const durationLabel = days === 1 ? "1 ημέρα" : `${days} ημέρες`;
+      const durationLabel = days === 1 ? t("scheduler.timeOff.oneDay") : t("scheduler.timeOff.days", { count: days });
 
       return {
         id: `timeoff_${entry.id}`,
@@ -1098,13 +1318,13 @@ const timeOffBackgroundEvents = computed(() => {
         backgroundColor: "rgba(239, 68, 68, 0.15)",
         start: startDateStr,
         end: endDateExclusive(entry.end_date),
-        title: `Άδεια (${durationLabel})`,
+        title: `${t("scheduler.timeOff.leave")} (${durationLabel})`,
         extendedProps: {
           isTimeOff: true,
           timeOffType: "leave",
           reason: entry.reason,
           durationLabel,
-          typeLabel: "Άδεια",
+          typeLabel: t("scheduler.timeOff.leave"),
         },
       };
     });
@@ -1130,7 +1350,7 @@ const breakBlockEvents = computed(() => {
       return {
         id: `timeoff_${entry.id}`,
         resourceId: entry.staff_id?.toString(),
-        title: `Αποκλεισμός (${minutes} λεπτά)`,
+        title: t("scheduler.timeOff.block", { minutes }),
         start: `${startDateStr}T${entry.start_time}`,
         end: `${startDateStr}T${entry.end_time}`,
         backgroundColor: "#9ca3af",
@@ -1254,9 +1474,12 @@ const prepareServicesForUpdate = (services: any[]) =>
 // the optimistic drag on rejection (previously swallowed silently, leaving
 // the event visually stuck in the rejected spot — now common once staff
 // working-hours/time-off enforcement can reject a drag).
+// `refresh: false` leaves reloading the calendar to the caller (a group move
+// saves several appointments, then reloads once).
 const updateAppointment = async (
   id: string,
   updates: any,
+  { refresh = true } = {},
 ): Promise<boolean> => {
   try {
     // Offline the move is queued and shown right away (see offline/queue.ts);
@@ -1285,6 +1508,13 @@ const updateAppointment = async (
     const res = result.response;
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
+      // A shared place (the sauna) would be over its places: ask, then send again.
+      if (err.error === "over_capacity") {
+        hideHoverCard();
+        return (await askOverCapacity(confirm, t, err))
+          ? updateAppointment(id, { ...updates, allow_over_capacity: true }, { refresh })
+          : false;
+      }
       if (err.error === "stale_appointment" || err.error === "appointment_missing") {
         // Changed (or deleted) on another device meanwhile: show the current state.
         await calendarStore.fetchAppointments(currentStart.value, currentEnd.value);
@@ -1292,7 +1522,7 @@ const updateAppointment = async (
       }
       throw new Error(err.error || t("scheduler.toasts.updateFailedError"));
     }
-    await calendarStore.fetchAppointments(currentStart.value, currentEnd.value);
+    if (refresh) await calendarStore.fetchAppointments(currentStart.value, currentEnd.value);
     return true;
   } catch (e: any) {
     toast.add({
@@ -1356,6 +1586,22 @@ const confirmOvertimeSlot = (entry: OvertimeEntry): Promise<boolean> =>
     });
   });
 
+// A new booking for a staff member and time, as a click on the empty grid
+// starts one. Outside the staff member's hours: ask first; the booking
+// dialog then doesn't ask again for the same staff member.
+const openNewBooking = async (start: Date, end: Date, staffId: string | null, staffName: string) => {
+  const overtime = overtimeEntryFor(staffId, start, end);
+  if (overtime && !(await confirmOvertimeSlot(overtime))) return;
+  selectedAppointment.value = {
+    start_time: formatSlotIso(start),
+    end_time: formatSlotIso(end),
+    staff_id: staffId,
+    staff_name: staffName,
+    overtime_confirmed_staff_id: overtime ? staffId : null,
+  };
+  dialogVisible.value = true;
+};
+
 // Phones fit about 6-7 narrow staff columns (time gutter ~44px) and scroll
 // sideways for the rest; larger screens keep the roomier width.
 const getDayMinWidth = () =>
@@ -1411,6 +1657,242 @@ const clearLinkedHighlight = () => {
       .querySelectorAll(`.${cssClass}`)
       .forEach((el) => el.classList.remove(cssClass));
   }
+};
+
+// A shared place's grouped card: the span, the most persons there together
+// against the places (green, amber one before full, red when full), a "+"
+// for one more booking at its start and a button to open it into separate
+// cards; then one line per booking. Built from user-editable names, so
+// everything is escaped.
+const placeGroupHtml = (props: any) => {
+  const { peak, capacity, members } = props;
+  const level = peak >= capacity ? "full" : peak === capacity - 1 ? "almost" : "free";
+  const start = Math.min(...members.map((m: any) => m.start));
+  const end = Math.max(...members.map((m: any) => m.end));
+  const rows = members
+    .map((m: any, i: number) => {
+      const appt = m.fullAppointment || {};
+      const cashPaid = appt.payment_status === "paid" && appt.payment_method === "cash";
+      const icon = appt.status === "confirmed" ? `<i class="pi pi-check text-violet-700"></i>` : "";
+      return `<div class="fc-place-group-row${cashPaid ? " is-cash-paid" : ""}" data-member="${i}">
+          <span class="fc-place-group-time">${hhmm(m.start)}</span>
+          <span class="fc-place-group-name">${escapeHtml(m.client_name)}</span>
+          ${m.persons > 1 ? `<span class="fc-place-group-persons">×${m.persons}</span>` : ""}
+          ${icon}
+        </div>`;
+    })
+    .join("");
+  return `<div lang="el" class="fc-place-group-card">
+      <div class="fc-place-group-head">
+        <span class="fc-place-group-span">${hhmm(start)}–${hhmm(end)}</span>
+        <span class="fc-place-group-badge is-${level}" title="${escapeHtml(t("capacity.places"))}">${peak}/${capacity}</span>
+        <span class="fc-place-group-actions">
+          ${peak < capacity ? `<button type="button" data-group-action="add" title="${escapeHtml(t("capacity.addPerson"))}"><i class="pi pi-plus"></i></button>` : ""}
+          ${members.length > 1 ? `<button type="button" data-group-action="expand" title="${escapeHtml(t("capacity.expand"))}"><i class="pi pi-clone"></i></button>` : ""}
+        </span>
+      </div>
+      ${rows}
+    </div>`;
+};
+
+// Dragging a grouped card moves its bookings' rows in this place by the
+// same time (Ctrl / ⌘: their other services too), in the same column. One
+// question first, with the places counted at the new time (the group itself
+// left out of what's already there) and any overtime.
+const movePlaceGroup = async (info: any) => {
+  const props = info.event.extendedProps;
+  const shift = info.event.start.getTime() - info.oldEvent.start.getTime();
+  if (shift === 0) return;
+  const resource = info.oldEvent.getResources?.()[0];
+  const all = isMoveTogether(info.jsEvent);
+  const byAppointment = new Map<string, { appt: any; indexes: number[] }>();
+  for (const m of props.members) {
+    const entry = byAppointment.get(m.appointmentId) || { appt: m.fullAppointment, indexes: [] };
+    entry.indexes.push(m.serviceIndex);
+    byAppointment.set(m.appointmentId, entry);
+  }
+  const moves = [...byAppointment.values()].map(({ appt, indexes }) => {
+    const isMoved = (i: number) => all || indexes.includes(i);
+    const services = prepareServicesForUpdate(JSON.parse(JSON.stringify(appt.services))).map((s: any, i: number) =>
+      isMoved(i) ? { ...s, start_time: new Date(new Date(s.start_time).getTime() + shift).toISOString() } : s,
+    );
+    return { appt, services, moved: services.filter((_: any, i: number) => isMoved(i)) };
+  });
+
+  const skip = new Set<string>(props.members.map((m: any) => `${m.appointmentId}|${m.serviceIndex}`));
+  const moved = props.members.map((m: any) => ({ start: m.start + shift, end: m.end + shift, persons: m.persons }));
+  const from = Math.min(...moved.map((m: any) => m.start));
+  const to = Math.max(...moved.map((m: any) => m.end));
+  const persons = peakPersons([...occupancyFrom(calendarStore.events, resource?.id, skip), ...moved], from, to);
+  const over = persons > props.capacity;
+  const overtime = moves
+    .flatMap(({ moved }) => moved)
+    .map((s: any) => {
+      const start = new Date(s.start_time);
+      return overtimeEntryFor(s.staff_id, start, new Date(start.getTime() + (Number(s.duration_override) || 60) * 60000));
+    })
+    .filter((o: OvertimeEntry | null, i: number, list: (OvertimeEntry | null)[]): o is OvertimeEntry =>
+      !!o && list.findIndex((x) => x?.name === o.name) === i);
+
+  const minutes = Math.round(Math.abs(shift) / 60000);
+  const message = [
+    t(all ? "capacity.moveGroupMessageAll" : "capacity.moveGroupMessage", {
+      n: byAppointment.size,
+      name: resource?.title || "",
+      shift: t(shift > 0 ? "capacity.minutesLater" : "capacity.minutesEarlier", { n: minutes }),
+    }),
+    over
+      ? overCapacityMessage(
+          { staff_name: resource?.title, persons, capacity: props.capacity, start_time: from, end_time: to },
+          t,
+        )
+      : "",
+    overtime.length ? overtimeConfirmMessage(overtime, t) : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+  hideHoverCard();
+  moveConfirmOpen = true;
+  const accepted = await new Promise<boolean>((resolve) => {
+    confirm.require({
+      header: over ? t("capacity.header") : overtime.length ? t("booking.overtime.header") : t("capacity.moveGroupHeader"),
+      message,
+      icon: over ? "pi pi-users" : overtime.length ? "pi pi-clock" : "pi pi-question-circle",
+      acceptLabel: over ? t("capacity.accept") : overtime.length ? t("booking.overtime.accept") : t("capacity.moveGroupAccept"),
+      rejectLabel: t("common.cancel"),
+      accept: () => resolve(true),
+      reject: () => resolve(false),
+      onHide: () => resolve(false),
+    });
+  });
+  moveConfirmOpen = false;
+  if (!accepted) {
+    info.revert();
+    return;
+  }
+  for (const { appt, services } of moves) {
+    await updateAppointment(
+      appt.id,
+      { ...appt, services, allow_overtime: overtime.length > 0, allow_over_capacity: true },
+      { refresh: false },
+    );
+  }
+  await calendarStore.fetchAppointments(currentStart.value, currentEnd.value);
+};
+
+// Dropping a card at a new time or staff member (Ctrl: all of its
+// appointment's cards), after confirming the change.
+const dropCard = async (info: any) => {
+  const { appointmentId, serviceIndex, fullAppointment } =
+    info.event.extendedProps;
+  const newResourceId = info.newResource?.id;
+  const start = info.event.start.getTime();
+  const end = info.event.end.getTime();
+  let services = prepareServicesForUpdate(
+    JSON.parse(JSON.stringify(fullAppointment.services)),
+  );
+  // Ctrl (⌘ on a Mac) held when dropping: every card of this appointment
+  // moves by the same time, and all to the column it was dropped in.
+  const moveAll = isMoveTogether(info.jsEvent) && services.length > 1;
+  if (moveAll) {
+    const shift = start - info.oldEvent.start.getTime();
+    services = services.map((s: any) => ({
+      ...s,
+      start_time: new Date(new Date(s.start_time).getTime() + shift).toISOString(),
+      ...(newResourceId ? { staff_id: newResourceId } : {}),
+    }));
+  } else if (services[serviceIndex]) {
+    services[serviceIndex].start_time = info.event.start.toISOString();
+    services[serviceIndex].duration_minutes = (end - start) / 60000;
+    services[serviceIndex].duration_override = (end - start) / 60000;
+    if (newResourceId) services[serviceIndex].staff_id = newResourceId;
+  }
+  const overtime = (moveAll ? services : [services[serviceIndex]])
+    .map((s: any) => {
+      if (!s) return null;
+      const from = new Date(s.start_time);
+      const to = new Date(from.getTime() + (Number(s.duration_override) || 60) * 60000);
+      return overtimeEntryFor(s.staff_id, from, to);
+    })
+    .filter((o: OvertimeEntry | null, i: number, all: (OvertimeEntry | null)[]): o is OvertimeEntry =>
+      !!o && all.findIndex((x) => x?.name === o.name) === i);
+  if (!(await confirmMove(fullAppointment.services, services, overtime))) {
+    info.revert();
+    return;
+  }
+  const ok = await updateAppointment(appointmentId, {
+    ...fullAppointment,
+    services,
+    allow_overtime: overtime.length > 0,
+  });
+  if (!ok) info.revert();
+};
+
+// Stretching or shortening a card, after confirming the change.
+const resizeCard = async (info: any) => {
+  const { appointmentId, serviceIndex, fullAppointment } =
+    info.event.extendedProps;
+  const start = info.event.start.getTime();
+  const end = info.event.end.getTime();
+  const newDuration = (end - start) / 60000;
+  let services = prepareServicesForUpdate(
+    JSON.parse(JSON.stringify(fullAppointment.services)),
+  );
+  if (services[serviceIndex]) {
+    services[serviceIndex].start_time = info.event.start.toISOString();
+    services[serviceIndex].duration_minutes = newDuration;
+    services[serviceIndex].duration_override = newDuration;
+  }
+  const overtime = overtimeEntryFor(
+    services[serviceIndex]?.staff_id,
+    info.event.start,
+    info.event.end,
+  );
+  if (!(await confirmMove(fullAppointment.services, services, overtime ? [overtime] : []))) {
+    info.revert();
+    return;
+  }
+  const ok = await updateAppointment(appointmentId, {
+    ...fullAppointment,
+    services,
+    allow_overtime: !!overtime,
+  });
+  if (!ok) info.revert();
+};
+
+// A card of an opened group moved or resized: the group closes again once
+// that's dealt with (saved, refused or cancelled), so it shows grouped.
+let openGroupDropping = false;
+const closeGroupIfNoDrop = () =>
+  setTimeout(() => {
+    if (!openGroupDropping) expandedGroupKey.value = null;
+  }, 400);
+const closeGroupAfter = async (handle: () => Promise<void>) => {
+  openGroupDropping = true;
+  try {
+    await handle();
+  } finally {
+    openGroupDropping = false;
+    expandedGroupKey.value = null;
+  }
+};
+
+// Hover card for a booking, shown next to `anchor` after a short pause.
+const showHoverCard = (anchor: HTMLElement, appointment: any) => {
+  if (hoverShowTimer) clearTimeout(hoverShowTimer);
+  hoverShowTimer = setTimeout(() => {
+    if (dragInProgress || moveConfirmOpen) return;
+    const rect = anchor.getBoundingClientRect();
+    hoverAnchorRect.value = {
+      top: rect.top,
+      left: rect.left,
+      right: rect.right,
+      bottom: rect.bottom,
+      width: rect.width,
+      height: rect.height,
+    };
+    hoveredAppointment.value = appointment;
+  }, 250);
 };
 
 // --- Calendar Options ---
@@ -1523,16 +2005,20 @@ const calendarOptions = ref({
   selectMirror: true,
   selectAllow: (info: any) =>
     isRangeAllowedForResource(info.start, info.end, info.resource),
-  eventAllow: (dropInfo: any, draggedEvent: any) =>
-    isRangeAllowedForResource(
-      dropInfo.start,
-      dropInfo.end,
-      dropInfo.resource || draggedEvent?.getResources?.()[0],
-    ),
+  eventAllow: (dropInfo: any, draggedEvent: any) => {
+    const own = draggedEvent?.getResources?.()[0];
+    // A shared place's grouped or opened cards move up or down only.
+    const p = draggedEvent?.extendedProps;
+    if ((p?.isPlaceGroup || p?.groupKey) && dropInfo.resource && own && String(dropInfo.resource.id) !== String(own.id)) {
+      return false;
+    }
+    return isRangeAllowedForResource(dropInfo.start, dropInfo.end, dropInfo.resource || own);
+  },
   resources: [],
   events: [],
 
   datesSet: async (arg: any) => {
+    expandedGroupKey.value = null;
     currentTitle.value = arg.view.title;
     dockedDate.value = arg.view.calendar.getDate();
     currentView.value = arg.view.type;
@@ -1632,7 +2118,6 @@ const calendarOptions = ref({
       props.fullAppointment?.payment_status === "paid" &&
       props.fullAppointment?.payment_method === "cash";
     const isConfirmed = status === "confirmed";
-    const isCompleted = status === "completed";
     const isMonthView = arg.view.type === "dayGridMonth";
     const start = arg.event.start;
     const end = arg.event.end;
@@ -1684,9 +2169,7 @@ const calendarOptions = ref({
 
     const statusBadge = isConfirmed
       ? `<span class="absolute top-1 right-1 text-violet-700"><i class="pi pi-check text-[9px]"></i></span>`
-      : isCompleted
-        ? `<span class="absolute top-1 right-1 text-green-600"><i class="pi pi-check-circle text-[9px]"></i></span>`
-        : "";
+      : "";
 
     const archivedBadge = props.serviceArchived
       ? `<span class="absolute top-1 right-6 text-gray-500" title="${escapeHtml(t("services.archivedTooltip"))}"><i class="pi pi-box text-[9px]"></i></span>`
@@ -1702,6 +2185,8 @@ const calendarOptions = ref({
         html: `<div class="fc-drag-time-pill">${hhmm(start)} – ${hhmm(end)}</div>`,
       };
     }
+
+    if (props.isPlaceGroup) return { html: placeGroupHtml(props) };
 
     if (isPhone.value && !isMonthView) {
       const start = arg.event.start as Date | null;
@@ -1753,6 +2238,28 @@ const calendarOptions = ref({
     if (dayKey) info.el.dataset.dayClientKey = dayKey;
     const apptId = info.event.extendedProps?.appointmentId;
     if (apptId) info.el.dataset.appointmentId = apptId; // used by the browser tests
+    const groupKey = info.event.extendedProps?.groupKey;
+    if (groupKey) info.el.dataset.groupKey = groupKey;
+    // A grouped card: the hover card is for the line under the mouse.
+    if (info.event.extendedProps?.isPlaceGroup) {
+      let current: HTMLElement | null = null;
+      info.el.addEventListener("mouseover", (e: MouseEvent) => {
+        if (dragInProgress || moveConfirmOpen) return;
+        const row = ((e.target as HTMLElement).closest?.("[data-member]") as HTMLElement | null) || null;
+        if (row === current) return;
+        current = row;
+        if (!row) return hideHoverCard();
+        const m = info.event.extendedProps.members[Number(row.dataset.member)];
+        showHoverCard(row, {
+          ...m.fullAppointment,
+          client_name: m.client_name,
+          service_name: m.service_name,
+          start: new Date(m.start),
+          end: new Date(m.end),
+        });
+      });
+      info.el.addEventListener("mouseleave", () => (current = null));
+    }
   },
 
   eventDragStart: (info: any) => {
@@ -1760,7 +2267,13 @@ const calendarOptions = ref({
     hideHoverCard();
     startMoveTogetherHint(info.event.extendedProps?.appointmentId);
   },
-  eventDragStop: () => {
+  eventDragStop: (info: any) => {
+    lastDragEnd = Date.now();
+    // A card of an opened group, dragged: the group closes again once the
+    // drop is dealt with (eventDrop, which comes a moment after this), or
+    // shortly if it wasn't dropped anywhere. Not right away: redrawing the
+    // calendar before the drop arrives would lose it.
+    if (info.event.extendedProps?.groupKey) closeGroupIfNoDrop();
     dragInProgress = false;
     hideHoverCard();
     stopMoveTogetherHint();
@@ -1770,7 +2283,9 @@ const calendarOptions = ref({
     dragInProgress = true;
     hideHoverCard();
   },
-  eventResizeStop: () => {
+  eventResizeStop: (info: any) => {
+    lastDragEnd = Date.now();
+    if (info.event.extendedProps?.groupKey) closeGroupIfNoDrop();
     dragInProgress = false;
     hideHoverCard();
     setTimeout(() => setSnapMinutes(SLOT_MINUTES));
@@ -1781,26 +2296,13 @@ const calendarOptions = ref({
     if (!info.event.extendedProps?.isServiceEvent) return;
     if (dragInProgress || moveConfirmOpen) return;
     highlightLinkedEvents(info.event.extendedProps, info.el);
-    if (hoverShowTimer) clearTimeout(hoverShowTimer);
-    hoverShowTimer = setTimeout(() => {
-      if (dragInProgress || moveConfirmOpen) return;
-      const rect = info.el.getBoundingClientRect();
-      hoverAnchorRect.value = {
-        top: rect.top,
-        left: rect.left,
-        right: rect.right,
-        bottom: rect.bottom,
-        width: rect.width,
-        height: rect.height,
-      };
-      hoveredAppointment.value = {
-        ...info.event.extendedProps.fullAppointment,
-        client_name: info.event.extendedProps.client_name,
-        service_name: info.event.extendedProps.service_name,
-        start: info.event.start,
-        end: info.event.end,
-      };
-    }, 250);
+    showHoverCard(info.el, {
+      ...info.event.extendedProps.fullAppointment,
+      client_name: info.event.extendedProps.client_name,
+      service_name: info.event.extendedProps.service_name,
+      start: info.event.start,
+      end: info.event.end,
+    });
   },
 
   eventMouseLeave: () => {
@@ -1810,6 +2312,33 @@ const calendarOptions = ref({
   },
 
   eventClick: (info: any) => {
+    // A grouped card: its buttons, or the booking on the line clicked.
+    if (info.event.extendedProps.isPlaceGroup) {
+      const p = info.event.extendedProps;
+      const target = info.jsEvent?.target as HTMLElement | null;
+      const action = (target?.closest?.("[data-group-action]") as HTMLElement | null)?.dataset.groupAction;
+      if (action === "expand") {
+        hideHoverCard();
+        expandedGroupKey.value = p.groupKey;
+        return;
+      }
+      if (action === "add") {
+        const resource = info.event.getResources()[0];
+        const start = info.event.start as Date;
+        openNewBooking(start, new Date(start.getTime() + 60 * 60000), resource?.id ?? null, resource?.title ?? "");
+        return;
+      }
+      const row = target?.closest?.("[data-member]") as HTMLElement | null;
+      const member = row ? p.members[Number(row.dataset.member)] : null;
+      if (member) {
+        hideHoverCard();
+        selectedAppointment.value = member.fullAppointment;
+        dialogVisible.value = true;
+        return;
+      }
+      openPlaceDialog(info.event.getResources()[0]?.id ?? info.event._def.resourceIds?.[0], p.groupKey);
+      return;
+    }
     const fullAppt = info.event.extendedProps.fullAppointment;
     if (fullAppt) {
       selectedAppointment.value = fullAppt;
@@ -1830,80 +2359,14 @@ const calendarOptions = ref({
   },
 
   eventDrop: async (info: any) => {
-    const { appointmentId, serviceIndex, fullAppointment } =
-      info.event.extendedProps;
-    const newResourceId = info.newResource?.id;
-    const start = info.event.start.getTime();
-    const end = info.event.end.getTime();
-    let services = prepareServicesForUpdate(
-      JSON.parse(JSON.stringify(fullAppointment.services)),
-    );
-    // Ctrl (⌘ on a Mac) held when dropping: every card of this appointment
-    // moves by the same time, and all to the column it was dropped in.
-    const moveAll = isMoveTogether(info.jsEvent) && services.length > 1;
-    if (moveAll) {
-      const shift = start - info.oldEvent.start.getTime();
-      services = services.map((s: any) => ({
-        ...s,
-        start_time: new Date(new Date(s.start_time).getTime() + shift).toISOString(),
-        ...(newResourceId ? { staff_id: newResourceId } : {}),
-      }));
-    } else if (services[serviceIndex]) {
-      services[serviceIndex].start_time = info.event.start.toISOString();
-      services[serviceIndex].duration_minutes = (end - start) / 60000;
-      services[serviceIndex].duration_override = (end - start) / 60000;
-      if (newResourceId) services[serviceIndex].staff_id = newResourceId;
-    }
-    const overtime = (moveAll ? services : [services[serviceIndex]])
-      .map((s: any) => {
-        if (!s) return null;
-        const from = new Date(s.start_time);
-        const to = new Date(from.getTime() + (Number(s.duration_override) || 60) * 60000);
-        return overtimeEntryFor(s.staff_id, from, to);
-      })
-      .filter((o: OvertimeEntry | null, i: number, all: (OvertimeEntry | null)[]): o is OvertimeEntry =>
-        !!o && all.findIndex((x) => x?.name === o.name) === i);
-    if (!(await confirmMove(fullAppointment.services, services, overtime))) {
-      info.revert();
-      return;
-    }
-    const ok = await updateAppointment(appointmentId, {
-      ...fullAppointment,
-      services,
-      allow_overtime: overtime.length > 0,
-    });
-    if (!ok) info.revert();
+    if (info.event.extendedProps.isPlaceGroup) return movePlaceGroup(info);
+    if (info.event.extendedProps.groupKey) return closeGroupAfter(() => dropCard(info));
+    return dropCard(info);
   },
 
   eventResize: async (info: any) => {
-    const { appointmentId, serviceIndex, fullAppointment } =
-      info.event.extendedProps;
-    const start = info.event.start.getTime();
-    const end = info.event.end.getTime();
-    const newDuration = (end - start) / 60000;
-    let services = prepareServicesForUpdate(
-      JSON.parse(JSON.stringify(fullAppointment.services)),
-    );
-    if (services[serviceIndex]) {
-      services[serviceIndex].start_time = info.event.start.toISOString();
-      services[serviceIndex].duration_minutes = newDuration;
-      services[serviceIndex].duration_override = newDuration;
-    }
-    const overtime = overtimeEntryFor(
-      services[serviceIndex]?.staff_id,
-      info.event.start,
-      info.event.end,
-    );
-    if (!(await confirmMove(fullAppointment.services, services, overtime ? [overtime] : []))) {
-      info.revert();
-      return;
-    }
-    const ok = await updateAppointment(appointmentId, {
-      ...fullAppointment,
-      services,
-      allow_overtime: !!overtime,
-    });
-    if (!ok) info.revert();
+    if (info.event.extendedProps.groupKey) return closeGroupAfter(() => resizeCard(info));
+    return resizeCard(info);
   },
 
   select: async (info: any) => {
@@ -1912,19 +2375,7 @@ const calendarOptions = ref({
     // dialog would otherwise do nothing.
     info.view.calendar.unselect();
     const { start, end } = roundRangeToSlots(info.start, info.end);
-    const staffId = info.resource ? info.resource.id : null;
-    // Outside the staff member's hours: ask first; the booking dialog then
-    // doesn't ask again for the same staff member.
-    const overtime = overtimeEntryFor(staffId, start, end);
-    if (overtime && !(await confirmOvertimeSlot(overtime))) return;
-    selectedAppointment.value = {
-      start_time: formatSlotIso(start),
-      end_time: formatSlotIso(end),
-      staff_id: staffId,
-      staff_name: info.resource ? info.resource.title : "",
-      overtime_confirmed_staff_id: overtime ? staffId : null,
-    };
-    dialogVisible.value = true;
+    await openNewBooking(start, end, info.resource ? info.resource.id : null, info.resource ? info.resource.title : "");
   },
 });
 
@@ -2004,6 +2455,16 @@ const onCardMouseDown = (e: MouseEvent) => {
     }),
   );
 };
+// An opened group closes again on a click outside its cards (and dialogs).
+// Not on the click the browser sends when a drag ends: closing then would
+// redraw the calendar before the drop is handled, and the move would be lost.
+let lastDragEnd = 0;
+const closeOpenGroup = (e: MouseEvent) => {
+  if (!expandedGroupKey.value || dragInProgress || Date.now() - lastDragEnd < 500) return;
+  const target = e.target as HTMLElement | null;
+  if (target?.closest?.(".fc-group-open, .fc-place-group, .p-dialog, .p-dialog-mask")) return;
+  expandedGroupKey.value = null;
+};
 // A Ctrl + press that didn't become a drag (just a click) mustn't count later.
 const disarmMoveTogether = () => {
   if (!dragInProgress) setTimeout(() => (moveTogetherArmed = false), 0);
@@ -2011,10 +2472,12 @@ const disarmMoveTogether = () => {
 onMounted(() => {
   document.addEventListener("mousedown", onCardMouseDown, true);
   document.addEventListener("mouseup", disarmMoveTogether, true);
+  document.addEventListener("click", closeOpenGroup);
 });
 onUnmounted(() => {
   document.removeEventListener("mousedown", onCardMouseDown, true);
   document.removeEventListener("mouseup", disarmMoveTogether, true);
+  document.removeEventListener("click", closeOpenGroup);
 });
 onMounted(() => {
   window.addEventListener("appointments-changed", liveReload);
@@ -2064,6 +2527,122 @@ onMounted(async () => {
   outline-offset: 1px;
 }
 
+/* Completed appointments: white, so an outline keeps them visible on the white grid. */
+.fc-event.fc-completed {
+  border: 1px solid #d1d5db !important;
+}
+
+/* Shared places (ΣΑΟΥΝΑ, ΧΑΜΜΑΜ): the grouped card, and an opened group's cards. */
+.fc-v-event.fc-place-group {
+  border: 1px solid #e5e7eb !important;
+}
+.fc-place-group-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  padding: 2px 4px;
+  font-size: 11px;
+  line-height: 1.25;
+  color: #111827;
+  text-transform: uppercase;
+}
+/* Too narrow for the time span: just the badge and buttons (the lines show
+   the times, the card's dialog everything). */
+.fc-place-group-card {
+  container-type: inline-size;
+}
+@container (max-width: 150px) {
+  .fc-place-group-span {
+    display: none;
+  }
+}
+.fc-place-group-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 1px;
+  font-weight: 600;
+  color: #6b7280;
+}
+.fc-place-group-span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fc-place-group-badge {
+  margin-left: auto;
+  padding: 0 5px;
+  border-radius: 9999px;
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+}
+.fc-place-group-badge.is-free {
+  background: #16a34a;
+}
+.fc-place-group-badge.is-almost {
+  background: #d97706;
+}
+.fc-place-group-badge.is-full {
+  background: #dc2626;
+}
+.fc-place-group-actions {
+  display: flex;
+  gap: 2px;
+}
+.fc-place-group-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background: #f3f4f6;
+  color: #4b5563;
+}
+.fc-place-group-actions button:hover {
+  background: #e5e7eb;
+}
+.fc-place-group-card .pi {
+  font-size: 9px;
+}
+.fc-place-group-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 2px;
+  border-radius: 3px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.fc-place-group-row:hover {
+  background: var(--p-primary-50);
+}
+.fc-place-group-time {
+  font-weight: 600;
+  color: #6b7280;
+}
+.fc-place-group-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 700;
+}
+.fc-place-group-persons {
+  font-weight: 700;
+  color: var(--p-primary-700);
+}
+.fc-place-group-row.is-cash-paid .fc-place-group-name {
+  text-decoration: line-through;
+  color: #c2410c;
+}
+.fc-v-event.fc-group-open {
+  outline: 2px dashed var(--p-primary-400);
+  outline-offset: 1px;
+}
+
 /* Docked date calendar: fills its column, no frame, no sideways scroll. */
 .docked-date-picker .p-datepicker,
 .docked-date-picker .p-datepicker-panel {
@@ -2079,12 +2658,79 @@ onMounted(async () => {
   width: 100%;
   table-layout: fixed;
 }
-.docked-date-picker .p-datepicker-day-cell {
-  padding: 0.125rem;
+/* The month header gives way too, so the narrowest width still shows all seven days. */
+.docked-date-picker .p-datepicker-calendar-container,
+.docked-date-picker .p-datepicker-calendar {
+  width: 100%;
+  min-width: 0;
 }
+.docked-date-picker .p-datepicker-header {
+  padding-inline: 0;
+  gap: 0;
+}
+.docked-date-picker .p-datepicker-title {
+  min-width: 0;
+  gap: 0.25rem;
+  white-space: nowrap;
+}
+.docked-date-picker .p-datepicker-title button {
+  padding-inline: 0.125rem;
+}
+/* Long Greek month names still fit beside the arrows when the column is narrow. */
+.docked-date-picker {
+  container-type: inline-size;
+}
+@container (max-width: 240px) {
+  .docked-date-picker .p-datepicker-title button {
+    font-size: 0.8125rem;
+  }
+}
+.docked-date-picker .p-datepicker-prev-button,
+.docked-date-picker .p-datepicker-next-button {
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+}
+.docked-date-picker .p-datepicker-day-cell,
+.docked-date-picker .p-datepicker-weekday-cell {
+  padding: 0.125rem;
+  min-width: 0;
+}
+/* The days grow and shrink with the column. */
 .docked-date-picker .p-datepicker-day {
-  width: 2rem;
-  height: 2rem;
+  width: 100%;
+  max-width: 3rem;
+  height: auto;
+  aspect-ratio: 1;
+  margin: 0 auto;
+}
+/* The line between the docked calendar and the schedule: thin to look at,
+   wider to grab, and it takes touch drags instead of scrolling the page. */
+.dock-resizer {
+  position: relative;
+  z-index: 20;
+  flex-shrink: 0;
+  width: 9px;
+  margin: 0 -4px;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+}
+.dock-resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 1px;
+  background: #f3f4f6;
+  transition: background-color 0.15s, box-shadow 0.15s;
+}
+.dock-resizer:hover::after,
+.dock-resizer:focus-visible::after,
+.dock-resizer.is-dragging::after {
+  background: var(--p-primary-color);
+  box-shadow: 0 0 0 1px var(--p-primary-color);
 }
 .fc {
   --fc-border-color: #f3f4f6;

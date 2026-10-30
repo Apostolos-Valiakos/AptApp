@@ -215,7 +215,37 @@
       <div v-if="resolveTarget" class="space-y-4">
         <div class="text-sm text-gray-600">
           <div class="truncate">{{ resolveTarget.label }}</div>
-          <div class="text-lg font-bold text-gray-900 tabular-nums">{{ formatMoney(resolveTarget.amount) }}</div>
+          <!-- The amount: all that's owed, or click it to settle part of it. -->
+          <InputNumber
+            v-if="editingAmount"
+            v-model="resolveAmount"
+            mode="currency"
+            currency="EUR"
+            locale="el-GR"
+            :min="0"
+            :max="resolveTarget.amount"
+            autofocus
+            class="w-full mt-1"
+            inputClass="w-full text-lg font-bold"
+            data-testid="debt-amount-input"
+            @blur="editingAmount = false"
+            @keydown.enter="editingAmount = false"
+          />
+          <button
+            v-else
+            type="button"
+            class="mt-1 inline-flex items-center gap-2 text-lg font-bold text-gray-900 tabular-nums rounded-md px-1 -mx-1 hover:bg-gray-100"
+            :title="t('bookingSidebar.debt.editAmount')"
+            data-testid="debt-amount"
+            @click="editingAmount = true"
+          >
+            {{ formatMoney(resolveAmount || 0) }}
+            <i class="pi pi-pencil text-xs text-gray-400"></i>
+          </button>
+          <div v-if="isPartial" class="text-xs text-gray-500 mt-1">
+            {{ t("bookingSidebar.debt.ofOwed", { amount: formatMoney(resolveTarget.amount) }) }} ·
+            <span class="text-amber-700 font-semibold">{{ t("bookingSidebar.debt.remainingAfter", { amount: formatMoney(resolveTarget.amount - (resolveAmount || 0)) }) }}</span>
+          </div>
         </div>
         <div class="grid grid-cols-2 gap-2">
           <button
@@ -237,7 +267,13 @@
       </div>
       <template #footer>
         <Button :label="t('common.cancel')" text @click="resolveVisible = false" />
-        <Button :label="t('bookingSidebar.debt.confirm')" icon="pi pi-check" :loading="debtSaving" @click="confirmResolve" />
+        <Button
+          :label="t('bookingSidebar.debt.confirm')"
+          icon="pi pi-check"
+          :loading="debtSaving"
+          :disabled="!(Number(resolveAmount) > 0)"
+          @click="confirmResolve"
+        />
       </template>
     </Dialog>
 
@@ -315,6 +351,12 @@ const resolveTarget = ref<ResolveTarget | null>(null);
 const RESOLVE_MODES = ["payment", "write_off"] as const;
 const resolveMode = ref<"payment" | "write_off">("payment");
 const resolveMethod = ref("cash");
+// What's settled now: all that's owed unless changed (never more).
+const resolveAmount = ref<number | null>(null);
+const editingAmount = ref(false);
+const isPartial = computed(
+  () => !!resolveTarget.value && Number(resolveAmount.value) > 0 && Number(resolveAmount.value) < resolveTarget.value.amount - 0.001,
+);
 
 const addDebtVisible = ref(false);
 const newDebt = ref<{ amount: number | null; date: Date | null; note: string }>({ amount: null, date: new Date(), note: "" });
@@ -334,6 +376,8 @@ const openResolve = (target: ResolveTarget) => {
   resolveTarget.value = target;
   resolveMode.value = "payment";
   resolveMethod.value = "cash";
+  resolveAmount.value = target.amount;
+  editingAmount.value = false;
   resolveVisible.value = true;
 };
 
@@ -343,7 +387,12 @@ const openAddDebt = () => {
 };
 
 const afterDebtChange = async (data: any, appointmentId?: string) => {
-  emit("debt-changed", { appointmentId, amount: Number(data.amount || 0), newBalance: Number(data.new_balance || 0) });
+  emit("debt-changed", {
+    appointmentId,
+    amount: Number(data.amount || 0),
+    remaining: Number(data.remaining || 0),
+    newBalance: Number(data.new_balance || 0),
+  });
   if (props.client?.id) await Promise.all([loadHistory(props.client.id), loadDebts(props.client.id)]);
 };
 
@@ -360,9 +409,15 @@ const confirmResolve = async () => {
         ? `/api/v1/appointments/${target.id}/resolve-debt`
         : `/api/v1/client-debts/${target.id}/resolve`;
     const data = await api
-      .post(url, { mode: resolveMode.value, payment_method: resolveMethod.value })
+      .post(url, {
+        mode: resolveMode.value,
+        payment_method: resolveMethod.value,
+        amount: Math.min(Number(resolveAmount.value) || 0, target.amount),
+      })
       .catch((e: ApiError) => {
-        throw new Error(e.data?.error === "nothing_owed" ? t("bookingSidebar.debt.nothingOwed") : t("bookingSidebar.debt.failed"));
+        if (e.data?.error === "nothing_owed") throw new Error(t("bookingSidebar.debt.nothingOwed"));
+        if (e.data?.error === "exceeds_owed") throw new Error(t("bookingSidebar.debt.exceedsOwed", { amount: formatMoney(e.data.owed) }));
+        throw new Error(t("bookingSidebar.debt.failed"));
       });
     resolveVisible.value = false;
     toast.add(

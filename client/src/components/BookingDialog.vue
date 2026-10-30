@@ -401,7 +401,7 @@
               </label> -->
               <Button
                 v-if="currentTab !== 'Payment'"
-                label="Πληρωμή"
+                :label="t('booking.tabs.payment')"
                 data-testid="booking-payment-tab"
                 @click="currentTab = 'Payment'"
                 severity="success"
@@ -489,7 +489,7 @@
 </template>
 
 <script setup lang="ts">
-import { api } from "../api/http";
+import { api, ApiError } from "../api/http";
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from "vue";
 import { useI18n } from "vue-i18n";
 import BookingProducts from "./booking/bookingProducts.vue";
@@ -516,6 +516,7 @@ import { useToast } from "primevue/usetoast";
 import { fetchOrQueue } from "../offline/queue";
 import { knownOverlapIds } from "../offline/overlaps";
 import { isTempId } from "../offline/tempIds";
+import { askOverCapacity, personsOf, placesOf } from "../utils/capacity";
 import { formatMoney } from "../utils/format";
 import { useBookingTotals } from "../composables/useBookingTotals";
 import { appendNote, firstStartOf, sameDayAppointmentFor } from "../utils/sameDayGrouping";
@@ -702,11 +703,12 @@ const refreshClientBalance = async (clientId: string) => {
 };
 
 // A payment or write-off made from the sidebar.
-const onDebtChanged = (e: { appointmentId?: string; amount: number; newBalance: number }) => {
+const onDebtChanged = (e: { appointmentId?: string; amount: number; remaining?: number; newBalance: number }) => {
   if (selectedClient.value) selectedClient.value.outstanding_balance = Number(e.newBalance) || 0;
   if (e.appointmentId && e.appointmentId === form.value.id) {
     form.value.deposit_amount = Number(form.value.deposit_amount || 0) + Number(e.amount || 0);
-    form.value.payment_status = "paid";
+    // Part of it settled: still partly unpaid.
+    form.value.payment_status = Number(e.remaining) > 0 ? "partial" : "paid";
   }
   emit("refresh");
 };
@@ -1004,6 +1006,7 @@ const loadExistingAppointment = (val: any, resolvedStaffId: any) => {
         duration_override: s.duration_minutes || 60,
         price_override: Number(s.price || 0),
         variation_name: resolvedVariationName || null,
+        persons: personsOf(s),
         service_archived: !!s.service_archived,
         _label: resolvedVariationName
           ? `${catalogService?.name || s.service_name || ""} — ${resolvedVariationName}`
@@ -1187,6 +1190,7 @@ const onPriceChanged = (data: any) => {
       start_time: new Date(s.start_time),
       duration_override: s.duration_override,
       price_override: Number(s.price_override),
+      persons: personsOf(s),
     })));
     originalServices.value = snapshotServices(servicesList.value);
   }
@@ -1280,15 +1284,10 @@ const saveAsTimeOff = async (force = false): Promise<boolean> => {
   const toTimeStr = (d: Date) =>
     `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 
-  const token = localStorage.getItem("token");
   try {
-    const res = await fetch(`/api/v1/staff/${staffId}/time-off`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
+    // Overlapping bookings: 409 with the list, asked about before forcing.
+    const conflict = await api
+      .post(`/api/v1/staff/${staffId}/time-off`, {
         type: "break",
         start_date: toDateStr(start),
         end_date: toDateStr(start),
@@ -1296,11 +1295,15 @@ const saveAsTimeOff = async (force = false): Promise<boolean> => {
         end_time: toTimeStr(end),
         reason: form.value.internal_notes || null,
         force,
-      }),
-    });
+      })
+      .then(() => null)
+      .catch((e) => {
+        if (e instanceof ApiError && e.status === 409) return e.data || {};
+        throw e;
+      });
 
-    if (res.status === 409) {
-      const data = await res.json();
+    if (conflict) {
+      const data = conflict;
       const list = (data.conflicts || [])
         .map(
           (c: any) =>
@@ -1310,7 +1313,7 @@ const saveAsTimeOff = async (force = false): Promise<boolean> => {
       return new Promise((resolve) => {
         confirm.require({
           message: t("staff.timeOff.conflictMessage", {
-            count: data.conflicts.length,
+            count: (data.conflicts || []).length,
             list,
           }),
           header: t("staff.timeOff.conflictHeader"),
@@ -1323,18 +1326,13 @@ const saveAsTimeOff = async (force = false): Promise<boolean> => {
       });
     }
 
-    if (!res.ok) throw new Error("Failed");
-
     // Editing an existing block: the replacement above is already safely
     // created (and conflict-checked only against real appointments, never
     // against this old row), so it's now safe to remove the original —
     // using its original staff id, which may differ if the block was moved
     // to another staff member in this edit.
     if (form.value.time_off_id && form.value.time_off_staff_id) {
-      await fetch(
-        `/api/v1/staff/${form.value.time_off_staff_id}/time-off/${form.value.time_off_id}`,
-        { method: "DELETE", headers: { Authorization: `Bearer ${token}` } },
-      ).catch(() => {});
+      await api.del(`/api/v1/staff/${form.value.time_off_staff_id}/time-off/${form.value.time_off_id}`).catch(() => {});
     }
 
     toast.add({
@@ -1413,8 +1411,26 @@ const save = async (close = true): Promise<boolean> => {
   return executeSave(close, isConvertingToSeries ? "series" : "single");
 };
 
+// Opened after the current question has closed (see offerCancelInstead).
+const askSaveThisOnly = (close: boolean) =>
+  new Promise<boolean>((resolve) => {
+    setTimeout(() => {
+      confirm.require({
+        header: t("booking.seriesHasPayments.header"),
+        message: t("booking.seriesHasPayments.message"),
+        icon: "pi pi-exclamation-triangle",
+        acceptLabel: t("booking.editDialog.thisOnly"),
+        rejectLabel: t("common.cancel"),
+        rejectClass: "p-button-outlined p-button-secondary",
+        accept: () => resolve(executeSave(close, "single")),
+        reject: () => resolve(false),
+        onHide: () => resolve(false),
+      });
+    }, 0);
+  });
+
 /** Saves the booking; true once saved (or queued offline), false if it wasn't. */
-const executeSave = async (close = true, scope = "single"): Promise<boolean> => {
+const executeSave = async (close = true, scope = "single", allowOverCapacity = false): Promise<boolean> => {
   // Unblocking (toggling an existing block's button off) and editing a
   // block's time/duration are both time-off-only flows with no client/
   // service involved — skip the normal booking validations entirely.
@@ -1534,7 +1550,10 @@ const executeSave = async (close = true, scope = "single"): Promise<boolean> => 
       services: servicesList.value.map((s) => ({
         ...s,
         price_override: Number(s.price_override) || Number(s.price) || 0,
+        // Persons only mean something in a shared place (the sauna).
+        persons: placesOf((props.staff || []).find((m: any) => String(m.id) === String(s.staff_id))) > 1 ? personsOf(s) : 1,
       })),
+      ...(allowOverCapacity ? { allow_over_capacity: true } : {}),
       products: productsList.value,
       ...discountPayload(discount.value),
       ...(method === "PUT" && currentVersion.value != null && !isTempId(String(form.value.id))
@@ -1552,6 +1571,8 @@ const executeSave = async (close = true, scope = "single"): Promise<boolean> => 
       createsId: method === "POST" ? "id" : undefined,
       offlineExtras: {
         offline_known_overlaps: knownOverlapIds(calendarStoreForOverlaps.events, payload.services, form.value.id),
+        // Made offline: when it was really booked, not when it syncs.
+        ...(method === "POST" ? { booked_at: new Date().toISOString() } : {}),
       },
     });
 
@@ -1586,6 +1607,16 @@ const executeSave = async (close = true, scope = "single"): Promise<boolean> => 
     const data = await res.json();
 
     if (!res.ok) {
+      // A shared place (the sauna) would be over its places: ask, then book anyway.
+      if (data.error === "over_capacity") {
+        loading.value = false;
+        return (await askOverCapacity(confirm, t, data)) ? executeSave(close, scope, true) : false;
+      }
+      // "This and future" would replace a paid booking: offer this one only.
+      if (data.error === "series_has_payments") {
+        loading.value = false;
+        return askSaveThisOnly(close);
+      }
       if (data.error === "staff_unavailable") {
         throw new Error(t("booking.validation.staffUnavailable"));
       }
@@ -1595,7 +1626,8 @@ const executeSave = async (close = true, scope = "single"): Promise<boolean> => 
       throw new Error(data.error || "Failed to save");
     }
 
-    if (method === "POST") {
+    // A series edit replaces this booking's row, so it answers with the new id too.
+    if (method === "POST" || data.id) {
       form.value.id = data.id;
     }
     if (data.version !== undefined) currentVersion.value = data.version;

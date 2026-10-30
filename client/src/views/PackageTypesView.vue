@@ -93,6 +93,7 @@
 </template>
 
 <script setup lang="ts">
+import { api as http, withMessage } from "../api/http";
 import { formatMoney } from "../utils/format";
 import { ref, reactive, computed, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
@@ -113,16 +114,8 @@ const form = reactive<any>({ id: null, name: "", service_id: null, visits: 5, pr
 
 const canSave = computed(() => form.name.trim() && form.service_id && form.visits > 0 && form.price >= 0);
 
-const api = async (url: string, method = "GET", body?: any) => {
-  const res = await fetch(url, {
-    method,
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("token")}` },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || t("packages.failed"));
-  return data;
-};
+const api = (url: string, method = "GET", body?: any) =>
+  http.request(method, url, body || undefined).then((data) => data ?? {}).catch(withMessage(t("packages.failed")));
 
 const load = async () => {
   loading.value = true;

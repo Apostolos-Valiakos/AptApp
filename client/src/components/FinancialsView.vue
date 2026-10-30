@@ -16,6 +16,13 @@
           @click="router.push('/app/expenses')"
         />
         <Button
+          :label="t('nav.dailyReport')"
+          icon="pi pi-wallet"
+          class="p-button-outlined flex-shrink-0"
+          data-testid="analytics-daily-report"
+          @click="router.push('/app/daily-report')"
+        />
+        <Button
           :label="t('nav.membershipReport')"
           icon="pi pi-chart-pie"
           class="p-button-outlined flex-shrink-0"
@@ -287,93 +294,10 @@
 
     <!-- Tab Section -->
     <TabView class="bg-white rounded-2xl shadow-sm border border-gray-100 p-2">
-      <!-- Tab: Client Demographics -->
-      <TabPanel :value="0" :header="t('analytics.tabs.demographics')">
-        <div class="p-6 max-w-7xl mx-auto">
-          <div class="grid grid-cols-1 gap-6 mb-8">
-            <div
-              class="bg-white p-6 rounded-xl shadow-sm border border-gray-100"
-            >
-              <h2 class="text-xl font-bold mb-6 text-gray-800">
-                {{ t("analytics.demographics.title") }}
-              </h2>
-              <ClientDemographics
-                :clients="clientsReport"
-                @view-group="openAgeGroupDialog"
-              />
-            </div>
-          </div>
-
-          <Dialog
-            v-model:visible="displayGroupDialog"
-            :header="
-              t('analytics.demographics.clientsLabel', {
-                name: selectedGroupName,
-              })
-            "
-            modal
-            :style="{ width: '50vw' }"
-            :breakpoints="{ '960px': '90vw' }"
-          >
-            <DataTable
-              :value="selectedGroupClients"
-              paginator
-              :rows="10"
-              stripedRows
-              class="p-datatable-sm"
-              responsiveLayout="scroll"
-            >
-              <Column :header="t('analytics.demographics.clientCol')">
-                <template #body="slotProps">
-                  <div class="flex flex-col">
-                    <span class="font-bold"
-                      >{{ slotProps.data.first_name }}
-                      {{ slotProps.data.last_name }}</span
-                    >
-                    <span class="text-xs text-gray-500">{{
-                      slotProps.data.email
-                    }}</span>
-                  </div>
-                </template>
-              </Column>
-              <Column field="phone" header="Τηλέφωνο"></Column>
-              <Column
-                field="appointment_count"
-                :header="t('analytics.demographics.apptsCol')"
-                sortable
-                class="text-center"
-              ></Column>
-              <Column :header="t('analytics.demographics.balanceCol')">
-                <template #body="slotProps">
-                  <span
-                    :class="
-                      Number(slotProps.data.outstanding_balance || 0) > 0
-                        ? 'text-red-600 font-bold'
-                        : ''
-                    "
-                  >
-                    {{ formatMoney(slotProps.data.outstanding_balance || 0) }}
-                  </span>
-                </template>
-              </Column>
-              <Column :header="t('analytics.demographics.servicesCol')">
-                <template #body="slotProps">
-                  <div class="flex gap-1">
-                    <span
-                      v-if="slotProps.data.ergotherapia"
-                      class="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold"
-                      >ΕΡΓΟ</span
-                    >
-                    <span
-                      v-if="slotProps.data.physiotherapia"
-                      class="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-[10px] font-bold"
-                      >ΦΥΣΙΟ</span
-                    >
-                  </div>
-                </template>
-              </Column>
-            </DataTable>
-          </Dialog>
+      <!-- Tab: Booking insights -->
+      <TabPanel :value="0" :header="t('analytics.tabs.insights')">
+        <div class="p-1 sm:p-4 md:p-6">
+          <BookingInsights :insights="insights" :loading="loading" />
         </div>
       </TabPanel>
 
@@ -940,6 +864,7 @@
 </template>
 
 <script setup lang="ts">
+import { api, ApiError, ifRefused, saveBlob } from "../api/http";
 import { formatMoney } from "../utils/format";
 import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useI18n } from "vue-i18n";
@@ -948,7 +873,7 @@ import { useToast } from "primevue/usetoast";
 import TabView from "primevue/tabview";
 import TabPanel from "primevue/tabpanel";
 import Skeleton from "primevue/skeleton";
-import ClientDemographics from "./ClientDemographics.vue";
+import BookingInsights from "./BookingInsights.vue";
 import { useSettingsStore } from "../stores/settings";
 
 // Sorts a column by a number field. DataTable compares whatever this returns;
@@ -1000,16 +925,7 @@ const staffReport = ref([]);
 const paymentsReport = ref<any[]>([]);
 const priceAdjustmentsReport = ref<any[]>([]);
 const appointmentsReport = ref([]);
-const clientsReport = ref<any[]>([]);
-const displayGroupDialog = ref(false);
-const selectedGroupName = ref("");
-const selectedGroupClients = ref([]);
-
-const openAgeGroupDialog = (data: any) => {
-  selectedGroupName.value = data.label;
-  selectedGroupClients.value = data.clients;
-  displayGroupDialog.value = true;
-};
+const insights = ref<any>(null);
 
 
 const formatDate = (d: Date | null) => {
@@ -1047,8 +963,6 @@ const setToday = () => {
 
 const fetchAllReports = async () => {
   loading.value = true;
-  const token = localStorage.getItem("token");
-  const headers = { Authorization: `Bearer ${token}` };
 
   const params = new URLSearchParams();
 
@@ -1074,75 +988,59 @@ const fetchAllReports = async () => {
   const qs = params.toString() ? `?${params.toString()}` : "";
 
   try {
+    // Without these the page can't show anything; the others may be refused
+    // (e.g. for a role that doesn't see them) and are then left as they were.
+    const optional = (url: string) => api.get(url).catch(ifRefused(null));
     const [
-      finRes,
-      salesRes,
-      staffRes,
-      payRes,
-      apptRes,
-      anaRes,
-      clientsRes,
-      serviceSumRes,
-      productsRes,
-      productUsageRes,
-      giftCardsRes,
-      priceAdjustmentsRes,
+      finData,
+      salesData,
+      staffData,
+      payData,
+      apptData,
+      anaData,
+      insightsData,
+      serviceSumData,
+      productsData,
+      productUsageData,
+      giftCardsData,
+      priceAdjustmentsData,
     ] = await Promise.all([
-      fetch(`/api/v1/reports/finances${qs}`, { headers }),
-      fetch(`/api/v1/reports/sales${qs}`, { headers }),
-      fetch(`/api/v1/reports/staff${qs}`, { headers }),
-      fetch(`/api/v1/reports/payments${qs}`, { headers }),
-      fetch(`/api/v1/reports/appointments${qs}`, { headers }),
-      fetch(`/api/v1/reports/analytics${qs}`, { headers }),
-      fetch(`/api/v1/reports/clients`, { headers }),
-      fetch(`/api/v1/reports/service-summary${qs}`, { headers }),
-      fetch(`/api/v1/reports/products${qs}`, { headers }),
-      fetch(`/api/v1/reports/product-usage${qs}`, { headers }),
-      fetch(`/api/v1/reports/gift-cards${qs}`, { headers }),
-      fetch(`/api/v1/reports/price-adjustments${qs}`, { headers }),
+      api.get(`/api/v1/reports/finances${qs}`),
+      api.get(`/api/v1/reports/sales${qs}`),
+      optional(`/api/v1/reports/staff${qs}`),
+      api.get(`/api/v1/reports/payments${qs}`),
+      optional(`/api/v1/reports/appointments${qs}`),
+      api.get(`/api/v1/reports/analytics${qs}`),
+      optional(`/api/v1/reports/insights${qs}`),
+      api.get(`/api/v1/reports/service-summary${qs}`),
+      optional(`/api/v1/reports/products${qs}`),
+      optional(`/api/v1/reports/product-usage${qs}`),
+      optional(`/api/v1/reports/gift-cards${qs}`),
+      optional(`/api/v1/reports/price-adjustments${qs}`),
     ]);
-
-    if (finRes.status === 401) throw new Error("unauthorized");
-
-    if (
-      !finRes.ok ||
-      !salesRes.ok ||
-      !anaRes.ok ||
-      !payRes.ok ||
-      !clientsRes.ok
-    ) {
-      throw new Error("loadFailed");
-    }
-    if (!serviceSumRes.ok) throw new Error("loadFailed");
-
-    const finData = await finRes.json();
-    const salesData = await salesRes.json();
-    const anaData = await anaRes.json();
 
     finances.value = finData;
     salesReport.value = salesData.details || [];
     analytics.value = anaData;
-    staffReport.value = await staffRes.json();
-    paymentsReport.value = await payRes.json();
-    if (priceAdjustmentsRes.ok) {
-      priceAdjustmentsReport.value = await priceAdjustmentsRes.json();
+    staffReport.value = staffData ?? [];
+    paymentsReport.value = payData;
+    if (priceAdjustmentsData) {
+      priceAdjustmentsReport.value = priceAdjustmentsData;
     }
-    appointmentsReport.value = await apptRes.json();
-    clientsReport.value = await clientsRes.json();
-    serviceSummaryReport.value = await serviceSumRes.json();
-    if (productsRes.ok) {
-      const productsData = await productsRes.json();
+    appointmentsReport.value = apptData ?? [];
+    insights.value = insightsData;
+    serviceSummaryReport.value = serviceSumData;
+    if (productsData) {
       productsReport.value = productsData.details || [];
       productsSummary.value = productsData.summary || {
         total_revenue: 0,
         total_units: 0,
       };
     }
-    if (productUsageRes.ok) {
-      productUsageReport.value = await productUsageRes.json();
+    if (productUsageData) {
+      productUsageReport.value = productUsageData;
     }
-    if (giftCardsRes.ok) {
-      const giftCardsData = await giftCardsRes.json();
+    if (giftCardsData) {
       giftCardsReport.value = giftCardsData.details || [];
       giftCardsSummary.value = giftCardsData.summary || {
         total_revenue: 0,
@@ -1153,7 +1051,7 @@ const fetchAllReports = async () => {
   } catch (err: any) {
     console.error(err);
     const toastKey =
-      err.message === "unauthorized"
+      err instanceof ApiError && err.status === 401
         ? "analytics.toast.unauthorized"
         : "analytics.toast.loadFailed";
     toast.add({
@@ -1288,13 +1186,7 @@ const exportPaymentsCSV = () => {
     ];
   });
   const csv = [headers, ...rows].map((r) => r.join(",")).join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `payments-export-${new Date().toISOString().split("T")[0]}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+  saveBlob(new Blob([csv], { type: "text/csv;charset=utf-8;" }), `payments-export-${new Date().toISOString().split("T")[0]}.csv`);
 };
 
 // Payment method badge helper

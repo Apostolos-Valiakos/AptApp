@@ -23,7 +23,7 @@
           <i class="pi pi-trophy text-yellow-300"></i>
           <span
             class="text-xs font-semibold uppercase tracking-widest text-yellow-200"
-            >Διαγωνισμός</span
+            >{{ t("portal.contestLabel") }}</span
           >
         </div>
         <h2 class="text-lg font-bold text-white">{{ activeContest.name }}</h2>
@@ -41,30 +41,6 @@
         {{ t("portal.greeting", { name: clientData?.first_name }) }}
       </h1>
       <p class="text-white/80 text-sm mt-1">{{ t("portal.subtitle") }}</p>
-    </div>
-
-    <!-- Save as an App -->
-    <div
-      v-if="showInstallCard"
-      class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3"
-    >
-      <div
-        class="w-10 h-10 rounded-xl bg-[var(--p-primary-50)] flex items-center justify-center flex-shrink-0"
-      >
-        <i class="pi pi-mobile text-[var(--p-primary-600)]"></i>
-      </div>
-      <div class="flex-1 min-w-0">
-        <p class="text-sm font-semibold text-gray-800">
-          {{ t("portal.install.title") }}
-        </p>
-        <p class="text-xs text-gray-400">{{ installSubtitle }}</p>
-      </div>
-      <Button
-        v-if="installIsActionable"
-        :label="t('portal.install.button')"
-        size="small"
-        @click="handleInstallClick"
-      />
     </div>
 
     <!-- Turn On Notifications -->
@@ -178,66 +154,32 @@
       </div>
     </div>
   </div>
-
-  <Dialog
-    v-model:visible="showManualInstallDialog"
-    modal
-    :header="t('portal.install.iosTitle')"
-    :style="{ width: '340px', maxWidth: '90vw' }"
-  >
-    <p class="text-sm text-gray-600">
-      {{ isIOS ? t("portal.install.iosInstructions", { icon: "" }) : t("portal.install.braveInstructions") }}
-      <i :class="isIOS ? 'pi pi-upload' : 'pi pi-ellipsis-v'" class="text-[var(--p-primary-600)]"></i>
-    </p>
-  </Dialog>
 </template>
 
 <script setup lang="ts">
+import { api } from "../../api/http";
 import { ref, computed, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import Button from "primevue/button";
-import Dialog from "primevue/dialog";
 import { useToast } from "primevue/usetoast";
-import { usePwaInstall } from "../../composables/usePwaInstall";
 import { usePushNotifications } from "../../composables/usePushNotifications";
 import { useAuthStore } from "../../stores/auth";
 
 const { t } = useI18n();
 const authStore = useAuthStore();
 const toast = useToast();
-const { canInstall, promptInstall, isIOS, isStandalone, status: pwaStatus } = usePwaInstall();
 const {
   isSupported: pushSupported,
+  availableHere: pushAvailableHere,
   permission: pushPermission,
   subscribe: subscribeToPush,
 } = usePushNotifications();
 
-// Always shown unless the app is already installed — a hidden card with no
-// explanation just looks like a missing feature, so the "can't install yet"
-// states get their own message instead of disappearing silently.
-const showInstallCard = computed(() => pwaStatus() !== "installed");
-const installIsActionable = computed(() =>
-  ["ready", "manual"].includes(pwaStatus()),
-);
-const installSubtitle = computed(() => {
-  switch (pwaStatus()) {
-    case "insecure-context":
-      return t("portal.install.unavailableInsecure");
-    case "not-yet-eligible":
-      return t("portal.install.unavailableNotYet");
-    default:
-      return t("portal.install.subtitle");
-  }
-});
-const showManualInstallDialog = ref(false);
-
-// iOS only allows push subscriptions once the site is installed to the home
-// screen — offering the prompt in a regular Safari tab would just fail.
 const showNotificationsCard = computed(
   () =>
     pushSupported &&
     pushPermission.value !== "granted" &&
-    (!isIOS || isStandalone),
+    pushAvailableHere,
 );
 
 const handleEnableNotifications = async () => {
@@ -251,17 +193,6 @@ const handleEnableNotifications = async () => {
       life: 6000,
     });
   }
-};
-
-const handleInstallClick = async () => {
-  if (canInstall.value) {
-    const outcome = await promptInstall();
-    if (outcome === "accepted") {
-      toast.add({ severity: "success", detail: t("portal.install.installedToast"), life: 3000 });
-    }
-    return;
-  }
-  showManualInstallDialog.value = true;
 };
 
 const loading = ref(true);
@@ -284,33 +215,18 @@ const nextAppointment = computed(() => {
 
 onMounted(async () => {
   try {
-    const contestRes = await fetch("/api/v1/contests/active", {
-      headers: { Authorization: `Bearer ${authStore.token}` },
-    });
-    if (contestRes.ok) {
-      activeContest.value = (await contestRes.json()) ?? null;
-    }
+    activeContest.value = (await api.get("/api/v1/contests/active")) ?? null;
   } catch {}
 
   try {
-    const shopRes = await fetch("/api/v1/shop", {
-      headers: { Authorization: `Bearer ${authStore.token}` },
-    });
-    if (shopRes.ok) {
-      const data = await shopRes.json();
-      shopPhone.value = data?.phone || "";
-    }
+    const data = await api.get("/api/v1/shop");
+    shopPhone.value = data?.phone || "";
   } catch {}
 
   try {
-    const res = await fetch(`/api/v1/clients/${authStore.clientId}/full`, {
-      headers: { Authorization: `Bearer ${authStore.token}` },
-    });
-    if (res.ok) {
-      const data = await res.json();
-      clientData.value = data.client;
-      history.value = data.history || [];
-    }
+    const data = await api.get(`/api/v1/clients/${authStore.clientId}/full`);
+    clientData.value = data.client;
+    history.value = data.history || [];
   } catch {
   } finally {
     loading.value = false;

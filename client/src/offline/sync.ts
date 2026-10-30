@@ -176,4 +176,4 @@ export const canCancelInstead = (w: QueuedWrite) => w.method === "DELETE" && w.c
 
 /** Conflicts that "keep mine" can resolve (the others can only be discarded). */
 export const canKeepMine = (w: QueuedWrite) =>
-  ["slot_taken", "stale_appointment"].includes(w.conflict?.code || "");
+  ["slot_taken", "stale_appointment", "over_capacity"].includes(w.conflict?.code || "");

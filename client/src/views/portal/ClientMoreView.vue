@@ -87,19 +87,19 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label class="block text-xs font-medium text-gray-500 mb-1"
-              >First Name</label
+              >{{ t("portal.account.firstName") }}</label
             >
             <InputText v-model="editProfileForm.first_name" class="w-full" />
           </div>
           <div>
             <label class="block text-xs font-medium text-gray-500 mb-1"
-              >Last Name</label
+              >{{ t("portal.account.lastName") }}</label
             >
             <InputText v-model="editProfileForm.last_name" class="w-full" />
           </div>
           <div>
             <label class="block text-xs font-medium text-gray-500 mb-1"
-              >Email</label
+              >{{ t("portal.account.email") }}</label
             >
             <InputText
               v-model="editProfileForm.email"
@@ -109,14 +109,14 @@
           </div>
           <div>
             <label class="block text-xs font-medium text-gray-500 mb-1"
-              >Phone</label
+              >{{ t("portal.account.phone") }}</label
             >
             <InputText v-model="editProfileForm.phone" class="w-full" />
           </div>
         </div>
         <div class="flex justify-end">
           <Button
-            label="Save Changes"
+            :label="t('portal.account.saveChanges')"
             size="small"
             :loading="isSavingProfile"
             @click="saveProfile"
@@ -147,7 +147,7 @@
       <div v-if="showChangePassword" class="mt-4 space-y-4">
         <div>
           <label class="block text-xs font-medium text-gray-500 mb-1"
-            >Current Password</label
+            >{{ t("portal.account.currentPassword") }}</label
           >
           <Password
             v-model="passwordForm.current"
@@ -159,7 +159,7 @@
         </div>
         <div>
           <label class="block text-xs font-medium text-gray-500 mb-1"
-            >New Password</label
+            >{{ t("portal.account.newPassword") }}</label
           >
           <Password
             v-model="passwordForm.newPass"
@@ -170,7 +170,7 @@
         </div>
         <div>
           <label class="block text-xs font-medium text-gray-500 mb-1"
-            >Confirm New Password</label
+            >{{ t("portal.account.confirmPassword") }}</label
           >
           <Password
             v-model="passwordForm.confirm"
@@ -184,12 +184,12 @@
               passwordForm.confirm && passwordForm.newPass !== passwordForm.confirm
             "
             class="text-red-500 block mt-1"
-            >Passwords do not match</small
+            >{{ t("portal.account.passwordMismatch") }}</small
           >
         </div>
         <div class="flex justify-end">
           <Button
-            label="Update Password"
+            :label="t('portal.account.updatePassword')"
             size="small"
             :loading="isSavingPassword"
             :disabled="
@@ -224,31 +224,6 @@
       </div>
     </div>
 
-    <!-- Save as an App -->
-    <div
-      v-if="showInstallCard"
-      class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 flex items-center justify-between gap-3"
-    >
-      <div class="flex items-center gap-2 min-w-0">
-        <i class="pi pi-mobile text-[var(--p-primary-color)]"></i>
-        <div class="min-w-0">
-          <p class="font-bold text-gray-800 text-sm truncate">
-            {{ t("portal.install.title") }}
-          </p>
-          <p v-if="!installIsActionable" class="text-xs text-gray-400">
-            {{ installSubtitle }}
-          </p>
-        </div>
-      </div>
-      <Button
-        v-if="installIsActionable"
-        :label="t('portal.install.button')"
-        size="small"
-        outlined
-        @click="handleInstallClick"
-      />
-    </div>
-
     <!-- Turn On Notifications -->
     <div
       v-if="showNotificationsCard"
@@ -280,18 +255,6 @@
   </div>
 
   <Dialog
-    v-model:visible="showManualInstallDialog"
-    modal
-    :header="t('portal.install.iosTitle')"
-    :style="{ width: '340px', maxWidth: '90vw' }"
-  >
-    <p class="text-sm text-gray-600">
-      {{ isIOS ? t("portal.install.iosInstructions", { icon: "" }) : t("portal.install.braveInstructions") }}
-      <i :class="isIOS ? 'pi pi-upload' : 'pi pi-ellipsis-v'" class="text-[var(--p-primary-600)]"></i>
-    </p>
-  </Dialog>
-
-  <Dialog
     v-model:visible="showQrModal"
     modal
     :header="t('portal.membership.qrNote')"
@@ -305,6 +268,7 @@
 </template>
 
 <script setup lang="ts">
+import { api, withMessage } from "../../api/http";
 import { ref, computed, onMounted, reactive, nextTick } from "vue";
 import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
@@ -317,41 +281,24 @@ import Dialog from "primevue/dialog";
 import ToggleSwitch from "primevue/toggleswitch";
 import { useToast } from "primevue/usetoast";
 import QRCode from "qrcode";
-import { usePwaInstall } from "../../composables/usePwaInstall";
 import { usePushNotifications } from "../../composables/usePushNotifications";
 
 const { t } = useI18n();
 const router = useRouter();
 const authStore = useAuthStore();
 const toast = useToast();
-const { canInstall, promptInstall, isIOS, isStandalone, status: pwaStatus } = usePwaInstall();
 const {
   isSupported: pushSupported,
+  availableHere: pushAvailableHere,
   permission: pushPermission,
   subscribe: subscribeToPush,
 } = usePushNotifications();
-
-const showInstallCard = computed(() => pwaStatus() !== "installed");
-const installIsActionable = computed(() =>
-  ["ready", "manual"].includes(pwaStatus()),
-);
-const installSubtitle = computed(() => {
-  switch (pwaStatus()) {
-    case "insecure-context":
-      return t("portal.install.unavailableInsecure");
-    case "not-yet-eligible":
-      return t("portal.install.unavailableNotYet");
-    default:
-      return "";
-  }
-});
-const showManualInstallDialog = ref(false);
 
 const showNotificationsCard = computed(
   () =>
     pushSupported &&
     pushPermission.value !== "granted" &&
-    (!isIOS || isStandalone),
+    pushAvailableHere,
 );
 
 const handleEnableNotifications = async () => {
@@ -365,17 +312,6 @@ const handleEnableNotifications = async () => {
       life: 6000,
     });
   }
-};
-
-const handleInstallClick = async () => {
-  if (canInstall.value) {
-    const outcome = await promptInstall();
-    if (outcome === "accepted") {
-      toast.add({ severity: "success", detail: t("portal.install.installedToast"), life: 3000 });
-    }
-    return;
-  }
-  showManualInstallDialog.value = true;
 };
 
 const clientData = ref<any>(null);
@@ -415,30 +351,19 @@ const renderLargeQr = () => {
 
 onMounted(async () => {
   try {
-    const res = await fetch(`/api/v1/clients/${authStore.clientId}/full`, {
-      headers: { Authorization: `Bearer ${authStore.token}` },
-    });
-    if (res.ok) {
-      const data = await res.json();
-      clientData.value = data.client;
-      editProfileForm.first_name = data.client?.first_name || "";
-      editProfileForm.last_name = data.client?.last_name || "";
-      editProfileForm.email = data.client?.email || "";
-      editProfileForm.phone = data.client?.phone || "";
-      receiveEmails.value = data.client?.receive_emails ?? true;
-    }
+    const data = await api.get(`/api/v1/clients/${authStore.clientId}/full`);
+    clientData.value = data.client;
+    editProfileForm.first_name = data.client?.first_name || "";
+    editProfileForm.last_name = data.client?.last_name || "";
+    editProfileForm.email = data.client?.email || "";
+    editProfileForm.phone = data.client?.phone || "";
+    receiveEmails.value = data.client?.receive_emails ?? true;
   } catch {}
 
   try {
-    const memRes = await fetch(
-      `/api/v1/clients/${authStore.clientId}/membership`,
-      { headers: { Authorization: `Bearer ${authStore.token}` } },
-    );
-    if (memRes.ok) {
-      const memData = await memRes.json();
-      membership.value = memData.membership;
-      membershipUsage.value = memData.usage || [];
-    }
+    const memData = await api.get(`/api/v1/clients/${authStore.clientId}/membership`);
+    membership.value = memData.membership;
+    membershipUsage.value = memData.usage || [];
   } catch {
   } finally {
     membershipLoading.value = false;
@@ -458,32 +383,24 @@ const saveProfile = async () => {
   if (!editProfileForm.first_name || !editProfileForm.last_name) {
     toast.add({
       severity: "warn",
-      summary: "Required",
-      detail: "First and last name are required",
+      summary: t("portal.toast.required"),
+      detail: t("portal.toast.nameRequired"),
       life: 3000,
     });
     return;
   }
   isSavingProfile.value = true;
   try {
-    const res = await fetch("/api/v1/portal/profile", {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${authStore.token}`,
-      },
-      body: JSON.stringify(editProfileForm),
-    });
-    if (!res.ok) throw new Error((await res.json()).error || "Failed");
+    await api.put("/api/v1/portal/profile", editProfileForm).catch(withMessage(t("portal.toast.failed")));
     toast.add({
       severity: "success",
-      summary: "Saved",
-      detail: "Profile updated.",
+      summary: t("portal.toast.saved"),
+      detail: t("portal.toast.profileUpdated"),
       life: 3000,
     });
     showEditProfile.value = false;
   } catch (e: any) {
-    toast.add({ severity: "error", summary: "Error", detail: e.message, life: 3000 });
+    toast.add({ severity: "error", summary: t("common.error"), detail: e.message, life: 3000 });
   } finally {
     isSavingProfile.value = false;
   }
@@ -493,25 +410,16 @@ const changePassword = async () => {
   if (passwordForm.newPass !== passwordForm.confirm) return;
   isSavingPassword.value = true;
   try {
-    const res = await fetch("/api/v1/portal/password", {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${authStore.token}`,
-      },
-      body: JSON.stringify({
-        currentPassword: passwordForm.current,
-        newPassword: passwordForm.newPass,
-      }),
-    });
-    if (!res.ok) throw new Error((await res.json()).error || "Failed");
-    toast.add({ severity: "success", summary: "Password updated", life: 3000 });
+    await api
+      .put("/api/v1/portal/password", { currentPassword: passwordForm.current, newPassword: passwordForm.newPass })
+      .catch(withMessage(t("portal.toast.failed")));
+    toast.add({ severity: "success", summary: t("portal.toast.passwordUpdated"), life: 3000 });
     passwordForm.current = "";
     passwordForm.newPass = "";
     passwordForm.confirm = "";
     showChangePassword.value = false;
   } catch (e: any) {
-    toast.add({ severity: "error", summary: "Error", detail: e.message, life: 3000 });
+    toast.add({ severity: "error", summary: t("common.error"), detail: e.message, life: 3000 });
   } finally {
     isSavingPassword.value = false;
   }
@@ -519,14 +427,7 @@ const changePassword = async () => {
 
 const saveNotificationPreference = async () => {
   try {
-    await fetch("/api/v1/portal/notifications", {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${authStore.token}`,
-      },
-      body: JSON.stringify({ receive_emails: receiveEmails.value }),
-    });
+    await api.put("/api/v1/portal/notifications", { receive_emails: receiveEmails.value });
   } catch {}
 };
 

@@ -107,6 +107,7 @@
 </template>
 
 <script setup lang="ts">
+import { api as http, withMessage } from "../api/http";
 import { formatMoney } from "../utils/format";
 import { ref, reactive, computed, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
@@ -169,16 +170,8 @@ const formatDate = (iso: string) =>
     year: "numeric",
   });
 
-const api = async (url: string, method = "GET", body?: any) => {
-  const res = await fetch(url, {
-    method,
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("token")}` },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || t("expenses.failed"));
-  return data;
-};
+const api = (url: string, method = "GET", body?: any) =>
+  http.request(method, url, body || undefined).then((data) => data ?? {}).catch(withMessage(t("expenses.failed")));
 
 const load = async () => {
   loading.value = true;

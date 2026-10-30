@@ -184,6 +184,7 @@
 </template>
 
 <script setup lang="ts">
+import { api, ifRefused } from "../api/http";
 import { ref, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
@@ -195,8 +196,6 @@ const { t } = useI18n();
 const router = useRouter();
 const toast = useToast();
 
-const token = () => localStorage.getItem("token");
-const authHeaders = () => ({ "Content-Type": "application/json", Authorization: `Bearer ${token()}` });
 
 interface RecipeRow {
   product_inventory_id: string | null;
@@ -239,13 +238,11 @@ const productVariationOptions = computed(() =>
 const formatDate = (v: string) => new Date(v).toLocaleString();
 
 const fetchServices = async () => {
-  const res = await fetch("/api/v1/services", { headers: authHeaders() });
-  services.value = res.ok ? await res.json() : [];
+  services.value = await api.get("/api/v1/services").catch(ifRefused([]));
 };
 
 const fetchProducts = async () => {
-  const res = await fetch("/api/v1/products", { headers: authHeaders() });
-  products.value = res.ok ? await res.json() : [];
+  products.value = await api.get("/api/v1/products").catch(ifRefused([]));
 };
 
 const addRecipeRow = () => {
@@ -260,8 +257,7 @@ const addRecipeRow = () => {
 
 const loadRecipesForService = async () => {
   if (!selectedServiceId.value) return;
-  const res = await fetch("/api/v1/product-usage/recipes", { headers: authHeaders() });
-  const all = res.ok ? await res.json() : [];
+  const all = await api.get("/api/v1/product-usage/recipes").catch(ifRefused([]));
   recipeRows.value = all
     .filter((r: any) => r.service_id === selectedServiceId.value)
     .map((r: any) => ({
@@ -287,12 +283,7 @@ const saveRecipes = async () => {
   }
   savingRecipes.value = true;
   try {
-    const res = await fetch(`/api/v1/services/${selectedServiceId.value}/recipes`, {
-      method: "PUT",
-      headers: authHeaders(),
-      body: JSON.stringify({ recipes: recipeRows.value }),
-    });
-    if (!res.ok) throw new Error();
+    await api.put(`/api/v1/services/${selectedServiceId.value}/recipes`, { recipes: recipeRows.value });
     toast.add({ severity: "success", summary: t("common.success"), detail: t("productUsage.toast.saved"), life: 3000 });
   } catch {
     toast.add({ severity: "error", summary: t("common.error"), detail: t("productUsage.toast.saveFailed"), life: 3000 });
@@ -303,20 +294,14 @@ const saveRecipes = async () => {
 
 const loadStocktakeHistory = async () => {
   if (!selectedInventoryId.value) return;
-  const res = await fetch(`/api/v1/product-inventory/${selectedInventoryId.value}/stocktakes`, { headers: authHeaders() });
-  stocktakeHistory.value = res.ok ? await res.json() : [];
+  stocktakeHistory.value = await api.get(`/api/v1/product-inventory/${selectedInventoryId.value}/stocktakes`).catch(ifRefused([]));
 };
 
 const submitStocktake = async () => {
   if (!selectedInventoryId.value || stocktakeForm.value.remaining_amount_ml === null) return;
   savingStocktake.value = true;
   try {
-    const res = await fetch(`/api/v1/product-inventory/${selectedInventoryId.value}/stocktake`, {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify(stocktakeForm.value),
-    });
-    if (!res.ok) throw new Error();
+    await api.post(`/api/v1/product-inventory/${selectedInventoryId.value}/stocktake`, stocktakeForm.value);
     toast.add({ severity: "success", summary: t("common.success"), detail: t("productUsage.toast.stocktakeSaved"), life: 3000 });
     stocktakeForm.value = { remaining_amount_ml: null, restocked_amount_ml: 0, notes: "" };
     await loadStocktakeHistory();
