@@ -16,6 +16,13 @@
           @click="router.push('/app/expenses')"
         />
         <Button
+          :label="t('nav.dailyReport')"
+          icon="pi pi-wallet"
+          class="p-button-outlined flex-shrink-0"
+          data-testid="analytics-daily-report"
+          @click="router.push('/app/daily-report')"
+        />
+        <Button
           :label="t('nav.membershipReport')"
           icon="pi pi-chart-pie"
           class="p-button-outlined flex-shrink-0"
