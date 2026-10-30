@@ -80,7 +80,7 @@ const describeReminderWindow = (hoursBefore) => {
 const processReminders = async () => {
   try {
     const query = `
-        SELECT
+        SELECT DISTINCT ON (a.id)
             a.id AS appointment_id,
             c.first_name AS client_name,
             c.id AS client_id,
@@ -104,7 +104,8 @@ const processReminders = async () => {
             AND a.email_reminder_sent = false
             AND a.status != 'cancelled'
             AND c.receive_emails = true
-            AND a.is_block = false;
+            AND a.is_block = false
+        ORDER BY a.id, aps.start_time;
         `;
 
     const { rows } = await pool.query(query);
@@ -490,6 +491,14 @@ const processReminders = async () => {
             </html>
             `;
 
+      // Marked before sending, by whoever gets there first, so an overlapping
+      // run can't send it too; a failed send gives it back for the next run.
+      const claim = await pool.query(
+        "UPDATE appointments SET email_reminder_sent = true WHERE id = $1 AND email_reminder_sent = false RETURNING id",
+        [appt.appointment_id],
+      );
+      if (claim.rowCount === 0) continue;
+
       try {
         await transporter.sendMail({
           from: `"${appt.shop_name}" <${process.env.EMAIL_USER}>`,
@@ -499,14 +508,12 @@ const processReminders = async () => {
           html: htmlContent,
           attachments: [{ filename: "logo.png", path: LOGO_PATH, cid: "brand-logo" }],
         });
-
-        // 3. Mark as sent using your specific column name
-        await pool.query(
-          "UPDATE appointments SET email_reminder_sent = true WHERE id = $1",
-          [appt.appointment_id],
-        );
       } catch (mailErr) {
         console.error("Mail send error:", mailErr);
+        await pool.query(
+          "UPDATE appointments SET email_reminder_sent = false WHERE id = $1",
+          [appt.appointment_id],
+        ).catch((err) => console.error("Reminder retry mark error:", err));
       }
     }
   } catch (err) {
@@ -524,7 +531,7 @@ const processReminders = async () => {
 const processPushReminders = async () => {
   try {
     const query = `
-        SELECT DISTINCT
+        SELECT DISTINCT ON (a.id)
             a.id AS appointment_id,
             a.client_id,
             a.shop_id,
@@ -539,11 +546,18 @@ const processPushReminders = async () => {
             AND aps.start_time >= (NOW() + ((s.reminder_hours_before || ' hours')::interval) - INTERVAL '5 minutes')
             AND a.push_reminder_sent = false
             AND a.status != 'cancelled'
-            AND a.is_block = false;
+            AND a.is_block = false
+        ORDER BY a.id, aps.start_time;
         `;
     const { rows } = await pool.query(query);
 
     for (const appt of rows) {
+      const claim = await pool.query(
+        "UPDATE appointments SET push_reminder_sent = true WHERE id = $1 AND push_reminder_sent = false RETURNING id",
+        [appt.appointment_id],
+      );
+      if (claim.rowCount === 0) continue;
+
       try {
         const startTimeStr = formatTime(appt.start_time);
         const title = `Ραντεβού: ${appt.service_name}`;
@@ -556,12 +570,12 @@ const processPushReminders = async () => {
           url,
         });
         await sendPushToClient(appt.client_id, { title, body, url });
-        await pool.query(
-          "UPDATE appointments SET push_reminder_sent = true WHERE id = $1",
-          [appt.appointment_id],
-        );
       } catch (pushErr) {
         console.error("Push reminder error:", pushErr);
+        await pool.query(
+          "UPDATE appointments SET push_reminder_sent = false WHERE id = $1",
+          [appt.appointment_id],
+        ).catch((err) => console.error("Reminder retry mark error:", err));
       }
     }
   } catch (err) {

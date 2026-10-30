@@ -224,3 +224,50 @@ test("a booking still waiting is confirmed, and open calendars hear about it", a
   assert.equal(changes, 1);
   socket.close();
 });
+
+// --- Reminders ---
+const runJob = (mode) =>
+  JSON.parse(
+    execFileSync("node", [path.join(ROOT, "tests/server/reminder-runner.cjs"), mode], {
+      env: { ...process.env, POSTGRES_URI: uri },
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim().split("\n").pop(),
+  );
+const dueBooking = async (last, services = 1) => {
+  q(`UPDATE appointments SET email_reminder_sent = true, push_reminder_sent = true`);
+  const hours = Number(q(`SELECT reminder_hours_before FROM shops WHERE id = '${SHOP}'`));
+  const start = new Date(Date.now() + hours * 3600000).toISOString();
+  const email = `${last.toLowerCase()}@example.invalid`;
+  const clientId = newClient(last, email);
+  const lines = services === 1 ? [line(start)] : [line(start), line(start, ids.staff2)];
+  const id = await book(clientId, lines);
+  q(`UPDATE appointments SET email_reminder_sent = false, push_reminder_sent = false WHERE id = '${id}'`);
+  return { id, email, clientId };
+};
+
+test("a booking split across staff at the same time gets one reminder", async () => {
+  const { id, email } = await dueBooking("Split", 2);
+  assert.deepEqual(runJob("one"), [email]);
+  assert.equal(q(`SELECT email_reminder_sent FROM appointments WHERE id = '${id}'`), "t");
+  assert.deepEqual(runJob("one"), [], "and none on the next run");
+});
+
+test("overlapping runs send one reminder", async () => {
+  const { email } = await dueBooking("Overlap");
+  assert.deepEqual(runJob("overlap"), [email]);
+});
+
+test("a failed send is tried again on the next run", async () => {
+  const { id, email } = await dueBooking("Retry");
+  assert.deepEqual(runJob("fail"), []);
+  assert.equal(q(`SELECT email_reminder_sent FROM appointments WHERE id = '${id}'`), "f");
+  assert.deepEqual(runJob("one"), [email]);
+});
+
+test("a push reminder is recorded once", async () => {
+  const { clientId } = await dueBooking("PushOnce", 2);
+  runJob("push");
+  runJob("push");
+  assert.equal(q(`SELECT count(*) FROM notification_deliveries WHERE client_id = '${clientId}'`), "1");
+});
