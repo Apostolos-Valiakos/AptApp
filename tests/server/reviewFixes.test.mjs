@@ -187,3 +187,40 @@ test("removing an admin from the calendar leaves their account alone", async () 
   assert.equal(q(`SELECT is_active FROM users WHERE id = '${userId}'`), "t");
   assert.equal((await api(PORT, held)("GET", "/api/v1/clients?limit=1")).status, 200);
 });
+
+// --- Confirmation link ---
+const confirmLink = (id) =>
+  fetch(`${URL_BASE}/api/v1/confirm-appointment?id=${id}&token=${createHmac("sha256", SECRET).update(id).digest("hex")}`);
+const statusOf = (id) => q(`SELECT status FROM appointments WHERE id = '${id}'`);
+
+test("an old confirmation link can't undo what happened since", async () => {
+  const id = await book(newClient("OldLink"), [line("2026-03-02T10:00:00+02:00")]);
+  for (const status of ["completed", "no-show", "arrived"]) {
+    q(`UPDATE appointments SET status = '${status}' WHERE id = '${id}'`);
+    const r = await confirmLink(id);
+    assert.equal(r.status, 200, "the client still sees a thank-you page");
+    assert.equal(statusOf(id), status);
+  }
+  q(`UPDATE appointments SET status = 'cancelled' WHERE id = '${id}'`);
+  assert.equal((await confirmLink(id)).status, 404);
+  assert.equal(statusOf(id), "cancelled");
+});
+
+test("a booking still waiting is confirmed, and open calendars hear about it", async () => {
+  const id = await book(newClient("Waiting"), [line("2027-09-06T10:00:00+03:00")]);
+  q(`UPDATE appointments SET status = 'new' WHERE id = '${id}'`);
+  const socket = io(URL_BASE, { auth: { token: token(ids.admin, "admin") }, transports: ["websocket"] });
+  await new Promise((resolve) => socket.on("connect", resolve));
+  await sleep(200);
+  let changes = 0;
+  socket.on("appointments:changed", () => changes++);
+  assert.equal((await confirmLink(id)).status, 200);
+  await sleep(300);
+  assert.equal(statusOf(id), "confirmed");
+  assert.equal(changes, 1);
+  // Clicked again: nothing to tell anyone.
+  await confirmLink(id);
+  await sleep(300);
+  assert.equal(changes, 1);
+  socket.close();
+});

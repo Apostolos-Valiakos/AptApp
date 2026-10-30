@@ -8,6 +8,7 @@ const pool = require("../db");
 const { PUBLIC_BASE_URL } = require("../reminderService");
 
 module.exports = function publicLinksRouter({
+  io,
   publicActionLimiter,
 }) {
   const router = express.Router();
@@ -129,17 +130,21 @@ module.exports = function publicLinksRouter({
       }
 
       try {
-        // Update status to 'confirmed' only if it's not already cancelled
-        const result = await pool.query(
-          "UPDATE appointments SET status = 'confirmed' WHERE id = $1 AND status != 'cancelled' RETURNING id",
-          [id],
-        );
-
-        if (result.rowCount === 0) {
+        const { rows } = await pool.query("SELECT status FROM appointments WHERE id = $1", [id]);
+        if (rows.length === 0 || rows[0].status === "cancelled") {
           return res
             .status(404)
             .send("Το ραντεβού δεν βρέθηκε ή έχει ήδη ακυρωθεί.");
         }
+
+        // Only a booking still waiting for an answer changes: an old email's
+        // link must not undo what has happened since (completed, no-show...).
+        // Clicked again or too late, the client just sees the thank-you page.
+        const updated = await pool.query(
+          "UPDATE appointments SET status = 'confirmed' WHERE id = $1 AND status IN ('new', 'Booked', 'no-response') RETURNING shop_id",
+          [id],
+        );
+        if (updated.rows[0]) io.to(`shop:${updated.rows[0].shop_id}`).emit("appointments:changed");
 
         // Success Styled Page
         res.send(`

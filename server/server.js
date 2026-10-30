@@ -516,6 +516,7 @@ app.use(
 app.use(
   "/api/v1",
   require("./routes/publicLinks")({
+    io,
     publicActionLimiter,
   }),
 );
