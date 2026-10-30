@@ -1018,7 +1018,9 @@ const calendarEvents = computed(() => {
       return;
 
     appt.services.forEach((svc: any, index: number) => {
-      const bgColor = resolveServiceColor(svc.service_color, svc.category_color);
+      // A completed appointment's card is white, whatever its service colour.
+      const isCompleted = appt.status === "completed";
+      const bgColor = isCompleted ? "#ffffff" : resolveServiceColor(svc.service_color, svc.category_color);
       const duration = svc.duration_minutes || 60;
       const endTime = svc.start_time
         ? new Date(
@@ -1063,6 +1065,7 @@ const calendarEvents = computed(() => {
         // red when the server refused them (see the sync banner).
         classNames: [
           "fresha-event",
+          ...(isCompleted ? ["fc-completed"] : []),
           ...(appt._offline === "conflict" ? ["fc-offline-conflict"] : appt._offline ? ["fc-offline-pending"] : []),
         ],
         extendedProps: {
@@ -1142,7 +1145,7 @@ const calendarEvents = computed(() => {
       for (let i = active.length - 1; i >= 0; i--) {
         if (new Date(active[i].end).getTime() <= startMs) active.splice(i, 1);
       }
-      if (active.length > 0) {
+      if (active.length > 0 && e.extendedProps.fullAppointment?.status !== "completed") {
         const usedColors = new Set(active.map((a) => a.backgroundColor));
         const accent =
           OVERLAP_ACCENT_COLORS.find((c) => !usedColors.has(c)) ||
@@ -1584,12 +1587,7 @@ const placeGroupHtml = (props: any) => {
     .map((m: any, i: number) => {
       const appt = m.fullAppointment || {};
       const cashPaid = appt.payment_status === "paid" && appt.payment_method === "cash";
-      const icon =
-        appt.status === "completed"
-          ? `<i class="pi pi-check-circle text-green-600"></i>`
-          : appt.status === "confirmed"
-            ? `<i class="pi pi-check text-violet-700"></i>`
-            : "";
+      const icon = appt.status === "confirmed" ? `<i class="pi pi-check text-violet-700"></i>` : "";
       return `<div class="fc-place-group-row${cashPaid ? " is-cash-paid" : ""}" data-member="${i}">
           <span class="fc-place-group-time">${hhmm(m.start)}</span>
           <span class="fc-place-group-name">${escapeHtml(m.client_name)}</span>
@@ -2034,7 +2032,6 @@ const calendarOptions = ref({
       props.fullAppointment?.payment_status === "paid" &&
       props.fullAppointment?.payment_method === "cash";
     const isConfirmed = status === "confirmed";
-    const isCompleted = status === "completed";
     const isMonthView = arg.view.type === "dayGridMonth";
     const start = arg.event.start;
     const end = arg.event.end;
@@ -2086,9 +2083,7 @@ const calendarOptions = ref({
 
     const statusBadge = isConfirmed
       ? `<span class="absolute top-1 right-1 text-violet-700"><i class="pi pi-check text-[9px]"></i></span>`
-      : isCompleted
-        ? `<span class="absolute top-1 right-1 text-green-600"><i class="pi pi-check-circle text-[9px]"></i></span>`
-        : "";
+      : "";
 
     const archivedBadge = props.serviceArchived
       ? `<span class="absolute top-1 right-6 text-gray-500" title="${escapeHtml(t("services.archivedTooltip"))}"><i class="pi pi-box text-[9px]"></i></span>`
@@ -2444,6 +2439,11 @@ onMounted(async () => {
 .fc-v-event.fc-move-together {
   outline: 2px dashed var(--p-primary-color);
   outline-offset: 1px;
+}
+
+/* Completed appointments: white, so an outline keeps them visible on the white grid. */
+.fc-event.fc-completed {
+  border: 1px solid #d1d5db !important;
 }
 
 /* Shared places (ΣΑΟΥΝΑ, ΧΑΜΜΑΜ): the grouped card, and an opened group's cards. */
