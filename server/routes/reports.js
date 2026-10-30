@@ -202,19 +202,18 @@ module.exports = function reportsRouter({
     if (role !== "admin" && role !== "super_admin" && role !== "frontdesk") {
       return res.status(403).json({ error: "Forbidden" });
     }
+    // The day to show: ?date=YYYY-MM-DD, or today.
+    const day = req.query.date ? String(req.query.date) : null;
+    if (day) {
+      const parsed = new Date(`${day}T00:00:00Z`);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || isNaN(parsed) || !parsed.toISOString().startsWith(day)) {
+        return res.status(400).json({ error: "invalid_date" });
+      }
+    }
     // Ctrl+1 (cash) / Ctrl+8 (card) hide-revenue toggles, same params as the other reports.
     const { excludeCash, excludeCard } = req.query;
     const methodExclusion = buildTxnMethodExclusionClause(excludeCash, excludeCard, "t.");
     const apptExclusion = buildRevenueExclusionClause(excludeCash, excludeCard, "a");
-    const paidExclusions = [];
-    if (excludeCash === "true") {
-      paidExclusions.push(
-        "t2.payment_method = 'cash'",
-        "(t2.payment_method = 'gift-card' AND EXISTS (SELECT 1 FROM gift_cards _gc WHERE _gc.id = t2.gift_card_id AND _gc.purchase_payment_method = 'cash'))",
-      );
-    }
-    if (excludeCard === "true") paidExclusions.push("t2.payment_method = 'card'");
-    const paidFilter = paidExclusions.length ? `AND NOT (${paidExclusions.join(" OR ")})` : "";
     const visibility = role === "super_admin" ? "" : " AND (a.id IS NULL OR a.save_receipt = true)";
     // Package/membership visits are prepaid earlier — not money collected today.
     const { rows: payments } = await pool.query(
@@ -223,35 +222,21 @@ module.exports = function reportsRouter({
        FROM transactions t
        LEFT JOIN clients c ON c.id = t.client_id
        LEFT JOIN appointments a ON a.id = t.appointment_id
-       WHERE t.shop_id = $1 AND t.created_at::date = CURRENT_DATE
+       WHERE t.shop_id = $1 AND t.created_at::date = COALESCE($2::date, CURRENT_DATE)
          AND COALESCE(t.payment_method, '') NOT IN ('membership', 'package', 'write-off')
          ${methodExclusion}
          ${visibility}
        ORDER BY t.created_at DESC`,
-      [req.shopId],
+      [req.shopId, day],
     );
 
     const { rows: appointments } = await pool.query(
-      `SELECT a.id, a.status, a.payment_status,
-              c.first_name, c.last_name,
-              (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) AS start_time,
-              COALESCE((
-                SELECT json_agg(json_build_object('name', s.name, 'staff', st.name) ORDER BY aps.start_time)
-                FROM appointment_services aps
-                LEFT JOIN services s ON s.id = aps.service_id
-                LEFT JOIN staff st ON st.id = aps.staff_id
-                WHERE aps.appointment_id = a.id
-              ), '[]') AS services,
-              COALESCE((SELECT SUM(COALESCE(price_override, 0)) FROM appointment_services WHERE appointment_id = a.id), 0)
-                + COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = a.id), 0) AS total_cost,
-              COALESCE((SELECT SUM(t2.amount) FROM transactions t2 WHERE t2.appointment_id = a.id ${paidFilter}), 0) AS paid
+      `SELECT a.status
        FROM appointments a
-       LEFT JOIN clients c ON c.id = a.client_id
        WHERE a.shop_id = $1 AND a.is_block = false ${apptExclusion}
-         AND EXISTS (SELECT 1 FROM appointment_services x WHERE x.appointment_id = a.id AND x.start_time::date = CURRENT_DATE)
-         ${role === "super_admin" ? "" : "AND a.save_receipt = true"}
-       ORDER BY start_time ASC`,
-      [req.shopId],
+         AND EXISTS (SELECT 1 FROM appointment_services x WHERE x.appointment_id = a.id AND x.start_time::date = COALESCE($2::date, CURRENT_DATE))
+         ${role === "super_admin" ? "" : "AND a.save_receipt = true"}`,
+      [req.shopId, day],
     );
 
     const byMethod = {};
@@ -265,18 +250,13 @@ module.exports = function reportsRouter({
     for (const a of appointments) byStatus[a.status] = (byStatus[a.status] || 0) + 1;
 
     res.json({
-      date: new Date().toISOString(),
+      date: day || new Date().toISOString(),
       total_collected: Math.round(total * 100) / 100,
       by_method: Object.entries(byMethod).map(([method, amount]) => ({
         method,
         amount: Math.round(amount * 100) / 100,
       })),
       payments,
-      appointments: appointments.map((a) => ({
-        ...a,
-        total_cost: Number(a.total_cost),
-        paid: Number(a.paid),
-      })),
       appointment_count: appointments.length,
       by_status: byStatus,
     });

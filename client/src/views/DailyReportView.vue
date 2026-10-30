@@ -3,9 +3,66 @@
     <div class="flex items-center justify-between flex-wrap gap-3">
       <div>
         <h1 class="text-2xl font-bold text-gray-900">{{ t("dailyReport.title") }}</h1>
-        <p class="text-sm text-gray-500">{{ todayLabel }}</p>
       </div>
-      <Button icon="pi pi-refresh" :label="t('dailyReport.refresh')" :loading="loading" @click="load" />
+      <div class="flex items-center gap-2 flex-wrap">
+        <!-- The day shown: previous/next, back to today, or the full calendar -->
+        <button
+          type="button"
+          class="p-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-800 transition-colors"
+          :title="t('dailyReport.previousDay')"
+          :aria-label="t('dailyReport.previousDay')"
+          data-testid="daily-prev"
+          @click="shiftDay(-1)"
+        >
+          <i class="pi pi-chevron-left text-sm"></i>
+        </button>
+        <button
+          type="button"
+          class="px-3 py-1.5 text-xs font-bold text-[var(--p-primary-700)] bg-[var(--p-primary-50)] hover:bg-[var(--p-primary-100)] rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          :disabled="isToday"
+          data-testid="daily-today"
+          @click="goToDay(new Date())"
+        >
+          {{ t("scheduler.nav.today") }}
+        </button>
+        <button
+          type="button"
+          class="p-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+          :disabled="isToday"
+          :title="t('dailyReport.nextDay')"
+          :aria-label="t('dailyReport.nextDay')"
+          data-testid="daily-next"
+          @click="shiftDay(1)"
+        >
+          <i class="pi pi-chevron-right text-sm"></i>
+        </button>
+        <div class="relative">
+          <button
+            type="button"
+            class="flex items-center gap-1 text-sm md:text-base font-bold text-gray-800 px-2 py-1 rounded-lg hover:bg-gray-100 transition-colors"
+            data-testid="daily-date"
+            @click.stop="showPicker = !showPicker"
+          >
+            {{ dayLabel }}
+            <i class="pi pi-chevron-down text-[10px] text-gray-400"></i>
+          </button>
+          <div
+            v-if="showPicker"
+            class="fixed left-1/2 -translate-x-1/2 top-32 sm:absolute sm:left-auto sm:translate-x-0 sm:top-full sm:right-0 sm:mt-2 z-50 bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden"
+            data-testid="daily-calendar"
+            @click.stop
+          >
+            <DatePicker
+              inline
+              :modelValue="selectedDay"
+              dateFormat="dd/mm/yy"
+              :maxDate="new Date()"
+              @update:modelValue="(d: any) => d && goToDay(d)"
+            />
+          </div>
+        </div>
+        <Button icon="pi pi-refresh" :label="t('dailyReport.refresh')" :loading="loading" @click="load" />
+      </div>
     </div>
 
     <div v-if="data" class="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -17,7 +74,7 @@
         <div class="text-xs uppercase tracking-wider text-gray-400 font-bold mb-2">{{ t("dailyReport.byMethod") }}</div>
         <div v-if="!data.by_method.length" class="text-sm text-gray-400">—</div>
         <div v-for="m in data.by_method" :key="m.method" class="flex justify-between text-sm py-0.5">
-          <span class="text-gray-600 capitalize">{{ m.method }}</span>
+          <span class="text-gray-600 capitalize">{{ methodLabel(m.method) }}</span>
           <span class="font-semibold">{{ formatMoney(m.amount) }}</span>
         </div>
       </div>
@@ -37,63 +94,53 @@
     </div>
 
     <div v-if="data" class="bg-white border border-gray-100 rounded-2xl shadow-sm p-6">
-      <h2 class="font-bold text-gray-800 mb-3">{{ t("dailyReport.appointmentsToday") }}</h2>
-      <p v-if="!data.appointments.length" class="text-sm text-gray-400">{{ t("dailyReport.noAppointments") }}</p>
-      <div v-else class="overflow-x-auto">
-        <table class="w-full text-sm">
-          <thead class="text-xs text-gray-400 uppercase">
-            <tr>
-              <th class="text-left py-2 pr-3">{{ t("dailyReport.time") }}</th>
-              <th class="text-left py-2 pr-3">{{ t("dailyReport.client") }}</th>
-              <th class="text-left py-2 pr-3">{{ t("dailyReport.services") }}</th>
-              <th class="text-left py-2 pr-3">{{ t("dailyReport.status") }}</th>
-              <th class="text-right py-2 pr-3">{{ t("dailyReport.total") }}</th>
-              <th class="text-right py-2">{{ t("dailyReport.paid") }}</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-gray-100">
-            <tr v-for="a in data.appointments" :key="a.id">
-              <td class="py-2 pr-3 whitespace-nowrap font-medium">{{ fmtTime(a.start_time) }}</td>
-              <td class="py-2 pr-3">{{ [a.first_name, a.last_name].filter(Boolean).join(" ") || "—" }}</td>
-              <td class="py-2 pr-3">
-                <div v-for="(s, i) in a.services" :key="i" class="text-gray-700">
-                  {{ s.name }}<span v-if="s.staff" class="text-gray-400"> · {{ s.staff }}</span>
-                </div>
-              </td>
-              <td class="py-2 pr-3">{{ statusLabel(a.status) }}</td>
-              <td class="py-2 pr-3 text-right">{{ formatMoney(a.total_cost) }}</td>
-              <td class="py-2 text-right" :class="a.paid + 0.01 < a.total_cost ? 'text-amber-600 font-semibold' : 'text-emerald-600'">
-                {{ formatMoney(a.paid) }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
+      <div class="flex items-center justify-between flex-wrap gap-3 mb-3">
+        <h2 class="font-bold text-gray-800">{{ t("dailyReport.paymentsToday") }}</h2>
+        <div class="flex items-center gap-2 flex-wrap">
+          <InputText
+            v-model="search"
+            size="small"
+            :placeholder="t('dailyReport.searchPayments')"
+            data-testid="daily-search"
+          />
+          <Button
+            icon="pi pi-file-excel"
+            :label="t('dailyReport.exportExcel')"
+            severity="secondary"
+            size="small"
+            :disabled="!shownPayments.length"
+            data-testid="daily-export"
+            @click="exportExcel"
+          />
+        </div>
       </div>
-    </div>
-
-    <div v-if="data" class="bg-white border border-gray-100 rounded-2xl shadow-sm p-6">
-      <h2 class="font-bold text-gray-800 mb-3">{{ t("dailyReport.paymentsToday") }}</h2>
-      <p v-if="!data.payments.length" class="text-sm text-gray-400">{{ t("dailyReport.noPayments") }}</p>
-      <div v-else class="overflow-x-auto">
-        <table class="w-full text-sm">
-          <thead class="text-xs text-gray-400 uppercase">
-            <tr>
-              <th class="text-left py-2 pr-3">{{ t("dailyReport.time") }}</th>
-              <th class="text-left py-2 pr-3">{{ t("dailyReport.client") }}</th>
-              <th class="text-left py-2 pr-3">{{ t("dailyReport.method") }}</th>
-              <th class="text-right py-2">{{ t("dailyReport.amount") }}</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-gray-100">
-            <tr v-for="p in data.payments" :key="p.id">
-              <td class="py-2 pr-3 whitespace-nowrap">{{ fmtTime(p.created_at) }}</td>
-              <td class="py-2 pr-3">{{ [p.first_name, p.last_name].filter(Boolean).join(" ") || "—" }}</td>
-              <td class="py-2 pr-3 capitalize">{{ p.payment_method }}<span v-if="p.transaction_type && p.transaction_type.endsWith('_sale')" class="text-gray-400"> · {{ p.transaction_type.replace("_", " ") }}</span></td>
-              <td class="py-2 text-right font-semibold">{{ formatMoney(p.amount) }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        v-model:first="firstRow"
+        v-model:sortField="sortField"
+        v-model:sortOrder="sortOrder"
+        :value="shownPayments"
+        dataKey="id"
+        size="small"
+        paginator
+        :alwaysShowPaginator="false"
+        :rows="10"
+        :rowsPerPageOptions="[10, 25, 50]"
+        responsiveLayout="scroll"
+        data-testid="daily-payments"
+      >
+        <template #empty>
+          <span class="text-sm text-gray-400">{{ t(payments.length ? "dailyReport.noSearchResults" : "dailyReport.noPayments") }}</span>
+        </template>
+        <Column field="created_at" :header="t('dailyReport.time')" sortable>
+          <template #body="{ data: p }"><span class="whitespace-nowrap">{{ p.time }}</span></template>
+        </Column>
+        <Column field="client" :header="t('dailyReport.client')" sortable />
+        <Column field="method" :header="t('dailyReport.method')" sortable />
+        <Column field="type" :header="t('dailyReport.type')" sortable />
+        <Column field="amount" :header="t('dailyReport.amount')" sortable bodyClass="font-semibold">
+          <template #body="{ data: p }">{{ formatMoney(p.amount) }}</template>
+        </Column>
+      </DataTable>
     </div>
   </div>
 </template>
@@ -101,40 +148,126 @@
 <script setup lang="ts">
 import { api, withMessage } from "../api/http";
 import { formatMoney } from "../utils/format";
-import { ref, computed, onMounted, watch } from "vue";
+import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
 import { useSettingsStore } from "../stores/settings";
+import { toLocalDateStr } from "../utils/staffAvailability";
 
-const { t, locale } = useI18n();
+const { t, te, locale } = useI18n();
 const toast = useToast();
 const settingsStore = useSettingsStore();
 const data = ref<any>(null);
 const loading = ref(false);
 
-const todayLabel = computed(() =>
-  new Date().toLocaleDateString(locale.value, { weekday: "long", day: "numeric", month: "long", year: "numeric" }),
+// The day shown: today when the page opens; today and earlier can be picked.
+const selectedDay = ref(new Date());
+const showPicker = ref(false);
+const isToday = computed(() => toLocalDateStr(selectedDay.value) >= toLocalDateStr(new Date()));
+const dayLabel = computed(() =>
+  selectedDay.value.toLocaleDateString(locale.value, { weekday: "long", day: "numeric", month: "long", year: "numeric" }),
 );
+const goToDay = (day: Date) => {
+  showPicker.value = false;
+  selectedDay.value = new Date(day);
+  load();
+};
+const shiftDay = (days: number) => {
+  const next = new Date(selectedDay.value);
+  next.setDate(next.getDate() + days);
+  if (toLocalDateStr(next) <= toLocalDateStr(new Date())) goToDay(next);
+};
+const closePicker = () => (showPicker.value = false);
 const fmtTime = (d: string) =>
   new Date(d).toLocaleTimeString(locale.value, { hour: "2-digit", minute: "2-digit" });
 
 const STATUS_KEYS: Record<string, string> = { "no-show": "noShow", "no-response": "noResponse" };
 const statusLabel = (s: string) => t(`common.status.${STATUS_KEYS[s] || s}`);
 
+const methodLabel = (m: string | null) => {
+  if (!m) return "—";
+  return te(`common.paymentMethod.${m}`) ? t(`common.paymentMethod.${m}`) : m;
+};
+const typeLabel = (p: any) => {
+  if (te(`dailyReport.types.${p.transaction_type}`)) return t(`dailyReport.types.${p.transaction_type}`);
+  return t(Number(p.amount) < 0 ? "dailyReport.types.refund" : "dailyReport.types.payment");
+};
+
+// The payments table: search, sort and paging all happen on the day's rows.
+const search = ref("");
+const firstRow = ref(0);
+const sortField = ref("created_at");
+const sortOrder = ref(-1);
+const payments = computed(() =>
+  (data.value?.payments || []).map((p: any) => ({
+    id: p.id,
+    created_at: p.created_at,
+    time: fmtTime(p.created_at),
+    client: [p.first_name, p.last_name].filter(Boolean).join(" ") || "—",
+    method: methodLabel(p.payment_method),
+    type: typeLabel(p),
+    amount: Number(p.amount),
+  })),
+);
+// Greek names are often typed without accents or in capitals.
+const plain = (s: string) =>
+  s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/ς/g, "σ");
+const shownPayments = computed(() => {
+  const words = plain(search.value).split(/\s+/).filter(Boolean);
+  if (!words.length) return payments.value;
+  return payments.value.filter((p: any) => {
+    const text = plain([p.time, p.client, p.method, p.type, p.amount, formatMoney(p.amount)].join(" "));
+    return words.every((w) => text.includes(w));
+  });
+});
+watch([search, data], () => (firstRow.value = 0));
+
+// The file holds every row the search leaves, in the table's order, not just the page.
+const exportExcel = async () => {
+  const field = sortField.value as "created_at" | "client" | "method" | "type" | "amount";
+  const rows = [...shownPayments.value].sort((a: any, b: any) => {
+    const order = field === "amount" ? a.amount - b.amount : String(a[field]).localeCompare(String(b[field]), locale.value);
+    return order * sortOrder.value;
+  });
+  const day = toLocalDateStr(selectedDay.value);
+  const XLSX = await import("xlsx");
+  const ws = XLSX.utils.json_to_sheet(
+    rows.map((p: any) => ({
+      [t("dailyReport.date")]: day.split("-").reverse().join("/"),
+      [t("dailyReport.time")]: p.time,
+      [t("dailyReport.client")]: p.client,
+      [t("dailyReport.method")]: p.method,
+      [t("dailyReport.type")]: p.type,
+      [t("dailyReport.amount")]: p.amount,
+    })),
+  );
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, t("dailyReport.sheetName"));
+  XLSX.writeFile(wb, `daily_payments_${day}.xlsx`);
+};
+
+// Quick clicks through the days: only the latest day's answer is shown.
+let latestLoad = 0;
 const load = async () => {
+  const thisLoad = ++latestLoad;
   loading.value = true;
   try {
-    const params = new URLSearchParams();
+    const params = new URLSearchParams({ date: toLocalDateStr(selectedDay.value) });
     if (settingsStore.hideCashPaid) params.append("excludeCash", "true");
     if (settingsStore.hideCardPaid) params.append("excludeCard", "true");
-    data.value = await api.get(`/api/v1/reports/daily?${params}`).catch(withMessage("Failed"));
+    const answer = await api.get(`/api/v1/reports/daily?${params}`).catch(withMessage("Failed"));
+    if (thisLoad === latestLoad) data.value = answer;
   } catch (e: any) {
-    toast.add({ severity: "error", summary: t("common.error"), detail: e.message, life: 3500 });
+    if (thisLoad === latestLoad) toast.add({ severity: "error", summary: t("common.error"), detail: e.message, life: 3500 });
   } finally {
-    loading.value = false;
+    if (thisLoad === latestLoad) loading.value = false;
   }
 };
 
-onMounted(load);
+onMounted(() => {
+  load();
+  document.addEventListener("click", closePicker);
+});
+onUnmounted(() => document.removeEventListener("click", closePicker));
 watch(() => [settingsStore.hideCashPaid, settingsStore.hideCardPaid], load);
 </script>
