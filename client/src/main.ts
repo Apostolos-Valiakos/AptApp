@@ -1,4 +1,4 @@
-import { createApp } from "vue";
+import { createApp, watch } from "vue";
 
 // In the Capacitor native build there is no Vite proxy, so relative /api
 // URLs would resolve to capacitor://localhost/api and fail. Patch fetch to
@@ -43,6 +43,7 @@ import Tooltip from "primevue/tooltip";
 // the first download only carries what the first screen needs.
 import { useThemeStore } from "./stores/themes";
 import { i18n } from "./i18n";
+import { elDatePickerNames } from "./i18n/datePicker";
 import { initOfflineSync } from "./offline/queue";
 
 declare const __APP_SW__: boolean; // set by vite.config.mjs
@@ -84,6 +85,18 @@ const initApp = async () => {
     },
     ripple: true,
   });
+
+  // Date pickers show months and days in the app's language, and follow it
+  // when it changes.
+  const primevue = app.config.globalProperties.$primevue;
+  const defaultLocale: any = { ...primevue.config.locale };
+  watch(
+    i18n.global.locale,
+    (lang) => {
+      primevue.config.locale = lang === "el" ? { ...defaultLocale, ...elDatePickerNames } : defaultLocale;
+    },
+    { immediate: true },
+  );
 
   // Directives
   app.directive("tooltip", Tooltip);
