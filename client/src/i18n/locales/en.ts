@@ -350,6 +350,7 @@ export default {
     confirmDiscard: 'Discard the change "{label}" for good?',
     logoutUnsynced: "{count} change(s) haven't synced yet and will be lost if you log out. Log out anyway?",
     conflict: {
+      series_has_payments: "A booking in the series has payments, so the change wasn't applied. Discard it and save this booking only.",
       has_payments: "It has payments, so it can't be deleted; it can be cancelled (the payments stay as credit).",
       slot_taken: 'This time was booked from another device meanwhile.',
       slot_taken_with: 'This time was booked meanwhile: {client}, {time}.',
@@ -1254,6 +1255,10 @@ export default {
     },
   },
   booking: {
+    seriesHasPayments: {
+      header: "A booking in the series is paid",
+      message: "One of the bookings that would change has payments, so the series can't change. Save the change on this booking only?",
+    },
     hasPayments: {
       header: "This booking has payments",
       message: "A booking with payments can't be deleted. Cancel it instead? It stays as cancelled, and what was paid stays with the client as credit.",

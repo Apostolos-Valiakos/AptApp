@@ -305,6 +305,7 @@ module.exports = function appointmentsRouter({
       if (cached) return { status: cached.response_status, body: cached.response_body };
 
       const validClientId = safeUUID(req.body.client_id);
+      let replacementId = null;
 
       if (scope !== "series") {
         await assertBaseVersion(client, req.shopId, id, req.body);
@@ -318,25 +319,39 @@ module.exports = function appointmentsRouter({
 
         if (groupInfo && groupInfo.group_id) {
           // === Case 1: Existing Series (Delete Future & Recreate) ===
-          const currentApptStart = req.body.services[0]?.start_time;
-          await client.query(
-            `DELETE FROM appointments 
-             WHERE group_id = $1 AND shop_id = $2
-             AND id IN (
-               SELECT a.id FROM appointments a
-               JOIN appointment_services aps ON a.id = aps.appointment_id
-               WHERE a.group_id = $1 AND aps.start_time >= $3
-             )`,
-            [groupInfo.group_id, req.shopId, currentApptStart],
+          // From this booking on, by whichever is earlier: where it was, or
+          // where it's going (moved later, its old slot must go too).
+          const idsRes = await client.query(
+            `SELECT DISTINCT a.id FROM appointments a
+             JOIN appointment_services aps ON a.id = aps.appointment_id
+             WHERE a.group_id = $1 AND a.shop_id = $2
+               AND aps.start_time >= LEAST($3::timestamptz, (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = $4))`,
+            [groupInfo.group_id, req.shopId, req.body.services[0]?.start_time, id],
           );
+          const replacedIds = idsRes.rows.map((r) => r.id);
+
+          // A booking with money on it isn't replaced, for the same reason it
+          // isn't deleted: its payments would be left linked to nothing.
+          const paidRes = await client.query(
+            "SELECT appointment_id FROM transactions WHERE appointment_id = ANY($1) LIMIT 1",
+            [replacedIds],
+          );
+          if (paidRes.rows.length > 0) {
+            throw new HttpError(409, { error: "series_has_payments", appointment_id: paidRes.rows[0].appointment_id });
+          }
+
+          await releaseBookingExtras(client, replacedIds);
+          await client.query("DELETE FROM appointments WHERE id = ANY($1) AND shop_id = $2", [replacedIds, req.shopId]);
 
           // createAppointmentSeries will create new rows.
           // These rows default to reminder_sent = false automatically via DB schema.
-          await createAppointmentSeries(
+          const { firstAppointmentId } = await createAppointmentSeries(
             client,
             { ...req.body, group_id_override: groupInfo.group_id },
             req.shopId,
           );
+          // This booking is one of the rows replaced: the caller carries on with its new id.
+          replacementId = firstAppointmentId;
         } else if (isRecurringBody) {
           // === Case 2: Convert Single -> Series (Update Current & Fill Future) ===
           const newGroupId = crypto.randomUUID();
@@ -380,8 +395,9 @@ module.exports = function appointmentsRouter({
         newBalance = await recalculateClientBalance(client, validClientId);
       }
 
-      const versionRes = await client.query("SELECT version FROM appointments WHERE id = $1 AND shop_id = $2", [id, req.shopId]);
+      const versionRes = await client.query("SELECT version FROM appointments WHERE id = $1 AND shop_id = $2", [replacementId || id, req.shopId]);
       const responseBody = {
+        ...(replacementId ? { id: replacementId } : {}),
         success: true,
         new_balance: newBalance,
         version: versionRes.rows[0] ? Number(versionRes.rows[0].version) : null,
@@ -430,6 +446,20 @@ module.exports = function appointmentsRouter({
     });
     res.json({ success: true, new_balance: newBalance });
   }, { log: "Staff appointment cancel error:" }));
+
+  // Before bookings' rows are removed: package visits go back to the package,
+  // and products sold on them back into stock.
+  const releaseBookingExtras = async (client, appointmentIds) => {
+    await releasePackageUsage(client, appointmentIds);
+    await client.query(
+      `UPDATE product_inventory pi
+       SET stock_quantity = pi.stock_quantity + ps.quantity
+       FROM product_sales ps
+       WHERE ps.inventory_id = pi.id AND ps.appointment_id = ANY($1)`,
+      [appointmentIds],
+    );
+    await client.query("DELETE FROM product_sales WHERE appointment_id = ANY($1)", [appointmentIds]);
+  };
 
   router.delete("/:id", authenticateToken, asyncHandler(async (req, res) => {
     const { id } = req.params;
@@ -482,21 +512,7 @@ module.exports = function appointmentsRouter({
         throw new HttpError(409, { error: "has_payments", appointment_id: paidRes.rows[0].appointment_id });
       }
 
-      // Visits paid with a prepaid package go back to the package
-      await releasePackageUsage(client, deletedIds);
-
-      // Restore stock for any product sales on the deleted appointments
-      await client.query(
-        `UPDATE product_inventory pi
-         SET stock_quantity = pi.stock_quantity + ps.quantity
-         FROM product_sales ps
-         WHERE ps.inventory_id = pi.id AND ps.appointment_id = ANY($1)`,
-        [deletedIds],
-      );
-      await client.query(
-        "DELETE FROM product_sales WHERE appointment_id = ANY($1)",
-        [deletedIds],
-      );
+      await releaseBookingExtras(client, deletedIds);
 
       if (scope === "series" && groupInfo && groupInfo.group_id) {
         await client.query(

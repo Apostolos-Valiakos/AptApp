@@ -1411,6 +1411,24 @@ const save = async (close = true): Promise<boolean> => {
   return executeSave(close, isConvertingToSeries ? "series" : "single");
 };
 
+// Opened after the current question has closed (see offerCancelInstead).
+const askSaveThisOnly = (close: boolean) =>
+  new Promise<boolean>((resolve) => {
+    setTimeout(() => {
+      confirm.require({
+        header: t("booking.seriesHasPayments.header"),
+        message: t("booking.seriesHasPayments.message"),
+        icon: "pi pi-exclamation-triangle",
+        acceptLabel: t("booking.editDialog.thisOnly"),
+        rejectLabel: t("common.cancel"),
+        rejectClass: "p-button-outlined p-button-secondary",
+        accept: () => resolve(executeSave(close, "single")),
+        reject: () => resolve(false),
+        onHide: () => resolve(false),
+      });
+    }, 0);
+  });
+
 /** Saves the booking; true once saved (or queued offline), false if it wasn't. */
 const executeSave = async (close = true, scope = "single", allowOverCapacity = false): Promise<boolean> => {
   // Unblocking (toggling an existing block's button off) and editing a
@@ -1594,6 +1612,11 @@ const executeSave = async (close = true, scope = "single", allowOverCapacity = f
         loading.value = false;
         return (await askOverCapacity(confirm, t, data)) ? executeSave(close, scope, true) : false;
       }
+      // "This and future" would replace a paid booking: offer this one only.
+      if (data.error === "series_has_payments") {
+        loading.value = false;
+        return askSaveThisOnly(close);
+      }
       if (data.error === "staff_unavailable") {
         throw new Error(t("booking.validation.staffUnavailable"));
       }
@@ -1603,7 +1626,8 @@ const executeSave = async (close = true, scope = "single", allowOverCapacity = f
       throw new Error(data.error || "Failed to save");
     }
 
-    if (method === "POST") {
+    // A series edit replaces this booking's row, so it answers with the new id too.
+    if (method === "POST" || data.id) {
       form.value.id = data.id;
     }
     if (data.version !== undefined) currentVersion.value = data.version;
