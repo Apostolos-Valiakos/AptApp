@@ -22,6 +22,7 @@ module.exports = function clientsRouter({
   walkInClientRow,
 }) {
   const router = express.Router();
+  const PAST_VISIT = "a.status NOT IN ('cancelled', 'no-show', 'no-response') AND f.first_start <= NOW()";
 
   router.get("/", authenticateToken, async (req, res) => {
     const { slim, search, limit, offset, id } = req.query;
@@ -164,6 +165,42 @@ module.exports = function clientsRouter({
       }
     }
   });
+
+  // Every client of the shop, for the Excel export on the Clients page. Visits
+  // and no-shows are counted from the appointments the caller may see (the
+  // stored no_show_count and total_sales are never updated). The shop's walk-in
+  // placeholder isn't a real client, so it stays out.
+  router.get("/export", authenticateToken, requireShopAdminAccess, asyncHandler(async (req, res) => {
+    const visibility = req.user.role === "super_admin" ? "" : "AND a.save_receipt = true";
+    const { rows } = await pool.query(
+      `SELECT c.first_name, c.last_name, c.email, c.phone,
+              to_char(c.date_of_birth, 'YYYY-MM-DD') AS date_of_birth,
+              c.outstanding_balance, c.notes, c.custom_fields,
+              c.ergotherapia, c.physiotherapia, c.logotherapia, c.receive_emails,
+              COALESCE(v.visits, 0)::int AS visits,
+              to_char(v.last_visit, 'YYYY-MM-DD') AS last_visit,
+              COALESCE(v.no_shows, 0)::int AS no_shows
+       FROM active_clients c
+       LEFT JOIN (
+         SELECT a.client_id,
+                COUNT(*) FILTER (WHERE ${PAST_VISIT}) AS visits,
+                MAX(f.first_start) FILTER (WHERE ${PAST_VISIT}) AS last_visit,
+                COUNT(*) FILTER (WHERE a.status = 'no-show') AS no_shows
+         FROM appointments a
+         JOIN (
+           SELECT appointment_id, MIN(start_time) AS first_start
+           FROM appointment_services GROUP BY appointment_id
+         ) f ON f.appointment_id = a.id
+         WHERE a.shop_id = $1 AND a.is_block = false ${visibility}
+         GROUP BY a.client_id
+       ) v ON v.client_id = c.id
+       WHERE c.shop_id = $1
+         AND c.id IS DISTINCT FROM (SELECT walk_in_client_id FROM shops WHERE id = $1)
+       ORDER BY NULLIF(TRIM(c.last_name), '') NULLS LAST, c.first_name`,
+      [req.shopId],
+    );
+    res.json(rows);
+  }));
 
   // Get-or-create this shop's single walk-in client — used to pre-select a
   // client on a brand-new, blank appointment (save fast, attribute later).
