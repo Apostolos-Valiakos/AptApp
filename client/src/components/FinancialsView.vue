@@ -297,7 +297,7 @@
       <!-- Tab: Booking insights -->
       <TabPanel :value="0" :header="t('analytics.tabs.insights')">
         <div class="p-1 sm:p-4 md:p-6">
-          <BookingInsights :insights="insights" :loading="loading" />
+          <BookingInsights :insights="insights" :loading="loading" :period="insightsPeriod" />
         </div>
       </TabPanel>
 
@@ -638,8 +638,6 @@
         <DataTable
           :value="analytics.staff_utilization"
           responsiveLayout="scroll"
-          :paginator="true"
-          :rows="10"
           class="p-datatable-sm"
         >
           <Column
@@ -880,7 +878,7 @@ import { useSettingsStore } from "../stores/settings";
 // its types only allow a string, hence the cast.
 const numericSort = (key: string) => ((row: any) => Number(row[key] || 0)) as unknown as (item: any) => string;
 
-const { t } = useI18n();
+const { t, te, locale } = useI18n();
 const router = useRouter();
 const toast = useToast();
 const settingsStore = useSettingsStore();
@@ -926,6 +924,17 @@ const paymentsReport = ref<any[]>([]);
 const priceAdjustmentsReport = ref<any[]>([]);
 const appointmentsReport = ref([]);
 const insights = ref<any>(null);
+// The dates the insights shown were asked for: the pickers may have moved on.
+const insightsRange = ref<{ from: Date | null; to: Date | null }>({ from: null, to: null });
+const insightsPeriod = computed(() => {
+  const day = (d: Date | null) =>
+    d
+      ? new Date(d).toLocaleDateString(locale.value === "el" ? "el-GR" : "en-GB", { day: "numeric", month: "short", year: "numeric" })
+      : "";
+  const from = day(insightsRange.value.from);
+  const to = day(insightsRange.value.to);
+  return from === to ? from : `${from} – ${to}`;
+});
 
 
 const formatDate = (d: Date | null) => {
@@ -963,6 +972,7 @@ const setToday = () => {
 
 const fetchAllReports = async () => {
   loading.value = true;
+  const requested = { ...filters.value };
 
   const params = new URLSearchParams();
 
@@ -1029,6 +1039,7 @@ const fetchAllReports = async () => {
     }
     appointmentsReport.value = apptData ?? [];
     insights.value = insightsData;
+    insightsRange.value = requested;
     serviceSummaryReport.value = serviceSumData;
     if (productsData) {
       productsReport.value = productsData.details || [];

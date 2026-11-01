@@ -366,7 +366,7 @@ module.exports = function reportsRouter({
   // booked most, who comes most, and regulars who stopped coming. Counts
   // bookings that happened or are coming (not cancelled / no-show, no time
   // blocks), each on the day and hour of its first service, in shop time.
-  // Regulars not seen lately look at all history, not the period.
+  // Regulars not seen lately ignore the period: they count the last 3 and 6 months.
   router.get("/reports/insights", authenticateToken, requireAnalyticsAccess, asyncHandler(async (req, res) => {
     const { from, to, excludeCash, excludeCard } = req.query;
     const tz = process.env.TZ || "Europe/Athens";
@@ -433,17 +433,20 @@ module.exports = function reportsRouter({
                 GROUP BY s.id, s.name ORDER BY 2 DESC, 3 DESC LIMIT 5`),
       topClients("visits DESC, value DESC"),
       topClients("value DESC, visits DESC"),
-      // 3+ past visits, the last over 60 days ago, nothing booked since.
+      // 3+ visits in the last 6 months (the page narrows it to 3 with
+      // visits_3_months), the latest over 60 days ago, nothing booked since.
       pool.query(
         `WITH b AS (${booked()})
          SELECT c.id, ${clientName} AS name, c.phone,
-                COUNT(*)::int AS visits, MAX(b.local_start)::date::text AS last_visit
+                COUNT(*) FILTER (WHERE b.first_start >= NOW() - INTERVAL '3 months')::int AS visits_3_months,
+                COUNT(*) FILTER (WHERE b.first_start >= NOW() - INTERVAL '6 months')::int AS visits_6_months,
+                MAX(b.local_start)::date::text AS last_visit
          FROM b JOIN clients c ON c.id = b.client_id
          WHERE ${notWalkIn}
          GROUP BY c.id
-         HAVING COUNT(*) >= 3 AND MAX(b.first_start) < NOW() - INTERVAL '60 days'
-         ORDER BY visits DESC, MAX(b.first_start) DESC
-         LIMIT 30`,
+         HAVING COUNT(*) FILTER (WHERE b.first_start >= NOW() - INTERVAL '6 months') >= 3
+            AND MAX(b.first_start) < NOW() - INTERVAL '60 days'
+         ORDER BY visits_6_months DESC, MAX(b.first_start) DESC`,
         [req.shopId],
       ),
     ]);

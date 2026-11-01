@@ -102,7 +102,8 @@
       <!-- Top clients -->
       <div v-if="!loading" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <section v-for="list in clientLists" :key="list.key" class="bg-white rounded-xl border border-gray-100 p-3 sm:p-5">
-          <h3 class="font-bold text-gray-800 mb-3">{{ list.title }}</h3>
+          <h3 class="font-bold text-gray-800">{{ list.title }}</h3>
+          <p class="text-xs text-gray-400 mb-3">{{ period ? t("analytics.insights.inPeriod", { period }) : t("analytics.insights.allDates") }}</p>
           <div v-if="list.rows.length === 0" class="text-sm text-gray-400">{{ t("analytics.insights.none") }}</div>
           <div v-else class="overflow-x-auto">
           <table class="w-full text-xs sm:text-sm">
@@ -131,10 +132,23 @@
       </div>
     </template>
 
-    <!-- Regulars not seen lately (all history, whatever the period) -->
+    <!-- Regulars not seen lately (the last 3 or 6 months, whatever the period) -->
     <section v-if="!loading && insights" class="bg-white rounded-xl border border-gray-100 p-3 sm:p-5">
-      <h3 class="font-bold text-gray-800">{{ t("analytics.insights.lapsedTitle") }}</h3>
-      <p class="text-xs text-gray-400 mb-3">{{ t("analytics.insights.lapsedNote") }}</p>
+      <div class="flex flex-wrap items-start justify-between gap-3 mb-3">
+        <div>
+          <h3 class="font-bold text-gray-800">{{ t("analytics.insights.lapsedTitle") }}</h3>
+          <p class="text-xs text-gray-400">{{ t("analytics.insights.lapsedNote", { months: lapsedMonths }) }}</p>
+        </div>
+        <SelectButton
+          v-model="lapsedMonths"
+          :options="lapsedMonthOptions"
+          optionLabel="label"
+          optionValue="value"
+          :allowEmpty="false"
+          size="small"
+          data-testid="lapsed-months"
+        />
+      </div>
       <div v-if="lapsed.length === 0" class="text-sm text-gray-400">{{ t("analytics.insights.none") }}</div>
       <DataTable v-else :value="lapsed" paginator :rows="10" stripedRows class="p-datatable-sm" responsiveLayout="scroll">
         <Column field="name" :header="t('analytics.insights.client')">
@@ -152,12 +166,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
+import SelectButton from "primevue/selectbutton";
 import Skeleton from "primevue/skeleton";
 import { formatDay, formatMoney } from "../utils/format";
 
-const props = defineProps<{ insights: any | null; loading: boolean }>();
+const props = defineProps<{ insights: any | null; loading: boolean; period?: string }>();
 
 const { t, locale } = useI18n();
 const dateLocale = computed(() => (locale.value === "el" ? "el-GR" : "en-GB"));
@@ -268,10 +283,17 @@ const clientLists = computed<{ key: string; title: string; rows: any[] }[]>(() =
   { key: "value", title: t("analytics.insights.topByValue"), rows: props.insights?.top_clients_by_value || [] },
 ]);
 
+const lapsedMonths = ref<3 | 6>(6);
+const lapsedMonthOptions = computed(() =>
+  [3, 6].map((value) => ({ value, label: t("analytics.insights.months", { n: value }) })),
+);
 const lapsed = computed(() => {
   const today = new Date();
-  return (props.insights?.lapsed_regulars || []).map((c: any) => ({
+  const visitsOf = (c: any) => (lapsedMonths.value === 3 ? c.visits_3_months : c.visits_6_months);
+  const regulars = (props.insights?.lapsed_regulars || []).filter((c: any) => visitsOf(c) >= 3);
+  return regulars.map((c: any) => ({
     ...c,
+    visits: visitsOf(c),
     days_since: Math.floor((today.getTime() - new Date(`${c.last_visit}T12:00:00`).getTime()) / 86400000),
   }));
 });
