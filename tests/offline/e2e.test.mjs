@@ -644,8 +644,9 @@ describe("offline mode in the browser", () => {
 
     await goOnline();
     await waitFor(queueEmpty, "client and booking to sync", 45000);
-    assert.equal(count(`SELECT count(*) FROM clients WHERE last_name = '${last}'`), 1, "the client was created once");
-    const clientId = q(`SELECT id FROM clients WHERE last_name = '${last}'`);
+    // Names are saved in capitals.
+    assert.equal(count(`SELECT count(*) FROM clients WHERE last_name = '${last.toUpperCase()}'`), 1, "the client was created once");
+    const clientId = q(`SELECT id FROM clients WHERE last_name = '${last.toUpperCase()}'`);
     assert.equal(appointmentsAt("17:00", `AND a.client_id = '${clientId}'`), 1, "the booking is linked to the new client");
   });
 

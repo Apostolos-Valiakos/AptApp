@@ -2,6 +2,7 @@
 // Moved out of server.js; helpers that still live there are handed over when
 // it mounts this router (see "Area routers" near the end of server.js).
 const express = require("express");
+const { upperName } = require("../domain/common");
 const { HttpError, asyncHandler, withTransaction } = require("../http");
 const pool = require("../db");
 
@@ -315,7 +316,7 @@ module.exports = function servicesRouter({
       `INSERT INTO services (name, duration_minutes, price, category, color_code, shop_id, bookable_online, default_staff_id, sort_order)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
       [
-        name,
+        upperName(name),
         duration_minutes,
         price,
         category,
@@ -356,7 +357,7 @@ module.exports = function servicesRouter({
     await pool.query(
       `UPDATE services SET name=$1, duration_minutes=$2, price=$3, category=$4, color_code=$5, bookable_online=$6, default_staff_id=$7 WHERE id=$8 AND shop_id=$9`,
       [
-        name,
+        upperName(name),
         duration_minutes,
         price,
         category,

@@ -123,3 +123,32 @@ test("the login works only in the header, never as ?token= in the URL", async ()
   const viaHeader = await fetch(`http://localhost:${PORT}/api/v1/staff`, { headers: { Authorization: `Bearer ${tok}` } });
   assert.equal(viaHeader.status, 200);
 });
+
+test("client and service names are saved in capitals, without Greek accents", async () => {
+  const created = await call("POST", "/api/v1/clients", { first_name: " Μαρία ", last_name: "Παπαδοπούλου" });
+  assert.equal(created.status, 200, JSON.stringify(created.data));
+  assert.equal(created.data.client.first_name, "ΜΑΡΙΑ");
+  assert.equal(created.data.client.last_name, "ΠΑΠΑΔΟΠΟΥΛΟΥ");
+
+  const id = created.data.client.id;
+  const edited = await call("PUT", `/api/v1/clients/${id}`, { first_name: "Ελένη", last_name: "smith", custom_fields: [] });
+  assert.equal(edited.status, 200, JSON.stringify(edited.data));
+  assert.equal(sql(DB, `SELECT first_name || '|' || last_name FROM clients WHERE id = '${id}'`), "ΕΛΕΝΗ|SMITH");
+
+  const service = await call("POST", "/api/v1/services", { name: "Μασάζ Προσώπου", duration_minutes: 30, price: 20, category: "Rename Test" });
+  assert.equal(service.status, 200, JSON.stringify(service.data));
+  const name = () => sql(DB, `SELECT name FROM services WHERE id = '${service.data.id}'`);
+  assert.equal(name(), "ΜΑΣΑΖ ΠΡΟΣΩΠΟΥ");
+  const renamed = await call("PUT", `/api/v1/services/${service.data.id}`, { name: "hot stones", duration_minutes: 30, price: 20, category: "Rename Test" });
+  assert.equal(renamed.status, 200, JSON.stringify(renamed.data));
+  assert.equal(name(), "HOT STONES");
+});
+
+test("the walk-in client keeps its stored name", async () => {
+  const walkIn = await call("GET", "/api/v1/clients/walk-in");
+  assert.equal(walkIn.status, 200, JSON.stringify(walkIn.data));
+  sql(DB, `UPDATE clients SET first_name = 'Walk', last_name = 'In' WHERE id = '${walkIn.data.id}'`);
+  const r = await call("PUT", `/api/v1/clients/${walkIn.data.id}`, { first_name: "Walk", last_name: "In", email: walkIn.data.email, phone: walkIn.data.phone, notes: "n", custom_fields: [] });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.equal(sql(DB, `SELECT first_name FROM clients WHERE id = '${walkIn.data.id}'`), "Walk");
+});

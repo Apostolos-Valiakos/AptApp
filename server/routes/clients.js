@@ -3,6 +3,7 @@
 // router (see "Area routers" near the end of server.js).
 const express = require("express");
 const { HttpError, asyncHandler, withTransaction } = require("../http");
+const { upperName } = require("../domain/common");
 const jwt = require("jsonwebtoken");
 const path = require("path");
 
@@ -273,8 +274,8 @@ module.exports = function clientsRouter({
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) 
          RETURNING *`,
         [
-          first_name,
-          last_name,
+          upperName(first_name),
+          upperName(last_name),
           email,
           phone,
           notes,
@@ -326,8 +327,9 @@ module.exports = function clientsRouter({
            ergotherapia=$7, physiotherapia=$8, logotherapia=$9, date_of_birth=$10
        WHERE id=$11 AND shop_id=$12`,
       [
-        first_name,
-        last_name,
+        // The walk-in client's name stays exactly as it is (see above).
+        walkIn ? first_name : upperName(first_name),
+        walkIn ? last_name : upperName(last_name),
         email,
         phone,
         notes,

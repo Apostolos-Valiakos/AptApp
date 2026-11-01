@@ -220,7 +220,8 @@ describe("idempotent replays", () => {
     const results = await Promise.all(Array.from({ length: 5 }, () => call("POST", "/api/v1/clients", body, { "Idempotency-Key": key })));
     assert.ok(results.every((r) => r.status === 200), JSON.stringify(results.map((r) => r.status)));
     assert.equal(new Set(results.map((r) => r.data.client.id)).size, 1);
-    assert.equal(count(`SELECT COUNT(*) FROM clients WHERE last_name = '${body.last_name}'`), 1);
+    // Names are saved in capitals.
+    assert.equal(count(`SELECT COUNT(*) FROM clients WHERE last_name = '${body.last_name.toUpperCase()}'`), 1);
   });
 
   test("a rejected request doesn't keep its key: the corrected retry goes through", async () => {

@@ -6,6 +6,9 @@ const safeUUID = (id) => {
   return cleanId.length === 36 ? cleanId : null;
 };
 
+// Client and service names are kept in capitals, the Greek way (no accents).
+const upperName = (name) => (typeof name === "string" ? name.trim().toLocaleUpperCase("el") : name);
+
 // --- VISIBILITY HELPER ---
 // If user is 'super_admin', return empty string (no filter).
 // If user is standard (staff, admin, manager), filter out 'completed' unless 'save_receipt' is true.
@@ -33,6 +36,7 @@ const clientInShop = async (db, clientId, shopId) =>
 
 module.exports = {
   safeUUID,
+  upperName,
   getVisibilityClause,
   walkInClientRow,
   clientInShop,
