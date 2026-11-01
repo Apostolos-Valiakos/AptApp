@@ -44,7 +44,7 @@
         <InputNumber
           v-else-if="modelValue.type === 'percent'"
           :modelValue="modelValue.value"
-          suffix=" %"
+          suffix="%"
           :min="0"
           :max="100"
           :maxFractionDigits="2"

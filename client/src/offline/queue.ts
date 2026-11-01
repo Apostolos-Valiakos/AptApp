@@ -57,8 +57,20 @@ const currentShopId = (): string | null => {
   }
 };
 
+const currentUserId = (): string | null => {
+  try {
+    if (!localStorage.getItem("token")) return null;
+    const user = JSON.parse(localStorage.getItem("user") || "null");
+    return user?.id != null ? String(user.id) : null;
+  } catch {
+    return null;
+  }
+};
+
+const mine = (write: QueuedWrite) => !write.userId || write.userId === currentUserId();
+
 const refreshPending = async () => {
-  pending.value = await getAllQueuedWrites();
+  pending.value = (await getAllQueuedWrites()).filter(mine);
   idMapRef.value = await getIdMap();
 };
 
@@ -89,7 +101,7 @@ const send = async (write: QueuedWrite): Promise<SendResult> => {
     const res = await fetchWithTimeout(write.endpoint, {
       method: write.method,
       headers: headersFor(write.id, true),
-      body: write.method === "DELETE" || write.body === undefined ? undefined : JSON.stringify(write.body),
+      body: write.body === undefined ? undefined : JSON.stringify(write.body),
     });
     const data = await res.json().catch(() => ({}));
     return { status: res.status, data };
@@ -133,6 +145,7 @@ const enqueue = async (
     createdAt: nextCreatedAt(),
     status: "pending",
     shopId: currentShopId(),
+    userId: currentUserId(),
     tempId,
     resultIdPath: meta.createsId,
   };
@@ -170,7 +183,7 @@ export const fetchOrQueue = async (
     const response = await fetchWithTimeout(endpoint, {
       method,
       headers: headersFor(idempotencyKey, false),
-      body: method === "DELETE" || body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? undefined : JSON.stringify(body),
     });
     return { queued: false, response };
   } catch {
@@ -193,6 +206,7 @@ export const flushQueue = async () => {
       saveIdMapping,
       send,
       currentShopId,
+      currentUserId,
     });
     authBlocked.value = result.stoppedBy === "auth";
     if (result.stoppedBy === "network") online.value = false;
@@ -298,7 +312,10 @@ export const syncBeforeLogout = async (): Promise<number> => {
  * all, so the changes can still sync after the next login.
  */
 export const clearOfflineData = async () => {
+  // Changes another user left waiting aren't this user's to delete.
+  const othersWrites = (await getAllQueuedWrites()).filter((write) => !mine(write));
   await clearAllStores();
+  await Promise.all(othersWrites.map(addQueuedWrite));
   authBlocked.value = false;
   await refreshPending();
   window.dispatchEvent(new CustomEvent("offline-data-cleared"));
@@ -306,9 +323,10 @@ export const clearOfflineData = async () => {
 };
 
 /** Call after logging in: writes held for an expired session can go now. */
-export const onLoggedIn = () => {
+export const onLoggedIn = async () => {
   authBlocked.value = false;
-  if (pending.value.some((w) => w.status === "pending")) flushQueue();
+  await refreshPending(); // which ones are this user's
+  if (pending.value.some((w) => w.status === "pending")) await flushQueue();
 };
 
 export const initOfflineSync = async () => {

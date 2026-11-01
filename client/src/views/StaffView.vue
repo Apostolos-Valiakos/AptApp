@@ -227,6 +227,11 @@
             class="w-full"
             filter
           />
+          <StaffServiceOrder
+            v-if="editingStaff.service_ids?.length > 1"
+            v-model="editingStaff.service_ids"
+            :services="services"
+          />
         </div>
         <div class="md:col-span-2 flex items-center gap-3">
           <ToggleSwitch v-model="editingStaff.visible_in_calendar" />
@@ -519,6 +524,7 @@ import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 import { useCalendarStore } from "../stores/calendar";
+import StaffServiceOrder from "../components/StaffServiceOrder.vue";
 
 const { t } = useI18n();
 

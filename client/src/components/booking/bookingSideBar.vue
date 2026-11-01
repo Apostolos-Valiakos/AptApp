@@ -126,7 +126,12 @@
         <div
           v-for="appt in pastAppointments"
           :key="appt.id"
-          class="flex justify-between items-start gap-2 text-sm mb-2 border-b border-gray-50 pb-1.5 last:border-0 last:mb-0"
+          class="flex justify-between items-start gap-2 text-sm mb-2 border-b border-gray-50 pb-1.5 last:border-0 last:mb-0 -mx-1.5 px-1.5 pt-1 rounded cursor-pointer hover:bg-gray-50 transition-colors"
+          role="button"
+          tabindex="0"
+          data-testid="past-appointment"
+          @click="emit('open-appointment', appt)"
+          @keydown.enter.self="emit('open-appointment', appt)"
         >
           <span class="flex flex-col items-start gap-0.5 whitespace-nowrap">
             <span class="text-gray-500" :class="{ 'line-through opacity-60': isVoided(appt.status) }">
@@ -147,7 +152,8 @@
               v-if="canManageDebt && appt.status !== 'cancelled' && Number(appt.owed) > 0"
               type="button"
               class="mt-1 text-xs font-semibold text-[var(--p-primary-700)] hover:underline"
-              @click="openResolve({ kind: 'appointment', id: appt.id, amount: Number(appt.owed), label: `${formatApptDate(appt.start_time)} · ${appt.service_names || ''}` })"
+              data-testid="past-appointment-resolve"
+              @click.stop="openResolve({ kind: 'appointment', id: appt.id, amount: Number(appt.owed), label: `${formatApptDate(appt.start_time)} · ${appt.service_names || ''}` })"
             >
               {{ t("bookingSidebar.debt.resolve") }}
             </button>
@@ -160,14 +166,9 @@
         v-if="canManageDebt"
         class="text-left bg-white p-4 rounded-xl shadow-sm border border-gray-100 mt-3"
       >
-        <div class="flex items-center justify-between mb-2 gap-2">
-          <h4 class="text-xs font-bold text-gray-400 uppercase border-l-2 border-[var(--p-primary-300)] pl-2">
-            {{ t("bookingSidebar.debt.manualTitle") }}
-          </h4>
-          <button type="button" class="text-xs font-semibold text-[var(--p-primary-700)] hover:underline" @click="openAddDebt">
-            + {{ t("bookingSidebar.debt.add") }}
-          </button>
-        </div>
+        <h4 class="text-xs font-bold text-gray-400 uppercase border-l-2 border-[var(--p-primary-300)] pl-2 mb-2">
+          {{ t("bookingSidebar.debt.manualTitle") }}
+        </h4>
         <p v-if="!openDebts.length" class="text-xs text-gray-400">{{ t("bookingSidebar.debt.none") }}</p>
         <div
           v-for="d in openDebts"
@@ -189,6 +190,15 @@
             </button>
           </span>
         </div>
+        <Button
+          :label="t('bookingSidebar.debt.add')"
+          icon="pi pi-plus"
+          severity="warn"
+          outlined
+          class="w-full mt-3 !py-2.5 !font-semibold !border-2"
+          data-testid="sidebar-add-debt"
+          @click="openAddDebt"
+        />
       </div>
     </div>
 
@@ -333,7 +343,7 @@ const props = defineProps({
     default: "",
   },
 });
-const emit = defineEmits(["update:bookingNotes", "debt-changed"]);
+const emit = defineEmits(["update:bookingNotes", "debt-changed", "open-appointment"]);
 const toast = useToast();
 
 // --- Debt: resolve (payment / write-off) and manual debts ---

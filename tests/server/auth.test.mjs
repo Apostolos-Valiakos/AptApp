@@ -40,6 +40,21 @@ test("an invite link token (new, typ: invite) is refused everywhere", async () =
   for (const url of READS) assert.equal((await call("GET", url)).status, 401, url);
 });
 
+test("a refused login says why with a code the app can translate", async () => {
+  const username = sql(DB, `SELECT username FROM users WHERE shop_id = '${SHOP}' ORDER BY id LIMIT 1`);
+  const login = (name) =>
+    fetch(`http://localhost:${PORT}/api/v1/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: name, password: "not-the-password" }),
+    }).then(async (r) => ({ status: r.status, ...(await r.json()) }));
+  for (const name of [username, "nobody-with-this-name"]) {
+    const r = await login(name);
+    assert.equal(r.status, 401);
+    assert.equal(r.code, "invalid_credentials");
+  }
+});
+
 test("a login token still works", async () => {
   const admin = sql(DB, `SELECT id FROM users WHERE shop_id = '${SHOP}' AND role = 'admin' LIMIT 1`);
   const call = api(PORT, token(admin, "admin"));

@@ -28,7 +28,22 @@
             <span class="w-24 flex-shrink-0 text-gray-500">{{ t("scheduler.hoverCard.duration") }}</span>
             <span class="text-gray-900 font-medium">{{ durationText }}</span>
           </div>
-          <div class="flex text-sm">
+          <div v-if="otherServicesThatDay" class="text-sm" data-testid="hover-day-services">
+            <div class="text-gray-500 mb-1">{{ t("scheduler.hoverCard.dayServices") }}</div>
+            <div
+              v-for="s in appointment.day_services"
+              :key="s.id"
+              class="flex gap-2 py-0.5 px-1 -mx-1 rounded"
+              :class="s.current ? 'bg-[var(--p-primary-50)] font-semibold text-gray-900' : 'text-gray-700'"
+            >
+              <span class="flex-shrink-0 tabular-nums">{{ timeOf(s.start) }}</span>
+              <span class="min-w-0">
+                {{ s.service }}
+                <span v-if="s.staff" class="block text-xs font-normal text-gray-500">{{ s.staff }}</span>
+              </span>
+            </div>
+          </div>
+          <div v-else class="flex text-sm">
             <span class="w-24 flex-shrink-0 text-gray-500">{{ t("scheduler.hoverCard.service") }}</span>
             <span class="text-gray-900 font-medium">{{ appointment.service_name }}</span>
           </div>
@@ -113,6 +128,10 @@ const statusHeaderText = computed(() => {
   const label = key ? t(`common.status.${key}`) : props.appointment.status;
   return `${label} ${t("scheduler.hoverCard.appointmentSuffix")}`;
 });
+
+const otherServicesThatDay = computed(() => (props.appointment.day_services?.length || 0) > 1);
+const timeOf = (d: Date) =>
+  new Intl.DateTimeFormat(locale.value === "el" ? "el-GR" : "en-GB", { hour: "2-digit", minute: "2-digit", hour12: false }).format(d);
 
 const clientName = computed(() => props.appointment.client_name || t("scheduler.hoverCard.unknownClient"));
 

@@ -2,6 +2,7 @@
 // Moved out of server.js; helpers that still live there are handed over when
 // it mounts this router (see "Area routers" near the end of server.js).
 const express = require("express");
+const { upperName } = require("../domain/common");
 const { asyncHandler } = require("../http");
 const pool = require("../db");
 const bcrypt = require("bcrypt");
@@ -65,8 +66,8 @@ module.exports = function portalRouter({
     await pool.query(
       `UPDATE clients SET first_name = $1, last_name = $2, email = $3, phone = $4 WHERE id = $5 AND shop_id = $6`,
       [
-        first_name,
-        last_name,
+        upperName(first_name),
+        upperName(last_name),
         email || null,
         phone || null,
         req.user.clientId,

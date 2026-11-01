@@ -70,6 +70,11 @@ const requireAnalyticsAccess = (req, res, next) => {
 const notForClients = (req, res, next) =>
   req.user?.role === "client" ? res.status(403).json({ error: "Forbidden" }) : next();
 
+// Plain staff only look at the calendar: they can't change appointments,
+// payments, clients or time off. After authenticateToken.
+const notForStaff = (req, res, next) =>
+  req.user?.role === "staff" ? res.status(403).json({ error: "Forbidden" }) : next();
+
 const requireShopAdminAccess = (req, res, next) => {
   if (!["admin", "super_admin", "frontdesk"].includes(req.user.role)) {
     return res.status(403).json({ error: "Admins only" });
@@ -91,6 +96,7 @@ module.exports = {
   authenticateToken,
   requireAnalyticsAccess,
   notForClients,
+  notForStaff,
   requireShopAdminAccess,
   isAdminRole,
   canSellExtras,

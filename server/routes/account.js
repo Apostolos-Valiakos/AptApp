@@ -29,7 +29,7 @@ module.exports = function accountRouter({
     );
 
     if (result.rows.length === 0) {
-      return res.status(401).json({ error: "Invalid credentials" });
+      return res.status(401).json({ error: "Invalid credentials", code: "invalid_credentials" });
     }
 
     const user = result.rows[0];
@@ -38,7 +38,7 @@ module.exports = function accountRouter({
     const match = await bcrypt.compare(password, user.password);
 
     if (!match) {
-      return res.status(401).json({ error: "Invalid credentials" });
+      return res.status(401).json({ error: "Invalid credentials", code: "invalid_credentials" });
     }
 
     // 2b. Block login for suspended/cancelled shops and deactivated accounts.
@@ -46,10 +46,11 @@ module.exports = function accountRouter({
     if (user.shop_id && user.shop_status && user.shop_status !== "active") {
       return res.status(403).json({
         error: `This shop is currently ${user.shop_status}. Please contact support.`,
+        code: "shop_inactive",
       });
     }
     if (user.is_active === false) {
-      return res.status(403).json({ error: "This account has been deactivated." });
+      return res.status(403).json({ error: "This account has been deactivated.", code: "account_deactivated" });
     }
 
     // 3. Generate Token

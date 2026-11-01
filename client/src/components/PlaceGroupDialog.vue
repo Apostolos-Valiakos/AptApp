@@ -97,7 +97,7 @@
 
     <template #footer>
       <Button
-        v-if="group && group.peak < group.capacity"
+        v-if="canAdd && group && group.peak < group.capacity"
         :label="t('capacity.addPerson')"
         icon="pi pi-plus"
         outlined
@@ -124,7 +124,7 @@ export type PlaceGroup = {
   members: any[];
 };
 
-const props = defineProps<{ visible: boolean; groups: PlaceGroup[]; index: number }>();
+const props = withDefaults(defineProps<{ visible: boolean; groups: PlaceGroup[]; index: number; canAdd?: boolean }>(), { canAdd: true });
 const emit = defineEmits<{
   "update:visible": [boolean];
   "update:index": [number];

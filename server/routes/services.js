@@ -2,6 +2,7 @@
 // Moved out of server.js; helpers that still live there are handed over when
 // it mounts this router (see "Area routers" near the end of server.js).
 const express = require("express");
+const { upperName } = require("../domain/common");
 const { HttpError, asyncHandler, withTransaction } = require("../http");
 const pool = require("../db");
 
@@ -315,7 +316,7 @@ module.exports = function servicesRouter({
       `INSERT INTO services (name, duration_minutes, price, category, color_code, shop_id, bookable_online, default_staff_id, sort_order)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
       [
-        name,
+        upperName(name),
         duration_minutes,
         price,
         category,
@@ -356,7 +357,7 @@ module.exports = function servicesRouter({
     await pool.query(
       `UPDATE services SET name=$1, duration_minutes=$2, price=$3, category=$4, color_code=$5, bookable_online=$6, default_staff_id=$7 WHERE id=$8 AND shop_id=$9`,
       [
-        name,
+        upperName(name),
         duration_minutes,
         price,
         category,
@@ -456,6 +457,10 @@ module.exports = function servicesRouter({
   // service materialized into explicit rows — otherwise simply not inserting a
   // row for this service would flip them to "restricted" and silently make
   // them ineligible for every other service too.
+  // A newly assigned service goes last in the staff member's own order.
+  const addToStaffServices = `INSERT INTO staff_services (staff_id, service_id, sort_order)
+    VALUES ($1, $2, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM staff_services WHERE staff_id = $1))
+    ON CONFLICT DO NOTHING`;
   const setServiceStaffEligibility = async (dbClient, shopId, serviceId, staffIds) => {
     const allStaffRes = await dbClient.query(
       "SELECT id FROM staff WHERE shop_id = $1 AND is_active = true",
@@ -464,7 +469,10 @@ module.exports = function servicesRouter({
     const checkedSet = new Set(staffIds);
 
     const otherServicesRes = await dbClient.query(
-      "SELECT id FROM services WHERE shop_id = $1 AND id != $2",
+      `SELECT s.id FROM services s
+       LEFT JOIN service_categories sc ON sc.shop_id = s.shop_id AND sc.name = s.category
+       WHERE s.shop_id = $1 AND s.id != $2
+       ORDER BY COALESCE(sc.sort_order, 999999), s.sort_order, s.name`,
       [shopId, serviceId],
     );
     const otherServiceIds = otherServicesRes.rows.map((r) => r.id);
@@ -481,7 +489,7 @@ module.exports = function servicesRouter({
         if (isCurrentlyUnrestricted && otherServiceIds.length > 0) {
           for (const otherId of otherServiceIds) {
             await dbClient.query(
-              `INSERT INTO staff_services (staff_id, service_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+              addToStaffServices,
               [staffId, otherId],
             );
           }
@@ -492,7 +500,7 @@ module.exports = function servicesRouter({
         );
       } else if (!isCurrentlyUnrestricted) {
         await dbClient.query(
-          `INSERT INTO staff_services (staff_id, service_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+          addToStaffServices,
           [staffId, serviceId],
         );
       }

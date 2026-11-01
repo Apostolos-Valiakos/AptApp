@@ -16,6 +16,8 @@ export interface SyncDeps {
   send(w: QueuedWrite): Promise<SendResult>;
   /** The shop of the session that is logged in now (null when logged out). */
   currentShopId(): string | null;
+  /** The user logged in now. */
+  currentUserId?(): string | null;
 }
 
 export interface FlushResult {
@@ -54,8 +56,8 @@ export async function flush(deps: SyncDeps): Promise<FlushResult> {
       if (original.tempId) blocked.add(original.tempId);
       continue;
     }
-    if (original.shopId && original.shopId !== shopId) {
-      // Made in another shop's session: never sent with this one.
+    if ((original.shopId && original.shopId !== shopId) || (original.userId && original.userId !== deps.currentUserId?.())) {
+      // Made in another shop's or user's session: never sent with this one.
       result.held++;
       if (original.tempId) blocked.add(original.tempId);
       continue;

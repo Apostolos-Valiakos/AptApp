@@ -8,7 +8,10 @@
     <div class="space-y-4">
       <div class="text-sm text-gray-600 bg-gray-50 rounded-lg p-3">
         {{ t("priceChange.currentTotal") }}:
-        <b>{{ formatMoney(currentTotal) }}</b>
+        <b data-testid="price-change-total">{{ formatMoney(currentTotal) }}</b>
+        <div v-if="otherAppointmentIds?.length" class="text-xs text-gray-500 mt-1">
+          {{ t("priceChange.severalAppointments", { n: otherAppointmentIds.length + 1 }) }}
+        </div>
       </div>
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1">{{
@@ -23,9 +26,9 @@
         />
       </div>
       <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">{{
-          t("priceChange.reason")
-        }}</label>
+        <label class="block text-sm font-medium text-gray-700 mb-1"
+          >{{ t("priceChange.reason") }} <span class="text-red-500">*</span></label
+        >
         <Textarea
           v-model="reason"
           rows="3"
@@ -61,6 +64,7 @@ const props = defineProps<{
   visible: boolean;
   appointmentId: string | null;
   currentTotal: number;
+  otherAppointmentIds?: string[];
   ensureSaved?: () => Promise<string | null>;
 }>();
 
@@ -96,9 +100,10 @@ const canSubmit = computed(
 
 
 const confirm = async () => {
-  let apptId = props.appointmentId;
-  if (!apptId && props.ensureSaved) apptId = await props.ensureSaved();
-  if (!apptId || !canSubmit.value) return;
+  if (!canSubmit.value) return;
+  // Saved first: the total shown may include edits not yet saved.
+  const apptId = props.ensureSaved ? await props.ensureSaved() : props.appointmentId;
+  if (!apptId) return;
 
   saving.value = true;
   try {
@@ -106,8 +111,11 @@ const confirm = async () => {
       .post(`/api/v1/appointments/${apptId}/price-change`, {
         new_total: newTotal.value,
         reason: reason.value.trim(),
+        also_appointment_ids: props.otherAppointmentIds || [],
       })
       .catch((e: ApiError) => {
+        if (e.data?.error === "appointment_completed") throw new Error(t("priceChange.completed"));
+        if (e.data?.error === "below_products") throw new Error(t("priceChange.belowProducts", { amount: formatMoney(e.data.products) }));
         throw new Error(e.data?.error || t("priceChange.failed"));
       });
     toast.add({

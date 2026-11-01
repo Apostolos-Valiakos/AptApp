@@ -62,7 +62,7 @@
         <div class="flex px-4 md:px-6 py-2 flex-shrink-0">
           <div class="flex gap-1 p-1 bg-gray-50 rounded-full">
             <button
-              v-for="tab in tabs"
+              v-for="tab in visibleTabs"
               :key="tab.key"
               @click="currentTab = tab.key"
               class="py-2 px-4 text-sm font-medium transition-colors whitespace-nowrap rounded-full"
@@ -79,6 +79,8 @@
 
         <!-- Tab content -->
         <div class="flex-grow overflow-y-auto p-4 md:p-6 space-y-6">
+          <!-- Inert for staff: they read the booking but can't use anything in it. -->
+          <div class="space-y-6" :inert="isReadOnly">
           <!-- BOOKING TAB -->
           <div v-if="currentTab === 'Booking'" class="space-y-6">
             <!-- Client selector -->
@@ -227,111 +229,146 @@
           </div>
 
           <!-- PAYMENT TAB -->
-          <div v-if="currentTab === 'Payment'">
-            <BookingPackages
-              ref="bookingPackagesRef"
-              :clientId="form.client_id"
-              :appointmentId="form.id"
-              :servicesList="servicesList"
-              v-model:pendingPackages="pendingPackages"
-              :ensureSaved="ensureSavedForPackage"
-              @changed="onPackageChanged"
-            />
-            <BookingGiftCards
-              :clientId="form.client_id"
-              :defaultCustomerName="selectedClient?.full_name"
-              v-model:pendingGiftCards="pendingGiftCards"
+          <div v-if="currentTab === 'Payment'" class="space-y-6">
+            <PaymentSteps
+              v-if="!isPaymentSettled"
+              v-model="paymentStep"
+              :canReachCharge="canReachCharge"
+              :total="combinedTotalDueNow"
             />
 
-            <!-- Same-day appointments (different staff) — visible to any
-                 role so staff can see the client's full day at a glance;
-                 only admin/frontdesk/super_admin can select siblings to
-                 combine into one payment (canCombineDayPayment). -->
-            <div
-              v-if="siblingAppointments.length"
-              class="mb-6 p-4 bg-gray-50 rounded-xl border border-gray-100"
-            >
-              <h4 class="text-sm font-bold text-gray-700 mb-3">
-                {{ t("payment.sameDayAppointments") }}
-              </h4>
+            <!-- Step 1: checkout. A booking with nothing to pay shows only this
+                 side, and what can still be added to it. -->
+            <div v-show="isPaymentSettled || paymentStep === 1" class="space-y-6">
+              <PaymentSummary
+                :totalDueNow="combinedTotalDueNow"
+                :servicesTotal="servicesTotal"
+                :productsTotal="productsTotal"
+                :discountAmount="discountAmount"
+                :previousDebt="previousDebt"
+                :packagesTotal="pendingPackagesTotal"
+                :giftCardsTotal="pendingGiftCardsTotal"
+                :sameDayAppointmentsTotal="selectedSiblingsOwedTotal"
+                :depositAmount="form.deposit_amount + selectedSiblingsDepositTotal"
+              />
+
+              <!-- Same-day appointments (different staff) — visible to any
+                   role so staff can see the client's full day at a glance;
+                   only admin/frontdesk/super_admin can select siblings to
+                   combine into one payment (canCombineDayPayment). -->
               <div
-                v-for="sib in siblingAppointments"
-                :key="sib.id"
-                class="flex items-center gap-3 py-1.5"
+                v-if="siblingAppointments.length"
+                class="p-4 bg-gray-50 rounded-xl border border-gray-100"
               >
-                <Checkbox
-                  v-model="selectedSiblingIds"
-                  :value="sib.id"
-                  :disabled="!canCombineDayPayment || sib.owed <= 0"
-                />
-                <div class="flex-1 min-w-0 text-sm text-gray-700 truncate">
-                  {{ sib.services.map((s: any) => s.service_name).join(", ") }}
-                  <span class="text-gray-400">
-                    — {{ sib.services[0]?.staff_name }}</span
-                  >
+                <h4 class="text-sm font-bold text-gray-700 mb-3">
+                  {{ t("payment.sameDayAppointments") }}
+                </h4>
+                <div
+                  v-for="sib in siblingAppointments"
+                  :key="sib.id"
+                  class="flex items-center gap-3 py-1.5"
+                >
+                  <Checkbox
+                    v-model="selectedSiblingIds"
+                    :value="sib.id"
+                    :disabled="!canCombineDayPayment || sib.owed <= 0"
+                  />
+                  <div class="flex-1 min-w-0 text-sm text-gray-700 truncate">
+                    {{ sib.services.map((s: any) => s.service_name).join(", ") }}
+                    <span class="text-gray-400">
+                      — {{ sib.services[0]?.staff_name }}</span
+                    >
+                  </div>
+                  <div class="text-sm font-semibold text-gray-800 flex-shrink-0">
+                    {{ formatMoney(sib.owed) }}
+                    <span
+                      v-if="sib.payment_status === 'paid'"
+                      class="text-xs font-normal text-green-600"
+                      >({{ t("payment.paid") }})</span
+                    >
+                  </div>
                 </div>
-                <div class="text-sm font-semibold text-gray-800 flex-shrink-0">
-                  {{ formatMoney(sib.owed) }}
-                  <span
-                    v-if="sib.payment_status === 'paid'"
-                    class="text-xs font-normal text-green-600"
-                    >({{ t("payment.paid") }})</span
+              </div>
+
+              <BookingDiscount
+                v-if="!isPaymentSettled"
+                v-model="discount"
+                :codes="discountCodes"
+                :discountAmount="discountAmount"
+              />
+
+              <div v-if="canSellExtras">
+                <BookingPackages
+                  ref="packageSaleRef"
+                  view="sell"
+                  :clientId="form.client_id"
+                  :appointmentId="form.id"
+                  :servicesList="servicesList"
+                  v-model:pendingPackages="pendingPackages"
+                  :ensureSaved="ensureSavedForPackage"
+                />
+                <BookingGiftCards
+                  ref="giftCardSaleRef"
+                  :clientId="form.client_id"
+                  :defaultCustomerName="selectedClient?.full_name"
+                  v-model:pendingGiftCards="pendingGiftCards"
+                />
+                <div class="flex flex-wrap items-center gap-2 mt-2">
+                  <button
+                    type="button"
+                    class="text-xs font-bold text-[var(--p-primary-600)] hover:underline flex items-center gap-1"
+                    data-testid="payment-add-sale"
+                    @click="saleChoicesOpen = !saleChoicesOpen"
                   >
+                    <i class="pi pi-plus text-[10px]"></i>
+                    {{ t("payment.stepper.addSale") }}
+                  </button>
+                  <template v-if="saleChoicesOpen">
+                    <Button
+                      :label="t('payment.stepper.salePackage')"
+                      icon="pi pi-box"
+                      size="small"
+                      severity="secondary"
+                      outlined
+                      data-testid="payment-sell-package"
+                      @click="openSale(packageSaleRef)"
+                    />
+                    <Button
+                      :label="t('payment.stepper.saleGiftCard')"
+                      icon="pi pi-ticket"
+                      size="small"
+                      severity="secondary"
+                      outlined
+                      data-testid="payment-sell-gift-card"
+                      @click="openSale(giftCardSaleRef)"
+                    />
+                  </template>
                 </div>
               </div>
             </div>
 
-            <BookingDiscount
-              v-model="discount"
-              :codes="discountCodes"
-              :discountAmount="discountAmount"
-            />
-
-            <div v-if="canChangePriceOrRefund" class="flex gap-2 mb-6">
-              <Button
-                :label="t('priceChange.button')"
-                icon="pi pi-pencil"
-                severity="secondary"
-                outlined
-                size="small"
-                @click="priceChangeVisible = true"
-              />
-              <Button
-                :label="t('refund.button')"
-                icon="pi pi-replay"
-                severity="secondary"
-                outlined
-                size="small"
-                :disabled="form.deposit_amount <= 0"
-                @click="refundVisible = true"
+            <!-- Step 2 starts with what the client already has; undoing a used
+                 visit stays possible once it has paid the whole booking. -->
+            <div v-show="isPaymentSettled || paymentStep === 2">
+              <BookingPackages
+                ref="bookingPackagesRef"
+                view="use"
+                :clientId="form.client_id"
+                :appointmentId="form.id"
+                :servicesList="servicesList"
+                :pendingPackages="pendingPackages"
+                :ensureSaved="ensureSavedForPackage"
+                @changed="onPackageChanged"
               />
             </div>
-            <PriceChangeDialog
-              v-model:visible="priceChangeVisible"
-              :appointmentId="form.id"
-              :currentTotal="currentApptTotal"
-              :ensureSaved="ensureSavedForPackage"
-              @changed="onPriceChanged"
-            />
-            <RefundDialog
-              v-model:visible="refundVisible"
-              :appointmentId="form.id"
-              :maxRefundable="form.deposit_amount"
-              :ensureSaved="ensureSavedForPackage"
-              @refunded="onRefunded"
-            />
 
             <BookingPayments
               ref="bookingPaymentsRef"
+              :step="paymentStep"
               :totalDueNow="combinedTotalDueNow"
               :currentApptTotal="currentApptTotal"
-              :servicesTotal="servicesTotal"
-              :productsTotal="productsTotal"
-              :discountAmount="discountAmount"
               :previousDebt="previousDebt"
-              :packagesTotal="pendingPackagesTotal"
-              :giftCardsTotal="pendingGiftCardsTotal"
-              :sameDayAppointmentsTotal="selectedSiblingsOwedTotal"
+              :salesTotal="pendingPackagesTotal + pendingGiftCardsTotal"
               :depositAmount="form.deposit_amount + selectedSiblingsDepositTotal"
               :loading="paymentLoading"
               :paidPaymentMethod="form.payment_method"
@@ -343,6 +380,70 @@
               v-model:giftCardId="selectedGiftCardId"
               v-model:membershipRedemptions="selectedMembershipRedemptions"
               @pay="recordPayment"
+            >
+              <template #beforeCharge>
+                <div v-if="canChangePrice || (canChangePriceOrRefund && form.deposit_amount > 0)" class="flex flex-wrap gap-3">
+                  <Button
+                    v-if="canChangePrice"
+                    :label="t('priceChange.button')"
+                    icon="pi pi-pencil"
+                    severity="info"
+                    outlined
+                    class="flex-1 !py-3 !font-semibold !border-2"
+                    data-testid="payment-price-change"
+                    @click="priceChangeVisible = true"
+                  />
+                  <Button
+                    v-if="form.deposit_amount > 0"
+                    :label="t('refund.button')"
+                    icon="pi pi-replay"
+                    severity="danger"
+                    outlined
+                    class="flex-1 !py-3 !font-semibold !border-2"
+                    @click="refundVisible = true"
+                  />
+                </div>
+              </template>
+            </BookingPayments>
+
+            <!-- Nothing to pay: the price and what was paid can still be corrected. -->
+            <div v-if="isPaymentSettled && canChangePriceOrRefund" class="flex flex-wrap gap-3">
+              <Button
+                v-if="canChangePrice"
+                :label="t('priceChange.button')"
+                icon="pi pi-pencil"
+                severity="info"
+                outlined
+                class="flex-1 !py-3 !font-semibold !border-2"
+                data-testid="payment-price-change"
+                @click="priceChangeVisible = true"
+              />
+              <Button
+                v-if="form.deposit_amount > 0"
+                :label="t('refund.button')"
+                icon="pi pi-replay"
+                severity="danger"
+                outlined
+                class="flex-1 !py-3 !font-semibold !border-2"
+                data-testid="payment-refund"
+                @click="refundVisible = true"
+              />
+            </div>
+
+            <PriceChangeDialog
+              v-model:visible="priceChangeVisible"
+              :appointmentId="form.id"
+              :currentTotal="currentApptTotal + selectedSiblingsTotal"
+              :otherAppointmentIds="selectedSiblingIds"
+              :ensureSaved="ensureSavedForPackage"
+              @changed="onPriceChangedInPayment"
+            />
+            <RefundDialog
+              v-model:visible="refundVisible"
+              :appointmentId="form.id"
+              :maxRefundable="form.deposit_amount"
+              :ensureSaved="ensureSavedForPackage"
+              @refunded="onRefunded"
             />
           </div>
 
@@ -366,6 +467,7 @@
               </div>
             </div>
           </div>
+          </div>
         </div>
 
         <!-- Footer bar -->
@@ -373,15 +475,29 @@
           class="px-4 md:px-6 py-4 border-t border-gray-200 flex flex-col-reverse sm:flex-row justify-between items-center bg-gradient-to-r from-gray-50 to-white flex-shrink-0 gap-3"
         >
           <Button
-            v-if="isEditMode"
+            v-if="isEditMode && !isReadOnly && currentTab !== 'Payment'"
             :label="t('booking.cancelAppt')"
             icon="pi pi-trash"
             class="p-button-danger p-button-text p-button-sm w-full sm:w-auto"
             data-testid="booking-delete"
             @click="confirmDelete"
           />
-          <div class="flex flex-col sm:flex-row gap-3 ml-auto w-full sm:w-auto">
+          <div
+            class="flex gap-3 ml-auto w-full sm:w-auto"
+            :class="currentTab === 'Payment' ? 'flex-row items-center' : 'flex-col sm:flex-row'"
+          >
+            <Button
+              v-if="showPaymentNav && paymentStep > 1"
+              :label="t('payment.stepper.back')"
+              icon="pi pi-arrow-left"
+              severity="secondary"
+              outlined
+              class="flex-1 sm:flex-none"
+              data-testid="payment-back"
+              @click="paymentStep--"
+            />
             <div
+              v-if="currentTab !== 'Payment'"
               class="flex items-center gap-2 justify-center sm:justify-start sm:mr-4 mb-2 sm:mb-0"
             >
               <!-- <Checkbox v-model="notifyClient" binary inputId="notify" />
@@ -400,7 +516,7 @@
                 Save Receipt
               </label> -->
               <Button
-                v-if="currentTab !== 'Payment'"
+                v-if="currentTab !== 'Payment' && !isReadOnly"
                 :label="t('booking.tabs.payment')"
                 data-testid="booking-payment-tab"
                 @click="currentTab = 'Payment'"
@@ -408,7 +524,7 @@
               />
             </div>
             <Button
-              v-if="!form.is_block"
+              v-if="!form.is_block && !isReadOnly && currentTab !== 'Payment'"
               :label="t('booking.repeat.button')"
               icon="pi pi-copy"
               outlined
@@ -417,6 +533,7 @@
               @click="showRepeatDialog = true"
             />
             <Button
+              v-if="!isReadOnly"
               :label="t('booking.save')"
               @click="save()"
               data-testid="booking-save"
@@ -424,6 +541,18 @@
               :disabled="!canSaveBooking"
               v-tooltip.top="!canSaveBooking ? t('booking.validation.staffRequired') : null"
               class="w-full sm:w-auto px-8"
+              :class="{ 'flex-1 sm:flex-none': currentTab === 'Payment' }"
+            />
+            <Button
+              v-if="showPaymentNav && paymentStep < 3"
+              :label="t('payment.stepper.next')"
+              icon="pi pi-arrow-right"
+              iconPos="right"
+              severity="success"
+              class="flex-1 sm:flex-none"
+              :disabled="paymentStep === 2 && !canReachCharge"
+              data-testid="payment-next"
+              @click="paymentStep++"
             />
             <!-- <div class="flex flex-col justify-end gap-3 pb-2">
               <div class="flex items-center gap-2">
@@ -457,13 +586,14 @@
           ></i>
         </div>
 
-        <div v-show="showMobileSidebar || !isMobile" class="h-full">
+        <div v-show="showMobileSidebar || !isMobile" class="h-full" :inert="isReadOnly">
           <BookingSidebar
             class="w-full bg-gray-50 h-full"
             :client="selectedClient"
-            :calculated-balance="previousDebt"
+            :calculated-balance="sidebarBalance"
             v-model:bookingNotes="form.booking_notes"
             @debt-changed="onDebtChanged"
+            @open-appointment="openPastAppointment"
           />
         </div>
       </div>
@@ -486,6 +616,18 @@
     />
   </Dialog>
   <ConfirmDialog></ConfirmDialog>
+  <!-- Deleting a booking: the question, and why (optional, kept in the log). -->
+  <ConfirmDialog group="delete-booking">
+    <template #message="{ message }">
+      <div class="w-full space-y-3">
+        <p>{{ message.message }}</p>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t("booking.deleteDialog.reason") }}</label>
+          <Textarea v-model="deleteReason" rows="2" maxlength="500" class="w-full" data-testid="delete-reason" />
+        </div>
+      </div>
+    </template>
+  </ConfirmDialog>
 </template>
 
 <script setup lang="ts">
@@ -510,6 +652,8 @@ import {
 import BookingSidebar from "./booking/bookingSideBar.vue";
 import ClientSelector from "./ClientSelector.vue";
 import RepeatBookingDialog from "./booking/RepeatBookingDialog.vue";
+import PaymentSteps from "./booking/PaymentSteps.vue";
+import PaymentSummary from "./booking/PaymentSummary.vue";
 import ClientProfileDialog from "./ClientProfileDialog.vue";
 import { useConfirm } from "primevue/useconfirm";
 import { useToast } from "primevue/usetoast";
@@ -540,12 +684,26 @@ const toast = useToast();
 const { t, locale } = useI18n();
 const authStore = useAuthStore();
 const canChangePriceOrRefund = computed(() => authStore.isShopAdmin);
+// A completed appointment's price is final (the server refuses it too).
+const canChangePrice = computed(
+  () =>
+    canChangePriceOrRefund.value &&
+    form.value.status !== "completed" &&
+    !siblingAppointments.value.some((s: any) => selectedSiblingIds.value.includes(s.id) && s.status === "completed"),
+);
+const selectedSiblingsTotal = computed(() =>
+  siblingAppointments.value
+    .filter((s: any) => selectedSiblingIds.value.includes(s.id))
+    .reduce((sum: number, s: any) => sum + Number(s.total_cost || 0), 0),
+);
 // Combining several of a client's same-day appointments into one payment
 // crosses staff ownership (a plain "staff" role normally only ever sees/acts
 // on their own bookings) — gated the same way canSellExtras already gates
 // packages/gift cards server-side. The read (siblingAppointments fetch) stays
 // open to every role so a plain staff member can still see the day's total.
 const canCombineDayPayment = computed(() => authStore.isShopAdmin);
+// Plain staff only read a booking; the server refuses their changes too.
+const isReadOnly = computed(() => authStore.user?.role === "staff");
 const priceChangeVisible = ref(false);
 const refundVisible = ref(false);
 
@@ -561,7 +719,7 @@ const props = defineProps([
   "shopMaxTime",
 ]);
 
-const emit = defineEmits(["update:visible", "save", "refresh"]);
+const emit = defineEmits(["update:visible", "save", "refresh", "open-appointment"]);
 const showRepeatDialog = ref(false);
 const canRepeatBooking = computed(
   () =>
@@ -623,6 +781,7 @@ const tabs = [
   { key: "Notes", label: computed(() => t("booking.tabs.notes")) },
   { key: "Payment", label: computed(() => t("booking.tabs.payment")) },
 ] as const;
+const visibleTabs = computed(() => tabs.filter((tab) => tab.key !== "Payment" || !isReadOnly.value));
 
 const loading = ref(false);
 const paymentLoading = ref(false);
@@ -855,6 +1014,7 @@ const pendingGiftCardsTotal = computed(() =>
 // sees the list and the combined total read-only.
 const siblingAppointments = ref<any[]>([]);
 const selectedSiblingIds = ref<string[]>([]);
+const savedStatus = ref("");
 const siblingsLoading = ref(false);
 // The money side (totals, earlier debt, what's due now): see
 // composables/useBookingTotals.ts.
@@ -880,9 +1040,61 @@ const {
   selectedSiblingIds,
   pendingPackagesTotal,
   pendingGiftCardsTotal,
+  savedUnpaid: computed(() => Math.max(0, originalSnapshot.value.price - originalSnapshot.value.deposit)),
+  savedStatus,
+});
+
+// The payment tab's steps: 1 checkout, 2 way of paying, 3 price change and charge.
+const paymentStep = ref(1);
+const packageSaleRef = ref<any>(null);
+const giftCardSaleRef = ref<any>(null);
+const saleChoicesOpen = ref(false);
+const canSellExtras = computed(() => !!form.value.client_id && authStore.isShopAdmin);
+const openSale = (sale: any) => {
+  saleChoicesOpen.value = false;
+  sale?.openSell();
+};
+const isPaymentSettled = computed(() => combinedTotalDueNow.value <= 0);
+const showPaymentNav = computed(() => currentTab.value === "Payment" && !isPaymentSettled.value && !isReadOnly.value);
+// Nothing unsaved on the payment tab outlives the dialog or moves to another
+// booking. What was already saved (a used visit, a price change) stays.
+const resetPayment = () => {
+  paymentStep.value = 1;
+  saleChoicesOpen.value = false;
+  priceChangeVisible.value = false;
+  refundVisible.value = false;
+  pendingPackages.value = [];
+  pendingGiftCards.value = [];
+  selectedPaymentMethod.value = "card";
+  selectedGiftCardId.value = null;
+  selectedMembershipRedemptions.value = [];
+  bookingPaymentsRef.value?.disableSplit();
+};
+const canReachCharge = computed(() => !!bookingPaymentsRef.value?.canContinue);
+// Only earlier debt left on this booking: nothing to check out, straight to paying it.
+watch(currentTab, (tab) => {
+  if (tab !== "Payment") return;
+  saleChoicesOpen.value = false;
+  paymentStep.value = form.value.deposit_amount >= currentApptTotal.value && previousDebt.value > 0 ? 2 : 1;
+});
+// Something sold is paid in full: the amount to pay grows and shrinks with it.
+watch(
+  () => pendingPackagesTotal.value + pendingGiftCardsTotal.value,
+  (sales, before) => {
+    amountToPayNow.value = Math.max(0, Math.min(combinedTotalDueNow.value, amountToPayNow.value + sales - before));
+  },
+);
+watch(isPaymentSettled, (settled) => {
+  if (settled) paymentStep.value = 1;
 });
 
 const originalServices = ref<ServiceSnapshot[]>([]);
+// The client's balance beside the booking: earlier debt, and what's left on this
+// booking once it's completed (its remainder is owed now).
+const sidebarBalance = computed(() =>
+  previousDebt.value +
+  (form.value.id && savedStatus.value === "completed" ? Math.max(0, originalSnapshot.value.price - originalSnapshot.value.deposit) : 0),
+);
 const originalSnapshot = ref({ price: 0, deposit: 0, isPast: false });
 
 // Suggests a sensible default amount: pay off whatever's explicitly owed for
@@ -907,7 +1119,7 @@ watch(selectedSiblingIds, () => nextTick(suggestAmountToPay), { deep: true });
 // an unrelated service-price change.
 watch(combinedTotalDueNow, (newVal) => {
   if (amountToPayNow.value > newVal) {
-    amountToPayNow.value = newVal;
+    amountToPayNow.value = Math.max(0, newVal); // a client in credit owes nothing
   }
 });
 
@@ -923,6 +1135,7 @@ const calendarStoreForOverlaps = useCalendarStore();
 
 const loadExistingAppointment = (val: any, resolvedStaffId: any) => {
   currentVersion.value = val.version ?? null;
+  savedStatus.value = val.status || "";
   form.value = {
     id: val.id,
     client_id: val.client_id || null,
@@ -1052,6 +1265,7 @@ const loadExistingAppointment = (val: any, resolvedStaffId: any) => {
 watch(
   [() => props.appointment, () => props.visible],
   ([val, visible]) => {
+    resetPayment();
     if (!visible) return;
     // Never carry a stale same-day-payment selection into a new dialog
     // instance — EDIT MODE below repopulates siblingAppointments if this
@@ -1149,7 +1363,10 @@ watch(
 
     // Suggest a sensible default amount after the form (and computed values) have settled.
     // Using nextTick so computed properties (currentApptTotal, totalDueNow) read the new form state.
-    nextTick(suggestAmountToPay);
+    nextTick(() => {
+      suggestAmountToPay();
+      loadedBooking = bookingSnapshot();
+    });
     currentTab.value = "Booking";
     showMobileSidebar.value = false;
   },
@@ -1157,6 +1374,61 @@ watch(
 );
 
 // === METHODS ===
+
+// A past visit clicked in the sidebar replaces this booking in the dialog, so
+// edits not yet saved need a yes first. There is no route for one appointment:
+// it comes from its day's list, the same shape the calendar gets.
+let loadedBooking = "";
+const bookingSnapshot = () =>
+  JSON.stringify({
+    status: form.value.status,
+    start: form.value.start_time,
+    internal: form.value.internal_notes || "",
+    notes: form.value.booking_notes || "",
+    services: servicesList.value.map((s: any) => [
+      s.service_id,
+      s.staff_id,
+      s.start_time,
+      s.duration_override,
+      s.price_override,
+      s.variation_name || null,
+      s.persons || 1,
+    ]),
+    products: productsList.value,
+    discount: discount.value,
+    sales: [pendingPackages.value, pendingGiftCards.value],
+  });
+const discardUnsavedEdits = () =>
+  new Promise<boolean>((resolve) => {
+    if (bookingSnapshot() === loadedBooking) return resolve(true);
+    confirm.require({
+      header: t("booking.openPast.header"),
+      message: t("booking.openPast.message"),
+      icon: "pi pi-exclamation-triangle",
+      acceptLabel: t("booking.openPast.discard"),
+      rejectLabel: t("booking.openPast.keep"),
+      accept: () => resolve(true),
+      reject: () => resolve(false),
+      onHide: () => resolve(false),
+    });
+  });
+
+let pastRequest = 0;
+const openPastAppointment = async (past: any) => {
+  if (past.id === form.value.id) return;
+  const request = ++pastRequest;
+  if (!(await discardUnsavedEdits()) || request !== pastRequest) return;
+  try {
+    const dayRows = await api.get(`/api/v1/appointments?date=${toLocalDateStr(new Date(past.start_time))}`);
+    if (request !== pastRequest || !props.visible) return;
+    const found = dayRows.find((a: any) => a.id === past.id);
+    if (!found) throw new Error("not in the day's list");
+    emit("open-appointment", found);
+  } catch {
+    if (request !== pastRequest) return;
+    toast.add({ severity: "error", summary: t("common.error"), detail: t("booking.openPast.failed"), life: 3500 });
+  }
+};
 
 // Package visits attach to a saved appointment: save pending edits first.
 const ensureSavedForPackage = async (): Promise<string | null> => {
@@ -1184,7 +1456,16 @@ const onPackageChanged = (data: any) => {
 // its response rather than re-deriving the same math client-side too.
 const onPriceChanged = (data: any) => {
   if (Array.isArray(data.services)) {
+    // Only the prices changed: each row keeps everything else (its variation, label).
+    const rowFor = (s: any) =>
+      servicesList.value.find(
+        (r: any) =>
+          r.service_id === s.service_id &&
+          r.staff_id === s.staff_id &&
+          new Date(r.start_time).getTime() === new Date(s.start_time).getTime(),
+      );
     servicesList.value = markManualStarts(data.services.map((s: any) => ({
+      ...rowFor(s),
       service_id: s.service_id,
       staff_id: s.staff_id,
       start_time: new Date(s.start_time),
@@ -1194,10 +1475,33 @@ const onPriceChanged = (data: any) => {
     })));
     originalServices.value = snapshotServices(servicesList.value);
   }
+  // The new price replaces any discount; what's left on the products is their price now.
+  if (data.discount_cleared) {
+    discount.value = emptyDiscount();
+    originalDiscountAmount.value = 0;
+    if (Array.isArray(data.products)) {
+      productsList.value = data.products.map((p: any) => ({
+        product_id: p.product_id,
+        quantity: p.quantity,
+        price: Number(p.price || 0),
+      }));
+    }
+  }
+  // The same-day appointments paid with this one have new prices too.
+  siblingAppointments.value = siblingAppointments.value.map((s: any) =>
+    data.totals?.[s.id] === undefined
+      ? s
+      : { ...s, total_cost: data.totals[s.id], owed: Math.max(0, data.totals[s.id] - Number(s.deposit_amount || 0)) },
+  );
   if (data.new_balance !== undefined && selectedClient.value) {
     selectedClient.value.outstanding_balance = Number(data.new_balance);
   }
-  emit("save");
+  if (data.version !== undefined) currentVersion.value = data.version;
+  if (data.booking_notes !== undefined) form.value.booking_notes = data.booking_notes || "";
+  // The dialog stays open: charging comes right after this.
+  originalSnapshot.value = { ...originalSnapshot.value, price: currentApptTotal.value };
+  loadedBooking = bookingSnapshot();
+  emit("refresh");
 };
 
 const onRefunded = (data: any) => {
@@ -1216,6 +1520,36 @@ const onRefunded = (data: any) => {
     deposit: form.value.deposit_amount,
   };
   emit("save");
+};
+
+// A price change can move what's owed after the amount was chosen. Paying the
+// whole amount simply follows it; a split, a part payment, a gift card or a
+// membership needs a person to look again.
+const onPriceChangedInPayment = (data: any) => {
+  const dueBefore = combinedTotalDueNow.value;
+  const amountBefore = amountToPayNow.value;
+  const paidWhole = amountBefore === dueBefore || amountBefore === suggestedAmount();
+  const simple =
+    paidWhole &&
+    !bookingPaymentsRef.value?.splitEnabled &&
+    !["gift-card", "membership"].includes(selectedPaymentMethod.value);
+  const wasSettled = isPaymentSettled.value;
+  onPriceChanged(data);
+  nextTick(() => {
+    const due = combinedTotalDueNow.value;
+    if (due <= 0) return;
+    if (wasSettled) {
+      amountToPayNow.value = suggestedAmount();
+      return;
+    }
+    if (simple) {
+      amountToPayNow.value = Math.min(due, Math.max(0, amountBefore + due - dueBefore));
+      toast.add({ severity: "info", summary: t("payment.stepper.amountFollowed", { amount: formatMoney(amountToPayNow.value) }), life: 3500 });
+      return;
+    }
+    amountToPayNow.value = Math.min(due, amountBefore);
+    toast.add({ severity: "warn", summary: t("payment.stepper.checkAmount"), life: 4000 });
+  });
 };
 
 const confirmChanges = (): Promise<boolean> => {
@@ -1384,6 +1718,7 @@ const unblockTimeOff = async (): Promise<boolean> => {
 
 // Resolves false only when the user declined the change confirmation.
 const save = async (close = true): Promise<boolean> => {
+  if (isReadOnly.value) return false;
   if (!(await confirmChanges())) return false;
 
   // Check if editing an existing recurring appointment
@@ -1631,6 +1966,7 @@ const executeSave = async (close = true, scope = "single", allowOverCapacity = f
       form.value.id = data.id;
     }
     if (data.version !== undefined) currentVersion.value = data.version;
+    savedStatus.value = form.value.status;
 
     if (data.new_balance !== undefined && selectedClient.value) {
       selectedClient.value.outstanding_balance = Number(data.new_balance);
@@ -1687,10 +2023,13 @@ const recordPayment = async (
   // of how much of the service itself is actually being paid right now.
   const packageTotal = pendingPackagesTotal.value;
   const giftCardTotal = pendingGiftCardsTotal.value;
-  const serviceLegAmount = Math.max(
-    0,
-    amountToPayNow.value - packageTotal - giftCardTotal,
-  );
+  // Packages and gift cards are paid first: by the first way of paying, and
+  // what it doesn't cover by the second. Only the rest goes to what's owed.
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const extrasOnFirst = Math.min(amountToPayNow.value, packageTotal + giftCardTotal);
+  const extrasOnSecond = round2(packageTotal + giftCardTotal - extrasOnFirst);
+  const serviceLegAmount = round2(amountToPayNow.value - extrasOnFirst);
+  const serviceLegAmount2 = split ? round2(Math.max(0, split.amount2 - extrasOnSecond)) : 0;
 
   // Save any pending form changes (services, notes) before processing payment.
   // Do NOT force status='completed' here — the transaction endpoint handles that
@@ -1740,7 +2079,8 @@ const recordPayment = async (
           : {}),
         ...(split
           ? {
-              amount2: split.amount2,
+              amount2: serviceLegAmount2,
+              extras_amount2: extrasOnSecond,
               payment_method2: split.payment_method2,
               gift_card_id2: split.gift_card_id2,
               redemptions2: split.redemptions2,
@@ -1755,7 +2095,7 @@ const recordPayment = async (
     );
 
     if (result.queued) {
-      const totalPaidThisVisit = serviceLegAmount + (split?.amount2 || 0);
+      const totalPaidThisVisit = serviceLegAmount + serviceLegAmount2;
       // Reflect the payment locally right away so staff aren't blocked, but
       // this is optimistic — the server hasn't actually seen it yet. The
       // queued request already carries package_purchases, so the package(s)
@@ -1784,6 +2124,7 @@ const recordPayment = async (
         selectedPaymentMethod.value = "card";
       }
       bookingPaymentsRef.value?.disableSplit();
+      paymentStep.value = 1;
       paymentLoading.value = false;
       return;
     }
@@ -1792,7 +2133,7 @@ const recordPayment = async (
 
     if (res.ok) {
       const data = await res.json();
-      const totalPaidThisVisit = serviceLegAmount + (split?.amount2 || 0);
+      const totalPaidThisVisit = serviceLegAmount + serviceLegAmount2;
 
       // Update local deposit_amount for immediate UI feedback (package
       // purchases never touch the appointment's own deposit/payment_status).
@@ -1872,6 +2213,7 @@ const recordPayment = async (
         selectedPaymentMethod.value = "card";
       }
       bookingPaymentsRef.value?.disableSplit();
+      paymentStep.value = 1;
 
       emit("save"); // Refresh the background calendar
     } else {
@@ -1896,10 +2238,14 @@ const recordPayment = async (
   }
 };
 
+const deleteReason = ref("");
 const confirmDelete = () => {
+  if (isReadOnly.value) return;
   const isSeries = !!props.appointment?.group_id;
+  deleteReason.value = "";
 
   confirm.require({
+    group: "delete-booking",
     message: isSeries
       ? t("booking.deleteDialog.messageRecurring")
       : t("booking.deleteDialog.messageSingle"),
@@ -1979,7 +2325,7 @@ const executeDelete = async (scope: string) => {
   if (Number(form.value.deposit_amount || 0) !== 0) return offerCancelInstead();
   try {
     // Offline the deletion is queued (and the booking hidden right away).
-    const result = await fetchOrQueue(`/api/v1/appointments/${form.value.id}?scope=${scope}`, "DELETE", undefined, {
+    const result = await fetchOrQueue(`/api/v1/appointments/${form.value.id}?scope=${scope}`, "DELETE", { reason: deleteReason.value }, {
       kind: "delete",
       label: `${t("booking.cancelAppt")} · ${selectedClient.value?.first_name || ""} ${selectedClient.value?.last_name || ""}`.trim(),
     });

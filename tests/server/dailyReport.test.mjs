@@ -49,7 +49,7 @@ test("a chosen day shows that day's bookings and money", async () => {
   assert.equal(r.data.total_collected, 25);
   assert.deepEqual(r.data.by_method, [{ method: "cash", amount: 25 }]);
   assert.equal(r.data.appointment_count, 1);
-  assert.deepEqual(r.data.by_status, { confirmed: 1 });
+  assert.deepEqual(r.data.by_status, { completed: 1 }, "a part payment completes a booking whose day has come");
   assert.equal(r.data.payments.length, 1);
   assert.equal(Number(r.data.payments[0].amount), 25);
   assert.equal(r.data.payments[0].first_name, "Daily");

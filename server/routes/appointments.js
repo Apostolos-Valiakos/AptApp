@@ -6,6 +6,7 @@ const express = require("express");
 const { HttpError, asyncHandler, withTransaction } = require("../http");
 
 module.exports = function appointmentsRouter({
+  notForStaff,
   DiscountError,
   MissingStaffError,
   OfflineConflictError,
@@ -222,13 +223,13 @@ module.exports = function appointmentsRouter({
         deposit_amount: parseFloat(row.deposit_amount),
         // Staff-authored notes about a client should never reach the client's
         // own portal view of their own appointment.
-        ...(req.user.role === "client" ? { internal_notes: null, products: [] } : {}),
+        ...(req.user.role === "client" ? { internal_notes: null, booking_notes: null, products: [] } : {}),
       }));
 
       res.json(formatted);
   }));
 
-  router.post("/", authenticateToken, asyncHandler(async (req, res) => {
+  router.post("/", authenticateToken, notForStaff, asyncHandler(async (req, res) => {
     const idempotencyKey = req.headers["idempotency-key"] || null;
     const { status, body } = await withTransaction(async (client) => {
       const cached = await checkIdempotency(client, idempotencyKey, req.shopId);
@@ -282,7 +283,7 @@ module.exports = function appointmentsRouter({
     res.status(status).json(body);
   }, { log: "Create Appointment Error:", message: "Failed to create appointment", mapError: createBookingError }));
 
-  router.put("/:id", authenticateToken, asyncHandler(async (req, res) => {
+  router.put("/:id", authenticateToken, notForStaff, asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { scope } = req.query;
     const idempotencyKey = req.headers["idempotency-key"] || null;
@@ -417,7 +418,7 @@ module.exports = function appointmentsRouter({
   // portal's own cancel endpoint, plus releasing any redeemed package visit
   // (the portal one doesn't — a pre-existing gap there, left alone since the
   // client portal is a separate, not-yet-shipped feature).
-  router.post("/:id/cancel", authenticateToken, asyncHandler(async (req, res) => {
+  router.post("/:id/cancel", authenticateToken, notForStaff, asyncHandler(async (req, res) => {
     if (req.user.role === "client") return res.status(403).json({ error: "Forbidden" });
     const { id } = req.params;
     const newBalance = await withTransaction(async (client) => {
@@ -461,7 +462,48 @@ module.exports = function appointmentsRouter({
     await client.query("DELETE FROM product_sales WHERE appointment_id = ANY($1)", [appointmentIds]);
   };
 
-  router.delete("/:id", authenticateToken, asyncHandler(async (req, res) => {
+  // Keeps a copy of bookings about to be deleted, for the admins' log (see
+  // migration 0009). Time blocks aren't bookings, so they aren't kept.
+  const logDeletedAppointments = (client, ids, req, reason) =>
+    client.query(
+      `INSERT INTO deleted_appointments
+         (shop_id, appointment_id, group_id, client_id, client_name, client_phone, status, start_time,
+          services, products, total, internal_notes, booking_notes, booked_at,
+          deleted_by_user_id, deleted_by_name, reason)
+       SELECT a.shop_id, a.id, a.group_id, a.client_id,
+              TRIM(COALESCE(c.last_name, '') || ' ' || COALESCE(c.first_name, '')), c.phone, a.status,
+              (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id),
+              COALESCE((
+                SELECT jsonb_agg(jsonb_build_object(
+                         'service', s.name, 'variation', aps.variation_name, 'staff', st.name,
+                         'start_time', aps.start_time,
+                         'duration_minutes', COALESCE(aps.duration_override, s.duration_minutes),
+                         'price', COALESCE(aps.price_override, s.price, 0)
+                       ) ORDER BY aps.start_time)
+                FROM appointment_services aps
+                LEFT JOIN services s ON s.id = aps.service_id
+                LEFT JOIN staff st ON st.id = aps.staff_id
+                WHERE aps.appointment_id = a.id), '[]'::jsonb),
+              COALESCE((
+                SELECT jsonb_agg(jsonb_build_object('product', p.name, 'quantity', ps.quantity, 'price', ps.total_price))
+                FROM product_sales ps
+                LEFT JOIN product_inventory pi ON pi.id = ps.inventory_id
+                LEFT JOIN products p ON p.id = pi.product_id
+                WHERE ps.appointment_id = a.id), '[]'::jsonb),
+              GREATEST(0,
+                COALESCE((SELECT SUM(COALESCE(aps.price_override, s.price, 0))
+                          FROM appointment_services aps LEFT JOIN services s ON s.id = aps.service_id
+                          WHERE aps.appointment_id = a.id), 0)
+                + COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = a.id), 0)),
+              a.internal_notes, a.booking_notes, a.booked_at,
+              $3, $4, $5
+       FROM appointments a
+       LEFT JOIN clients c ON c.id = a.client_id
+       WHERE a.id = ANY($1) AND a.shop_id = $2 AND NOT COALESCE(a.is_block, false)`,
+      [ids, req.shopId, req.user.userId || null, req.user.username || null, reason],
+    );
+
+  router.delete("/:id", authenticateToken, notForStaff, asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { scope } = req.query;
     const idempotencyKey = req.headers["idempotency-key"] || null;
@@ -512,6 +554,8 @@ module.exports = function appointmentsRouter({
         throw new HttpError(409, { error: "has_payments", appointment_id: paidRes.rows[0].appointment_id });
       }
 
+      const reason = String(req.body?.reason || "").trim().slice(0, 500) || null;
+      await logDeletedAppointments(client, deletedIds, req, reason);
       await releaseBookingExtras(client, deletedIds);
 
       if (scope === "series" && groupInfo && groupInfo.group_id) {
@@ -538,7 +582,7 @@ module.exports = function appointmentsRouter({
     res.status(status).json(body);
   }));
 
-  router.post("/swap", authenticateToken, asyncHandler(async (req, res) => {
+  router.post("/swap", authenticateToken, notForStaff, asyncHandler(async (req, res) => {
     const { appointment1_id, appointment2_id } = req.body;
     if (!appointment1_id || !appointment2_id)
       return res.status(400).json({ error: "Two appointment IDs required" });
@@ -687,11 +731,13 @@ module.exports = function appointmentsRouter({
     }),
   );
 
-  // A manual checkout price change re-derives each service's price_override
-  // from the new total, proportionally to what it currently carries (reusing
-  // the same largest-remainder split the discount engine uses), and logs the
-  // before/after + reason for the admin report — it isn't a money movement by
-  // itself, so it doesn't create a transaction, only an audit row.
+  // A manual checkout price change: new_total is what the appointment, together
+  // with any same-day ones paid with it (also_appointment_ids), now costs,
+  // products included. Their services share the difference proportionally
+  // (the same largest-remainder split the discount engine uses). The new price
+  // replaces any discount on them, so it's what every later load and save sees.
+  // It logs the before/after + reason for the admin report — it isn't a money
+  // movement by itself, so it doesn't create a transaction, only an audit row.
   router.post(
     "/:id/price-change",
     authenticateToken,
@@ -700,7 +746,7 @@ module.exports = function appointmentsRouter({
         return res.status(403).json({ error: "Not authorized to change prices" });
       }
       const { id } = req.params;
-      const { new_total, reason } = req.body;
+      const { new_total, reason, also_appointment_ids } = req.body;
       const newTotal = round2(Number(new_total));
       if (new_total == null || Number.isNaN(newTotal) || newTotal < 0) {
         return res.status(400).json({ error: "new_total must be a non-negative number" });
@@ -708,54 +754,105 @@ module.exports = function appointmentsRouter({
       if (!reason?.trim()) {
         return res.status(400).json({ error: "A reason is required" });
       }
+      const others = Array.isArray(also_appointment_ids) ? also_appointment_ids.map(safeUUID) : [];
+      if (others.includes(null)) return res.status(400).json({ error: "Invalid also_appointment_ids" });
+      const ids = [...new Set([id, ...others])];
 
       const result = await withTransaction(async (client) => {
         const apptRes = await client.query(
-          `SELECT client_id FROM appointments WHERE id = $1 AND shop_id = $2`,
-          [id, req.shopId],
+          `SELECT id, client_id, status FROM appointments WHERE id = ANY($1) AND shop_id = $2 ORDER BY id FOR UPDATE`,
+          [ids, req.shopId],
         );
-        if (apptRes.rows.length === 0) throw new HttpError(404, { error: "Appointment not found" });
-        const clientId = apptRes.rows[0].client_id;
+        const main = apptRes.rows.find((a) => a.id === id);
+        if (!main || apptRes.rows.length !== ids.length) throw new HttpError(404, { error: "Appointment not found" });
+        if (apptRes.rows.some((a) => a.client_id !== main.client_id)) {
+          throw new HttpError(400, { error: "Appointments belong to different clients" });
+        }
+        if (apptRes.rows.some((a) => a.status === "completed")) {
+          throw new HttpError(400, { error: "appointment_completed" });
+        }
+        const clientId = main.client_id;
 
         const svcRes = await client.query(
-          `SELECT id, COALESCE(price_override, 0) AS price
-           FROM appointment_services WHERE appointment_id = $1 ORDER BY start_time`,
-          [id],
+          `SELECT id, appointment_id, COALESCE(price_override, 0) AS price
+           FROM appointment_services WHERE appointment_id = ANY($1)
+           ORDER BY array_position($1::uuid[], appointment_id), start_time`,
+          [ids],
         );
-        if (svcRes.rows.length === 0) throw new HttpError(400, { error: "no_services_to_adjust" });
+        if (!svcRes.rows.some((r) => r.appointment_id === id)) throw new HttpError(400, { error: "no_services_to_adjust" });
+
+        const productsRes = await client.query(
+          `SELECT appointment_id, COALESCE(SUM(total_price), 0) AS total
+           FROM product_sales WHERE appointment_id = ANY($1) GROUP BY appointment_id`,
+          [ids],
+        );
+        const productsOf = new Map(productsRes.rows.map((r) => [r.appointment_id, Number(r.total)]));
+        const productsTotal = round2([...productsOf.values()].reduce((a, b) => a + b, 0));
+        const servicesTarget = round2(newTotal - productsTotal);
+        if (servicesTarget < 0) throw new HttpError(400, { error: "below_products", products: productsTotal });
 
         const amounts = svcRes.rows.map((r) => Number(r.price));
-        const oldTotal = round2(amounts.reduce((a, b) => a + b, 0));
-        const delta = round2(newTotal - oldTotal);
+        const delta = round2(servicesTarget - round2(amounts.reduce((a, b) => a + b, 0)));
 
+        // No existing price to proportion an increase against (e.g. a comped
+        // €0 visit) — put the entire difference on the last block rather than
+        // silently doing nothing.
+        const allocs = delta === 0 ? amounts.map(() => 0) : allocate(amounts, Math.abs(delta));
+        const noPriceYet = delta > 0 && amounts.every((a) => a <= 0);
+        const prices = amounts.map((amount, i) =>
+          noPriceYet
+            ? (i === amounts.length - 1 ? servicesTarget : 0)
+            : round2(amount + (delta > 0 ? allocs[i] : -allocs[i])),
+        );
         if (delta !== 0) {
-          // No existing price to proportion an increase against (e.g. a comped
-          // €0 visit) — put the entire new total on the last block rather than
-          // silently doing nothing.
-          if (oldTotal <= 0 && delta > 0) {
-            const lastIdx = svcRes.rows.length - 1;
+          for (let i = 0; i < svcRes.rows.length; i++) {
             await client.query(
-              `UPDATE appointment_services SET price_override = $1 WHERE id = $2`,
-              [newTotal, svcRes.rows[lastIdx].id],
+              `UPDATE appointment_services SET price_override = $1, list_price = $1 WHERE id = $2`,
+              [prices[i], svcRes.rows[i].id],
             );
-          } else {
-            const allocs = allocate(amounts, Math.abs(delta));
-            for (let i = 0; i < svcRes.rows.length; i++) {
-              const newPrice = round2(amounts[i] + (delta > 0 ? allocs[i] : -allocs[i]));
-              await client.query(
-                `UPDATE appointment_services SET price_override = $1 WHERE id = $2`,
-                [newPrice, svcRes.rows[i].id],
-              );
-            }
           }
+          await client.query(
+            `UPDATE product_sales SET list_total = total_price WHERE appointment_id = ANY($1)`,
+            [ids],
+          );
         }
 
-        await client.query(
-          `INSERT INTO price_adjustments
-            (appointment_id, shop_id, old_total, new_total, reason, created_by_user_id, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-          [id, req.shopId, oldTotal, newTotal, reason.trim(), req.user.username],
-        );
+        const totals = {};
+        for (const apptId of ids) {
+          const of = (list) =>
+            round2(list.reduce((sum, value, i) => (svcRes.rows[i].appointment_id === apptId ? sum + value : sum), 0));
+          const products = productsOf.get(apptId) || 0;
+          const oldApptTotal = round2(of(amounts) + products);
+          const newApptTotal = round2(of(prices) + products);
+          totals[apptId] = newApptTotal;
+          const changed = newApptTotal !== oldApptTotal;
+
+          if (changed || apptId === id) {
+            await client.query(
+              `INSERT INTO price_adjustments
+                (appointment_id, shop_id, old_total, new_total, reason, created_by_user_id, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+              [apptId, req.shopId, oldApptTotal, newApptTotal, reason.trim(), req.user.username],
+            );
+            // The note also goes in the appointment's notes (the booking dialog's
+            // sidebar, hover card), on a line of its own, whatever the new total.
+            await client.query(
+              `UPDATE appointments
+               SET booking_notes = CASE WHEN COALESCE(TRIM(booking_notes), '') = '' THEN $1 ELSE booking_notes || E'\n' || $1 END
+               WHERE id = $2 AND shop_id = $3`,
+              [reason.trim(), apptId, req.shopId],
+            );
+          }
+          if (changed) {
+            await client.query(
+              `UPDATE appointments
+               SET discount_type = NULL, discount_value = NULL, discount_scope = NULL,
+                   discount_code_id = NULL, discount_code_name = NULL, discount_amount = 0
+               WHERE id = $1 AND shop_id = $2`,
+              [apptId, req.shopId],
+            );
+          }
+        }
 
         let newBalance = 0;
         if (clientId) newBalance = await recalculateClientBalance(client, clientId);
@@ -768,13 +865,22 @@ module.exports = function appointmentsRouter({
            FROM appointment_services WHERE appointment_id = $1 ORDER BY start_time`,
           [id],
         );
+        const updatedProducts = await client.query(
+          `SELECT inventory_id AS product_id, quantity, ROUND(total_price / NULLIF(quantity, 0), 2) AS price
+           FROM product_sales WHERE appointment_id = $1`,
+          [id],
+        );
 
         return {
           success: true,
           new_balance: newBalance,
-          old_total: oldTotal,
           new_total: newTotal,
+          totals,
+          discount_cleared: delta !== 0,
           services: updatedServices.rows,
+          products: updatedProducts.rows,
+          // The dialog stays open to charge next, and saves with these.
+          ...(await client.query("SELECT version, booking_notes FROM appointments WHERE id = $1", [id])).rows[0],
         };
       });
       res.json(result);
@@ -782,7 +888,7 @@ module.exports = function appointmentsRouter({
   );
 
   // Use one visit of a package for a service line of this appointment.
-  router.post("/:id/package-redemptions", authenticateToken, asyncHandler(async (req, res) => {
+  router.post("/:id/package-redemptions", authenticateToken, notForStaff, asyncHandler(async (req, res) => {
     if (req.user.role === "client") return res.status(403).json({ error: "Forbidden" });
     const packageId = safeUUID(req.body.client_package_id);
     if (!packageId) return res.status(400).json({ error: "client_package_id is required" });

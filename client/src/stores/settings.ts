@@ -1,9 +1,10 @@
 import { defineStore } from "pinia";
 import { api } from "../api/http";
+import { readSavedJson } from "../utils/savedLogin";
 import { ref, watch } from "vue";
 
 export const useSettingsStore = defineStore("settings", () => {
-  const user = JSON.parse(localStorage.getItem("user") || "null");
+  const user = readSavedJson("user");
   const isStaff = user?.role === "staff";
 
   // "me" is currently only ever a deliberate choice for the "staff" role —

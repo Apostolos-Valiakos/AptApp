@@ -411,6 +411,7 @@ const navItems = computed(() => [
     label: t("nav.qrScanner"),
     path: "/app/qr-scanner",
     ownerOnly: false,
+    hideFromStaff: true,
     hideFromAdmin: true,
     icon: "pi pi-qrcode",
   },
@@ -469,6 +470,7 @@ const visibleNavItems = computed(() => {
     if (item.frontdeskOnly && authStore.user?.role !== "frontdesk") return false;
     if (item.hideFromAdmin && isAnalyticsAllowed.value) return false;
     if (item.platformOnly && !authStore.isOwner) return false;
+    if (item.hideFromStaff && authStore.user?.role === "staff") return false;
 
     return true;
   });

@@ -11,18 +11,27 @@ import { computeDiscountAmount, type DiscountState } from "../utils/discount";
  */
 export const BALANCE_START = new Date("2026-03-01T00:00:00");
 
-/** Whether a booking starting at `start` is already part of the client's stored balance (it has happened). */
-export const countsInStoredBalance = (start: Date | string | null | undefined, now = new Date()) => {
+/**
+ * Whether a booking starting at `start` is already part of the client's stored
+ * balance: it has happened, or it's completed and its day has come (a part
+ * payment completes a booking that starts later today).
+ */
+export const countsInStoredBalance = (start: Date | string | null | undefined, now = new Date(), status?: string) => {
   if (!start) return false;
   const at = new Date(start);
-  return at >= BALANCE_START && at <= now;
+  if (at < BALANCE_START) return false;
+  if (at <= now) return true;
+  const endOfToday = new Date(now);
+  endOfToday.setHours(23, 59, 59, 999);
+  return status === "completed" && at <= endOfToday;
 };
 
 /**
  * The client's debt from other bookings. The stored balance already
  * contains whatever is unpaid on this booking and on the selected same-day
  * ones if they have happened; that part is taken out, so it isn't counted
- * twice (once here and once as this visit's own amount).
+ * twice (once here and once as this visit's own amount). The result is
+ * negative when the client is in credit.
  */
 export const previousDebtFrom = ({
   storedBalance,
@@ -41,7 +50,7 @@ export const previousDebtFrom = ({
   let debt = storedBalance;
   if (currentInBalance) debt -= currentUnpaid;
   debt -= selectedSiblingsUnpaidInBalance;
-  return Math.max(0, debt);
+  return debt;
 };
 
 /**
@@ -65,6 +74,10 @@ export function useBookingTotals(state: {
   selectedSiblingIds: Ref<string[]>;
   pendingPackagesTotal: Ref<number>;
   pendingGiftCardsTotal: Ref<number>;
+  /** What's unpaid on this booking as last saved (the stored balance knows nothing of later edits). Defaults to the current amount. */
+  savedUnpaid?: Ref<number>;
+  /** The booking's status as last saved, which is what the stored balance went by. */
+  savedStatus?: Ref<string>;
 }) {
   const selectedSiblings = computed(() =>
     state.siblings.value.filter((s) => state.selectedSiblingIds.value.includes(s.id)),
@@ -88,7 +101,7 @@ export function useBookingTotals(state: {
   const currentApptTotal = computed(() => servicesTotal.value + productsTotal.value - discountAmount.value);
   const currentUnpaid = computed(() => Math.max(0, currentApptTotal.value - state.form.value.deposit_amount));
 
-  const isApptInDatabaseBalance = computed(() => !!state.form.value && state.isEdit.value && countsInStoredBalance(state.form.value.start_time));
+  const isApptInDatabaseBalance = computed(() => !!state.form.value && state.isEdit.value && countsInStoredBalance(state.form.value.start_time, new Date(), state.savedStatus?.value));
 
   const previousDebt = computed(() => {
     if (!state.client.value) return 0;
@@ -96,9 +109,9 @@ export function useBookingTotals(state: {
       storedBalance: Number(state.client.value.outstanding_balance || 0),
       isEdit: state.isEdit.value,
       currentInBalance: isApptInDatabaseBalance.value,
-      currentUnpaid: currentUnpaid.value,
+      currentUnpaid: state.savedUnpaid ? state.savedUnpaid.value : currentUnpaid.value,
       selectedSiblingsUnpaidInBalance: selectedSiblings.value
-        .filter((s) => countsInStoredBalance(s?.services?.[0]?.start_time))
+        .filter((s) => countsInStoredBalance(s?.services?.[0]?.start_time, new Date(), s?.status))
         .reduce((sum, s) => sum + Number(s.owed), 0),
     });
   });

@@ -24,6 +24,9 @@ export interface QueuedWrite {
   // The shop the write was made for: it is only ever replayed with that
   // shop's session, never with another account's.
   shopId?: string | null;
+  // The user who made it: only that user sees it or sends it. Missing on
+  // writes saved before this was recorded; those go with any login of the shop.
+  userId?: string | null;
   // For creates made offline: the temporary id the rest of the queue (and the
   // calendar) uses for the new record until the server assigns the real one,
   // and where that real id is in the response ("id", "client.id").

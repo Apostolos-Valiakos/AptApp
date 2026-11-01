@@ -3,10 +3,12 @@
 // router (see "Area routers" near the end of server.js).
 const express = require("express");
 const { HttpError, asyncHandler, withTransaction } = require("../http");
+const { upperName } = require("../domain/common");
 const jwt = require("jsonwebtoken");
 const path = require("path");
 
 module.exports = function clientsRouter({
+  notForStaff,
   authenticateToken,
   canSellExtras,
   checkIdempotency,
@@ -239,7 +241,7 @@ module.exports = function clientsRouter({
     res.status(status).json(body);
   }));
 
-  router.post("/", authenticateToken, asyncHandler(async (req, res) => {
+  router.post("/", authenticateToken, notForStaff, asyncHandler(async (req, res) => {
     const {
       first_name,
       last_name,
@@ -272,8 +274,8 @@ module.exports = function clientsRouter({
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) 
          RETURNING *`,
         [
-          first_name,
-          last_name,
+          upperName(first_name),
+          upperName(last_name),
           email,
           phone,
           notes,
@@ -293,7 +295,7 @@ module.exports = function clientsRouter({
     res.status(status).json(body);
   }));
 
-  router.put("/:id", authenticateToken, asyncHandler(async (req, res) => {
+  router.put("/:id", authenticateToken, notForStaff, asyncHandler(async (req, res) => {
     const { id } = req.params;
     const {
       first_name,
@@ -325,8 +327,9 @@ module.exports = function clientsRouter({
            ergotherapia=$7, physiotherapia=$8, logotherapia=$9, date_of_birth=$10
        WHERE id=$11 AND shop_id=$12`,
       [
-        first_name,
-        last_name,
+        // The walk-in client's name stays exactly as it is (see above).
+        walkIn ? first_name : upperName(first_name),
+        walkIn ? last_name : upperName(last_name),
         email,
         phone,
         notes,
@@ -342,7 +345,7 @@ module.exports = function clientsRouter({
     res.json({ success: true });
   }, { message: "Update failed" }));
 
-  router.delete("/:id", authenticateToken, asyncHandler(async (req, res) => {
+  router.delete("/:id", authenticateToken, notForStaff, asyncHandler(async (req, res) => {
     const { id } = req.params;
     // We don't DELETE anymore, we just mark them
     await pool.query("UPDATE clients SET is_deleted = TRUE WHERE id = $1", [
@@ -435,7 +438,10 @@ module.exports = function clientsRouter({
            WHERE a.client_id = $1 AND a.shop_id = $2
          ) x
          JOIN appointments a ON a.id = x.id
-         WHERE x.start_time < NOW()
+         WHERE (x.start_time < NOW()
+                OR (a.status = 'completed'
+                    AND (x.start_time AT TIME ZONE '${process.env.TZ || "Europe/Athens"}')::date
+                        <= (NOW() AT TIME ZONE '${process.env.TZ || "Europe/Athens"}')::date))
            ${threeMonthClause}
            ${statusClause}
          ORDER BY x.start_time DESC
@@ -546,6 +552,8 @@ module.exports = function clientsRouter({
     );
 
     const walkInRes = await pool.query("SELECT walk_in_client_id FROM shops WHERE id = $1", [req.shopId]);
+    // The notes on a client's card are the shop's, not for the client to read.
+    if (req.user.role === "client") delete client.notes;
     res.json({
       client: {
         ...client,
@@ -623,6 +631,7 @@ module.exports = function clientsRouter({
   router.post(
     "/:id/files",
     authenticateToken,
+    notForStaff,
     dbFileUpload.single("file"),
     asyncHandler(async (req, res) => {
       const { id } = req.params;
@@ -699,6 +708,7 @@ module.exports = function clientsRouter({
   router.delete(
     "/files/:fileId",
     authenticateToken,
+    notForStaff,
     asyncHandler(async (req, res) => {
       await pool.query(
         `DELETE FROM client_files cf
@@ -728,6 +738,7 @@ module.exports = function clientsRouter({
   router.post(
     "/:id/exercises/toggle",
     authenticateToken,
+    notForStaff,
     asyncHandler(async (req, res) => {
       const { id } = req.params; // Client ID
       const { exerciseId, completed } = req.body;
@@ -751,7 +762,7 @@ module.exports = function clientsRouter({
   );
 
   // Invite Endpoint
-  router.post("/:id/invite", authenticateToken, asyncHandler(async (req, res) => {
+  router.post("/:id/invite", authenticateToken, notForStaff, asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { rows } = await pool.query(
       "SELECT * FROM clients WHERE id = $1 AND shop_id = $2",

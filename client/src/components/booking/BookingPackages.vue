@@ -1,22 +1,10 @@
 <template>
-  <div v-if="clientId" class="bg-white border border-gray-200 rounded-xl p-4 mb-6">
-    <div class="flex items-center justify-between mb-3">
-      <h4 class="text-xs font-bold text-gray-500 uppercase tracking-wider">
-        {{ t("packages.title") }}
-      </h4>
-      <Button
-        v-if="canSell"
-        size="small"
-        text
-        icon="pi pi-plus"
-        :label="t('packages.card.sell')"
-        @click="showSell = true"
-      />
-    </div>
-
-    <p v-if="!packages.length" class="text-sm text-gray-400">
-      {{ t("packages.card.none") }}
-    </p>
+  <div v-if="clientId">
+  <!-- The client's packages, to use a visit -->
+  <div v-if="view === 'use' && packages.length" class="bg-white border border-gray-200 rounded-xl p-4 mb-6">
+    <h4 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">
+      {{ t("packages.title") }}
+    </h4>
 
     <div v-for="p in packages" :key="p.id" class="py-3 border-t border-gray-100 first:border-0 first:pt-0">
       <div class="flex items-center justify-between gap-2">
@@ -58,6 +46,10 @@
       </div>
     </div>
 
+  </div>
+
+  <!-- Packages being sold with this payment -->
+  <template v-if="view === 'sell'">
     <div
       v-for="(p, idx) in pendingPackages"
       :key="'pending-' + idx"
@@ -81,6 +73,7 @@
       :immediate="false"
       @picked="onPicked"
     />
+  </template>
   </div>
 </template>
 
@@ -90,14 +83,13 @@ import { formatMoney } from "../../utils/format";
 import { ref, computed, watch, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
-import { useAuthStore } from "../../stores/auth";
 import SellPackageDialog from "./SellPackageDialog.vue";
 
 const { t, locale } = useI18n();
 const toast = useToast();
-const authStore = useAuthStore();
 
 const props = defineProps<{
+  view: "use" | "sell";
   clientId: string | null;
   appointmentId: string | null;
   servicesList: any[];
@@ -119,15 +111,13 @@ const removePending = (idx: number) => {
   emit("update:pendingPackages", list);
 };
 
-const role = computed(() => authStore.user?.role);
-const canSell = computed(() => ["admin", "super_admin", "frontdesk"].includes(role.value));
-
 const packages = ref<any[]>([]);
 const showSell = ref(false);
 const busyId = ref<string | null>(null);
 
 
 const load = async () => {
+  if (props.view === "sell") return;
   if (!props.clientId) {
     packages.value = [];
     return;
@@ -192,5 +182,5 @@ const undo = async (u: any) => {
   }
 };
 
-defineExpose({ load });
+defineExpose({ load, openSell: () => (showSell.value = true) });
 </script>

@@ -15,3 +15,7 @@ scripts/__pycache__/import_appointments.cpython-312.pyc
 scripts/backup_before_import_20260704_102527.dump
 # Database backups (client data), never committed.
 *.dump
+
+# Mutation testing (npm run test:mutation)
+.stryker-tmp/
+/reports/

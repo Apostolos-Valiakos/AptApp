@@ -297,7 +297,7 @@
       <!-- Tab: Booking insights -->
       <TabPanel :value="0" :header="t('analytics.tabs.insights')">
         <div class="p-1 sm:p-4 md:p-6">
-          <BookingInsights :insights="insights" :loading="loading" />
+          <BookingInsights :insights="insights" :loading="loading" :period="insightsPeriod" />
         </div>
       </TabPanel>
 
@@ -638,8 +638,6 @@
         <DataTable
           :value="analytics.staff_utilization"
           responsiveLayout="scroll"
-          :paginator="true"
-          :rows="10"
           class="p-datatable-sm"
         >
           <Column
@@ -859,6 +857,59 @@
           </Column>
         </DataTable>
       </TabPanel>
+
+      <!-- Tab: Deleted bookings (by when they were deleted) -->
+      <TabPanel :value="8" :header="t('analytics.tabs.deleted')">
+        <div class="flex items-center justify-between flex-wrap gap-3 mb-3">
+          <p class="text-xs text-gray-400">{{ t("analytics.deleted.note") }}</p>
+          <InputText v-model="deletedSearch" size="small" :placeholder="t('analytics.deleted.search')" data-testid="deleted-search" />
+        </div>
+        <DataTable
+          :value="shownDeleted"
+          dataKey="id"
+          responsiveLayout="scroll"
+          :paginator="true"
+          :alwaysShowPaginator="false"
+          :rows="15"
+          class="p-datatable-sm"
+          data-testid="deleted-table"
+        >
+          <template #empty>
+            <span class="text-sm text-gray-400">{{ t("analytics.deleted.none") }}</span>
+          </template>
+          <Column field="deleted_at" :header="t('analytics.deleted.deletedAt')" sortable>
+            <template #body="{ data }"><span class="whitespace-nowrap">{{ fmtDateTime(data.deleted_at) }}</span></template>
+          </Column>
+          <Column field="deleted_by_name" :header="t('analytics.deleted.deletedBy')" sortable />
+          <Column field="client_name" :header="t('analytics.deleted.client')" sortable>
+            <template #body="{ data }">
+              <div class="font-medium uppercase">{{ data.client_name || "—" }}</div>
+              <div v-if="data.client_phone" class="text-xs text-gray-400">{{ data.client_phone }}</div>
+            </template>
+          </Column>
+          <Column field="start_time" :header="t('analytics.deleted.bookingDate')" sortable>
+            <template #body="{ data }"><span class="whitespace-nowrap">{{ data.start_time ? fmtDateTime(data.start_time) : "—" }}</span></template>
+          </Column>
+          <Column :header="t('analytics.deleted.services')">
+            <template #body="{ data }">
+              <div v-for="(s, i) in data.services" :key="i" class="text-sm">
+                {{ s.service || "—" }}<template v-if="s.variation"> — {{ s.variation }}</template>
+                <span v-if="s.staff" class="text-xs text-gray-400"> · {{ s.staff }}</span>
+              </div>
+              <div v-for="(p, i) in data.products" :key="`p${i}`" class="text-xs text-gray-500">{{ p.quantity }} × {{ p.product || "—" }}</div>
+            </template>
+          </Column>
+          <Column field="total" :header="t('analytics.deleted.total')" sortable :sortField="numericSort('total')">
+            <template #body="{ data }">{{ formatMoney(data.total) }}</template>
+          </Column>
+          <Column field="status" :header="t('analytics.deleted.status')">
+            <template #body="{ data }">{{ deletedStatusLabel(data.status) }}</template>
+          </Column>
+          <Column field="reason" :header="t('analytics.deleted.reason')">
+            <template #body="{ data }">{{ data.reason || "—" }}</template>
+          </Column>
+        </DataTable>
+      </TabPanel>
     </TabView>
   </div>
 </template>
@@ -880,7 +931,7 @@ import { useSettingsStore } from "../stores/settings";
 // its types only allow a string, hence the cast.
 const numericSort = (key: string) => ((row: any) => Number(row[key] || 0)) as unknown as (item: any) => string;
 
-const { t } = useI18n();
+const { t, te, locale } = useI18n();
 const router = useRouter();
 const toast = useToast();
 const settingsStore = useSettingsStore();
@@ -926,6 +977,52 @@ const paymentsReport = ref<any[]>([]);
 const priceAdjustmentsReport = ref<any[]>([]);
 const appointmentsReport = ref([]);
 const insights = ref<any>(null);
+const deletedReport = ref<any[]>([]);
+const deletedSearch = ref("");
+const fmtDateTime = (d: string) =>
+  new Date(d).toLocaleString(locale.value === "el" ? "el-GR" : "en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+const DELETED_STATUS_KEYS: Record<string, string> = { "no-show": "noShow", "no-response": "noResponse" };
+const deletedStatusLabel = (status: string) => {
+  const key = `common.status.${DELETED_STATUS_KEYS[status] || status}`;
+  return te(key) ? t(key) : status;
+};
+// Greek names are often typed without accents or in capitals.
+const plainText = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/ς/g, "σ");
+const shownDeleted = computed(() => {
+  const words = plainText(deletedSearch.value).split(/\s+/).filter(Boolean);
+  if (!words.length) return deletedReport.value;
+  return deletedReport.value.filter((d) => {
+    const text = plainText(
+      [
+        d.client_name,
+        d.client_phone,
+        d.deleted_by_name,
+        d.reason,
+        ...d.services.flatMap((s: any) => [s.service, s.staff]),
+      ]
+        .filter(Boolean)
+        .join(" "),
+    );
+    return words.every((w) => text.includes(w));
+  });
+});
+// The dates the insights shown were asked for: the pickers may have moved on.
+const insightsRange = ref<{ from: Date | null; to: Date | null }>({ from: null, to: null });
+const insightsPeriod = computed(() => {
+  const day = (d: Date | null) =>
+    d
+      ? new Date(d).toLocaleDateString(locale.value === "el" ? "el-GR" : "en-GB", { day: "numeric", month: "short", year: "numeric" })
+      : "";
+  const from = day(insightsRange.value.from);
+  const to = day(insightsRange.value.to);
+  return from === to ? from : `${from} – ${to}`;
+});
 
 
 const formatDate = (d: Date | null) => {
@@ -963,6 +1060,7 @@ const setToday = () => {
 
 const fetchAllReports = async () => {
   loading.value = true;
+  const requested = { ...filters.value };
 
   const params = new URLSearchParams();
 
@@ -1004,6 +1102,7 @@ const fetchAllReports = async () => {
       productUsageData,
       giftCardsData,
       priceAdjustmentsData,
+      deletedData,
     ] = await Promise.all([
       api.get(`/api/v1/reports/finances${qs}`),
       api.get(`/api/v1/reports/sales${qs}`),
@@ -1017,6 +1116,7 @@ const fetchAllReports = async () => {
       optional(`/api/v1/reports/product-usage${qs}`),
       optional(`/api/v1/reports/gift-cards${qs}`),
       optional(`/api/v1/reports/price-adjustments${qs}`),
+      optional(`/api/v1/reports/deleted-appointments${qs}`),
     ]);
 
     finances.value = finData;
@@ -1027,8 +1127,10 @@ const fetchAllReports = async () => {
     if (priceAdjustmentsData) {
       priceAdjustmentsReport.value = priceAdjustmentsData;
     }
+    if (deletedData) deletedReport.value = deletedData;
     appointmentsReport.value = apptData ?? [];
     insights.value = insightsData;
+    insightsRange.value = requested;
     serviceSummaryReport.value = serviceSumData;
     if (productsData) {
       productsReport.value = productsData.details || [];
