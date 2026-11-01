@@ -3,7 +3,7 @@
 // same events FullCalendar would. The large dialogs are replaced too, except in
 // the read-only tests, which use the real booking dialog. Toasts, confirmations,
 // stores and the offline queue are real. C8–C17 in test-report.html.
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { defineComponent, h } from "vue";
 import { createPinia, setActivePinia } from "pinia";
 import SchedulerView from "../../client/src/views/SchedulerView.vue";
@@ -24,7 +24,7 @@ import {
 } from "./helpers";
 
 const calendarApi = new Proxy<Record<string, any>>(
-  { view: { title: "", type: "resourceTimeGridDay" } },
+  { el: document.createElement("div"), view: { title: "", type: "resourceTimeGridDay" } },
   { get: (t, k: string) => (k in t ? t[k] : (t[k] = vi.fn())) },
 );
 
@@ -407,5 +407,203 @@ describe("C17 a day that can't be loaded", () => {
     await settle();
     expect(useCalendarStore().events).toEqual([]);
     expect(errorToasts()).toBe(1);
+  });
+});
+
+describe("the hover card", () => {
+  const hoverOn = (options: any) =>
+    options.eventMouseEnter({
+      el: document.createElement("div"),
+      event: {
+        display: "auto",
+        start: new Date("2026-06-01T10:00:00"),
+        end: new Date("2026-06-01T11:00:00"),
+        extendedProps: { isServiceEvent: true, fullAppointment: appointment(), client_name: "Client", service_name: "Service" },
+      },
+    });
+  const cardShown = async (wrapper: any) => {
+    await new Promise((r) => setTimeout(r, 300));
+    await settle();
+    return wrapper.findComponent({ name: "AppointmentHoverCard" }).exists();
+  };
+  const fakeHoverNone = (noHover: boolean) =>
+    vi.spyOn(window, "matchMedia").mockImplementation(
+      (query: string) => ({ matches: noHover && query === "(hover: none)", media: query, addEventListener() {}, removeEventListener() {} }) as any,
+    );
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.stubGlobal("innerWidth", 1024);
+  });
+
+  test("shows on a computer", async () => {
+    fakeHoverNone(false);
+    const { wrapper, options } = await open("admin");
+    hoverOn(options);
+    expect(await cardShown(wrapper)).toBe(true);
+  });
+
+  test("doesn't show on a phone, where a tap would open it with the booking dialog", async () => {
+    fakeHoverNone(false);
+    vi.stubGlobal("innerWidth", 390);
+    const { wrapper, options } = await open("admin");
+    hoverOn(options);
+    expect(await cardShown(wrapper)).toBe(false);
+  });
+
+  test("doesn't show on a wider touch screen, such as a phone on its side", async () => {
+    fakeHoverNone(true);
+    const { wrapper, options } = await open("admin");
+    hoverOn(options);
+    expect(await cardShown(wrapper)).toBe(false);
+  });
+});
+
+describe("the hover card's services of the day", () => {
+  const svc = (start: string, staff = "st1") => ({ service_id: "svc", service_name: "Massage", staff_id: staff, start_time: `${MONDAY}T${start}:00`, duration_minutes: 60, price: 30 });
+  const booked = (id: string, client: string, start: string, status = "confirmed") => ({ ...appointment(), id, client_id: client, status, services: [svc(start)] });
+
+  const listFor = async (rows: any[], hoveredId: string) => {
+    const { wrapper, options } = await open("admin", { "GET /api/v1/appointments": { body: rows } });
+    await showDay(options, `${MONDAY}T00:00:00`, "2026-11-03T00:00:00");
+    await settle();
+    const calls = calendarApi.setOption.mock.calls.filter((c: any[]) => c[0] === "events");
+    const events = calls[calls.length - 1][1];
+    const hovered = events.find((e: any) => e.extendedProps?.appointmentId === hoveredId);
+    options.eventMouseEnter({
+      el: document.createElement("div"),
+      event: { display: "auto", start: new Date(hovered.start), end: new Date(hovered.end), extendedProps: hovered.extendedProps },
+    });
+    await new Promise((r) => setTimeout(r, 300));
+    await settle();
+    return wrapper.findComponent({ name: "AppointmentHoverCard" }).props("appointment").day_services;
+  };
+
+  test("lists all the client's services that day, in time order, marking the hovered one", async () => {
+    const list = await listFor([booked("late", "c1", "15:00"), booked("early", "c1", "11:00"), booked("other", "c2", "12:00")], "late");
+    expect(list.map((s: any) => [s.id, s.current])).toEqual([
+      ["early_0", false],
+      ["late_0", true],
+    ]);
+    expect(list[0].staff).toBe("Anna");
+  });
+
+  test("leaves out the client's cancelled bookings", async () => {
+    const list = await listFor([booked("a", "c1", "11:00"), booked("gone", "c1", "13:00", "cancelled")], "a");
+    expect(list.map((s: any) => s.id)).toEqual(["a_0"]);
+  });
+});
+
+describe("a completed appointment's card", () => {
+  const serviceEvent = async (status: string) => {
+    const { options } = await open("admin", {
+      "GET /api/v1/appointments": {
+        body: [{ ...appointment(), status, services: [{ ...appointment().services[0], service_color: "#fde68a" }] }],
+      },
+    });
+    await showDay(options, `${MONDAY}T00:00:00`, "2026-11-03T00:00:00");
+    await settle();
+    const calls = calendarApi.setOption.mock.calls.filter((c: any[]) => c[0] === "events");
+    return calls[calls.length - 1][1].find((e: any) => e.extendedProps?.isServiceEvent);
+  };
+
+  test("keeps its colour and gets the line", async () => {
+    const event = await serviceEvent("completed");
+    expect(event.backgroundColor).toBe("#fde68a");
+    expect(event.classNames).toContain("fc-completed");
+  });
+
+  test("other statuses get no line", async () => {
+    expect((await serviceEvent("confirmed")).classNames).not.toContain("fc-completed");
+  });
+});
+
+describe("the time on a computer's cards", () => {
+  const cardHtml = (options: any, minutes: number) =>
+    options.eventContent({
+      timeText: "10:00 - 10:15",
+      isMirror: false,
+      view: { type: "resourceTimeGridDay" },
+      event: {
+        start: new Date(`${MONDAY}T10:00:00`),
+        end: new Date(new Date(`${MONDAY}T10:00:00`).getTime() + minutes * 60000),
+        extendedProps: { client_name: "P Eleni", client_surname: "P", service_name: "Massage", fullAppointment: appointment() },
+      },
+    }).html;
+
+  test.each([15, 60])("is much smaller than the name on a %i-minute card", async (minutes) => {
+    const { options } = await open("admin");
+    expect(cardHtml(options, minutes)).toMatch(/text-\[8px\] md:text-\[9px\][^>]*>10:00/);
+  });
+
+  test.each([15, 20, 25, 30, 60])("shows on a %i-minute card", async (minutes) => {
+    const { options } = await open("admin");
+    expect(cardHtml(options, minutes)).toContain("10:00");
+  });
+});
+
+describe("the phone's day view", () => {
+  const bella = { ...staff[0], id: "st2", name: "Bella" };
+  const onLeave = (id: string) => ({
+    "GET /api/v1/staff": { body: [staff[0], bella] },
+    "GET /api/v1/time-off": { body: [{ staff_id: id, type: "leave", start_date: MONDAY, end_date: MONDAY }] },
+  });
+  const shownStaff = () => {
+    const calls = calendarApi.setOption.mock.calls.filter((c: any[]) => c[0] === "resources");
+    return calls[calls.length - 1][1].map((r: any) => r.id);
+  };
+  const openDay = async (routes: Record<string, Handler>) => {
+    const opened = await open("admin", routes);
+    await showDay(opened.options, `${MONDAY}T00:00:00`, "2026-11-03T00:00:00");
+    await settle();
+    return opened;
+  };
+  const onPhone = () => vi.stubGlobal("innerWidth", 390);
+  afterEach(() => {
+    vi.stubGlobal("innerWidth", 1024);
+    localStorage.removeItem("scheduler.showAllStaff");
+  });
+
+  test("hides staff on leave that day", async () => {
+    onPhone();
+    await openDay(onLeave("st2"));
+    expect(shownStaff()).toEqual(["st1"]);
+  });
+
+  test("shows them when the switch is on", async () => {
+    onPhone();
+    localStorage.setItem("scheduler.showAllStaff", "1");
+    await openDay(onLeave("st2"));
+    expect(shownStaff()).toEqual(["st1", "st2"]);
+  });
+
+  test("keeps someone on leave who has a booking that day", async () => {
+    onPhone();
+    const booking = { ...appointment(), services: [{ ...appointment().services[0], staff_id: "st2" }] };
+    await openDay({ ...onLeave("st2"), "GET /api/v1/appointments": { body: [booking] } });
+    expect(shownStaff()).toEqual(["st1", "st2"]);
+  });
+
+  test("a computer still shows staff on leave", async () => {
+    await openDay(onLeave("st2"));
+    expect(shownStaff()).toEqual(["st1", "st2"]);
+  });
+
+  test("a card shows the name and service, not the time", async () => {
+    onPhone();
+    const { options } = await open("admin");
+    const { html } = options.eventContent({
+      timeText: "10:00 - 11:00",
+      isMirror: false,
+      view: { type: "resourceTimeGridDay" },
+      event: {
+        start: new Date(`${MONDAY}T10:00:00`),
+        end: new Date(`${MONDAY}T11:00:00`),
+        extendedProps: { client_name: "P Eleni", service_name: "Massage", fullAppointment: appointment() },
+      },
+    });
+    expect(html).toContain("P Eleni");
+    expect(html).toContain("Massage");
+    expect(html).toContain("line-clamp-2");
+    expect(html).not.toContain("10:00");
   });
 });

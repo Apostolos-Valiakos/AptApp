@@ -1792,6 +1792,7 @@ export default {
       month: "Μήνας",
     },
     zoom: "Ζουμ",
+    showAllStaff: "Όλο το προσωπικό, και όσοι έχουν ρεπό",
     timeOff: {
       leave: "Άδεια",
       oneDay: "1 ημέρα",
@@ -1825,6 +1826,7 @@ export default {
       menu: "Περισσότερες επιλογές",
     },
     hoverCard: {
+      dayServices: "Υπηρεσίες της ημέρας",
       newClient: "ΝΕΟΣ ΠΕΛΑΤΗΣ",
       appointmentSuffix: "ραντεβού",
       unknownClient: "Άγνωστος πελάτης",

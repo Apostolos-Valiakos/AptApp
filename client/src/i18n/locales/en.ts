@@ -1739,6 +1739,7 @@ export default {
       month: "Month",
     },
     zoom: "Zoom",
+    showAllStaff: "All staff, including those off today",
     timeOff: {
       leave: "Leave",
       oneDay: "1 day",
@@ -1772,6 +1773,7 @@ export default {
       menu: 'More options',
     },
     hoverCard: {
+      dayServices: "Services this day",
       newClient: 'NEW CLIENT',
       appointmentSuffix: 'appointment',
       unknownClient: 'Unknown client',

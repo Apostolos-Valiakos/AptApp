@@ -6,14 +6,20 @@
       :class="isPhone ? 'py-2' : 'py-3'"
     >
       <!-- PHONE: month title, search, menu -->
-      <div v-if="isPhone" class="flex items-center justify-between w-full gap-2">
+      <div
+        v-if="isPhone"
+        class="flex items-center justify-between w-full gap-2"
+      >
         <div class="relative">
           <button
             @click.stop="toggleDatePicker"
             class="flex items-center gap-1.5 text-lg font-bold text-gray-900 select-none"
           >
             {{ mobileMonthTitle }}
-            <i v-if="!calendarDocked" class="pi pi-chevron-down text-xs text-gray-400"></i>
+            <i
+              v-if="!calendarDocked"
+              class="pi pi-chevron-down text-xs text-gray-400"
+            ></i>
           </button>
           <div
             v-if="showDatePicker"
@@ -56,7 +62,10 @@
             <i class="pi pi-search text-lg"></i>
           </button>
           <button
-            @click.stop="mobileMenuOpen = !mobileMenuOpen; showDatePicker = false"
+            @click.stop="
+              mobileMenuOpen = !mobileMenuOpen;
+              showDatePicker = false;
+            "
             class="w-10 h-10 flex items-center justify-center rounded-lg text-gray-600"
             :class="mobileMenuOpen ? 'bg-gray-100' : ''"
             :aria-label="t('scheduler.mobile.menu')"
@@ -95,7 +104,10 @@
             class="flex items-center gap-1 text-sm md:text-base font-bold text-gray-800 min-w-[120px] md:min-w-[180px] select-none hover:text-[var(--p-primary-700)] transition-colors"
           >
             {{ currentTitle }}
-            <i v-if="!calendarDocked" class="pi pi-chevron-down text-[10px] text-gray-400"></i>
+            <i
+              v-if="!calendarDocked"
+              class="pi pi-chevron-down text-[10px] text-gray-400"
+            ></i>
           </button>
           <div
             v-if="showDatePicker"
@@ -129,7 +141,11 @@
         v-show="!isPhone || mobileMenuOpen"
         @click.stop
         class="flex items-center gap-2 flex-wrap"
-        :class="isPhone ? 'absolute right-2 top-full mt-1 z-50 w-[min(20rem,calc(100vw-1rem))] bg-white rounded-xl shadow-lg border border-gray-100 p-3 flex-col !items-stretch' : ''"
+        :class="
+          isPhone
+            ? 'absolute right-2 top-full mt-1 z-50 w-[min(20rem,calc(100vw-1rem))] bg-white rounded-xl shadow-lg border border-gray-100 p-3 flex-col !items-stretch'
+            : ''
+        "
       >
         <!-- Status Filter -->
         <div class="flex items-center bg-gray-100 rounded-lg p-0.5 gap-0.5">
@@ -166,8 +182,24 @@
           </button>
         </div>
 
+        <!-- Phone: staff who are off that day are hidden unless asked for -->
+        <label
+          v-if="isPhone && currentView === 'resourceTimeGridDay'"
+          class="flex items-center justify-between gap-3 text-xs font-medium text-gray-600"
+        >
+          {{ t("scheduler.showAllStaff") }}
+          <ToggleSwitch
+            :modelValue="showAllStaff"
+            data-testid="show-all-staff"
+            @update:modelValue="setShowAllStaff"
+          />
+        </label>
+
         <!-- Zoom -->
-        <div class="items-center bg-gray-100 rounded-lg p-0.5" :class="isPhone ? 'flex self-start' : 'hidden sm:flex'">
+        <div
+          class="items-center bg-gray-100 rounded-lg p-0.5"
+          :class="isPhone ? 'flex self-start' : 'hidden sm:flex'"
+        >
           <button
             @click="zoomOut"
             class="p-1.5 rounded-md text-gray-500 hover:bg-white hover:shadow-sm hover:text-gray-800 transition-all"
@@ -175,7 +207,9 @@
           >
             <i class="pi pi-minus text-xs"></i>
           </button>
-          <span class="text-xs font-medium text-gray-400 px-1.5">{{ t("scheduler.zoom") }}</span>
+          <span class="text-xs font-medium text-gray-400 px-1.5">{{
+            t("scheduler.zoom")
+          }}</span>
           <button
             @click="zoomIn"
             class="p-1.5 rounded-md text-gray-500 hover:bg-white hover:shadow-sm hover:text-gray-800 transition-all"
@@ -248,7 +282,11 @@
         @click="goToDay(d.date)"
         class="flex flex-col items-center gap-1 py-1 disabled:opacity-30"
       >
-        <span class="text-[11px] font-medium" :class="d.weekend ? 'text-gray-400' : 'text-gray-600'">{{ d.letter }}</span>
+        <span
+          class="text-[11px] font-medium"
+          :class="d.weekend ? 'text-gray-400' : 'text-gray-600'"
+          >{{ d.letter }}</span
+        >
         <span
           class="w-9 h-9 rounded-full flex items-center justify-center text-base font-semibold"
           :class="
@@ -260,112 +298,119 @@
                   ? 'text-gray-400'
                   : 'text-gray-900'
           "
-        >{{ d.day }}</span>
+          >{{ d.day }}</span
+        >
       </button>
     </div>
 
     <div class="flex-grow flex min-h-0">
-    <!-- ===== DOCKED DATE CALENDAR (pinned from the date popup) ===== -->
-    <aside
-      v-if="calendarDocked"
-      class="docked-date-picker flex-shrink-0 bg-white overflow-y-auto overflow-x-hidden"
-      :style="{ width: `${dockedWidth}px` }"
-      data-testid="docked-calendar"
-    >
-      <div class="flex justify-end px-2 pt-2">
-        <button
-          @click="dockCalendar(false)"
-          class="w-7 h-7 rounded-md flex items-center justify-center text-[var(--p-primary-600)] bg-[var(--p-primary-50)] hover:bg-[var(--p-primary-100)]"
-          v-tooltip.bottom="t('scheduler.undockCalendar')"
-          :aria-label="t('scheduler.undockCalendar')"
-          data-testid="undock-calendar"
-        >
-          <i class="pi pi-thumbtack text-sm rotate-45"></i>
-        </button>
-      </div>
-      <DatePicker
-        inline
-        v-model="dockedDate"
-        dateFormat="dd/mm/yy"
-        :minDate="isStaffRole ? todayDate : undefined"
-        @date-select="onDatePicked"
-      />
-    </aside>
-    <!-- Drag to resize the docked calendar -->
-    <div
-      v-if="calendarDocked"
-      class="dock-resizer"
-      :class="{ 'is-dragging': resizingDock }"
-      role="separator"
-      aria-orientation="vertical"
-      tabindex="0"
-      :aria-label="t('scheduler.resizeCalendar')"
-      :aria-valuenow="dockedWidth"
-      :aria-valuemin="DOCKED_MIN_WIDTH"
-      :title="t('scheduler.resizeCalendar')"
-      data-testid="docked-resizer"
-      @pointerdown="startDockResize"
-      @pointermove="moveDockResize"
-      @pointerup="endDockResize"
-      @pointercancel="endDockResize"
-      @dblclick="setDockedWidth(DOCKED_DEFAULT_WIDTH, true)"
-      @keydown.left.prevent="setDockedWidth(dockedWidth - 16, true)"
-      @keydown.right.prevent="setDockedWidth(dockedWidth + 16, true)"
-    ></div>
-
-    <!-- ===== CALENDAR AREA ===== -->
-    <div class="flex-1 min-w-0 overflow-auto relative">
-      <!-- Loading overlay -->
-      <transition name="fade">
-        <div
-          v-if="isFetching"
-          class="absolute inset-0 z-10 bg-white/60 backdrop-blur-[1px] flex items-center justify-center pointer-events-none"
-        >
-          <div
-            class="flex items-center gap-2 bg-white rounded-full px-4 py-2 shadow-md border border-gray-100"
-          >
-            <i class="pi pi-spin pi-spinner text-[var(--p-primary-color)]"></i>
-            <span class="text-xs font-medium text-gray-500">{{ t("common.loading") }}</span>
-          </div>
-        </div>
-      </transition>
-
-      <FullCalendar
-        v-if="calendarResources.length > 0"
-        ref="fullCalendar"
-        :options="calendarOptions"
-        :style="{ '--slot-row-height': `${slotRowHeight}px` }"
-        class="h-full w-full"
-      />
-
-      <!-- Empty state -->
-      <div
-        v-else
-        class="h-full flex flex-col items-center justify-center bg-gray-50/50"
+      <!-- ===== DOCKED DATE CALENDAR (pinned from the date popup) ===== -->
+      <aside
+        v-if="calendarDocked"
+        class="docked-date-picker flex-shrink-0 bg-white overflow-y-auto overflow-x-hidden"
+        :style="{ width: `${dockedWidth}px` }"
+        data-testid="docked-calendar"
       >
+        <div class="flex justify-end px-2 pt-2">
+          <button
+            @click="dockCalendar(false)"
+            class="w-7 h-7 rounded-md flex items-center justify-center text-[var(--p-primary-600)] bg-[var(--p-primary-50)] hover:bg-[var(--p-primary-100)]"
+            v-tooltip.bottom="t('scheduler.undockCalendar')"
+            :aria-label="t('scheduler.undockCalendar')"
+            data-testid="undock-calendar"
+          >
+            <i class="pi pi-thumbtack text-sm rotate-45"></i>
+          </button>
+        </div>
+        <DatePicker
+          inline
+          v-model="dockedDate"
+          dateFormat="dd/mm/yy"
+          :minDate="isStaffRole ? todayDate : undefined"
+          @date-select="onDatePicked"
+        />
+      </aside>
+      <!-- Drag to resize the docked calendar -->
+      <div
+        v-if="calendarDocked"
+        class="dock-resizer"
+        :class="{ 'is-dragging': resizingDock }"
+        role="separator"
+        aria-orientation="vertical"
+        tabindex="0"
+        :aria-label="t('scheduler.resizeCalendar')"
+        :aria-valuenow="dockedWidth"
+        :aria-valuemin="DOCKED_MIN_WIDTH"
+        :title="t('scheduler.resizeCalendar')"
+        data-testid="docked-resizer"
+        @pointerdown="startDockResize"
+        @pointermove="moveDockResize"
+        @pointerup="endDockResize"
+        @pointercancel="endDockResize"
+        @dblclick="setDockedWidth(DOCKED_DEFAULT_WIDTH, true)"
+        @keydown.left.prevent="setDockedWidth(dockedWidth - 16, true)"
+        @keydown.right.prevent="setDockedWidth(dockedWidth + 16, true)"
+      ></div>
+
+      <!-- ===== CALENDAR AREA ===== -->
+      <div class="flex-1 min-w-0 overflow-auto relative">
+        <!-- Loading overlay -->
+        <transition name="fade">
+          <div
+            v-if="isFetching"
+            class="absolute inset-0 z-10 bg-white/60 backdrop-blur-[1px] flex items-center justify-center pointer-events-none"
+          >
+            <div
+              class="flex items-center gap-2 bg-white rounded-full px-4 py-2 shadow-md border border-gray-100"
+            >
+              <i
+                class="pi pi-spin pi-spinner text-[var(--p-primary-color)]"
+              ></i>
+              <span class="text-xs font-medium text-gray-500">{{
+                t("common.loading")
+              }}</span>
+            </div>
+          </div>
+        </transition>
+
+        <FullCalendar
+          v-if="calendarResources.length > 0"
+          ref="fullCalendar"
+          :options="calendarOptions"
+          :style="{ '--slot-row-height': `${slotRowHeight}px` }"
+          class="h-full w-full"
+        />
+
+        <!-- Empty state -->
         <div
-          class="p-10 bg-white rounded-2xl shadow-sm text-center border border-gray-100 max-w-sm"
+          v-else
+          class="h-full flex flex-col items-center justify-center bg-gray-50/50"
         >
           <div
-            class="w-16 h-16 bg-[var(--p-primary-50)] text-[var(--p-primary-600)] rounded-full flex items-center justify-center mx-auto mb-4"
+            class="p-10 bg-white rounded-2xl shadow-sm text-center border border-gray-100 max-w-sm"
           >
-            <i class="pi pi-users text-2xl"></i>
+            <div
+              class="w-16 h-16 bg-[var(--p-primary-50)] text-[var(--p-primary-600)] rounded-full flex items-center justify-center mx-auto mb-4"
+            >
+              <i class="pi pi-users text-2xl"></i>
+            </div>
+            <h3 class="text-lg font-bold text-gray-900 mb-2">
+              {{ t("scheduler.noStaff.title") }}
+            </h3>
+            <p class="text-sm text-gray-500 mb-6">
+              {{ t("scheduler.noStaff.text") }}
+            </p>
+            <a
+              v-if="!isStaffRole"
+              href="/app/staff"
+              class="inline-flex items-center gap-2 bg-[var(--p-primary-color)] text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:brightness-105 transition-all"
+            >
+              <i class="pi pi-plus text-xs"></i>
+              {{ t("scheduler.noStaff.addStaff") }}
+            </a>
           </div>
-          <h3 class="text-lg font-bold text-gray-900 mb-2">{{ t("scheduler.noStaff.title") }}</h3>
-          <p class="text-sm text-gray-500 mb-6">
-            {{ t("scheduler.noStaff.text") }}
-          </p>
-          <a
-            v-if="!isStaffRole"
-            href="/app/staff"
-            class="inline-flex items-center gap-2 bg-[var(--p-primary-color)] text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:brightness-105 transition-all"
-          >
-            <i class="pi pi-plus text-xs"></i>
-            {{ t("scheduler.noStaff.addStaff") }}
-          </a>
         </div>
       </div>
-    </div>
     </div>
 
     <BookingDialog
@@ -380,6 +425,7 @@
       :shopMaxTime="shopSlotMaxTime"
       @save="handleSave"
       @refresh="handleRefresh"
+      @open-appointment="selectedAppointment = $event"
     />
     <AppointmentSwapDialog
       v-model:visible="swapDialogVisible"
@@ -430,6 +476,14 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, computed, nextTick } from "vue";
+import {
+  DEFAULT_ROW_HEIGHT,
+  fitRowHeight,
+  readSavedRowHeight,
+  saveRowHeight,
+  zoomedIn,
+  zoomedOut,
+} from "../utils/schedulerZoom";
 import FullCalendar from "@fullcalendar/vue3";
 import resourceTimeGridPlugin from "@fullcalendar/resource-timegrid";
 import scrollGridPlugin from "@fullcalendar/scrollgrid";
@@ -456,7 +510,9 @@ import { useAuthStore } from "../stores/auth";
 import elLocale from "@fullcalendar/core/locales/el";
 import StaffReorderDialog from "../components/StaffReorderDialog.vue";
 import AppointmentHoverCard from "../components/AppointmentHoverCard.vue";
-import PlaceGroupDialog, { type PlaceGroup } from "../components/PlaceGroupDialog.vue";
+import PlaceGroupDialog, {
+  type PlaceGroup,
+} from "../components/PlaceGroupDialog.vue";
 import {
   isStaffAvailable,
   toLocalDateStr,
@@ -470,7 +526,16 @@ import { api as http, ApiError } from "../api/http"; // (`api` in this file is F
 import { fetchOrQueue } from "../offline/queue";
 import { knownOverlapIds } from "../offline/overlaps";
 import { isTempId } from "../offline/tempIds";
-import { askOverCapacity, hhmm, occupancyFrom, overCapacityMessage, overlapGroups, peakPersons, personsOf, placesOf } from "../utils/capacity";
+import {
+  askOverCapacity,
+  hhmm,
+  occupancyFrom,
+  overCapacityMessage,
+  overlapGroups,
+  peakPersons,
+  personsOf,
+  placesOf,
+} from "../utils/capacity";
 
 const reorderDialogVisible = ref(false);
 const authStore = useAuthStore();
@@ -512,13 +577,17 @@ const confirmMove = (
     };
     const changes = `${t("booking.changeConfirm.intro")}\n\n${lines.map((l) => `• ${l}`).join("\n")}`;
     confirm.require({
-      header: overtime.length ? t("booking.overtime.header") : t("booking.changeConfirm.header"),
+      header: overtime.length
+        ? t("booking.overtime.header")
+        : t("booking.changeConfirm.header"),
       // With overtime, the overtime question replaces the generic one.
       message: overtime.length
         ? `${changes}\n\n${overtimeConfirmMessage(overtime, t)}`
         : `${changes}\n\n${t("booking.changeConfirm.question")}`,
       icon: overtime.length ? "pi pi-clock" : "pi pi-question-circle",
-      acceptLabel: overtime.length ? t("booking.overtime.accept") : t("booking.changeConfirm.apply"),
+      acceptLabel: overtime.length
+        ? t("booking.overtime.accept")
+        : t("booking.changeConfirm.apply"),
       rejectLabel: t("booking.changeConfirm.cancel"),
       accept: () => done(true),
       reject: () => done(false),
@@ -578,8 +647,13 @@ const DOCKED_MIN_WIDTH = 200;
 const DOCKED_MAX_WIDTH = 560;
 const clampDockedWidth = (width: number) => {
   // At least half the window stays for the schedule (on a phone, the default width).
-  const roomy = Math.max(DOCKED_DEFAULT_WIDTH, Math.floor(window.innerWidth / 2));
-  return Math.round(Math.max(DOCKED_MIN_WIDTH, Math.min(DOCKED_MAX_WIDTH, roomy, width)));
+  const roomy = Math.max(
+    DOCKED_DEFAULT_WIDTH,
+    Math.floor(window.innerWidth / 2),
+  );
+  return Math.round(
+    Math.max(DOCKED_MIN_WIDTH, Math.min(DOCKED_MAX_WIDTH, roomy, width)),
+  );
 };
 const readDockedWidth = () => {
   try {
@@ -649,10 +723,20 @@ const toggleFitStaff = () => {
 
 // --- Status filter ---
 const statusFilter = ref<"all" | "active" | "cancelled">("all");
-const statusFilterOptions = computed<{ label: string; value: "all" | "active" | "cancelled"; icon: string }[]>(() => [
+const statusFilterOptions = computed<
+  { label: string; value: "all" | "active" | "cancelled"; icon: string }[]
+>(() => [
   { label: t("scheduler.filter.all"), value: "all", icon: "" },
-  { label: t("scheduler.filter.active"), value: "active", icon: "pi pi-check-circle" },
-  { label: t("scheduler.filter.cancelled"), value: "cancelled", icon: "pi pi-times-circle" },
+  {
+    label: t("scheduler.filter.active"),
+    value: "active",
+    icon: "pi pi-check-circle",
+  },
+  {
+    label: t("scheduler.filter.cancelled"),
+    value: "cancelled",
+    icon: "pi pi-times-circle",
+  },
 ]);
 
 // --- View options ---
@@ -676,9 +760,11 @@ const handleSwap = async (swapData: {
   try {
     // (This request used to go without the login token, so the server
     // always refused it.)
-    const data = await http.post("/api/v1/appointments/swap", swapData).catch((e: ApiError) => {
-      throw new Error(e.data?.error || "Swap failed");
-    });
+    const data = await http
+      .post("/api/v1/appointments/swap", swapData)
+      .catch((e: ApiError) => {
+        throw new Error(e.data?.error || "Swap failed");
+      });
     if (!data.success) throw new Error(t("scheduler.toasts.swapFailedError"));
 
     swapDialogVisible.value = false;
@@ -725,15 +811,38 @@ const handleReorderSave = async (newOrder: any[]) => {
 // --slot-row-height CSS variable on the calendar. Clicks therefore land on
 // quarter hours at every zoom, while drag and resize snap to 5 minutes.
 const SLOT_MINUTES = 15;
-const ZOOM_ROW_HEIGHTS = [81, 54, 40, 27, 20, 13, 9];
-const zoomLevel = ref(ZOOM_ROW_HEIGHTS.indexOf(27));
-const slotRowHeight = computed(() => ZOOM_ROW_HEIGHTS[zoomLevel.value]);
+// What the user picked on this device; until then a phone fits the shop's
+// hours on its screen, and anything bigger starts at the default.
+const chosenRowHeight = ref(readSavedRowHeight());
+const fittedRowHeight = ref<number | null>(null);
+const slotRowHeight = computed(
+  () => chosenRowHeight.value ?? fittedRowHeight.value ?? DEFAULT_ROW_HEIGHT,
+);
 
-const zoomIn = () => {
-  if (zoomLevel.value > 0) zoomLevel.value--;
+const chooseRowHeight = (height: number) => {
+  chosenRowHeight.value = height;
+  saveRowHeight(height);
 };
-const zoomOut = () => {
-  if (zoomLevel.value < ZOOM_ROW_HEIGHTS.length - 1) zoomLevel.value++;
+const zoomIn = () => chooseRowHeight(zoomedIn(slotRowHeight.value));
+const zoomOut = () => chooseRowHeight(zoomedOut(slotRowHeight.value));
+// Only the time grids have rows: a month view leaves the last fit as it is.
+const fitRowsToScreen = async () => {
+  if (chosenRowHeight.value !== null) return;
+  if (!isPhone.value) {
+    fittedRowHeight.value = null;
+    return;
+  }
+  await nextTick();
+  const root: HTMLElement | undefined = calendarApi.value?.el;
+  const rows = root?.querySelector<HTMLElement>(
+    ".fc-timegrid .fc-scrollgrid-section-body .fc-scroller",
+  );
+  if (!rows) return;
+  fittedRowHeight.value = fitRowHeight(
+    rows.clientHeight,
+    shopSlotMinTime.value,
+    shopSlotMaxTime.value,
+  );
 };
 // FullCalendar measures row heights to place events, so re-measure once the
 // new height is in the DOM.
@@ -776,11 +885,16 @@ const roundRangeToSlots = (start: Date, end: Date) => {
     return r;
   };
   const s = at(start, Math.floor(minutesOf(start) / slot) * slot);
-  const endMins = minutesOf(end) + (end.getDate() !== start.getDate() ? 24 * 60 : 0);
-  const e = at(start, Math.max(Math.ceil(endMins / slot) * slot, minutesOf(s) + slot));
+  const endMins =
+    minutesOf(end) + (end.getDate() !== start.getDate() ? 24 * 60 : 0);
+  const e = at(
+    start,
+    Math.max(Math.ceil(endMins / slot) * slot, minutesOf(s) + slot),
+  );
   return { start: s, end: e };
 };
-const formatSlotIso = (d: Date) => calendarApi.value?.formatIso(d) ?? d.toISOString();
+const formatSlotIso = (d: Date) =>
+  calendarApi.value?.formatIso(d) ?? d.toISOString();
 
 const changeView = (viewName: string) => {
   const api = calendarApi.value;
@@ -799,6 +913,7 @@ const closeMenus = () => {
 // --- Phone layout: compact top bar, day strip, narrow staff columns ---
 const PHONE_MAX_WIDTH = 768;
 const isPhone = ref(window.innerWidth < PHONE_MAX_WIDTH);
+let lastFitWidth = window.innerWidth;
 const mobileMenuOpen = ref(false);
 
 const viewDate = computed(() => {
@@ -814,8 +929,18 @@ const dateLocale = computed(() => (locale.value === "el" ? "el-GR" : "en-GB"));
 // Browsers give the Greek month in the genitive ("Οκτωβρίου") when formatted
 // alone; a heading needs the nominative.
 const GREEK_MONTHS = [
-  "Ιανουάριος", "Φεβρουάριος", "Μάρτιος", "Απρίλιος", "Μάιος", "Ιούνιος",
-  "Ιούλιος", "Αύγουστος", "Σεπτέμβριος", "Οκτώβριος", "Νοέμβριος", "Δεκέμβριος",
+  "Ιανουάριος",
+  "Φεβρουάριος",
+  "Μάρτιος",
+  "Απρίλιος",
+  "Μάιος",
+  "Ιούνιος",
+  "Ιούλιος",
+  "Αύγουστος",
+  "Σεπτέμβριος",
+  "Οκτώβριος",
+  "Νοέμβριος",
+  "Δεκέμβριος",
 ];
 const mobileMonthTitle = computed(() => {
   const d = viewDate.value;
@@ -823,7 +948,9 @@ const mobileMonthTitle = computed(() => {
     locale.value === "el"
       ? GREEK_MONTHS[d.getMonth()]
       : d.toLocaleDateString("en-GB", { month: "long" });
-  return d.getFullYear() === new Date().getFullYear() ? month : `${month} ${d.getFullYear()}`;
+  return d.getFullYear() === new Date().getFullYear()
+    ? month
+    : `${month} ${d.getFullYear()}`;
 });
 
 const weekStrip = computed(() => {
@@ -837,7 +964,8 @@ const weekStrip = computed(() => {
       letter: date.toLocaleDateString(dateLocale.value, { weekday: "narrow" }),
       day: date.getDate(),
       weekend: date.getDay() === 0 || date.getDay() === 6,
-      selected: currentView.value !== "dayGridMonth" && sameDay(date, viewDate.value),
+      selected:
+        currentView.value !== "dayGridMonth" && sameDay(date, viewDate.value),
       today: sameDay(date, new Date()),
       disabled: isStaffRole.value && date < todayDate.value,
     };
@@ -847,7 +975,8 @@ const weekStrip = computed(() => {
 const goToDay = (date: Date) => {
   const api = calendarApi.value;
   if (!api) return;
-  const target = isStaffRole.value && date < todayDate.value ? todayDate.value : date;
+  const target =
+    isStaffRole.value && date < todayDate.value ? todayDate.value : date;
   api.changeView("resourceTimeGridDay", target);
   currentView.value = "resourceTimeGridDay";
 };
@@ -867,7 +996,8 @@ const onStripTouchEnd = (e: TouchEvent) => {
   const dx = e.changedTouches[0].clientX - stripTouch.x;
   const dy = e.changedTouches[0].clientY - stripTouch.y;
   stripTouch = null;
-  if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) shiftWeek(dx < 0 ? 1 : -1);
+  if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5)
+    shiftWeek(dx < 0 ? 1 : -1);
 };
 
 // --- Date picker popover ---
@@ -909,7 +1039,8 @@ const startDockResize = (e: PointerEvent) => {
   resizingDock.value = true;
 };
 const moveDockResize = (e: PointerEvent) => {
-  if (resizingDock.value) setDockedWidth(dockDragStartWidth + e.clientX - dockDragStartX);
+  if (resizingDock.value)
+    setDockedWidth(dockDragStartWidth + e.clientX - dockDragStartX);
 };
 const endDockResize = () => {
   if (!resizingDock.value) return;
@@ -919,7 +1050,10 @@ const endDockResize = () => {
 
 // A narrower window can leave too little room for the width chosen earlier.
 const fitDockedWidth = () => {
-  if (calendarDocked.value && dockedWidth.value !== clampDockedWidth(dockedWidth.value)) {
+  if (
+    calendarDocked.value &&
+    dockedWidth.value !== clampDockedWidth(dockedWidth.value)
+  ) {
     setDockedWidth(dockedWidth.value);
   }
 };
@@ -980,6 +1114,35 @@ const staffWithAppointmentsOnDay = computed(() => {
   return ids;
 });
 
+const isOnLeaveOnDay = (r: any) => {
+  if (!currentStart.value || !Array.isArray(calendarStore.timeOff))
+    return false;
+  const day = toLocalDateStr(currentStart.value);
+  return calendarStore.timeOff.some(
+    (entry: any) =>
+      entry.type === "leave" &&
+      String(entry.staff_id) === String(r.id) &&
+      toLocalDateStr(entry.start_date) <= day &&
+      day <= toLocalDateStr(entry.end_date),
+  );
+};
+
+const SHOW_ALL_STAFF_KEY = "scheduler.showAllStaff";
+const readShowAllStaff = () => {
+  try {
+    return localStorage.getItem(SHOW_ALL_STAFF_KEY) === "1";
+  } catch {
+    return false;
+  }
+};
+const showAllStaff = ref(readShowAllStaff());
+const setShowAllStaff = (show: boolean) => {
+  showAllStaff.value = show;
+  try {
+    localStorage.setItem(SHOW_ALL_STAFF_KEY, show ? "1" : "0");
+  } catch {}
+};
+
 const calendarResources = computed(() => {
   const res = calendarStore.resources;
   if (!Array.isArray(res)) return [];
@@ -998,23 +1161,38 @@ const calendarResources = computed(() => {
   // untouched by design since FullCalendar's resource views use one fixed
   // column set for the whole visible range — there's no way to show
   // different staff per day there.
-  if (currentView.value === "resourceTimeGridDay" && currentStart.value) {
-    filtered = filtered.filter(
+  //
+  // On a phone every column counts: staff on leave that day go too, and the
+  // switch in the menu brings everyone back (to book someone who is off).
+  // If that would leave no one at all, everyone stays.
+  if (
+    currentView.value === "resourceTimeGridDay" &&
+    currentStart.value &&
+    !(isPhone.value && showAllStaff.value)
+  ) {
+    const working = filtered.filter(
       (r: any) =>
-        !isNotWorkingOnDay(r) ||
+        !(isNotWorkingOnDay(r) || (isPhone.value && isOnLeaveOnDay(r))) ||
         staffWithAppointmentsOnDay.value.has(String(r.id)),
     );
+    if (working.length > 0) filtered = working;
   }
 
   return filtered.map((r: any) => ({
     id: r.id.toString(),
     title: r.name,
     eventBackgroundColor: "#f3f4f6",
-    notWorking: currentView.value === "resourceTimeGridDay" && isNotWorkingOnDay(r),
+    notWorking:
+      currentView.value === "resourceTimeGridDay" && isNotWorkingOnDay(r),
   }));
 });
 
-const placesById = computed(() => new Map(calendarStore.resources.map((r: any) => [String(r.id), placesOf(r)])));
+const placesById = computed(
+  () =>
+    new Map(
+      calendarStore.resources.map((r: any) => [String(r.id), placesOf(r)]),
+    ),
+);
 
 // The day view's cards in a shared place: bookings that overlap become one
 // card that says how many are there together (see placeGroupHtml), except
@@ -1026,7 +1204,12 @@ const placeGroupEvents = (events: any[]) => {
   for (const e of events) {
     const status = e.extendedProps.fullAppointment?.status;
     const inPlace = (placesById.value.get(String(e.resourceId)) || 1) > 1;
-    if (inPlace && e.start && e.end && !["cancelled", "no-show", "no_show"].includes(status)) {
+    if (
+      inPlace &&
+      e.start &&
+      e.end &&
+      !["cancelled", "no-show", "no_show"].includes(status)
+    ) {
       if (!byPlace.has(e.resourceId)) byPlace.set(e.resourceId, []);
       byPlace.get(e.resourceId)!.push(e);
     } else {
@@ -1035,9 +1218,16 @@ const placeGroupEvents = (events: any[]) => {
   }
   for (const [resourceId, list] of byPlace) {
     const capacity = placesById.value.get(String(resourceId)) || 1;
-    const items = list.map((e) => ({ e, start: new Date(e.start).getTime(), end: new Date(e.end).getTime() }));
+    const items = list.map((e) => ({
+      e,
+      start: new Date(e.start).getTime(),
+      end: new Date(e.end).getTime(),
+    }));
     for (const group of overlapGroups(items)) {
-      const key = `${resourceId}|${group.map((g) => g.e.id).sort().join(",")}`;
+      const key = `${resourceId}|${group
+        .map((g) => g.e.id)
+        .sort()
+        .join(",")}`;
       if (key === expandedGroupKey.value) {
         result.push(
           ...group.map(({ e }) => ({
@@ -1050,7 +1240,11 @@ const placeGroupEvents = (events: any[]) => {
       }
       const start = Math.min(...group.map((g) => g.start));
       const end = Math.max(...group.map((g) => g.end));
-      const members = group.map(({ e, start, end }) => ({ ...e.extendedProps, start, end }));
+      const members = group.map(({ e, start, end }) => ({
+        ...e.extendedProps,
+        start,
+        end,
+      }));
       const offline = members.some((m) => m.offlineState === "conflict")
         ? "fc-offline-conflict"
         : members.some((m) => m.offlineState)
@@ -1065,7 +1259,11 @@ const placeGroupEvents = (events: any[]) => {
         borderColor: "transparent",
         textColor: "#1f2937",
         durationEditable: false,
-        classNames: ["fresha-event", "fc-place-group", ...(offline ? [offline] : [])],
+        classNames: [
+          "fresha-event",
+          "fc-place-group",
+          ...(offline ? [offline] : []),
+        ],
         extendedProps: {
           isPlaceGroup: true,
           groupKey: key,
@@ -1118,9 +1316,8 @@ const calendarEvents = computed(() => {
       return;
 
     appt.services.forEach((svc: any, index: number) => {
-      // A completed appointment's card is white, whatever its service colour.
       const isCompleted = appt.status === "completed";
-      const bgColor = isCompleted ? "#ffffff" : resolveServiceColor(svc.service_color, svc.category_color);
+      const bgColor = resolveServiceColor(svc.service_color, svc.category_color);
       const duration = svc.duration_minutes || 60;
       const endTime = svc.start_time
         ? new Date(
@@ -1150,7 +1347,10 @@ const calendarEvents = computed(() => {
         "Service";
 
       const persons = personsOf(svc);
-      const serviceLabel = persons > 1 ? `${displayedServiceName} ×${persons}` : displayedServiceName;
+      const serviceLabel =
+        persons > 1
+          ? `${displayedServiceName} ×${persons}`
+          : displayedServiceName;
 
       events.push({
         id: `${appt.id}_${index}`,
@@ -1166,7 +1366,11 @@ const calendarEvents = computed(() => {
         classNames: [
           "fresha-event",
           ...(isCompleted ? ["fc-completed"] : []),
-          ...(appt._offline === "conflict" ? ["fc-offline-conflict"] : appt._offline ? ["fc-offline-pending"] : []),
+          ...(appt._offline === "conflict"
+            ? ["fc-offline-conflict"]
+            : appt._offline
+              ? ["fc-offline-pending"]
+              : []),
         ],
         extendedProps: {
           isServiceEvent: true,
@@ -1202,6 +1406,7 @@ const calendarEvents = computed(() => {
           // positive — simply absent when there's no real client_id.
           dayClientKey:
             appt.client_id &&
+            !/walk[- ]?in/i.test(`${appt.first_name || ""} ${appt.last_name || ""}`) &&
             appt.status !== "cancelled" &&
             appt.status !== "no-show"
               ? `${appt.client_id}|${toLocalDateStr(svc.start_time)}`
@@ -1229,10 +1434,14 @@ const calendarEvents = computed(() => {
     "#bbf7d0", // green-200
     "#fecaca", // red-200
   ];
-  const shown = currentView.value === "resourceTimeGridDay" ? placeGroupEvents(events) : events;
+  const shown =
+    currentView.value === "resourceTimeGridDay"
+      ? placeGroupEvents(events)
+      : events;
   const eventsByResource: Record<string, any[]> = {};
   shown.forEach((e) => {
-    if (!e.resourceId || !e.start || !e.end || e.extendedProps.isPlaceGroup) return;
+    if (!e.resourceId || !e.start || !e.end || e.extendedProps.isPlaceGroup)
+      return;
     (eventsByResource[e.resourceId] ||= []).push(e);
   });
   Object.values(eventsByResource).forEach((group) => {
@@ -1245,7 +1454,7 @@ const calendarEvents = computed(() => {
       for (let i = active.length - 1; i >= 0; i--) {
         if (new Date(active[i].end).getTime() <= startMs) active.splice(i, 1);
       }
-      if (active.length > 0 && e.extendedProps.fullAppointment?.status !== "completed") {
+      if (active.length > 0) {
         const usedColors = new Set(active.map((a) => a.backgroundColor));
         const accent =
           OVERLAP_ACCENT_COLORS.find((c) => !usedColors.has(c)) ||
@@ -1263,9 +1472,16 @@ const calendarEvents = computed(() => {
 const placeDialogGroups = computed<(PlaceGroup & { key: string })[]>(() => {
   const resourceId = placeDialogResourceId.value;
   if (!resourceId) return [];
-  const name = calendarStore.resources.find((r: any) => String(r.id) === String(resourceId))?.name || "";
+  const name =
+    calendarStore.resources.find(
+      (r: any) => String(r.id) === String(resourceId),
+    )?.name || "";
   return calendarEvents.value
-    .filter((e: any) => e.extendedProps?.isPlaceGroup && String(e.resourceId) === String(resourceId))
+    .filter(
+      (e: any) =>
+        e.extendedProps?.isPlaceGroup &&
+        String(e.resourceId) === String(resourceId),
+    )
     .map((e: any) => ({
       key: e.extendedProps.groupKey,
       resourceName: name,
@@ -1279,13 +1495,18 @@ const placeDialogGroups = computed<(PlaceGroup & { key: string })[]>(() => {
 });
 // After a reload the list may be shorter: stay on a group that exists.
 watch(placeDialogGroups, (list) => {
-  if (placeDialogIndex.value > list.length - 1) placeDialogIndex.value = Math.max(0, list.length - 1);
-  if (placeDialogVisible.value && list.length === 0) placeDialogVisible.value = false;
+  if (placeDialogIndex.value > list.length - 1)
+    placeDialogIndex.value = Math.max(0, list.length - 1);
+  if (placeDialogVisible.value && list.length === 0)
+    placeDialogVisible.value = false;
 });
 const openPlaceDialog = (resourceId: string, groupKey: string) => {
   hideHoverCard();
   placeDialogResourceId.value = String(resourceId);
-  placeDialogIndex.value = Math.max(0, placeDialogGroups.value.findIndex((g) => g.key === groupKey));
+  placeDialogIndex.value = Math.max(
+    0,
+    placeDialogGroups.value.findIndex((g) => g.key === groupKey),
+  );
   placeDialogVisible.value = true;
 };
 // A booking clicked in the dialog: its booking dialog instead.
@@ -1298,7 +1519,12 @@ const onPlaceGroupAdd = (start: Date) => {
   const resourceId = placeDialogResourceId.value;
   const name = placeDialogGroups.value[0]?.resourceName || "";
   placeDialogVisible.value = false;
-  openNewBooking(start, new Date(start.getTime() + 60 * 60000), resourceId, name);
+  openNewBooking(
+    start,
+    new Date(start.getTime() + 60 * 60000),
+    resourceId,
+    name,
+  );
 };
 
 // Multi-day leave only — still a non-interactive background tint, since a
@@ -1323,7 +1549,10 @@ const timeOffBackgroundEvents = computed(() => {
             new Date(`${startDateStr}T00:00:00`).getTime()) /
             86400000,
         ) + 1;
-      const durationLabel = days === 1 ? t("scheduler.timeOff.oneDay") : t("scheduler.timeOff.days", { count: days });
+      const durationLabel =
+        days === 1
+          ? t("scheduler.timeOff.oneDay")
+          : t("scheduler.timeOff.days", { count: days });
 
       return {
         id: `timeoff_${entry.id}`,
@@ -1502,15 +1731,30 @@ const updateAppointment = async (
     // meanwhile instead of overwriting that change.
     const body = {
       ...updates,
-      ...(updates.version != null && !isTempId(String(id)) ? { base_version: updates.version } : {}),
+      ...(updates.version != null && !isTempId(String(id))
+        ? { base_version: updates.version }
+        : {}),
     };
     delete body.version;
     delete body._offline;
-    const result = await fetchOrQueue(`/api/v1/appointments/${id}`, "PUT", body, {
-      kind: "appointment",
-      label: `${updates.first_name || ""} ${updates.last_name || ""}`.trim() || t("booking.editDialog.title"),
-      offlineExtras: { offline_known_overlaps: knownOverlapIds(calendarStore.events, updates.services || [], id) },
-    });
+    const result = await fetchOrQueue(
+      `/api/v1/appointments/${id}`,
+      "PUT",
+      body,
+      {
+        kind: "appointment",
+        label:
+          `${updates.first_name || ""} ${updates.last_name || ""}`.trim() ||
+          t("booking.editDialog.title"),
+        offlineExtras: {
+          offline_known_overlaps: knownOverlapIds(
+            calendarStore.events,
+            updates.services || [],
+            id,
+          ),
+        },
+      },
+    );
     if (result.queued) {
       toast.add({
         severity: "warn",
@@ -1527,17 +1771,31 @@ const updateAppointment = async (
       if (err.error === "over_capacity") {
         hideHoverCard();
         return (await askOverCapacity(confirm, t, err))
-          ? updateAppointment(id, { ...updates, allow_over_capacity: true }, { refresh })
+          ? updateAppointment(
+              id,
+              { ...updates, allow_over_capacity: true },
+              { refresh },
+            )
           : false;
       }
-      if (err.error === "stale_appointment" || err.error === "appointment_missing") {
+      if (
+        err.error === "stale_appointment" ||
+        err.error === "appointment_missing"
+      ) {
         // Changed (or deleted) on another device meanwhile: show the current state.
-        await calendarStore.fetchAppointments(currentStart.value, currentEnd.value);
+        await calendarStore.fetchAppointments(
+          currentStart.value,
+          currentEnd.value,
+        );
         throw new Error(t(`offline.conflict.${err.error}`));
       }
       throw new Error(err.error || t("scheduler.toasts.updateFailedError"));
     }
-    if (refresh) await calendarStore.fetchAppointments(currentStart.value, currentEnd.value);
+    if (refresh)
+      await calendarStore.fetchAppointments(
+        currentStart.value,
+        currentEnd.value,
+      );
     return true;
   } catch (e: any) {
     toast.add({
@@ -1573,17 +1831,32 @@ const canBookOvertime = computed(() => authStore.isShopAdmin);
 const isRangeAllowedForResource = (start: Date, end: Date, resource: any) => {
   if (!resource) return true;
   const result = staffAvailability(resource.id, start, end);
-  return result.available || (result.reason === "outside_hours" && canBookOvertime.value);
+  return (
+    result.available ||
+    (result.reason === "outside_hours" && canBookOvertime.value)
+  );
 };
 
 // The overtime entry for a staff member and time range, or null when the
 // range is within their working hours.
-const overtimeEntryFor = (staffId: any, start: Date, end: Date): OvertimeEntry | null => {
+const overtimeEntryFor = (
+  staffId: any,
+  start: Date,
+  end: Date,
+): OvertimeEntry | null => {
   if (!staffId) return null;
-  if (staffAvailability(staffId, start, end).reason !== "outside_hours") return null;
+  if (staffAvailability(staffId, start, end).reason !== "outside_hours")
+    return null;
   return {
-    name: calendarStore.resources.find((r: any) => String(r.id) === String(staffId))?.name || "",
-    hours: describeWorkingDay(calendarStore.workingHours, calendarStore.resources, staffId, start),
+    name:
+      calendarStore.resources.find((r: any) => String(r.id) === String(staffId))
+        ?.name || "",
+    hours: describeWorkingDay(
+      calendarStore.workingHours,
+      calendarStore.resources,
+      staffId,
+      start,
+    ),
   };
 };
 
@@ -1604,7 +1877,12 @@ const confirmOvertimeSlot = (entry: OvertimeEntry): Promise<boolean> =>
 // A new booking for a staff member and time, as a click on the empty grid
 // starts one. Outside the staff member's hours: ask first; the booking
 // dialog then doesn't ask again for the same staff member.
-const openNewBooking = async (start: Date, end: Date, staffId: string | null, staffName: string) => {
+const openNewBooking = async (
+  start: Date,
+  end: Date,
+  staffId: string | null,
+  staffName: string,
+) => {
   if (isStaffRole.value) return;
   const overtime = overtimeEntryFor(staffId, start, end);
   if (overtime && !(await confirmOvertimeSlot(overtime))) return;
@@ -1621,7 +1899,9 @@ const openNewBooking = async (start: Date, end: Date, staffId: string | null, st
 // Phones fit about 6-7 narrow staff columns (time gutter ~44px) and scroll
 // sideways for the rest; larger screens keep the roomier width.
 const getDayMinWidth = () =>
-  window.innerWidth < 768 ? Math.max(46, Math.floor((window.innerWidth - 44) / 6.5)) : 160;
+  window.innerWidth < 768
+    ? Math.max(46, Math.floor((window.innerWidth - 44) / 5.5))
+    : 160;
 
 // eventContent/resourceLabelContent below build raw HTML strings from
 // client/staff/service names, which are user-editable text, not code — always
@@ -1659,7 +1939,9 @@ const highlightLinkedEvents = (
     const key = extendedProps[attr];
     if (!key) continue;
     document
-      .querySelectorAll<HTMLElement>(`[data-${attr === "linkKey" ? "link-key" : "day-client-key"}]`)
+      .querySelectorAll<HTMLElement>(
+        `[data-${attr === "linkKey" ? "link-key" : "day-client-key"}]`,
+      )
       .forEach((el) => {
         if (el !== hoveredEl && (el.dataset as any)[attr] === key) {
           el.classList.add(cssClass);
@@ -1675,6 +1957,33 @@ const clearLinkedHighlight = () => {
   }
 };
 
+// Everything this client has that day, for the hover card, from what the
+// calendar shows (so it respects the filters and the cash/card hiding), grouped
+// cards included. Nothing to list for a booking with no day key.
+const dayServices = (hovered: Record<string, any>) => {
+  if (!hovered.dayClientKey) return [];
+  const staffName = (id: any) =>
+    calendarStore.resources.find((r: any) => String(r.id) === String(id))?.name || "";
+  const row = (props: Record<string, any>, start: any, resourceId: any) => ({
+    id: `${props.appointmentId}_${props.serviceIndex}`,
+    start: new Date(start),
+    service: props.service_name,
+    staff: staffName(resourceId),
+    current: props.appointmentId === hovered.appointmentId && props.serviceIndex === hovered.serviceIndex,
+    key: props.dayClientKey,
+  });
+  return calendarEvents.value
+    .flatMap((e: any) =>
+      e.extendedProps?.isPlaceGroup
+        ? e.extendedProps.members.map((m: any) => row(m, m.start, e.resourceId))
+        : e.extendedProps?.isServiceEvent
+          ? [row(e.extendedProps, e.start, e.resourceId)]
+          : [],
+    )
+    .filter((s: any) => s.key === hovered.dayClientKey)
+    .sort((a: any, b: any) => a.start.getTime() - b.start.getTime());
+};
+
 // A shared place's grouped card: the span, the most persons there together
 // against the places (green, amber one before full, red when full), a "+"
 // for one more booking at its start and a button to open it into separate
@@ -1682,26 +1991,25 @@ const clearLinkedHighlight = () => {
 // everything is escaped.
 const placeGroupHtml = (props: any) => {
   const { peak, capacity, members } = props;
-  const level = peak >= capacity ? "full" : peak === capacity - 1 ? "almost" : "free";
+  const level =
+    peak >= capacity ? "full" : peak === capacity - 1 ? "almost" : "free";
   const start = Math.min(...members.map((m: any) => m.start));
   const end = Math.max(...members.map((m: any) => m.end));
   const rows = members
     .map((m: any, i: number) => {
       const appt = m.fullAppointment || {};
-      const cashPaid = appt.payment_status === "paid" && appt.payment_method === "cash";
-      const icon = appt.status === "confirmed" ? `<i class="pi pi-check text-violet-700"></i>` : "";
-      return `<div class="fc-place-group-row${cashPaid ? " is-cash-paid" : ""}" data-member="${i}">
-          <span class="fc-place-group-time">${hhmm(m.start)}</span>
+      const cashPaid =
+        appt.payment_status === "paid" && appt.payment_method === "cash";
+      return `<div class="fc-place-group-row${cashPaid ? " is-cash-paid" : ""}${appt.status === "completed" ? " is-completed" : ""}" data-member="${i}"${m.dayClientKey ? ` data-day-client-key="${escapeHtml(m.dayClientKey)}"` : ""}>
           <span class="fc-place-group-name">${escapeHtml(m.client_name)}</span>
           ${m.persons > 1 ? `<span class="fc-place-group-persons">×${m.persons}</span>` : ""}
-          ${icon}
         </div>`;
     })
     .join("");
   return `<div lang="el" class="fc-place-group-card">
       <div class="fc-place-group-head">
-        <span class="fc-place-group-span">${hhmm(start)}–${hhmm(end)}</span>
         <span class="fc-place-group-badge is-${level}" title="${escapeHtml(t("capacity.places"))}">${peak}/${capacity}</span>
+        <span class="fc-place-group-span">${hhmm(start)}–${hhmm(end)}</span>
         <span class="fc-place-group-actions">
           ${peak < capacity && !isStaffRole.value ? `<button type="button" data-group-action="add" title="${escapeHtml(t("capacity.addPerson"))}"><i class="pi pi-plus"></i></button>` : ""}
           ${members.length > 1 ? `<button type="button" data-group-action="expand" title="${escapeHtml(t("capacity.expand"))}"><i class="pi pi-clone"></i></button>` : ""}
@@ -1723,43 +2031,88 @@ const movePlaceGroup = async (info: any) => {
   const all = isMoveTogether(info.jsEvent);
   const byAppointment = new Map<string, { appt: any; indexes: number[] }>();
   for (const m of props.members) {
-    const entry = byAppointment.get(m.appointmentId) || { appt: m.fullAppointment, indexes: [] };
+    const entry = byAppointment.get(m.appointmentId) || {
+      appt: m.fullAppointment,
+      indexes: [],
+    };
     entry.indexes.push(m.serviceIndex);
     byAppointment.set(m.appointmentId, entry);
   }
   const moves = [...byAppointment.values()].map(({ appt, indexes }) => {
     const isMoved = (i: number) => all || indexes.includes(i);
-    const services = prepareServicesForUpdate(JSON.parse(JSON.stringify(appt.services))).map((s: any, i: number) =>
-      isMoved(i) ? { ...s, start_time: new Date(new Date(s.start_time).getTime() + shift).toISOString() } : s,
+    const services = prepareServicesForUpdate(
+      JSON.parse(JSON.stringify(appt.services)),
+    ).map((s: any, i: number) =>
+      isMoved(i)
+        ? {
+            ...s,
+            start_time: new Date(
+              new Date(s.start_time).getTime() + shift,
+            ).toISOString(),
+          }
+        : s,
     );
-    return { appt, services, moved: services.filter((_: any, i: number) => isMoved(i)) };
+    return {
+      appt,
+      services,
+      moved: services.filter((_: any, i: number) => isMoved(i)),
+    };
   });
 
-  const skip = new Set<string>(props.members.map((m: any) => `${m.appointmentId}|${m.serviceIndex}`));
-  const moved = props.members.map((m: any) => ({ start: m.start + shift, end: m.end + shift, persons: m.persons }));
+  const skip = new Set<string>(
+    props.members.map((m: any) => `${m.appointmentId}|${m.serviceIndex}`),
+  );
+  const moved = props.members.map((m: any) => ({
+    start: m.start + shift,
+    end: m.end + shift,
+    persons: m.persons,
+  }));
   const from = Math.min(...moved.map((m: any) => m.start));
   const to = Math.max(...moved.map((m: any) => m.end));
-  const persons = peakPersons([...occupancyFrom(calendarStore.events, resource?.id, skip), ...moved], from, to);
+  const persons = peakPersons(
+    [...occupancyFrom(calendarStore.events, resource?.id, skip), ...moved],
+    from,
+    to,
+  );
   const over = persons > props.capacity;
   const overtime = moves
     .flatMap(({ moved }) => moved)
     .map((s: any) => {
       const start = new Date(s.start_time);
-      return overtimeEntryFor(s.staff_id, start, new Date(start.getTime() + (Number(s.duration_override) || 60) * 60000));
+      return overtimeEntryFor(
+        s.staff_id,
+        start,
+        new Date(start.getTime() + (Number(s.duration_override) || 60) * 60000),
+      );
     })
-    .filter((o: OvertimeEntry | null, i: number, list: (OvertimeEntry | null)[]): o is OvertimeEntry =>
-      !!o && list.findIndex((x) => x?.name === o.name) === i);
+    .filter(
+      (
+        o: OvertimeEntry | null,
+        i: number,
+        list: (OvertimeEntry | null)[],
+      ): o is OvertimeEntry =>
+        !!o && list.findIndex((x) => x?.name === o.name) === i,
+    );
 
   const minutes = Math.round(Math.abs(shift) / 60000);
   const message = [
     t(all ? "capacity.moveGroupMessageAll" : "capacity.moveGroupMessage", {
       n: byAppointment.size,
       name: resource?.title || "",
-      shift: t(shift > 0 ? "capacity.minutesLater" : "capacity.minutesEarlier", { n: minutes }),
+      shift: t(
+        shift > 0 ? "capacity.minutesLater" : "capacity.minutesEarlier",
+        { n: minutes },
+      ),
     }),
     over
       ? overCapacityMessage(
-          { staff_name: resource?.title, persons, capacity: props.capacity, start_time: from, end_time: to },
+          {
+            staff_name: resource?.title,
+            persons,
+            capacity: props.capacity,
+            start_time: from,
+            end_time: to,
+          },
           t,
         )
       : "",
@@ -1771,10 +2124,22 @@ const movePlaceGroup = async (info: any) => {
   moveConfirmOpen = true;
   const accepted = await new Promise<boolean>((resolve) => {
     confirm.require({
-      header: over ? t("capacity.header") : overtime.length ? t("booking.overtime.header") : t("capacity.moveGroupHeader"),
+      header: over
+        ? t("capacity.header")
+        : overtime.length
+          ? t("booking.overtime.header")
+          : t("capacity.moveGroupHeader"),
       message,
-      icon: over ? "pi pi-users" : overtime.length ? "pi pi-clock" : "pi pi-question-circle",
-      acceptLabel: over ? t("capacity.accept") : overtime.length ? t("booking.overtime.accept") : t("capacity.moveGroupAccept"),
+      icon: over
+        ? "pi pi-users"
+        : overtime.length
+          ? "pi pi-clock"
+          : "pi pi-question-circle",
+      acceptLabel: over
+        ? t("capacity.accept")
+        : overtime.length
+          ? t("booking.overtime.accept")
+          : t("capacity.moveGroupAccept"),
       rejectLabel: t("common.cancel"),
       accept: () => resolve(true),
       reject: () => resolve(false),
@@ -1789,7 +2154,12 @@ const movePlaceGroup = async (info: any) => {
   for (const { appt, services } of moves) {
     await updateAppointment(
       appt.id,
-      { ...appt, services, allow_overtime: overtime.length > 0, allow_over_capacity: true },
+      {
+        ...appt,
+        services,
+        allow_overtime: overtime.length > 0,
+        allow_over_capacity: true,
+      },
       { refresh: false },
     );
   }
@@ -1814,7 +2184,9 @@ const dropCard = async (info: any) => {
     const shift = start - info.oldEvent.start.getTime();
     services = services.map((s: any) => ({
       ...s,
-      start_time: new Date(new Date(s.start_time).getTime() + shift).toISOString(),
+      start_time: new Date(
+        new Date(s.start_time).getTime() + shift,
+      ).toISOString(),
       ...(newResourceId ? { staff_id: newResourceId } : {}),
     }));
   } else if (services[serviceIndex]) {
@@ -1827,11 +2199,19 @@ const dropCard = async (info: any) => {
     .map((s: any) => {
       if (!s) return null;
       const from = new Date(s.start_time);
-      const to = new Date(from.getTime() + (Number(s.duration_override) || 60) * 60000);
+      const to = new Date(
+        from.getTime() + (Number(s.duration_override) || 60) * 60000,
+      );
       return overtimeEntryFor(s.staff_id, from, to);
     })
-    .filter((o: OvertimeEntry | null, i: number, all: (OvertimeEntry | null)[]): o is OvertimeEntry =>
-      !!o && all.findIndex((x) => x?.name === o.name) === i);
+    .filter(
+      (
+        o: OvertimeEntry | null,
+        i: number,
+        all: (OvertimeEntry | null)[],
+      ): o is OvertimeEntry =>
+        !!o && all.findIndex((x) => x?.name === o.name) === i,
+    );
   if (!(await confirmMove(fullAppointment.services, services, overtime))) {
     info.revert();
     return;
@@ -1864,7 +2244,13 @@ const resizeCard = async (info: any) => {
     info.event.start,
     info.event.end,
   );
-  if (!(await confirmMove(fullAppointment.services, services, overtime ? [overtime] : []))) {
+  if (
+    !(await confirmMove(
+      fullAppointment.services,
+      services,
+      overtime ? [overtime] : [],
+    ))
+  ) {
     info.revert();
     return;
   }
@@ -1893,8 +2279,11 @@ const closeGroupAfter = async (handle: () => Promise<void>) => {
   }
 };
 
-// Hover card for a booking, shown next to `anchor` after a short pause.
+// Hover card for a booking, shown next to `anchor` after a short pause. Not on
+// phones and touch screens: a tap counts as a hover too, so the card would open
+// together with the booking dialog.
 const showHoverCard = (anchor: HTMLElement, appointment: any) => {
+  if (isPhone.value || window.matchMedia("(hover: none)").matches) return;
   if (hoverShowTimer) clearTimeout(hoverShowTimer);
   hoverShowTimer = setTimeout(() => {
     if (dragInProgress || moveConfirmOpen) return;
@@ -1918,15 +2307,19 @@ const showHoverCard = (anchor: HTMLElement, appointment: any) => {
 // Ctrl-click for the Mac context menu), so a Ctrl + press on a card is
 // remembered here and handed on without Ctrl (see onCardMouseDown).
 let moveTogetherArmed = false;
-const isMoveTogether = (e: MouseEvent | undefined) => moveTogetherArmed || !!(e?.ctrlKey || e?.metaKey);
+const isMoveTogether = (e: MouseEvent | undefined) =>
+  moveTogetherArmed || !!(e?.ctrlKey || e?.metaKey);
 let moveTogetherId: string | null = null;
 const markMoveTogether = (on: boolean) => {
   if (!moveTogetherId) return;
   document
-    .querySelectorAll(`.fc-event[data-appointment-id="${CSS.escape(moveTogetherId)}"]`)
+    .querySelectorAll(
+      `.fc-event[data-appointment-id="${CSS.escape(moveTogetherId)}"]`,
+    )
     .forEach((el) => el.classList.toggle("fc-move-together", on));
 };
-const onMoveTogetherKey = (e: KeyboardEvent) => markMoveTogether(isMoveTogether(e as unknown as MouseEvent));
+const onMoveTogetherKey = (e: KeyboardEvent) =>
+  markMoveTogether(isMoveTogether(e as unknown as MouseEvent));
 const startMoveTogetherHint = (appointmentId: string | undefined) => {
   moveTogetherId = appointmentId ? String(appointmentId) : null;
   markMoveTogether(moveTogetherArmed);
@@ -1974,7 +2367,7 @@ const calendarOptions = ref({
     minute: "2-digit",
     hour12: false,
   } as const,
-  // Fixed: zoom changes row height, not this (see ZOOM_ROW_HEIGHTS).
+  // Fixed: zoom changes row height, not this (see utils/schedulerZoom.ts).
   slotDuration: "00:15:00",
   // Clicks and selections on the empty grid snap to the 15-minute rows;
   // hovering an appointment switches this to 5 minutes so dragging and
@@ -2006,7 +2399,7 @@ const calendarOptions = ref({
     return [];
   },
   height: "100%",
-  // Rows keep the zoom height exactly (see ZOOM_ROW_HEIGHTS). Stretching them
+  // Rows keep the zoom height exactly (see utils/schedulerZoom.ts). Stretching them
   // to fill the screen would not stretch the separate time-axis column, so
   // the hour numbers would drift off their lines when zoomed out.
   expandRows: false,
@@ -2026,15 +2419,25 @@ const calendarOptions = ref({
     const own = draggedEvent?.getResources?.()[0];
     // A shared place's grouped or opened cards move up or down only.
     const p = draggedEvent?.extendedProps;
-    if ((p?.isPlaceGroup || p?.groupKey) && dropInfo.resource && own && String(dropInfo.resource.id) !== String(own.id)) {
+    if (
+      (p?.isPlaceGroup || p?.groupKey) &&
+      dropInfo.resource &&
+      own &&
+      String(dropInfo.resource.id) !== String(own.id)
+    ) {
       return false;
     }
-    return isRangeAllowedForResource(dropInfo.start, dropInfo.end, dropInfo.resource || own);
+    return isRangeAllowedForResource(
+      dropInfo.start,
+      dropInfo.end,
+      dropInfo.resource || own,
+    );
   },
   resources: [],
   events: [],
 
   datesSet: async (arg: any) => {
+    fitRowsToScreen();
     expandedGroupKey.value = null;
     currentTitle.value = arg.view.title;
     dockedDate.value = arg.view.calendar.getDate();
@@ -2053,6 +2456,12 @@ const calendarOptions = ref({
 
   windowResize: () => {
     isPhone.value = window.innerWidth < PHONE_MAX_WIDTH;
+    // A turned phone has new room; the on-screen keyboard changes only the
+    // height, and mustn't resize the rows behind it.
+    if (window.innerWidth !== lastFitWidth) {
+      lastFitWidth = window.innerWidth;
+      fitRowsToScreen();
+    }
     if (fullCalendar.value) {
       fullCalendar.value
         .getApi()
@@ -2072,7 +2481,9 @@ const calendarOptions = ref({
     const title = escapeHtml(arg.resource.title);
     const notWorking = !!arg.resource.extendedProps.notWorking;
     if (isPhone.value) {
-      const initial = escapeHtml(Array.from(String(arg.resource.title || "?").trim())[0] || "?");
+      const initial = escapeHtml(
+        Array.from(String(arg.resource.title || "?").trim())[0] || "?",
+      );
       return {
         html: `
         <div class="flex items-center justify-center py-1.5 w-full" title="${title}">
@@ -2144,11 +2555,6 @@ const calendarOptions = ref({
     // "name — service" layout — everything 20 min and up keeps the full
     // two-line name/service layout.
     const isShort = durationMins <= 20;
-    // A half-hour-or-shorter appointment never shows its time range (the
-    // box's position/height already says when it is) — matches the
-    // reference calendar's own behavior, independent of the tighter
-    // single-line cutoff above.
-    const hideTime = durationMins <= 30;
 
     const paddingClass =
       isShort && !isMonthView
@@ -2160,13 +2566,14 @@ const calendarOptions = ref({
             // get, and this tier (20+ min, day/week view) is exactly the one
             // tightest on room relative to what it now needs to fit.
             "px-2 py-1";
-    // Hierarchy comes from weight/color, not size — name and service/time
-    // stay close in font size (Fresha-style); the name reads first purely
-    // because it's bold + near-black against muted-gray secondary lines.
+    // The name reads first because it's bold + near-black against the muted
+    // service line, which stays close to it in size; the time is much smaller.
     const titleClass =
       isShort && !isMonthView
         ? "text-[10px] md:text-[11px] leading-tight"
         : "text-[11px] md:text-[12px] leading-tight";
+
+    const timeSizeClass = "text-[8px] md:text-[9px]";
 
     const textClass = isCancelled
       ? "line-through opacity-60 text-gray-500"
@@ -2205,17 +2612,14 @@ const calendarOptions = ref({
 
     if (props.isPlaceGroup) return { html: placeGroupHtml(props) };
 
+    // A phone's card is as narrow as it gets: surname first over up to two
+    // lines, then the service. Its place on the grid already says the time.
     if (isPhone.value && !isMonthView) {
-      const start = arg.event.start as Date | null;
-      const startText = start
-        ? `${String(start.getHours()).padStart(2, "0")}:${String(start.getMinutes()).padStart(2, "0")}`
-        : "";
       return {
         html: `
         <div lang="el" class="relative w-full h-full px-1 py-0.5 flex flex-col leading-tight overflow-hidden uppercase">
-          ${durationMins > 30 ? `<div class="text-[9px] font-semibold truncate ${timeClass}">${startText}</div>` : ""}
-          <div class="text-[10px] font-bold truncate ${textClass}">${escapeHtml(props.client_name)}</div>
-          ${durationMins > 15 ? `<div class="text-[9px] truncate ${serviceClass}">${escapeHtml(props.service_name)}</div>` : ""}
+          <div class="flex-shrink-0 text-[9px] font-bold break-words ${durationMins > 15 ? "line-clamp-2" : "line-clamp-1"} ${textClass}">${escapeHtml(props.client_name)}</div>
+          ${durationMins > 15 ? `<div class="min-h-0 text-[8px] break-words ${serviceClass}">${escapeHtml(props.service_name)}</div>` : ""}
         </div>
       `,
       };
@@ -2226,10 +2630,10 @@ const calendarOptions = ref({
       <div lang="el" class="relative w-full ${paddingClass} flex flex-col leading-tight overflow-hidden uppercase hover:brightness-95 transition-all ${isMonthView ? "" : "h-full"}">
         ${statusBadge}
         ${archivedBadge}
-        ${!hideTime && !isMonthView ? `<div class="text-[10px] md:text-[12px] font-semibold mb-0.5 truncate ${timeClass}">${timeText}</div>` : ""}
+        ${!isShort && !isMonthView ? `<div class="flex-shrink-0 ${timeSizeClass} font-semibold mb-0.5 truncate ${timeClass}">${timeText}</div>` : ""}
         ${
           isShort && !isMonthView
-            ? `<div class="font-bold ${titleClass} pr-2 truncate ${textClass}" title="${escapeHtml(props.client_name)} — ${escapeHtml(props.service_name)}">${escapeHtml(props.client_surname)}<span class="font-normal ${serviceClass}"> — ${escapeHtml(props.service_name)}</span></div>`
+            ? `<div class="font-bold ${titleClass} pr-2 truncate ${textClass}" title="${escapeHtml(props.client_name)} — ${escapeHtml(props.service_name)}"><span class="${timeSizeClass} font-semibold ${timeClass}">${timeText.split(" - ")[0]}</span> ${escapeHtml(props.client_surname)}<span class="font-normal ${serviceClass}"> — ${escapeHtml(props.service_name)}</span></div>`
             : isMonthView
               ? `<div class="font-bold ${titleClass} pr-4 truncate ${textClass}" title="${escapeHtml(props.client_name)}">${escapeHtml(props.client_name)}</div>
         <div class="text-[10px] md:text-[12px] font-medium mt-0.5 truncate ${serviceClass}" title="${escapeHtml(props.service_name)}">${escapeHtml(props.service_name)}</div>`
@@ -2262,17 +2666,23 @@ const calendarOptions = ref({
       let current: HTMLElement | null = null;
       info.el.addEventListener("mouseover", (e: MouseEvent) => {
         if (dragInProgress || moveConfirmOpen) return;
-        const row = ((e.target as HTMLElement).closest?.("[data-member]") as HTMLElement | null) || null;
+        const row =
+          ((e.target as HTMLElement).closest?.(
+            "[data-member]",
+          ) as HTMLElement | null) || null;
         if (row === current) return;
         current = row;
+        clearLinkedHighlight();
         if (!row) return hideHoverCard();
         const m = info.event.extendedProps.members[Number(row.dataset.member)];
+        highlightLinkedEvents(m, row);
         showHoverCard(row, {
           ...m.fullAppointment,
           client_name: m.client_name,
           service_name: m.service_name,
           start: new Date(m.start),
           end: new Date(m.end),
+          day_services: dayServices(m),
         });
       });
       info.el.addEventListener("mouseleave", () => (current = null));
@@ -2319,6 +2729,7 @@ const calendarOptions = ref({
       service_name: info.event.extendedProps.service_name,
       start: info.event.start,
       end: info.event.end,
+      day_services: dayServices(info.event.extendedProps),
     });
   },
 
@@ -2333,7 +2744,9 @@ const calendarOptions = ref({
     if (info.event.extendedProps.isPlaceGroup) {
       const p = info.event.extendedProps;
       const target = info.jsEvent?.target as HTMLElement | null;
-      const action = (target?.closest?.("[data-group-action]") as HTMLElement | null)?.dataset.groupAction;
+      const action = (
+        target?.closest?.("[data-group-action]") as HTMLElement | null
+      )?.dataset.groupAction;
       if (action === "expand") {
         hideHoverCard();
         expandedGroupKey.value = p.groupKey;
@@ -2342,7 +2755,12 @@ const calendarOptions = ref({
       if (action === "add") {
         const resource = info.event.getResources()[0];
         const start = info.event.start as Date;
-        openNewBooking(start, new Date(start.getTime() + 60 * 60000), resource?.id ?? null, resource?.title ?? "");
+        openNewBooking(
+          start,
+          new Date(start.getTime() + 60 * 60000),
+          resource?.id ?? null,
+          resource?.title ?? "",
+        );
         return;
       }
       const row = target?.closest?.("[data-member]") as HTMLElement | null;
@@ -2353,7 +2771,10 @@ const calendarOptions = ref({
         dialogVisible.value = true;
         return;
       }
-      openPlaceDialog(info.event.getResources()[0]?.id ?? info.event._def.resourceIds?.[0], p.groupKey);
+      openPlaceDialog(
+        info.event.getResources()[0]?.id ?? info.event._def.resourceIds?.[0],
+        p.groupKey,
+      );
       return;
     }
     const fullAppt = info.event.extendedProps.fullAppointment;
@@ -2378,13 +2799,15 @@ const calendarOptions = ref({
   eventDrop: async (info: any) => {
     if (isStaffRole.value) return info.revert();
     if (info.event.extendedProps.isPlaceGroup) return movePlaceGroup(info);
-    if (info.event.extendedProps.groupKey) return closeGroupAfter(() => dropCard(info));
+    if (info.event.extendedProps.groupKey)
+      return closeGroupAfter(() => dropCard(info));
     return dropCard(info);
   },
 
   eventResize: async (info: any) => {
     if (isStaffRole.value) return info.revert();
-    if (info.event.extendedProps.groupKey) return closeGroupAfter(() => resizeCard(info));
+    if (info.event.extendedProps.groupKey)
+      return closeGroupAfter(() => resizeCard(info));
     return resizeCard(info);
   },
 
@@ -2394,7 +2817,12 @@ const calendarOptions = ref({
     // dialog would otherwise do nothing.
     info.view.calendar.unselect();
     const { start, end } = roundRangeToSlots(info.start, info.end);
-    await openNewBooking(start, end, info.resource ? info.resource.id : null, info.resource ? info.resource.title : "");
+    await openNewBooking(
+      start,
+      end,
+      info.resource ? info.resource.id : null,
+      info.resource ? info.resource.title : "",
+    );
   },
 });
 
@@ -2452,7 +2880,12 @@ const onVisibleAgain = () => {
 // Ctrl + press on a card (before FullCalendar sees it): note it, and pass the
 // same press on without Ctrl so the drag starts.
 const onCardMouseDown = (e: MouseEvent) => {
-  if (!e.ctrlKey || e.button !== 0 || !(e.target as HTMLElement)?.closest?.(".fc-event")) return;
+  if (
+    !e.ctrlKey ||
+    e.button !== 0 ||
+    !(e.target as HTMLElement)?.closest?.(".fc-event")
+  )
+    return;
   moveTogetherArmed = true;
   e.stopImmediatePropagation();
   e.preventDefault();
@@ -2479,9 +2912,19 @@ const onCardMouseDown = (e: MouseEvent) => {
 // redraw the calendar before the drop is handled, and the move would be lost.
 let lastDragEnd = 0;
 const closeOpenGroup = (e: MouseEvent) => {
-  if (!expandedGroupKey.value || dragInProgress || Date.now() - lastDragEnd < 500) return;
+  if (
+    !expandedGroupKey.value ||
+    dragInProgress ||
+    Date.now() - lastDragEnd < 500
+  )
+    return;
   const target = e.target as HTMLElement | null;
-  if (target?.closest?.(".fc-group-open, .fc-place-group, .p-dialog, .p-dialog-mask")) return;
+  if (
+    target?.closest?.(
+      ".fc-group-open, .fc-place-group, .p-dialog, .p-dialog-mask",
+    )
+  )
+    return;
   expandedGroupKey.value = null;
 };
 // A Ctrl + press that didn't become a drag (just a click) mustn't count later.
@@ -2547,6 +2990,7 @@ onMounted(async () => {
             if (typeof shop.show_weekends === "boolean")
               api.setOption("weekends", shop.show_weekends);
           }
+          fitRowsToScreen();
         }
       } catch {}
     }
@@ -2561,9 +3005,9 @@ onMounted(async () => {
   outline-offset: 1px;
 }
 
-/* Completed appointments: white, so an outline keeps them visible on the white grid. */
+/* Completed appointments keep their colour and gain a blue line on the left. */
 .fc-event.fc-completed {
-  border: 1px solid #d1d5db !important;
+  border-left: 3px solid #2563eb !important;
 }
 
 /* Shared places (ΣΑΟΥΝΑ, ΧΑΜΜΑΜ): the grouped card, and an opened group's cards. */
@@ -2600,13 +3044,14 @@ onMounted(async () => {
   color: #6b7280;
 }
 .fc-place-group-span {
+  font-size: 9px;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .fc-place-group-badge {
-  margin-left: auto;
+  flex-shrink: 0;
   padding: 0 5px;
   border-radius: 9999px;
   font-weight: 700;
@@ -2623,6 +3068,7 @@ onMounted(async () => {
   background: #dc2626;
 }
 .fc-place-group-actions {
+  margin-left: auto;
   display: flex;
   gap: 2px;
 }
@@ -2654,10 +3100,6 @@ onMounted(async () => {
 .fc-place-group-row:hover {
   background: var(--p-primary-50);
 }
-.fc-place-group-time {
-  font-weight: 600;
-  color: #6b7280;
-}
 .fc-place-group-name {
   min-width: 0;
   overflow: hidden;
@@ -2671,6 +3113,10 @@ onMounted(async () => {
 .fc-place-group-row.is-cash-paid .fc-place-group-name {
   text-decoration: line-through;
   color: #c2410c;
+}
+.fc-place-group-row.is-completed {
+  box-shadow: inset 3px 0 0 #2563eb;
+  padding-left: 5px;
 }
 .fc-v-event.fc-group-open {
   outline: 2px dashed var(--p-primary-400);
@@ -2758,7 +3204,9 @@ onMounted(async () => {
   left: 4px;
   width: 1px;
   background: #f3f4f6;
-  transition: background-color 0.15s, box-shadow 0.15s;
+  transition:
+    background-color 0.15s,
+    box-shadow 0.15s;
 }
 .dock-resizer:hover::after,
 .dock-resizer:focus-visible::after,
@@ -2896,6 +3344,10 @@ onMounted(async () => {
    fc-linked-hover on the same box. */
 .fc-day-client-hover {
   box-shadow: 0 0 0 2px var(--p-primary-color) inset !important;
+}
+/* The same client's line inside a grouped card (ΣΑΟΥΝΑ, ΧΑΜΜΑΜ). */
+.fc-place-group-row.fc-day-client-hover {
+  background: var(--p-primary-100);
 }
 
 /* Minimum visual height floor: a 5-10 min appointment renders at only a
