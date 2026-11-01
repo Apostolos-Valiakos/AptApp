@@ -408,3 +408,27 @@ test("a no-show paid in part stays a no-show", async () => {
   assert.equal((await payPart(client, appt, 10)).status, 200);
   assert.match(statusOf(appt), /^no-show /);
 });
+
+test("a written-off visit stays in sales and staff figures, never as money collected, and owes nothing", async () => {
+  const client = clientFor("WrittenOff");
+  const appt = bookAt(client, "'2027-08-10 10:00:00+03'::timestamptz", 80);
+  sql(DB, `UPDATE appointments SET status = 'completed', save_receipt = true WHERE id = '${appt}'`);
+  const range = `from=${encodeURIComponent("2027-08-10T00:00:00+03:00")}&to=${encodeURIComponent("2027-08-10T23:59:59+03:00")}`;
+  const figures = async () => {
+    const finances = (await call("GET", `/api/v1/reports/finances?${range}`)).data;
+    const service = (await call("GET", `/api/v1/reports/service-summary?${range}`)).data[0];
+    return { sales: finances.total_sales, service };
+  };
+  const before = await figures();
+  assert.equal(before.sales, 80);
+  assert.equal(Number(before.service.total_owed), 80);
+
+  const off = await call("POST", `/api/v1/appointments/${appt}/resolve-debt`, { mode: "write_off" });
+  assert.equal(off.status, 200, JSON.stringify(off.data));
+  assert.equal(statusOf(appt), "completed paid");
+
+  const after = await figures();
+  assert.equal(after.sales, 80, "still in sales");
+  assert.equal(Number(after.service.total_paid), 0, "not money received");
+  assert.equal(Number(after.service.total_owed), 0, "nothing owed");
+});

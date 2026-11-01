@@ -25,7 +25,9 @@ module.exports = function reportsRouter({
   // (that transaction uses a real payment_method like cash/card, so it's counted
   // normally and is unaffected by this exclusion).
   const buildRevenueExclusionClause = (excludeCash, excludeCard, alias = "a") => {
-    const conditions = [`_t.payment_method IN ('membership', 'package', 'write-off')`];
+    // A written-off visit still happened: it stays in sales and staff figures.
+    // The write-off itself is never money collected (buildTxnMethodExclusionClause).
+    const conditions = [`_t.payment_method IN ('membership', 'package')`];
     if (excludeCash === "true") {
       conditions.push(`_t.payment_method = 'cash'`);
       conditions.push(
@@ -908,8 +910,13 @@ module.exports = function reportsRouter({
           SUM(COALESCE((
             SELECT SUM(t.amount) 
             FROM transactions t 
-            WHERE t.appointment_id = a.id
-          ), 0)) as total_paid
+            WHERE t.appointment_id = a.id AND COALESCE(t.payment_method, '') <> 'write-off'
+          ), 0)) as total_paid,
+          SUM(COALESCE((
+            SELECT SUM(t.amount)
+            FROM transactions t
+            WHERE t.appointment_id = a.id AND t.payment_method = 'write-off'
+          ), 0)) as total_written_off
         FROM appointment_services aps
         JOIN services s ON aps.service_id = s.id
         JOIN appointments a ON aps.appointment_id = a.id
@@ -929,7 +936,7 @@ module.exports = function reportsRouter({
         ...row,
         total_owed: Math.max(
           0,
-          Number(row.total_value) - Number(row.total_paid),
+          Number(row.total_value) - Number(row.total_paid) - Number(row.total_written_off),
         ),
       }));
 
