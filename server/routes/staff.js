@@ -33,7 +33,7 @@ module.exports = function staffRouter({
         st.email, st.phone, st.specialty, st.shop_id, st.sort_order,
         st.visible_in_calendar, st.working_hours_enabled, st.capacity,
         COALESCE(
-          json_agg(ss.service_id) FILTER (WHERE ss.service_id IS NOT NULL),
+          json_agg(ss.service_id ORDER BY ss.sort_order, ss.service_id) FILTER (WHERE ss.service_id IS NOT NULL),
           '[]'
         ) as service_ids
       FROM staff st
@@ -128,10 +128,10 @@ module.exports = function staffRouter({
       await client.query(`DELETE FROM staff_services WHERE staff_id = $1`, [id]);
 
       if (service_ids.length > 0) {
-        for (const svcId of service_ids) {
+        for (const [position, svcId] of service_ids.entries()) {
           await client.query(
-            `INSERT INTO staff_services (staff_id, service_id) VALUES ($1, $2)`,
-            [id, svcId],
+            `INSERT INTO staff_services (staff_id, service_id, sort_order) VALUES ($1, $2, $3)`,
+            [id, svcId, position],
           );
         }
       }

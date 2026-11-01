@@ -152,3 +152,27 @@ test("the walk-in client keeps its stored name", async () => {
   assert.equal(r.status, 200, JSON.stringify(r.data));
   assert.equal(sql(DB, `SELECT first_name FROM clients WHERE id = '${walkIn.data.id}'`), "Walk");
 });
+
+test("a staff member's services keep the order they were saved in; a new one goes last", async () => {
+  const staff = sql(DB, `INSERT INTO staff (name, shop_id) VALUES ('Order Test', '${SHOP}') RETURNING id`).split("\n")[0];
+  const service = async (name) => (await call("POST", "/api/v1/services", { name, duration_minutes: 30, price: 20, category: "Order Test" })).data.id;
+  const [a, b, c, d] = [await service("order a"), await service("order b"), await service("order c"), await service("order d")];
+  const saved = async () => (await call("GET", "/api/v1/staff")).data.find((s) => s.id === staff).service_ids;
+
+  const put = await call("PUT", `/api/v1/staff/${staff}`, { first_name: "Order", last_name: "Test", service_ids: [c, a, b] });
+  assert.equal(put.status, 200, JSON.stringify(put.data));
+  assert.deepEqual(await saved(), [c, a, b]);
+
+  const assigned = await call("PUT", `/api/v1/services/${d}`, { name: "order d", duration_minutes: 30, price: 20, category: "Order Test", staff_ids: [staff] });
+  assert.equal(assigned.status, 200, JSON.stringify(assigned.data));
+  assert.deepEqual(await saved(), [c, a, b, d]);
+
+  await call("PUT", `/api/v1/staff/${staff}`, { first_name: "Order", last_name: "Test", service_ids: [d, b] });
+  assert.deepEqual(await saved(), [d, b]);
+});
+
+test("existing assignments start in the shop's usual order", async () => {
+  const sets = sql(DB, `SELECT COUNT(*) FROM (
+    SELECT staff_id FROM staff_services GROUP BY staff_id HAVING COUNT(DISTINCT sort_order) <> COUNT(*)) x`);
+  assert.equal(sets, "0");
+});

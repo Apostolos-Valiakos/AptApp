@@ -241,6 +241,8 @@ export default {
       hourlyRate: 'Hourly Rate (€)',
       servicesProvided: 'Services Provided',
       selectServices: 'Select services',
+      serviceOrder: 'Order in the service picker',
+      serviceOrderNote: 'Drag services within a category, or drag whole categories. This staff member\'s services appear in this order when booking.',
       capacity: 'Places at the same time',
       capacityNote: 'How many persons fit together, e.g. 5 for the sauna. 1 = one booking at a time.',
       visibleInCalendar: 'Visible in calendar',

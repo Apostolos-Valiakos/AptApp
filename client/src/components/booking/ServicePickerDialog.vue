@@ -160,7 +160,7 @@
 import { formatMoney } from "../../utils/format";
 import { ref, computed, watch, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
-import { groupServicesByCategory } from "../../utils/serviceGroups";
+import { groupServicesByCategory, servicesInStaffOrder } from "../../utils/serviceGroups";
 
 const { t } = useI18n();
 
@@ -278,7 +278,7 @@ const filteredServices = computed(() => {
     const staffMember = props.staff.find((s) => s.id === staffFilterId.value);
     const eligibleIds: string[] = staffMember?.service_ids || [];
     if (eligibleIds.length > 0) {
-      list = list.filter((s: any) => eligibleIds.includes(s.id));
+      list = servicesInStaffOrder(list, eligibleIds);
     }
   }
   const q = search.value.trim().toLowerCase();
