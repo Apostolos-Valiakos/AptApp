@@ -936,6 +936,31 @@ module.exports = function reportsRouter({
 
   // Backing report for the admin Financials "Payments Log" tab's new
   // Refunds & Price Changes section.
+  // The log of deleted bookings, by when they were deleted.
+  router.get(
+    "/reports/deleted-appointments",
+    authenticateToken,
+    requireAnalyticsAccess,
+    asyncHandler(async (req, res) => {
+      const { from, to } = req.query;
+      const params = [req.shopId];
+      let whereClause = "WHERE shop_id = $1";
+      if (from) {
+        params.push(from);
+        whereClause += ` AND deleted_at >= $${params.length}`;
+      }
+      if (to) {
+        params.push(to);
+        whereClause += ` AND deleted_at <= $${params.length}`;
+      }
+      const { rows } = await pool.query(
+        `SELECT * FROM deleted_appointments ${whereClause} ORDER BY deleted_at DESC`,
+        params,
+      );
+      res.json(rows);
+    }, { log: "Deleted appointments report error:" }),
+  );
+
   router.get(
     "/reports/price-adjustments",
     authenticateToken,

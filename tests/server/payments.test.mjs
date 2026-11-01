@@ -188,6 +188,68 @@ test("a price can change until the appointment is completed", async () => {
   assert.equal(total(), "25.00");
 });
 
+const logged = (id) => sql(DB, `SELECT count(*) FROM deleted_appointments WHERE appointment_id = '${id}'`);
+
+test("a deleted booking is removed, and a copy kept with who, when and why", async () => {
+  const appt = await book();
+  const r = await call("DELETE", `/api/v1/appointments/${appt}?scope=single`, { reason: "client asked" });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.equal(exists(appt), false);
+
+  const log = await call("GET", "/api/v1/reports/deleted-appointments");
+  assert.equal(log.status, 200, JSON.stringify(log.data));
+  const entry = log.data.find((d) => d.appointment_id === appt);
+  assert.equal(entry.client_name, "Test Payments");
+  assert.equal(entry.status, "confirmed");
+  assert.equal(entry.reason, "client asked");
+  assert.equal(entry.deleted_by_user_id, ids.admin);
+  assert.equal(Number(entry.total), 40);
+  assert.equal(entry.services.length, 1);
+  assert.equal(entry.services[0].price, 40);
+  assert.ok(entry.services[0].staff);
+});
+
+test("the reason is optional; the period filters by when it was deleted", async () => {
+  const appt = await book();
+  assert.equal((await call("DELETE", `/api/v1/appointments/${appt}?scope=single`)).status, 200);
+  assert.equal(sql(DB, `SELECT reason IS NULL FROM deleted_appointments WHERE appointment_id = '${appt}'`), "t");
+  const past = await call("GET", "/api/v1/reports/deleted-appointments?from=2020-01-01&to=2020-12-31");
+  assert.equal(past.data.some((d) => d.appointment_id === appt), false);
+});
+
+test("a booking that can't be deleted leaves nothing in the log", async () => {
+  const appt = await book();
+  assert.equal((await pay(appt, 10)).status, 200);
+  assert.equal((await call("DELETE", `/api/v1/appointments/${appt}?scope=single`)).status, 409);
+  assert.equal(logged(appt), "0");
+});
+
+test("deleting a repeated booking's series keeps one entry per booking", async () => {
+  const group = sql(DB, "SELECT gen_random_uuid()");
+  const first = await book();
+  const second = await book();
+  sql(DB, `UPDATE appointments SET group_id = '${group}' WHERE id IN ('${first}', '${second}')`);
+  assert.equal((await call("DELETE", `/api/v1/appointments/${first}?scope=series`, { reason: "series" })).status, 200);
+  assert.equal(logged(first), "1");
+  assert.equal(logged(second), "1");
+});
+
+test("a time block isn't kept in the log", async () => {
+  const appt = await book();
+  sql(DB, `UPDATE appointments SET is_block = true WHERE id = '${appt}'`);
+  assert.equal((await call("DELETE", `/api/v1/appointments/${appt}?scope=single`)).status, 200);
+  assert.equal(logged(appt), "0");
+});
+
+test("only admins see the log", async () => {
+  for (const role of ["frontdesk", "staff"]) {
+    const user = sql(DB, `SELECT id FROM users WHERE shop_id = '${SHOP}' AND role = '${role}' LIMIT 1`);
+    if (!user) continue;
+    const r = await api(PORT, token(user, role))("GET", "/api/v1/reports/deleted-appointments");
+    assert.equal(r.status, 403, role);
+  }
+});
+
 test("a price change's note is required, and goes in the appointment's notes on a new line", async () => {
   const client = sql(DB, `INSERT INTO clients (first_name, last_name, shop_id) VALUES ('Note', 'Line', '${SHOP}') RETURNING id`).split("\n")[0];
   const appt = await book({ client_id: client, booking_notes: "existing" });
@@ -272,6 +334,18 @@ test("the new price is what the booking loads with afterwards, and replaces a di
   assert.equal(Number(loaded.services[0].price), 25);
   assert.equal(loaded.discount_type, null);
   assert.equal(Number(loaded.discount_amount), 0);
+});
+
+test("the log's value is what the booking cost, not reduced twice by its discount", async () => {
+  const client = sql(DB, `INSERT INTO clients (first_name, last_name, shop_id) VALUES ('Log', 'Value', '${SHOP}') RETURNING id`).split("\n")[0];
+  const created = await call("POST", "/api/v1/appointments", {
+    client_id: client, status: "confirmed", save_receipt: true, allow_unavailable: true,
+    discount_type: "percent", discount_value: 10, discount_scope: "services",
+    services: [{ service_id: ids.service, staff_id: ids.staff, start_time: nextStart(), duration_override: 60, price_override: 40 }],
+  });
+  const appt = created.data.id;
+  assert.equal((await call("DELETE", `/api/v1/appointments/${appt}?scope=single`)).status, 200);
+  assert.equal(sql(DB, `SELECT total FROM deleted_appointments WHERE appointment_id = '${appt}'`), "36.00");
 });
 
 const athensDay = (days = 0) => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Athens" }).format(new Date(Date.now() + days * 86400000));

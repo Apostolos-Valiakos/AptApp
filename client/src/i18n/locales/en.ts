@@ -1159,6 +1159,19 @@ export default {
     failed: 'Something went wrong. Please try again.',
   },
   analytics: {
+    deleted: {
+      note: "Bookings deleted in the selected period. They no longer count anywhere else.",
+      search: "Search client, staff, who deleted…",
+      none: "No bookings were deleted in this period.",
+      deletedAt: "Deleted on",
+      deletedBy: "Deleted by",
+      client: "Client",
+      bookingDate: "Booking date",
+      services: "Services",
+      total: "Value",
+      status: "Status",
+      reason: "Reason",
+    },
     title: 'Financial & Analytics',
     subtitle: 'Performance metrics, revenue and client retention.',
     filter: {
@@ -1196,6 +1209,7 @@ export default {
       giftCards: 'Gift Cards',
       staffPerformance: 'Staff Performance',
       paymentsLog: 'Payments Log',
+      deleted: 'Deleted',
     },
     products: {
       product: 'Product',
@@ -1397,9 +1411,10 @@ export default {
       thisAndFuture: 'This and Future',
     },
     deleteDialog: {
+      reason: "Reason (optional)",
       messageRecurring: 'This is a recurring appointment. What would you like to delete?',
-      messageSingle: 'Are you sure you want to cancel this appointment?',
-      header: 'Cancel Appointment',
+      messageSingle: 'Are you sure you want to delete this appointment?',
+      header: 'Delete Appointment',
       yes: 'Yes',
       no: 'No',
     },

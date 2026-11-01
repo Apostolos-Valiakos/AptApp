@@ -616,6 +616,18 @@
     />
   </Dialog>
   <ConfirmDialog></ConfirmDialog>
+  <!-- Deleting a booking: the question, and why (optional, kept in the log). -->
+  <ConfirmDialog group="delete-booking">
+    <template #message="{ message }">
+      <div class="w-full space-y-3">
+        <p>{{ message.message }}</p>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t("booking.deleteDialog.reason") }}</label>
+          <Textarea v-model="deleteReason" rows="2" maxlength="500" class="w-full" data-testid="delete-reason" />
+        </div>
+      </div>
+    </template>
+  </ConfirmDialog>
 </template>
 
 <script setup lang="ts">
@@ -2226,11 +2238,14 @@ const recordPayment = async (
   }
 };
 
+const deleteReason = ref("");
 const confirmDelete = () => {
   if (isReadOnly.value) return;
   const isSeries = !!props.appointment?.group_id;
+  deleteReason.value = "";
 
   confirm.require({
+    group: "delete-booking",
     message: isSeries
       ? t("booking.deleteDialog.messageRecurring")
       : t("booking.deleteDialog.messageSingle"),
@@ -2310,7 +2325,7 @@ const executeDelete = async (scope: string) => {
   if (Number(form.value.deposit_amount || 0) !== 0) return offerCancelInstead();
   try {
     // Offline the deletion is queued (and the booking hidden right away).
-    const result = await fetchOrQueue(`/api/v1/appointments/${form.value.id}?scope=${scope}`, "DELETE", undefined, {
+    const result = await fetchOrQueue(`/api/v1/appointments/${form.value.id}?scope=${scope}`, "DELETE", { reason: deleteReason.value }, {
       kind: "delete",
       label: `${t("booking.cancelAppt")} · ${selectedClient.value?.first_name || ""} ${selectedClient.value?.last_name || ""}`.trim(),
     });

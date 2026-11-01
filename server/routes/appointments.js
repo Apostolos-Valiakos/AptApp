@@ -462,6 +462,47 @@ module.exports = function appointmentsRouter({
     await client.query("DELETE FROM product_sales WHERE appointment_id = ANY($1)", [appointmentIds]);
   };
 
+  // Keeps a copy of bookings about to be deleted, for the admins' log (see
+  // migration 0009). Time blocks aren't bookings, so they aren't kept.
+  const logDeletedAppointments = (client, ids, req, reason) =>
+    client.query(
+      `INSERT INTO deleted_appointments
+         (shop_id, appointment_id, group_id, client_id, client_name, client_phone, status, start_time,
+          services, products, total, internal_notes, booking_notes, booked_at,
+          deleted_by_user_id, deleted_by_name, reason)
+       SELECT a.shop_id, a.id, a.group_id, a.client_id,
+              TRIM(COALESCE(c.last_name, '') || ' ' || COALESCE(c.first_name, '')), c.phone, a.status,
+              (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id),
+              COALESCE((
+                SELECT jsonb_agg(jsonb_build_object(
+                         'service', s.name, 'variation', aps.variation_name, 'staff', st.name,
+                         'start_time', aps.start_time,
+                         'duration_minutes', COALESCE(aps.duration_override, s.duration_minutes),
+                         'price', COALESCE(aps.price_override, s.price, 0)
+                       ) ORDER BY aps.start_time)
+                FROM appointment_services aps
+                LEFT JOIN services s ON s.id = aps.service_id
+                LEFT JOIN staff st ON st.id = aps.staff_id
+                WHERE aps.appointment_id = a.id), '[]'::jsonb),
+              COALESCE((
+                SELECT jsonb_agg(jsonb_build_object('product', p.name, 'quantity', ps.quantity, 'price', ps.total_price))
+                FROM product_sales ps
+                LEFT JOIN product_inventory pi ON pi.id = ps.inventory_id
+                LEFT JOIN products p ON p.id = pi.product_id
+                WHERE ps.appointment_id = a.id), '[]'::jsonb),
+              GREATEST(0,
+                COALESCE((SELECT SUM(COALESCE(aps.price_override, s.price, 0))
+                          FROM appointment_services aps LEFT JOIN services s ON s.id = aps.service_id
+                          WHERE aps.appointment_id = a.id), 0)
+                + COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = a.id), 0)),
+              a.internal_notes, a.booking_notes, a.booked_at,
+              $3, $4, $5
+       FROM appointments a
+       LEFT JOIN clients c ON c.id = a.client_id
+       WHERE a.id = ANY($1) AND a.shop_id = $2 AND NOT COALESCE(a.is_block, false)`,
+      [ids, req.shopId, req.user.userId || null, req.user.username || null, reason],
+    );
+
   router.delete("/:id", authenticateToken, notForStaff, asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { scope } = req.query;
@@ -513,6 +554,8 @@ module.exports = function appointmentsRouter({
         throw new HttpError(409, { error: "has_payments", appointment_id: paidRes.rows[0].appointment_id });
       }
 
+      const reason = String(req.body?.reason || "").trim().slice(0, 500) || null;
+      await logDeletedAppointments(client, deletedIds, req, reason);
       await releaseBookingExtras(client, deletedIds);
 
       if (scope === "series" && groupInfo && groupInfo.group_id) {

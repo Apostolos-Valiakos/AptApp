@@ -101,7 +101,7 @@ const send = async (write: QueuedWrite): Promise<SendResult> => {
     const res = await fetchWithTimeout(write.endpoint, {
       method: write.method,
       headers: headersFor(write.id, true),
-      body: write.method === "DELETE" || write.body === undefined ? undefined : JSON.stringify(write.body),
+      body: write.body === undefined ? undefined : JSON.stringify(write.body),
     });
     const data = await res.json().catch(() => ({}));
     return { status: res.status, data };
@@ -183,7 +183,7 @@ export const fetchOrQueue = async (
     const response = await fetchWithTimeout(endpoint, {
       method,
       headers: headersFor(idempotencyKey, false),
-      body: method === "DELETE" || body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? undefined : JSON.stringify(body),
     });
     return { queued: false, response };
   } catch {
