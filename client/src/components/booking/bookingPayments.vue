@@ -1,93 +1,5 @@
 <template>
-  <div class="space-y-6 pt-4">
-    <!-- Balance summary card -->
-    <div
-      class="bg-gradient-to-br from-gray-900 to-gray-800 text-white rounded-xl p-8 shadow-xl relative overflow-hidden"
-    >
-      <div class="flex justify-between items-center mb-1 opacity-70">
-        <span class="text-xs uppercase tracking-wider font-bold">{{
-          t("payment.totalBalance")
-        }}</span>
-      </div>
-      <div
-        class="text-5xl font-extrabold mb-6 tracking-tight"
-        :class="{ 'animate-pulse': totalDueNow > 0 }"
-      >
-        {{ formatMoney(totalDueNow) }}
-      </div>
-      <div class="space-y-0 border-t border-gray-700 pt-4 text-sm opacity-90">
-        <div class="flex justify-between py-2 border-b border-gray-700/50">
-          <span>{{ t("payment.appointmentCost") }}</span>
-          <span class="font-medium">{{ formatMoney(servicesTotal) }}</span>
-        </div>
-        <div
-          v-if="productsTotal > 0"
-          class="flex justify-between py-2 border-b border-gray-700/50"
-        >
-          <span>{{ t("payment.products") }}</span>
-          <span class="font-medium text-amber-300"
-            >+ {{ formatMoney(productsTotal) }}</span
-          >
-        </div>
-        <div
-          v-if="discountAmount > 0"
-          class="flex justify-between py-2 border-b border-gray-700/50"
-        >
-          <span>{{ t("payment.discount") }}</span>
-          <span class="font-medium text-green-300"
-            >- {{ formatMoney(discountAmount) }}</span
-          >
-        </div>
-        <div
-          v-if="sameDayAppointmentsTotal > 0"
-          class="flex justify-between py-2 border-b border-gray-700/50"
-        >
-          <span>{{ t("payment.sameDayAppointments") }}</span>
-          <span class="font-medium text-amber-300"
-            >+ {{ formatMoney(sameDayAppointmentsTotal) }}</span
-          >
-        </div>
-        <div
-          v-if="previousDebt > 0"
-          class="flex justify-between py-2 border-b border-gray-700/50"
-        >
-          <span>{{ t("payment.previousDebt") }}</span>
-          <span class="font-medium text-red-300"
-            >+ {{ formatMoney(previousDebt) }}</span
-          >
-        </div>
-        <div
-          v-else-if="previousDebt < 0"
-          class="flex justify-between py-2 border-b border-gray-700/50"
-        >
-          <span>{{ t("payment.clientCredit") }}</span>
-          <span class="font-medium text-green-300">{{ formatMoney(previousDebt) }}</span>
-        </div>
-        <div
-          v-if="packagesTotal > 0"
-          class="flex justify-between py-2 border-b border-gray-700/50"
-        >
-          <span>{{ t("payment.newPackages") }}</span>
-          <span class="font-medium text-amber-300"
-            >+ {{ formatMoney(packagesTotal) }}</span
-          >
-        </div>
-        <div
-          v-if="giftCardsTotal > 0"
-          class="flex justify-between py-2 border-b border-gray-700/50"
-        >
-          <span>{{ t("payment.newGiftCards") }}</span>
-          <span class="font-medium text-amber-300"
-            >+ {{ formatMoney(giftCardsTotal) }}</span
-          >
-        </div>
-        <div class="flex justify-between pt-2">
-          <span>{{ t("payment.paid") }}</span>
-          <span>- {{ formatMoney(depositAmount) }}</span>
-        </div>
-      </div>
-    </div>
-
+  <div class="space-y-6">
     <!-- Cash payment banner (shown together with the Payment Complete state below) -->
     <div
       v-if="totalDueNow <= 0 && paidPaymentMethod === 'cash'"
@@ -109,6 +21,8 @@
     </div>
 
     <div v-if="totalDueNow > 0" class="animate-fade-in">
+      <!-- Step 2: how the client pays -->
+      <div v-show="step === 2">
       <!-- Appointment settled info box -->
       <div
         v-if="depositAmount >= currentApptTotal && previousDebt > 0"
@@ -133,22 +47,25 @@
           class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2"
           >{{ t("payment.paymentMethod") }}</label
         >
-        <Dropdown
-          :modelValue="paymentMethod"
-          @update:modelValue="onPaymentMethodChange"
-          :options="['cash', 'card', 'bank-transfer', 'gift-card', 'membership']"
-          class="w-full"
-        >
-          <template #value="slotProps">
-            <div class="flex items-center gap-2">
-              <i class="pi pi-credit-card text-gray-400"></i>
-              <span>{{ t(`common.paymentMethod.${slotProps.value}`) }}</span>
-            </div>
-          </template>
-          <template #option="slotProps">
-            {{ t(`common.paymentMethod.${slotProps.option}`) }}
-          </template>
-        </Dropdown>
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          <button
+            v-for="method in METHODS"
+            :key="method"
+            type="button"
+            class="flex items-center justify-center gap-2 px-3 py-3 rounded-xl border text-sm font-semibold transition-colors"
+            :class="
+              paymentMethod === method
+                ? 'border-[var(--p-primary-color)] bg-[var(--p-primary-50)] text-[var(--p-primary-700)] ring-1 ring-[var(--p-primary-color)]'
+                : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+            "
+            :aria-pressed="paymentMethod === method"
+            :data-testid="`payment-method-${method}`"
+            @click="onPaymentMethodChange(method)"
+          >
+            <i :class="['pi', paidMethodIcons[method]]"></i>
+            {{ t(`common.paymentMethod.${method}`) }}
+          </button>
+        </div>
       </div>
 
       <!-- Membership picker (leg 1) -->
@@ -179,48 +96,11 @@
           @update:card="(c) => (selectedGiftCard = c)"
         />
 
-        <!-- Shortfall warning -->
-        <div
-          v-if="
-            selectedGiftCard &&
-            Number(selectedGiftCard.remaining_balance) < totalDueNow
-          "
-          class="mt-2 flex items-start gap-2 p-3 bg-orange-50 border border-orange-200 rounded-lg"
-        >
-          <i class="pi pi-exclamation-triangle text-orange-500 mt-0.5"></i>
-          <p class="text-xs text-orange-700">
-            {{
-              t("payment.giftCard.shortfall", {
-                covered: formatMoney(selectedGiftCard.remaining_balance),
-                remaining: formatMoney(totalDueNow - Number(selectedGiftCard.remaining_balance)),
-              })
-            }}
-          </p>
-        </div>
       </div>
 
-      <!-- Amount to pay (leg 1) -->
-      <div class="mb-3">
-        <label
-          class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2"
-        >
-          {{
-            depositAmount >= currentApptTotal
-              ? t("payment.amountTowardBalance")
-              : t("payment.amountNow")
-          }}
-        </label>
-        <InputNumber
-          :modelValue="amountToPay"
-          @update:modelValue="$emit('update:amountToPay', $event)"
-          mode="currency"
-          currency="EUR"
-          class="w-full fresha-input-large"
-          inputClass="!text-lg !font-bold"
-          :max="maxAmount"
-          :disabled="paymentMethod === 'membership'"
-        />
-      </div>
+      <p v-if="methodProblem" class="text-xs text-red-600 mb-3" data-testid="payment-sale-method">
+        {{ t(methodProblem) }}
+      </p>
 
       <!-- Split payment toggle -->
       <div class="mb-6">
@@ -228,6 +108,7 @@
           v-if="!splitEnabled"
           type="button"
           class="text-xs font-bold text-[var(--p-primary-600)] hover:underline flex items-center gap-1"
+          data-testid="payment-add-split"
           @click="enableSplit"
         >
           <i class="pi pi-plus text-[10px]"></i>
@@ -284,44 +165,88 @@
             @update:amount="onMembershipAmount2Change"
           />
 
+        </div>
+      </div>
+
+      </div>
+
+      <!-- Step 3: price change and charge -->
+      <div v-show="step === 3" class="space-y-6">
+        <div class="bg-white border border-gray-200 rounded-xl p-4 space-y-4" data-testid="payment-review">
           <div>
-            <label
-              class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2"
-            >
-              {{ t("payment.split.secondAmount") }}
+            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
+              {{ t(`common.paymentMethod.${paymentMethod}`) }} ·
+              {{ depositAmount >= currentApptTotal ? t("payment.amountTowardBalance") : t("payment.amountNow") }}
             </label>
             <InputNumber
-              v-model="amountToPay2"
+              :modelValue="amountToPay"
+              @update:modelValue="$emit('update:amountToPay', $event)"
+              @input="fillSecondAmount($event.value as number | null)"
+              mode="currency"
+              currency="EUR"
+              class="w-full fresha-input-large"
+              inputClass="!text-lg !font-bold"
+              :max="maxAmount"
+              :disabled="paymentMethod === 'membership'"
+            />
+          </div>
+          <div v-if="splitEnabled">
+            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
+              {{ t(`common.paymentMethod.${paymentMethod2}`) }} · {{ t("payment.split.secondAmount") }}
+            </label>
+            <InputNumber
+              :modelValue="amountToPay2"
+              @update:modelValue="onSecondAmountChange"
+              data-testid="payment-second-amount"
               mode="currency"
               currency="EUR"
               class="w-full"
               :max="maxAmount2"
             />
-            <p class="text-xs text-gray-400 mt-1">
+          </div>
+          <div v-if="remainderAfterBoth > 0" class="flex justify-between text-sm border-t border-gray-100 pt-3">
+            <span class="text-gray-600">{{ t("payment.stepper.remaining") }}</span>
+            <span class="font-semibold text-red-600" data-testid="payment-remaining">{{ formatMoney(remainderAfterBoth) }}</span>
+          </div>
+          <p v-if="salesProblem" class="text-xs text-red-600" data-testid="payment-sale-problem">
+            {{ t(salesProblem, { amount: formatMoney(salesTotal) }) }}
+          </p>
+          <div
+            v-if="
+              paymentMethod === 'gift-card' &&
+              selectedGiftCard &&
+              Number(selectedGiftCard.remaining_balance) < totalDueNow
+            "
+            class="flex items-start gap-2 p-3 bg-orange-50 border border-orange-200 rounded-lg"
+          >
+            <i class="pi pi-exclamation-triangle text-orange-500 mt-0.5"></i>
+            <p class="text-xs text-orange-700">
               {{
-                t("payment.split.remainingNote", {
-                  remaining: formatMoney(remainderAfterBoth),
+                t("payment.giftCard.shortfall", {
+                  covered: formatMoney(selectedGiftCard.remaining_balance),
+                  remaining: formatMoney(totalDueNow - Number(selectedGiftCard.remaining_balance)),
                 })
               }}
             </p>
           </div>
         </div>
-      </div>
 
-      <!-- Pay button -->
-      <Button
-        :label="
-          depositAmount >= currentApptTotal
-            ? t('payment.clearDebt')
-            : t('payment.chargeComplete')
-        "
-        icon="pi pi-check"
-        class="w-full !py-4 !text-lg !bg-green-600 hover:!bg-green-700 !border-none"
-        :loading="loading"
-        :disabled="!canSubmit"
-        data-testid="payment-submit"
-        @click="submitPayment"
-      />
+        <slot name="beforeCharge" />
+
+        <Button
+          :label="
+            depositAmount >= currentApptTotal
+              ? t('payment.clearDebt')
+              : t('payment.chargeComplete')
+          "
+          icon="pi pi-check"
+          class="w-full !py-4 !text-lg !bg-green-600 hover:!bg-green-700 !border-none"
+          :loading="loading"
+          :disabled="!canSubmit"
+          data-testid="payment-submit"
+          @click="submitPayment"
+        />
+      </div>
     </div>
     <!-- Payment complete state -->
     <div
@@ -358,16 +283,14 @@ import GiftCardPicker from "./GiftCardPicker.vue";
 import MembershipPicker from "./MembershipPicker.vue";
 const { t } = useI18n();
 
+const METHODS = ["cash", "card", "bank-transfer", "gift-card", "membership"];
+
 const props = defineProps({
+  step: { type: Number, default: 2 },
   totalDueNow: { type: Number, default: 0 },
   currentApptTotal: { type: Number, default: 0 },
-  servicesTotal: { type: Number, default: 0 },
-  productsTotal: { type: Number, default: 0 },
-  discountAmount: { type: Number, default: 0 },
+  salesTotal: { type: Number, default: 0 },
   previousDebt: { type: Number, default: 0 },
-  packagesTotal: { type: Number, default: 0 },
-  giftCardsTotal: { type: Number, default: 0 },
-  sameDayAppointmentsTotal: { type: Number, default: 0 },
   depositAmount: { type: Number, default: 0 },
   amountToPay: { type: Number, default: 0 },
   loading: { type: Boolean, default: false },
@@ -462,19 +385,24 @@ const method2Options = computed(() =>
   ),
 );
 
+// The first amount gives way to what's typed in the second, unless a
+// membership fixes it (its amount comes from the services it covers).
 const maxAmount2 = computed(() => {
-  const remainderAfterLeg1 = Math.max(
-    0,
-    props.totalDueNow - (props.amountToPay || 0),
-  );
+  const room =
+    props.paymentMethod === "membership"
+      ? Math.max(0, props.totalDueNow - (props.amountToPay || 0))
+      : props.totalDueNow;
   if (paymentMethod2.value === "gift-card" && selectedGiftCard2.value) {
-    return Math.min(
-      remainderAfterLeg1,
-      Number(selectedGiftCard2.value.remaining_balance),
-    );
+    return Math.min(room, Number(selectedGiftCard2.value.remaining_balance));
   }
-  return remainderAfterLeg1;
+  return room;
 });
+
+const onSecondAmountChange = (value: number | null) => {
+  amountToPay2.value = value || 0;
+  const roomForFirst = Math.max(0, props.totalDueNow - amountToPay2.value);
+  if ((props.amountToPay || 0) > roomForFirst) emit("update:amountToPay", roomForFirst);
+};
 
 const remainderAfterBoth = computed(() =>
   Math.max(
@@ -486,11 +414,23 @@ const remainderAfterBoth = computed(() =>
 const enableSplit = () => {
   splitEnabled.value = true;
   paymentMethod2.value = method2Options.value[0] || "cash";
-  amountToPay2.value = Math.max(
-    0,
-    props.totalDueNow - (props.amountToPay || 0),
-  );
+  fillSecondAmount(props.amountToPay);
 };
+
+// The second way of paying takes what the first leaves, up to a gift card's
+// balance. A membership's amount comes from the services it covers instead.
+const fillSecondAmount = (firstAmount: number | null) => {
+  if (!splitEnabled.value || paymentMethod2.value === "membership") return;
+  const rest = Math.max(0, props.totalDueNow - (firstAmount || 0));
+  amountToPay2.value =
+    paymentMethod2.value === "gift-card" && selectedGiftCard2.value
+      ? Math.min(rest, Number(selectedGiftCard2.value.remaining_balance))
+      : rest;
+};
+watch(
+  () => [props.amountToPay, props.totalDueNow, paymentMethod2.value, selectedGiftCard2.value],
+  () => fillSecondAmount(props.amountToPay),
+);
 
 const disableSplit = () => {
   splitEnabled.value = false;
@@ -534,7 +474,22 @@ watch(
   },
 );
 
-const canSubmit = computed(() => {
+// Packages and gift cards being sold must be paid in full, by the first way of
+// paying and then the second, and only with cash, card or bank transfer.
+const SALE_METHODS = ["cash", "card", "bank-transfer"];
+const methodProblem = computed(() =>
+  props.salesTotal > 0 && !SALE_METHODS.includes(props.paymentMethod) ? "payment.stepper.saleMethod" : null,
+);
+const salesProblem = computed(() => {
+  if (props.salesTotal <= 0 || methodProblem.value) return null;
+  const second = splitEnabled.value && SALE_METHODS.includes(paymentMethod2.value) ? amountToPay2.value || 0 : 0;
+  if ((props.amountToPay || 0) + second < props.salesTotal - 0.005) return "payment.stepper.saleInFull";
+  return null;
+});
+
+// Step 2 is about the ways of paying: each is chosen and has what it needs.
+const canContinue = computed(() => {
+  if (methodProblem.value) return false;
   if (props.paymentMethod === "gift-card" && !props.giftCardId) return false;
   if (
     props.paymentMethod === "membership" &&
@@ -542,15 +497,17 @@ const canSubmit = computed(() => {
   )
     return false;
   if (splitEnabled.value) {
-    if (!amountToPay2.value || amountToPay2.value <= 0) return false;
-    if (paymentMethod2.value === "gift-card" && !giftCardId2.value)
-      return false;
-    if (
-      paymentMethod2.value === "membership" &&
-      !membershipRedemptions2.value.length
-    )
-      return false;
+    if (paymentMethod2.value === "gift-card" && !giftCardId2.value) return false;
+    if (paymentMethod2.value === "membership" && !membershipRedemptions2.value.length) return false;
   }
+  return true;
+});
+
+// Step 3 adds the amounts.
+const canSubmit = computed(() => {
+  if (!canContinue.value || salesProblem.value) return false;
+  if (!(props.amountToPay > 0)) return false;
+  if (splitEnabled.value && !(amountToPay2.value > 0)) return false;
   return true;
 });
 
@@ -568,5 +525,5 @@ const submitPayment = () => {
   );
 };
 
-defineExpose({ disableSplit });
+defineExpose({ disableSplit, canContinue, splitEnabled });
 </script>

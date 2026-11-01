@@ -458,6 +458,266 @@ describe("the hover card", () => {
   });
 });
 
+describe("a past visit in the booking dialog's sidebar", () => {
+  const past = { id: "old1", status: "completed", start_time: "2026-10-05T10:00:00", service_names: "Massage", staff_names: "Anna", owed: 20 };
+  const oldBooking = { ...appointment(), id: "old1", client_id: "c1" };
+  const show = async (routes: Record<string, Handler> = {}) => {
+    saveLogin({ id: "u1", role: "admin", shop_id: "s1" });
+    fakeServer({
+      ...baseRoutes,
+      "GET /api/v1/clients/c1/past-appointments": { body: [past] },
+      "GET /api/v1/clients/c1": { body: { id: "c1", first_name: "Eleni", last_name: "P" } },
+      "GET /api/v1/appointments": { body: [oldBooking] },
+      ...routes,
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const opened = vi.fn();
+    const Parent = defineComponent({
+      data: () => ({ visible: false, appt: null as any }),
+      render() {
+        return h(BookingDialog, {
+          visible: (this as any).visible,
+          appointment: (this as any).appt,
+          services: [],
+          staff,
+          allProducts: [],
+          timeOff: [],
+          workingHours: [],
+          onOpenAppointment: opened,
+        });
+      },
+    });
+    const wrapper = mountScreen(Parent);
+    const parent = wrapper.findComponent(Parent);
+    await settle();
+    (parent.vm as any).appt = { ...appointment(), client_id: "c1" };
+    (parent.vm as any).visible = true;
+    await settle();
+    return opened;
+  };
+  const clickVisit = async () => {
+    (document.querySelector('[data-testid="past-appointment"]') as HTMLElement).click();
+    await settle();
+  };
+
+  test("opens that booking, with everything the calendar has on it", async () => {
+    const opened = await show();
+    await clickVisit();
+    expect(opened).toHaveBeenCalledWith(oldBooking);
+  });
+
+  test("its resolve button only resolves", async () => {
+    const opened = await show();
+    (document.querySelector('[data-testid="past-appointment-resolve"]') as HTMLElement).click();
+    await settle();
+    expect(opened).not.toHaveBeenCalled();
+  });
+
+  test("asks first when there are unsaved changes", async () => {
+    const opened = await show();
+    const notes = document.querySelector("textarea") as HTMLTextAreaElement;
+    notes.value = "changed";
+    notes.dispatchEvent(new Event("input"));
+    await settle();
+    await clickVisit();
+    expect(opened).not.toHaveBeenCalled();
+    (document.querySelector(".p-confirmdialog-accept-button") as HTMLElement).click();
+    await settle();
+    expect(opened).toHaveBeenCalledWith(oldBooking);
+  });
+
+  test("stays on this booking when the other can't be found", async () => {
+    const opened = await show({ "GET /api/v1/appointments": { body: [] } });
+    await clickVisit();
+    expect(opened).not.toHaveBeenCalled();
+  });
+});
+
+describe("the booking dialog's payment steps", () => {
+  const owing = {
+    ...appointment(),
+    client_id: "c1",
+    status: "new",
+    payment_status: "unpaid",
+    deposit_amount: 0,
+    client_outstanding_balance: 30,
+    services: [{ ...appointment().services[0], price: 30 }],
+  };
+  const paid = { ...owing, status: "completed", payment_status: "paid", deposit_amount: 30, client_outstanding_balance: 0 };
+  const q = (id: string) => document.querySelector(`[data-testid="${id}"]`) as HTMLElement | null;
+  const seen = (id: string) => {
+    const el = q(id);
+    if (!el) return false;
+    for (let e: HTMLElement | null = el; e; e = e.parentElement) if (e.style.display === "none") return false;
+    return true;
+  };
+  const show = async (appt: any, role = "admin") => {
+    saveLogin({ id: "u1", role, shop_id: "s1" });
+    fakeServer({
+      ...baseRoutes,
+      "GET /api/v1/clients/c1/balance": { body: { balance: appt.client_outstanding_balance } },
+      "GET /api/v1/clients/c1/past-appointments": { body: [] },
+      "GET /api/v1/appointments": { body: [appt] },
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const Parent = defineComponent({
+      data: () => ({ visible: false, appt: null as any }),
+      render() {
+        return h(BookingDialog, {
+          visible: (this as any).visible,
+          appointment: (this as any).appt,
+          services: [{ id: "svc", name: "Massage", duration_minutes: 60, price: 30 }],
+          staff,
+          allProducts: [],
+          timeOff: [],
+          workingHours: [],
+        });
+      },
+    });
+    const wrapper = mountScreen(Parent);
+    const parent = wrapper.findComponent(Parent);
+    await settle();
+    (parent.vm as any).appt = appt;
+    (parent.vm as any).visible = true;
+    await settle();
+    q("booking-payment-tab")!.click();
+    await settle();
+    return wrapper;
+  };
+  const next = async () => {
+    q("payment-next")!.click();
+    await settle();
+  };
+
+  test("step 1 is the checkout: the sale buttons, no charge yet", async () => {
+    await show(owing);
+    expect(seen("payment-steps")).toBe(true);
+    expect(seen("payment-add-sale")).toBe(true);
+    expect(seen("payment-method-card")).toBe(false);
+    expect(seen("payment-submit")).toBe(false);
+    q("payment-add-sale")!.click();
+    await settle();
+    expect(seen("payment-sell-package")).toBe(true);
+    expect(seen("payment-sell-gift-card")).toBe(true);
+  });
+
+  test("step 2 is the way of paying, step 3 the price change and the charge", async () => {
+    await show(owing);
+    await next();
+    expect(seen("payment-method-cash")).toBe(true);
+    expect(seen("payment-method-gift-card")).toBe(true);
+    expect(seen("payment-method-membership")).toBe(true);
+    expect(seen("payment-submit")).toBe(false);
+    expect(seen("payment-step-total")).toBe(false);
+    expect(seen("payment-review")).toBe(false);
+    await next();
+    expect(seen("payment-step-total")).toBe(true);
+    expect(seen("payment-review")).toBe(true);
+    expect(seen("payment-price-change")).toBe(true);
+    expect(seen("payment-submit")).toBe(true);
+    expect(seen("payment-method-cash")).toBe(false);
+  });
+
+  test("the second way of paying takes what the first leaves, as it is typed", async () => {
+    const wrapper = await show(owing);
+    await next();
+    q("payment-add-split")!.click();
+    await settle();
+    const first = wrapper
+      .findAllComponents({ name: "InputNumber" })
+      .find((c: any) => c.vm.$el.classList?.contains("fresha-input-large"))!;
+    const second = () => document.querySelector('[data-testid="payment-second-amount"] input') as HTMLInputElement;
+    const shows = (euros: string) => expect(second().value.replace(/\s/g, "")).toMatch(new RegExp(`^(€${euros}\\.00|${euros},00€)$`));
+
+    first.vm.$emit("input", { value: 20 });
+    await settle();
+    shows("10");
+
+    first.vm.$emit("update:modelValue", 5);
+    await settle();
+    shows("25");
+  });
+
+  test("an amount typed in the second way stays: the first gives way when both would be too much", async () => {
+    const wrapper = await show(owing);
+    await next();
+    q("payment-add-split")!.click();
+    await settle();
+    const inputs = wrapper.findAllComponents({ name: "InputNumber" });
+    const first = inputs.find((c: any) => c.vm.$el.classList?.contains("fresha-input-large"))!;
+    const second = wrapper.findAllComponents({ name: "InputNumber" }).find((c: any) => c.attributes("data-testid") === "payment-second-amount" || c.vm.$el.matches?.('[data-testid="payment-second-amount"]'))!;
+    const euros = (c: any) => Number(c.props("modelValue"));
+    expect(euros(first)).toBe(30);
+
+    second.vm.$emit("update:modelValue", 12);
+    await settle();
+    expect(euros(second)).toBe(12);
+    expect(euros(first)).toBe(18);
+    expect(second.props("max")).toBe(30);
+  });
+
+  test("next and back sit in the footer, beside save", async () => {
+    await show(owing);
+    const footer = q("booking-save")!.parentElement!;
+    expect(footer.contains(q("payment-next"))).toBe(true);
+    await next();
+    expect(footer.contains(q("payment-back"))).toBe(true);
+  });
+
+  test("closing starts the payment again: step, way of paying, split", async () => {
+    const wrapper = await show(owing);
+    const parent = wrapper.findComponent({ name: "BookingDialog" }).vm.$parent as any;
+    await next();
+    q("payment-method-cash")!.click();
+    await settle();
+    q("payment-add-split")!.click();
+    await settle();
+
+    parent.visible = false;
+    await settle();
+    parent.visible = true;
+    await settle();
+    q("booking-payment-tab")!.click();
+    await settle();
+
+    expect(seen("payment-add-sale")).toBe(true);
+    await next();
+    expect(q("payment-method-card")!.getAttribute("aria-pressed")).toBe("true");
+    expect(q("payment-second-amount")).toBe(null);
+    expect(seen("payment-add-split")).toBe(true);
+  });
+
+  test("frontdesk can change the price and charge", async () => {
+    await show(owing, "frontdesk");
+    await next();
+    await next();
+    expect(seen("payment-submit")).toBe(true);
+    expect(seen("payment-price-change")).toBe(true);
+  });
+
+  test("a paid, completed booking has no steps; it can be refunded, not repriced", async () => {
+    await show(paid);
+    expect(seen("payment-steps")).toBe(false);
+    expect(seen("payment-submit")).toBe(false);
+    expect(seen("payment-price-change")).toBe(false);
+    expect(seen("payment-refund")).toBe(true);
+    expect(seen("payment-add-sale")).toBe(true);
+  });
+
+  test("a completed booking's price can't be changed, even with money still owed", async () => {
+    await show({ ...owing, status: "completed" });
+    await next();
+    await next();
+    expect(seen("payment-submit")).toBe(true);
+    expect(seen("payment-price-change")).toBe(false);
+  });
+
+  test("a paid booking not yet completed can still have its price changed", async () => {
+    await show({ ...paid, status: "confirmed" });
+    expect(seen("payment-price-change")).toBe(true);
+  });
+});
+
 describe("the hover card's services of the day", () => {
   const svc = (start: string, staff = "st1") => ({ service_id: "svc", service_name: "Massage", staff_id: staff, start_time: `${MONDAY}T${start}:00`, duration_minutes: 60, price: 30 });
   const booked = (id: string, client: string, start: string, status = "confirmed") => ({ ...appointment(), id, client_id: client, status, services: [svc(start)] });

@@ -30,7 +30,7 @@
         }}</label>
         <InputNumber
           v-model="form.percentage"
-          suffix=" %"
+          suffix="%"
           :min="0.01"
           :max="100"
           :maxFractionDigits="2"

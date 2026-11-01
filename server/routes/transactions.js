@@ -30,7 +30,8 @@ module.exports = function transactionsRouter({
       payment_method2,
       gift_card_id2,
       redemptions2,
-      package_purchases, // [{ package_type_id }] — sold alongside this payment, same leg1 method
+      package_purchases, // [{ package_type_id }] — sold alongside this payment
+      extras_amount2, // how much of the packages and gift cards the second way of paying covers; the first covers the rest
       gift_card_purchases, // [{ card_number, customer_name, initial_amount }] — same idea, for gift cards
     } = req.body;
 
@@ -65,6 +66,10 @@ module.exports = function transactionsRouter({
     }
     if (payment_method === "membership" && (!redemptions || !redemptions.length)) {
       return res.status(400).json({ error: "redemptions is required for membership payments" });
+    }
+    const extrasOnLeg2 = Number(extras_amount2) || 0;
+    if (extrasOnLeg2 < 0 || (extrasOnLeg2 > 0 && !["cash", "card", "bank-transfer"].includes(payment_method2))) {
+      return res.status(400).json({ error: "Packages and gift cards can only be purchased with cash, card, or bank transfer" });
     }
     const hasSecondLeg =
       (amount2 !== undefined && amount2 !== null && Number(amount2) > 0) ||
@@ -117,6 +122,23 @@ module.exports = function transactionsRouter({
 
     const idempotencyKey = req.headers["idempotency-key"] || null;
     const { status, body } = await withTransaction(async (client) => {
+
+      // A payment completes its booking, even a part payment if the booking's
+      // day has come: what's left is then owed at once (see clientBalanceSql).
+      // A part payment for a later day is a deposit, and it stays confirmed.
+      const SHOP_TZ = process.env.TZ || "Europe/Athens";
+      const dueNowSql = (apptRef) => `(
+        (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = ${apptRef}) AT TIME ZONE '${SHOP_TZ}')::date
+        <= (NOW() AT TIME ZONE '${SHOP_TZ}')::date`;
+      const statusAfterPayment = async (apptId, isFullyPaid) => {
+        if (isFullyPaid) return "completed";
+        const { rows } = await client.query(`SELECT ${dueNowSql("$1")} AS due`, [apptId]);
+        return rows[0].due ? "completed" : "confirmed";
+      };
+      const STATUS_AFTER_PAYMENT_SQL = `CASE
+                   WHEN status = 'completed' THEN 'completed'
+                   WHEN status IN ('no-show', 'no_show') AND payment_status <> 'paid' AND $1 = 'partial' THEN status
+                   ELSE $2 END`;
 
       // Processes ONE payment leg against the client's current owed appointments
       // (current appointment first, then oldest debt first). Re-reads owed state
@@ -176,13 +198,13 @@ module.exports = function transactionsRouter({
           const isFullyPaid = totalPaid >= totalPrice - 0.01;
           await client.query(
             `UPDATE appointments
-             SET payment_status = $1,
-                 status = CASE WHEN status = 'completed' THEN 'completed' ELSE $2 END,
+             SET status = ${STATUS_AFTER_PAYMENT_SQL},
+                 payment_status = $1,
                  deposit_amount = deposit_amount + $3
              WHERE id = $4 AND shop_id = $5`,
             [
               isFullyPaid ? "paid" : "partial",
-              isFullyPaid ? "completed" : "confirmed",
+              await statusAfterPayment(apptId, isFullyPaid),
               paymentAmount,
               apptId,
               req.shopId,
@@ -394,13 +416,13 @@ module.exports = function transactionsRouter({
 
         await client.query(
           `UPDATE appointments
-           SET payment_status = $1,
-               status = CASE WHEN status = 'completed' THEN 'completed' ELSE $2 END,
+           SET status = ${STATUS_AFTER_PAYMENT_SQL},
+               payment_status = $1,
                deposit_amount = deposit_amount + $3
            WHERE id = $4 AND shop_id = $5`,
           [
             isFullyPaid ? "paid" : "partial",
-            isFullyPaid ? "completed" : "confirmed",
+            await statusAfterPayment(appointment_id, isFullyPaid),
             totalAmount,
             appointment_id,
             req.shopId,
@@ -415,7 +437,19 @@ module.exports = function transactionsRouter({
       if (cached) return { status: cached.response_status, body: cached.response_body };
 
       // A shared id links both rows of a split payment so reports can flag them
-      const splitGroupId = hasSecondLeg ? crypto.randomUUID() : null;
+      const splitGroupId = hasSecondLeg || extrasOnLeg2 > 0 ? crypto.randomUUID() : null;
+
+      // A sale's price, by the way of paying that covers it (two rows if both do).
+      let extrasLeftOnLeg2 = extrasOnLeg2;
+      const salePayments = (price) => {
+        const onLeg2 = Math.min(Number(price), extrasLeftOnLeg2);
+        extrasLeftOnLeg2 = Math.round((extrasLeftOnLeg2 - onLeg2) * 100) / 100;
+        const onLeg1 = Math.round((Number(price) - onLeg2) * 100) / 100;
+        return [
+          ...(onLeg1 > 0 ? [{ amount: onLeg1, method: payment_method }] : []),
+          ...(onLeg2 > 0 ? [{ amount: onLeg2, method: payment_method2 }] : []),
+        ];
+      };
 
       // Packages are sold in full immediately, independent of the FIFO debt
       // cap below (same as the standalone sell-package endpoint) — a package
@@ -444,11 +478,13 @@ module.exports = function transactionsRouter({
              RETURNING id`,
             [req.shopId, client_id, pt.id, pt.name, pt.service_id, pt.visits, pt.price, pt.validity_days],
           );
-          await client.query(
-            `INSERT INTO transactions (appointment_id, client_id, amount, payment_method, transaction_type, shop_id, created_at)
-             VALUES (NULL, $1, $2, $3, 'package_sale', $4, NOW())`,
-            [client_id, pt.price, payment_method, req.shopId],
-          );
+          for (const part of salePayments(pt.price)) {
+            await client.query(
+              `INSERT INTO transactions (appointment_id, client_id, amount, payment_method, transaction_type, shop_id, split_group_id, created_at)
+               VALUES (NULL, $1, $2, $3, 'package_sale', $4, $5, NOW())`,
+              [client_id, part.amount, part.method, req.shopId, splitGroupId],
+            );
+          }
           packageAmount += Number(pt.price);
           purchasedPackages.push({ id: ins.rows[0].id, name: pt.name });
         }
@@ -468,23 +504,30 @@ module.exports = function transactionsRouter({
               error: "Each gift card needs a card_number, customer_name and a positive initial_amount",
             });
           }
+          const parts = salePayments(initialAmount);
           const ins = await client.query(
             `INSERT INTO gift_cards
                (card_number, client_id, customer_name, initial_amount, remaining_balance,
                 purchase_payment_method, shop_id, issued_at, expires_at, sold_by_staff_id)
              VALUES ($1, $2, $3, $4, $4, $5, $6, NOW(), NOW() + INTERVAL '3 months', $7)
              RETURNING id, card_number`,
-            [cardNumber, client_id || null, customerName, initialAmount, payment_method, req.shopId, req.user.staffId || null],
+            [cardNumber, client_id || null, customerName, initialAmount, parts[0].method, req.shopId, req.user.staffId || null],
           );
-          await client.query(
-            `INSERT INTO transactions
-               (appointment_id, client_id, amount, payment_method, transaction_type, shop_id, gift_card_id, created_at)
-             VALUES (NULL, $1, $2, $3, 'gift_card_sale', $4, $5, NOW())`,
-            [client_id || null, initialAmount, payment_method, req.shopId, ins.rows[0].id],
-          );
+          for (const part of parts) {
+            await client.query(
+              `INSERT INTO transactions
+                 (appointment_id, client_id, amount, payment_method, transaction_type, shop_id, gift_card_id, split_group_id, created_at)
+               VALUES (NULL, $1, $2, $3, 'gift_card_sale', $4, $5, $6, NOW())`,
+              [client_id || null, part.amount, part.method, req.shopId, ins.rows[0].id, splitGroupId],
+            );
+          }
           giftCardAmount += initialAmount;
           purchasedGiftCards.push({ id: ins.rows[0].id, card_number: ins.rows[0].card_number });
         }
+      }
+
+      if (extrasLeftOnLeg2 > 0) {
+        throw new HttpError(400, { error: "extras_amount2 is more than the packages and gift cards sold" });
       }
 
       // The service leg only ever covers the appointment's own debt cap, never
@@ -517,6 +560,17 @@ module.exports = function transactionsRouter({
         if (leg2Error) {
           throw new HttpError(400, { error: leg2Error });
         }
+      }
+
+      // Ticked same-day bookings the money didn't reach are settled at the till
+      // too: they complete with the rest, and what they cost is owed at once.
+      if (validatedApptIds && (serviceLegAmount > 0 || hasSecondLeg || payment_method === "membership")) {
+        await client.query(
+          `UPDATE appointments a SET status = 'completed'
+           WHERE a.id = ANY($1::uuid[]) AND a.shop_id = $2
+             AND a.status NOT IN ('completed', 'no-show', 'no_show') AND ${dueNowSql("a.id")}`,
+          [validatedApptIds, req.shopId],
+        );
       }
 
       // Recalculate client balance and return it so the frontend can update without guessing

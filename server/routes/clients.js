@@ -438,7 +438,10 @@ module.exports = function clientsRouter({
            WHERE a.client_id = $1 AND a.shop_id = $2
          ) x
          JOIN appointments a ON a.id = x.id
-         WHERE x.start_time < NOW()
+         WHERE (x.start_time < NOW()
+                OR (a.status = 'completed'
+                    AND (x.start_time AT TIME ZONE '${process.env.TZ || "Europe/Athens"}')::date
+                        <= (NOW() AT TIME ZONE '${process.env.TZ || "Europe/Athens"}')::date))
            ${threeMonthClause}
            ${statusClause}
          ORDER BY x.start_time DESC
@@ -549,6 +552,8 @@ module.exports = function clientsRouter({
     );
 
     const walkInRes = await pool.query("SELECT walk_in_client_id FROM shops WHERE id = $1", [req.shopId]);
+    // The notes on a client's card are the shop's, not for the client to read.
+    if (req.user.role === "client") delete client.notes;
     res.json({
       client: {
         ...client,

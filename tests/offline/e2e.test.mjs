@@ -603,6 +603,8 @@ describe("offline mode in the browser", () => {
     const tmpCard = await waitFor(async () => (await cards()).find((c) => c.pending && c.id.startsWith("tmp-")), "the pending booking");
     await openCard(tmpCard.id);
     await clickTestId("booking-payment-tab");
+    await clickTestId("payment-next");
+    await clickTestId("payment-next");
     await clickTestId("payment-submit");
     await waitFor(async () => (await queue()).some((w) => w.kind === "payment"), "the payment in the queue");
     await page.keyboard.press("Escape");
@@ -832,6 +834,8 @@ describe("offline mode in the browser", () => {
     await waitFor(async () => !(await page.$(".p-toast-message")), "earlier toasts to go", 15000);
     await openCard(r.data.id);
     await clickTestId("booking-payment-tab");
+    await clickTestId("payment-next");
+    await clickTestId("payment-next");
     await clickTestId("payment-submit");
     const toast = await waitFor(
       () => page.evaluate(() => [...document.querySelectorAll(".p-toast-message")].map((t) => t.textContent.replace(/\s+/g, " ")).join(" | ")),

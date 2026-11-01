@@ -1,22 +1,5 @@
 <template>
-  <div v-if="canSell" class="bg-white border border-gray-200 rounded-xl p-4 mb-6">
-    <div class="flex items-center justify-between mb-3">
-      <h4 class="text-xs font-bold text-gray-500 uppercase tracking-wider">
-        {{ t("giftCards.quickSell.cardTitle") }}
-      </h4>
-      <Button
-        size="small"
-        text
-        icon="pi pi-plus"
-        :label="t('giftCards.quickSell.sell')"
-        @click="showSell = true"
-      />
-    </div>
-
-    <p v-if="!pendingGiftCards.length" class="text-sm text-gray-400">
-      {{ t("giftCards.quickSell.none") }}
-    </p>
-
+  <div v-if="canSell">
     <div
       v-for="(g, idx) in pendingGiftCards"
       :key="idx"
@@ -74,4 +57,6 @@ const removePending = (idx: number) => {
   list.splice(idx, 1);
   emit("update:pendingGiftCards", list);
 };
+
+defineExpose({ openSell: () => (showSell.value = true) });
 </script>

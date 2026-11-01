@@ -1302,6 +1302,13 @@ export default {
     },
   },
   booking: {
+    openPast: {
+      header: "Leave this booking?",
+      message: "You have changes that aren't saved. Opening the other booking will lose them.",
+      discard: "Open it, lose my changes",
+      keep: "Stay here",
+      failed: "This booking could not be opened.",
+    },
     seriesHasPayments: {
       header: "A booking in the series is paid",
       message: "One of the bookings that would change has payments, so the series can't change. Save the change on this booking only?",
@@ -1550,6 +1557,9 @@ export default {
     },
   },
   priceChange: {
+    severalAppointments: "All {n} appointments being paid together. The new total is shared between them in proportion.",
+    belowProducts: "The new total can't be below the products ({amount}).",
+    completed: "A completed appointment's price can't be changed.",
     button: 'Change price',
     title: 'Change appointment price',
     currentTotal: 'Current total',
@@ -1574,6 +1584,22 @@ export default {
     exceedsPaid: 'That exceeds the amount paid on this appointment.',
   },
   payment: {
+    stepper: {
+      checkout: "Checkout",
+      payment: "Payment",
+      charge: "Charge",
+      next: "Next",
+      back: "Back",
+      toPay: "To pay",
+      remaining: "Still owed after this",
+      addSale: "Add sale",
+      salePackage: "Package",
+      saleGiftCard: "Gift card",
+      amountFollowed: "Amount to pay updated to {amount}",
+      checkAmount: "The price changed. Check the amount to pay.",
+      saleInFull: "The package or gift card being sold ({amount}) must be paid in full.",
+      saleMethod: "A package or gift card can only be sold for cash, card or bank transfer. Choose one of these first.",
+    },
     recordedToast: "Payment recorded",
     recordedToastDetail: "{amount} · {method}",
     nothingToPay: "Enter the amount to pay.",

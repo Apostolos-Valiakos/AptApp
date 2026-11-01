@@ -20,6 +20,8 @@ describe("which bookings are in the client's stored balance", () => {
     expect(countsInStoredBalance("2026-10-27T18:00:00", now)).toBe(false);
     expect(countsInStoredBalance("2026-02-28T10:00:00", now)).toBe(false);
     expect(countsInStoredBalance(null, now)).toBe(false);
+    expect(countsInStoredBalance("2026-10-27T18:00:00", now, "completed")).toBe(true);
+    expect(countsInStoredBalance("2026-10-28T18:00:00", now, "completed")).toBe(false);
   });
 });
 
