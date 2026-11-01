@@ -853,7 +853,10 @@ module.exports = function reportsRouter({
       }
       if (to) {
         expParams.push(to);
-        expFilter += ` AND expense_date <= ${expenseDateOf(expParams.length)}`;
+        // A monthly expense (on the 1st) counts only if the period covers its whole month.
+        expFilter += ` AND CASE WHEN kind = 'monthly'
+                                THEN (date_trunc('month', expense_date) + INTERVAL '1 month - 1 day')::date
+                                ELSE expense_date END <= ${expenseDateOf(expParams.length)}`;
       }
       if (excludeCash === "true") expFilter += ` AND payment_method <> 'cash'`;
       if (excludeCard === "true") expFilter += ` AND payment_method <> 'card'`;

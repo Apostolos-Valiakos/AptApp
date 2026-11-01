@@ -499,6 +499,7 @@ app.use(
   require("./routes/expenses")({
     authenticateToken,
     requireShopAdminAccess,
+    requireAnalyticsAccess,
     safeUUID,
   }),
 );
