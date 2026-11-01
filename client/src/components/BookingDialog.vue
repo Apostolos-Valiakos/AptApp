@@ -62,7 +62,7 @@
         <div class="flex px-4 md:px-6 py-2 flex-shrink-0">
           <div class="flex gap-1 p-1 bg-gray-50 rounded-full">
             <button
-              v-for="tab in tabs"
+              v-for="tab in visibleTabs"
               :key="tab.key"
               @click="currentTab = tab.key"
               class="py-2 px-4 text-sm font-medium transition-colors whitespace-nowrap rounded-full"
@@ -79,6 +79,8 @@
 
         <!-- Tab content -->
         <div class="flex-grow overflow-y-auto p-4 md:p-6 space-y-6">
+          <!-- Inert for staff: they read the booking but can't use anything in it. -->
+          <div class="space-y-6" :inert="isReadOnly">
           <!-- BOOKING TAB -->
           <div v-if="currentTab === 'Booking'" class="space-y-6">
             <!-- Client selector -->
@@ -366,6 +368,7 @@
               </div>
             </div>
           </div>
+          </div>
         </div>
 
         <!-- Footer bar -->
@@ -373,7 +376,7 @@
           class="px-4 md:px-6 py-4 border-t border-gray-200 flex flex-col-reverse sm:flex-row justify-between items-center bg-gradient-to-r from-gray-50 to-white flex-shrink-0 gap-3"
         >
           <Button
-            v-if="isEditMode"
+            v-if="isEditMode && !isReadOnly"
             :label="t('booking.cancelAppt')"
             icon="pi pi-trash"
             class="p-button-danger p-button-text p-button-sm w-full sm:w-auto"
@@ -400,7 +403,7 @@
                 Save Receipt
               </label> -->
               <Button
-                v-if="currentTab !== 'Payment'"
+                v-if="currentTab !== 'Payment' && !isReadOnly"
                 :label="t('booking.tabs.payment')"
                 data-testid="booking-payment-tab"
                 @click="currentTab = 'Payment'"
@@ -408,7 +411,7 @@
               />
             </div>
             <Button
-              v-if="!form.is_block"
+              v-if="!form.is_block && !isReadOnly"
               :label="t('booking.repeat.button')"
               icon="pi pi-copy"
               outlined
@@ -417,6 +420,7 @@
               @click="showRepeatDialog = true"
             />
             <Button
+              v-if="!isReadOnly"
               :label="t('booking.save')"
               @click="save()"
               data-testid="booking-save"
@@ -457,7 +461,7 @@
           ></i>
         </div>
 
-        <div v-show="showMobileSidebar || !isMobile" class="h-full">
+        <div v-show="showMobileSidebar || !isMobile" class="h-full" :inert="isReadOnly">
           <BookingSidebar
             class="w-full bg-gray-50 h-full"
             :client="selectedClient"
@@ -546,6 +550,8 @@ const canChangePriceOrRefund = computed(() => authStore.isShopAdmin);
 // packages/gift cards server-side. The read (siblingAppointments fetch) stays
 // open to every role so a plain staff member can still see the day's total.
 const canCombineDayPayment = computed(() => authStore.isShopAdmin);
+// Plain staff only read a booking; the server refuses their changes too.
+const isReadOnly = computed(() => authStore.user?.role === "staff");
 const priceChangeVisible = ref(false);
 const refundVisible = ref(false);
 
@@ -623,6 +629,7 @@ const tabs = [
   { key: "Notes", label: computed(() => t("booking.tabs.notes")) },
   { key: "Payment", label: computed(() => t("booking.tabs.payment")) },
 ] as const;
+const visibleTabs = computed(() => tabs.filter((tab) => tab.key !== "Payment" || !isReadOnly.value));
 
 const loading = ref(false);
 const paymentLoading = ref(false);
@@ -880,6 +887,7 @@ const {
   selectedSiblingIds,
   pendingPackagesTotal,
   pendingGiftCardsTotal,
+  savedUnpaid: computed(() => Math.max(0, originalSnapshot.value.price - originalSnapshot.value.deposit)),
 });
 
 const originalServices = ref<ServiceSnapshot[]>([]);
@@ -907,7 +915,7 @@ watch(selectedSiblingIds, () => nextTick(suggestAmountToPay), { deep: true });
 // an unrelated service-price change.
 watch(combinedTotalDueNow, (newVal) => {
   if (amountToPayNow.value > newVal) {
-    amountToPayNow.value = newVal;
+    amountToPayNow.value = Math.max(0, newVal); // a client in credit owes nothing
   }
 });
 
@@ -1384,6 +1392,7 @@ const unblockTimeOff = async (): Promise<boolean> => {
 
 // Resolves false only when the user declined the change confirmation.
 const save = async (close = true): Promise<boolean> => {
+  if (isReadOnly.value) return false;
   if (!(await confirmChanges())) return false;
 
   // Check if editing an existing recurring appointment
@@ -1897,6 +1906,7 @@ const recordPayment = async (
 };
 
 const confirmDelete = () => {
+  if (isReadOnly.value) return;
   const isSeries = !!props.appointment?.group_id;
 
   confirm.require({

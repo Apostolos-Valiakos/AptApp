@@ -2,6 +2,7 @@
 // (staff availability, discounts, self-booking, overlaps, places, versions).
 const crypto = require("crypto");
 const { applyDiscount } = require("../discounts");
+const { HttpError } = require("../http");
 const { safeUUID } = require("./common");
 const { recalculateClientBalance } = require("./balances");
 const { releasePackageUsage } = require("./packages");
@@ -173,7 +174,16 @@ const resolveDiscount = async (client, shopId, body, existing = null) => {
 };
 
 // --- HELPER: Create Appointment Series ---
+// A product line's quantity, when given, is at least 1 (the booking screen
+// doesn't allow less, and a line of 0 would otherwise be charged as 1).
+const assertProductQuantities = (products) => {
+  if ((products || []).some((p) => p.quantity != null && !(Number(p.quantity) >= 1))) {
+    throw new HttpError(400, { error: "invalid_quantity" });
+  }
+};
+
 const createAppointmentSeries = async (client, data, shopId) => {
+  assertProductQuantities(data.products);
   const {
     client_id,
     status = "new",
@@ -418,6 +428,7 @@ const createAppointmentSeries = async (client, data, shopId) => {
 
 // --- HELPER: Perform Single Update ---
 const performSingleUpdate = async (client, id, shopId, body) => {
+  assertProductQuantities(body.products);
   const {
     client_id,
     status,

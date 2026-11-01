@@ -73,6 +73,15 @@ import { useToast } from "primevue/usetoast";
 
 const { t } = useI18n();
 
+// Why a login was refused (the server's or the store's code), in the app's language.
+const LOGIN_ERRORS: Record<string, string> = {
+  invalid_credentials: "login.invalidCredentials",
+  shop_inactive: "login.errors.shopInactive",
+  account_deactivated: "login.errors.accountDeactivated",
+  too_many_attempts: "login.errors.tooManyAttempts",
+  network: "login.errors.network",
+};
+
 const username = ref("");
 const password = ref("");
 const loading = ref(false);
@@ -102,11 +111,13 @@ const login = async () => {
 
       if (authStore.user?.role === "client") {
         router.push("/portal");
+      } else if (authStore.isOwner) {
+        router.push("/app/platform/shops");
       } else {
         router.push("/app/scheduler");
       }
     } else {
-      toast.add({ severity: "error", summary: t('login.loginFailed'), detail: result.error || t('login.invalidCredentials'), life: 4000 });
+      toast.add({ severity: "error", summary: t('login.loginFailed'), detail: t(LOGIN_ERRORS[result.code] || "login.errors.unknown"), life: 4000 });
     }
   } finally {
     loading.value = false;

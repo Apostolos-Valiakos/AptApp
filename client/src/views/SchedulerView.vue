@@ -48,6 +48,7 @@
             {{ t("scheduler.mobile.today") }}
           </button>
           <button
+            v-if="!isStaffRole"
             @click="clientSearchVisible = true"
             class="w-10 h-10 flex items-center justify-center rounded-lg text-[var(--p-primary-600)]"
             :aria-label="t('clientSearch.button')"
@@ -188,7 +189,7 @@
 
         <!-- Client search -->
         <button
-          v-if="!isPhone"
+          v-if="!isPhone && !isStaffRole"
           @click="clientSearchVisible = true"
           class="flex items-center gap-1.5 bg-[var(--p-primary-color)] hover:brightness-105 text-white px-3 md:px-4 py-2 rounded-lg text-xs font-bold shadow-sm active:scale-95 transition-all flex-shrink-0"
         >
@@ -199,6 +200,7 @@
         <!-- Secondary: Swap + Reorder -->
         <div class="flex items-center gap-1">
           <button
+            v-if="!isStaffRole"
             @click="openSwapDialog"
             class="p-2 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-800 transition-colors flex-shrink-0"
             :title="t('scheduler.nav.swap')"
@@ -354,6 +356,7 @@
             {{ t("scheduler.noStaff.text") }}
           </p>
           <a
+            v-if="!isStaffRole"
             href="/app/staff"
             class="inline-flex items-center gap-2 bg-[var(--p-primary-color)] text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:brightness-105 transition-all"
           >
@@ -389,6 +392,7 @@
       v-model:visible="placeDialogVisible"
       v-model:index="placeDialogIndex"
       :groups="placeDialogGroups"
+      :can-add="!isStaffRole"
       @add="onPlaceGroupAdd"
       @open="onPlaceGroupOpen"
     />
@@ -696,7 +700,17 @@ const handleSwap = async (swapData: {
 };
 
 const handleReorderSave = async (newOrder: any[]) => {
-  await calendarStore.updateResourceOrder(newOrder);
+  try {
+    await calendarStore.updateResourceOrder(newOrder);
+  } catch {
+    toast.add({
+      severity: "error",
+      summary: t("scheduler.toasts.updateFailed"),
+      detail: t("scheduler.toasts.staffOrderFailed"),
+      life: 4000,
+    });
+    return;
+  }
   toast.add({
     severity: "success",
     summary: t("common.success"),
@@ -1439,6 +1453,7 @@ const onClientSelected = (client: any) => {
 };
 
 const onBookForClient = (client: any) => {
+  if (isStaffRole.value) return;
   selectedAppointment.value = {
     client_id: client.client_id,
     ...client,
@@ -1590,6 +1605,7 @@ const confirmOvertimeSlot = (entry: OvertimeEntry): Promise<boolean> =>
 // starts one. Outside the staff member's hours: ask first; the booking
 // dialog then doesn't ask again for the same staff member.
 const openNewBooking = async (start: Date, end: Date, staffId: string | null, staffName: string) => {
+  if (isStaffRole.value) return;
   const overtime = overtimeEntryFor(staffId, start, end);
   if (overtime && !(await confirmOvertimeSlot(overtime))) return;
   selectedAppointment.value = {
@@ -1687,7 +1703,7 @@ const placeGroupHtml = (props: any) => {
         <span class="fc-place-group-span">${hhmm(start)}–${hhmm(end)}</span>
         <span class="fc-place-group-badge is-${level}" title="${escapeHtml(t("capacity.places"))}">${peak}/${capacity}</span>
         <span class="fc-place-group-actions">
-          ${peak < capacity ? `<button type="button" data-group-action="add" title="${escapeHtml(t("capacity.addPerson"))}"><i class="pi pi-plus"></i></button>` : ""}
+          ${peak < capacity && !isStaffRole.value ? `<button type="button" data-group-action="add" title="${escapeHtml(t("capacity.addPerson"))}"><i class="pi pi-plus"></i></button>` : ""}
           ${members.length > 1 ? `<button type="button" data-group-action="expand" title="${escapeHtml(t("capacity.expand"))}"><i class="pi pi-clone"></i></button>` : ""}
         </span>
       </div>
@@ -2000,8 +2016,9 @@ const calendarOptions = ref({
   nowIndicator: true,
   weekends: true,
   headerToolbar: false as const,
-  editable: true,
-  selectable: true,
+  // Plain staff only look at the calendar (the server refuses their changes too).
+  editable: !isStaffRole.value,
+  selectable: !isStaffRole.value,
   selectMirror: true,
   selectAllow: (info: any) =>
     isRangeAllowedForResource(info.start, info.end, info.resource),
@@ -2359,12 +2376,14 @@ const calendarOptions = ref({
   },
 
   eventDrop: async (info: any) => {
+    if (isStaffRole.value) return info.revert();
     if (info.event.extendedProps.isPlaceGroup) return movePlaceGroup(info);
     if (info.event.extendedProps.groupKey) return closeGroupAfter(() => dropCard(info));
     return dropCard(info);
   },
 
   eventResize: async (info: any) => {
+    if (isStaffRole.value) return info.revert();
     if (info.event.extendedProps.groupKey) return closeGroupAfter(() => resizeCard(info));
     return resizeCard(info);
   },
@@ -2483,6 +2502,21 @@ onMounted(() => {
   window.addEventListener("appointments-changed", liveReload);
   document.addEventListener("visibilitychange", onVisibleAgain);
 });
+// A day the server refused or failed to load: the calendar is empty, so say why.
+watch(
+  () => calendarStore.loadFailed,
+  (failed) => {
+    if (failed) {
+      toast.add({
+        severity: "error",
+        summary: t("scheduler.toasts.loadFailed"),
+        detail: t("scheduler.toasts.loadFailedDetail"),
+        life: 5000,
+      });
+    }
+  },
+);
+
 onUnmounted(() => {
   window.removeEventListener("appointments-changed", liveReload);
   document.removeEventListener("visibilitychange", onVisibleAgain);

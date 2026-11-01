@@ -33,9 +33,9 @@ describe("earlier debt", () => {
   test("a booking later today: the stored balance doesn't have it yet", () => {
     expect(previousDebtFrom({ storedBalance: 50, isEdit: true, currentInBalance: false, currentUnpaid: 30, selectedSiblingsUnpaidInBalance: 0 })).toBe(50);
   });
-  test("selected same-day bookings that have happened are taken out too, never below zero", () => {
+  test("selected same-day bookings that have happened are taken out too; below zero is the client's credit", () => {
     expect(previousDebtFrom({ storedBalance: 100, isEdit: true, currentInBalance: true, currentUnpaid: 30, selectedSiblingsUnpaidInBalance: 20 })).toBe(50);
-    expect(previousDebtFrom({ storedBalance: 10, isEdit: true, currentInBalance: true, currentUnpaid: 30, selectedSiblingsUnpaidInBalance: 0 })).toBe(0);
+    expect(previousDebtFrom({ storedBalance: 10, isEdit: true, currentInBalance: true, currentUnpaid: 30, selectedSiblingsUnpaidInBalance: 0 })).toBe(-20);
   });
 });
 

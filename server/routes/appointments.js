@@ -6,6 +6,7 @@ const express = require("express");
 const { HttpError, asyncHandler, withTransaction } = require("../http");
 
 module.exports = function appointmentsRouter({
+  notForStaff,
   DiscountError,
   MissingStaffError,
   OfflineConflictError,
@@ -228,7 +229,7 @@ module.exports = function appointmentsRouter({
       res.json(formatted);
   }));
 
-  router.post("/", authenticateToken, asyncHandler(async (req, res) => {
+  router.post("/", authenticateToken, notForStaff, asyncHandler(async (req, res) => {
     const idempotencyKey = req.headers["idempotency-key"] || null;
     const { status, body } = await withTransaction(async (client) => {
       const cached = await checkIdempotency(client, idempotencyKey, req.shopId);
@@ -282,7 +283,7 @@ module.exports = function appointmentsRouter({
     res.status(status).json(body);
   }, { log: "Create Appointment Error:", message: "Failed to create appointment", mapError: createBookingError }));
 
-  router.put("/:id", authenticateToken, asyncHandler(async (req, res) => {
+  router.put("/:id", authenticateToken, notForStaff, asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { scope } = req.query;
     const idempotencyKey = req.headers["idempotency-key"] || null;
@@ -417,7 +418,7 @@ module.exports = function appointmentsRouter({
   // portal's own cancel endpoint, plus releasing any redeemed package visit
   // (the portal one doesn't — a pre-existing gap there, left alone since the
   // client portal is a separate, not-yet-shipped feature).
-  router.post("/:id/cancel", authenticateToken, asyncHandler(async (req, res) => {
+  router.post("/:id/cancel", authenticateToken, notForStaff, asyncHandler(async (req, res) => {
     if (req.user.role === "client") return res.status(403).json({ error: "Forbidden" });
     const { id } = req.params;
     const newBalance = await withTransaction(async (client) => {
@@ -461,7 +462,7 @@ module.exports = function appointmentsRouter({
     await client.query("DELETE FROM product_sales WHERE appointment_id = ANY($1)", [appointmentIds]);
   };
 
-  router.delete("/:id", authenticateToken, asyncHandler(async (req, res) => {
+  router.delete("/:id", authenticateToken, notForStaff, asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { scope } = req.query;
     const idempotencyKey = req.headers["idempotency-key"] || null;
@@ -538,7 +539,7 @@ module.exports = function appointmentsRouter({
     res.status(status).json(body);
   }));
 
-  router.post("/swap", authenticateToken, asyncHandler(async (req, res) => {
+  router.post("/swap", authenticateToken, notForStaff, asyncHandler(async (req, res) => {
     const { appointment1_id, appointment2_id } = req.body;
     if (!appointment1_id || !appointment2_id)
       return res.status(400).json({ error: "Two appointment IDs required" });
@@ -782,7 +783,7 @@ module.exports = function appointmentsRouter({
   );
 
   // Use one visit of a package for a service line of this appointment.
-  router.post("/:id/package-redemptions", authenticateToken, asyncHandler(async (req, res) => {
+  router.post("/:id/package-redemptions", authenticateToken, notForStaff, asyncHandler(async (req, res) => {
     if (req.user.role === "client") return res.status(403).json({ error: "Forbidden" });
     const packageId = safeUUID(req.body.client_package_id);
     if (!packageId) return res.status(400).json({ error: "client_package_id is required" });

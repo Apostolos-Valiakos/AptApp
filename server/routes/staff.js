@@ -7,6 +7,7 @@ const pool = require("../db");
 const bcrypt = require("bcrypt");
 
 module.exports = function staffRouter({
+  notForStaff,
   io,
   revokeUserSessions,
   authenticateToken,
@@ -183,7 +184,7 @@ module.exports = function staffRouter({
   }));
 
   // Create a leave or break — warns about conflicting appointments unless force=true
-  router.post("/staff/:id/time-off", authenticateToken, notForClients, asyncHandler(async (req, res) => {
+  router.post("/staff/:id/time-off", authenticateToken, notForClients, notForStaff, asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { type, start_date, end_date, start_time, end_time, reason, force } = req.body;
 
@@ -263,7 +264,7 @@ module.exports = function staffRouter({
     res.json(rows[0]);
   }));
 
-  router.delete("/staff/:id/time-off/:timeOffId", authenticateToken, notForClients, asyncHandler(async (req, res) => {
+  router.delete("/staff/:id/time-off/:timeOffId", authenticateToken, notForClients, notForStaff, asyncHandler(async (req, res) => {
     const { rowCount } = await pool.query(
       `DELETE FROM staff_time_off WHERE id = $1 AND staff_id = $2 AND shop_id = $3`,
       [req.params.timeOffId, req.params.id, req.shopId],

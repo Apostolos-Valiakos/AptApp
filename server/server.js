@@ -23,7 +23,7 @@ const { checkIdempotency, saveIdempotency } = require("./domain/idempotency");
 const { releasePackageUsage, loadClientPackages } = require("./domain/packages");
 const { parseDebtResolution, settleAmount } = require("./domain/debts");
 const { StaffUnavailableError, MissingStaffError, getGroupDetails, DiscountError, createAppointmentSeries, performSingleUpdate, SelfBookingNotAllowedError, sanitizeClientBookingPayload, OfflineConflictError, assertCapacity, assertNoNewOverlaps, assertBaseVersion } = require("./domain/bookings");
-const { forceLogoutCache, userRevokedCache, revokeUserSessions, isSessionToken, authenticateToken, requireAnalyticsAccess, notForClients, requireShopAdminAccess, isAdminRole, canSellExtras } = require("./middleware/auth");
+const { forceLogoutCache, userRevokedCache, revokeUserSessions, isSessionToken, authenticateToken, requireAnalyticsAccess, notForClients, notForStaff, requireShopAdminAccess, isAdminRole, canSellExtras } = require("./middleware/auth");
 const path = require("path");
 const cors = require("cors");
 const helmet = require("helmet");
@@ -54,7 +54,7 @@ const allowedOrigins = [...ALLOWED_ORIGINS];
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
-  message: { error: "Too many login attempts, please try again in 15 minutes" },
+  message: { error: "Too many login attempts, please try again in 15 minutes", code: "too_many_attempts" },
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -304,6 +304,7 @@ const atStartup = async () => {
 app.use(
   "/api/v1/appointments",
   require("./routes/appointments")({
+    notForStaff,
     DiscountError,
     MissingStaffError,
     OfflineConflictError,
@@ -335,6 +336,7 @@ app.use(
 app.use(
   "/api/v1/transactions",
   require("./routes/transactions")({
+    notForStaff,
     authenticateToken,
     canSellExtras,
     checkIdempotency,
@@ -347,6 +349,7 @@ app.use(
 app.use(
   "/api/v1/clients",
   require("./routes/clients")({
+    notForStaff,
     authenticateToken,
     canSellExtras,
     checkIdempotency,
@@ -369,6 +372,7 @@ app.use(
 app.use(
   "/api/v1",
   require("./routes/staff")({
+    notForStaff,
     authenticateToken,
     io,
     revokeUserSessions,

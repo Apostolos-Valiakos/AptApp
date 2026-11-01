@@ -133,6 +133,9 @@ const routes = [
   { path: "/profile", redirect: "/app/profile" },
 ];
 
+// The only pages of the staff app a plain "staff" login may open.
+const STAFF_PAGES = ["/app/scheduler", "/app/profile"];
+
 const router = createRouter({
   history: createWebHistory(),
   routes,
@@ -146,11 +149,16 @@ router.beforeEach((to, from, next) => {
   }
 
   if (to.path === "/login" && authStore.isAuthenticated) {
-    return authStore.isClient ? next("/portal/home") : next("/app/scheduler");
+    if (authStore.isClient) return next("/portal/home");
+    return next(authStore.isOwner ? "/app/platform/shops" : "/app/scheduler");
   }
 
   if (to.path.startsWith("/app") && authStore.isClient) {
     return next("/portal/home");
+  }
+
+  if (authStore.user?.role === "staff" && to.path.startsWith("/app") && !STAFF_PAGES.includes(to.path)) {
+    return next("/app/scheduler");
   }
 
   if (to.meta.requiresAnalytics && !authStore.isAnalyticsAllowed) {

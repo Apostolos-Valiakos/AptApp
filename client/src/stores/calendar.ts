@@ -12,6 +12,7 @@ import {
 } from "../offline/localData";
 import { idMap, pendingWrites } from "../offline/queue";
 import { api } from "../api/http";
+import { useAuthStore } from "./auth";
 
 // Offline mode: everything loaded here is also kept in the browser (see
 // offline/localData.ts), so the calendar opens and works without a
@@ -33,9 +34,14 @@ export const useCalendarStore = defineStore("calendar", () => {
   const workingHours = ref<any[]>([]);
   /** Shown from the browser's copy (the server couldn't be reached). */
   const fromCache = ref(false);
+  /** The server refused or failed to load the visible range (not a lost connection). */
+  const loadFailed = ref(false);
   const clientsById = ref<Record<string, any>>({});
   let lastRange: { start: string; end: string } | null = null;
   let lastPrefetch = 0;
+  // Raised when the logged-in user changes: answers to requests made before
+  // that belong to the previous user and are dropped.
+  let session = 0;
 
   /** The calendar's appointments: the last known list plus changes waiting to sync. */
   const events = computed(() =>
@@ -65,16 +71,18 @@ export const useCalendarStore = defineStore("calendar", () => {
       ["/api/v1/time-off", "timeOff", (v) => (timeOff.value = v)],
       ["/api/v1/working-hours", "workingHours", (v) => (workingHours.value = v)],
     ];
+    const startedIn = session;
     await Promise.all(
       sources.map(async ([url, key, apply]) => {
         try {
           const data = await getJson(url);
+          if (startedIn !== session) return;
           apply(data);
           cacheValue(key, data).catch(() => {});
         } catch (err: any) {
           if (err?.status && err.status !== 503) return; // a real refusal: don't mask it with old data
           const cached = await cachedValue(key).catch(() => undefined);
-          if (cached) apply(cached);
+          if (cached && startedIn === session) apply(cached);
         }
       }),
     );
@@ -95,11 +103,18 @@ export const useCalendarStore = defineStore("calendar", () => {
       if (seq !== fetchSeq) return;
       serverEvents.value = rows;
       fromCache.value = false;
+      loadFailed.value = false;
       cacheAppointmentsRange(start, end, rows).catch(() => {});
       prefetchAround();
     } catch (err: any) {
       if (err?.status && err.status !== 503) {
         console.error("fetchAppointments failed", err);
+        if (seq !== fetchSeq) return;
+        // Old appointments must not pass for this range's.
+        serverEvents.value = [];
+        fromCache.value = false;
+        // An expired session has its own message (utils/sessionRecovery.ts).
+        loadFailed.value = err.status !== 401;
         return;
       }
       // Offline: the browser's copy of this range.
@@ -107,6 +122,7 @@ export const useCalendarStore = defineStore("calendar", () => {
       if (seq !== fetchSeq) return;
       serverEvents.value = cached;
       fromCache.value = true;
+      loadFailed.value = false;
     }
   };
 
@@ -120,6 +136,7 @@ export const useCalendarStore = defineStore("calendar", () => {
   const prefetchAround = async (force = false) => {
     if (!force && Date.now() - lastPrefetch < PREFETCH_EVERY_MS) return;
     lastPrefetch = Date.now();
+    const startedIn = session;
     const from = new Date(Date.now() - PREFETCH_DAYS_BACK * 86400000);
     from.setHours(0, 0, 0, 0);
     const to = new Date(Date.now() + PREFETCH_DAYS_AHEAD * 86400000);
@@ -127,6 +144,7 @@ export const useCalendarStore = defineStore("calendar", () => {
     try {
       const params = new URLSearchParams({ start: from.toISOString(), end: to.toISOString() });
       const rows = await getJson(`/api/v1/appointments?${params.toString()}`);
+      if (startedIn !== session) return;
       await cacheAppointmentsRange(from.toISOString(), to.toISOString(), rows);
       await pruneCachedAppointments(60);
     } catch {
@@ -134,7 +152,7 @@ export const useCalendarStore = defineStore("calendar", () => {
     }
     try {
       const clients = await getJson("/api/v1/clients?slim=true");
-      if (Array.isArray(clients)) {
+      if (Array.isArray(clients) && startedIn === session) {
         await cacheClients(clients);
         await loadCachedClients();
       }
@@ -159,7 +177,9 @@ export const useCalendarStore = defineStore("calendar", () => {
     }
   };
 
+  /** Shows the new order right away; if it can't be saved, puts the old one back and throws. */
   const updateResourceOrder = async (reorderedStaff: any[]) => {
+    const previous = resources.value;
     resources.value = reorderedStaff;
 
     try {
@@ -171,8 +191,32 @@ export const useCalendarStore = defineStore("calendar", () => {
       });
     } catch (err) {
       console.error("Failed to save staff order", err);
+      resources.value = previous;
+      throw err;
     }
   };
+
+  /** Forgets everything in memory, and any answers still on their way. */
+  const forgetLoadedData = () => {
+    session++;
+    fetchSeq++;
+    lastRange = null;
+    lastPrefetch = 0;
+    serverEvents.value = [];
+    resources.value = [];
+    services.value = [];
+    products.value = [];
+    timeOff.value = [];
+    workingHours.value = [];
+    clientsById.value = {};
+    fromCache.value = false;
+    loadFailed.value = false;
+  };
+
+  // Every way a user stops being the current one: logout, an expired or
+  // revoked session, entering or leaving a shop's view.
+  const authStore = useAuthStore();
+  watch(() => authStore.user?.id, forgetLoadedData, { flush: "sync" });
 
   // Synced changes now have real ids and server data: reload what's visible.
   if (typeof window !== "undefined") {
@@ -182,11 +226,7 @@ export const useCalendarStore = defineStore("calendar", () => {
     });
     window.addEventListener("offline-queue-changed", () => loadCachedClients());
     // Logged out: forget what's in memory too, and download afresh next login.
-    window.addEventListener("offline-data-cleared", () => {
-      serverEvents.value = [];
-      clientsById.value = {};
-      lastPrefetch = 0;
-    });
+    window.addEventListener("offline-data-cleared", forgetLoadedData);
   }
   // Clients created offline appear in the overlay by name.
   watch(pendingWrites, () => loadCachedClients());
@@ -200,6 +240,7 @@ export const useCalendarStore = defineStore("calendar", () => {
     timeOff,
     workingHours,
     fromCache,
+    loadFailed,
     fetchBaseResources,
     fetchAppointments,
     refreshVisibleRange,

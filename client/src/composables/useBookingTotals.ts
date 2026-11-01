@@ -22,7 +22,8 @@ export const countsInStoredBalance = (start: Date | string | null | undefined, n
  * The client's debt from other bookings. The stored balance already
  * contains whatever is unpaid on this booking and on the selected same-day
  * ones if they have happened; that part is taken out, so it isn't counted
- * twice (once here and once as this visit's own amount).
+ * twice (once here and once as this visit's own amount). The result is
+ * negative when the client is in credit.
  */
 export const previousDebtFrom = ({
   storedBalance,
@@ -41,7 +42,7 @@ export const previousDebtFrom = ({
   let debt = storedBalance;
   if (currentInBalance) debt -= currentUnpaid;
   debt -= selectedSiblingsUnpaidInBalance;
-  return Math.max(0, debt);
+  return debt;
 };
 
 /**
@@ -65,6 +66,8 @@ export function useBookingTotals(state: {
   selectedSiblingIds: Ref<string[]>;
   pendingPackagesTotal: Ref<number>;
   pendingGiftCardsTotal: Ref<number>;
+  /** What's unpaid on this booking as last saved (the stored balance knows nothing of later edits). Defaults to the current amount. */
+  savedUnpaid?: Ref<number>;
 }) {
   const selectedSiblings = computed(() =>
     state.siblings.value.filter((s) => state.selectedSiblingIds.value.includes(s.id)),
@@ -96,7 +99,7 @@ export function useBookingTotals(state: {
       storedBalance: Number(state.client.value.outstanding_balance || 0),
       isEdit: state.isEdit.value,
       currentInBalance: isApptInDatabaseBalance.value,
-      currentUnpaid: currentUnpaid.value,
+      currentUnpaid: state.savedUnpaid ? state.savedUnpaid.value : currentUnpaid.value,
       selectedSiblingsUnpaidInBalance: selectedSiblings.value
         .filter((s) => countsInStoredBalance(s?.services?.[0]?.start_time))
         .reduce((sum, s) => sum + Number(s.owed), 0),

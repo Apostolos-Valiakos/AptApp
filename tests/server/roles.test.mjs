@@ -101,8 +101,9 @@ test("plain staff keep what their screens use", async () => {
     assert.equal(r.status, 200, `${url}: ${r.status} ${JSON.stringify(r.data)?.slice(0, 80)}`);
   }
   assert.equal((await as.staff("POST", "/api/v1/staff/reorder", { orders: [] })).status, 200);
+  // Time off is no longer theirs to change (see staffReadOnly.test.mjs).
   const added = await as.staff("POST", `/api/v1/staff/${ids.staff}/time-off`, { type: "break", start_date: "2027-03-11", end_date: "2027-03-11", start_time: "10:00", end_time: "11:00" });
-  assert.equal(added.status, 200, JSON.stringify(added.data));
+  assert.equal(added.status, 403, JSON.stringify(added.data));
 });
 
 test("admin and front desk can make those changes", async () => {

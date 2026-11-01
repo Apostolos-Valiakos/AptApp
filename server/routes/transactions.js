@@ -6,6 +6,7 @@ const crypto = require("crypto");
 const { HttpError, asyncHandler, withTransaction } = require("../http");
 
 module.exports = function transactionsRouter({
+  notForStaff,
   authenticateToken,
   canSellExtras,
   checkIdempotency,
@@ -16,7 +17,7 @@ module.exports = function transactionsRouter({
 }) {
   const router = express.Router();
 
-  router.post("/", authenticateToken, asyncHandler(async (req, res) => {
+  router.post("/", authenticateToken, notForStaff, asyncHandler(async (req, res) => {
     const {
       appointment_id,
       appointment_ids, // string[] | undefined — explicit ordered list for a combined same-day payment; appointment_id must be one of its entries

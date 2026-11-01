@@ -57,6 +57,13 @@
           >
         </div>
         <div
+          v-else-if="previousDebt < 0"
+          class="flex justify-between py-2 border-b border-gray-700/50"
+        >
+          <span>{{ t("payment.clientCredit") }}</span>
+          <span class="font-medium text-green-300">{{ formatMoney(previousDebt) }}</span>
+        </div>
+        <div
           v-if="packagesTotal > 0"
           class="flex justify-between py-2 border-b border-gray-700/50"
         >
