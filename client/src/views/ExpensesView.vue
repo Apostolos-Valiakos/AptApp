@@ -11,7 +11,7 @@
             <p class="text-sm text-gray-500 mt-0.5">{{ t(isAdmin ? "expenses.subtitle" : "expenses.subtitleFrontdesk") }}</p>
           </div>
         </div>
-        <div v-if="section !== 'report'" class="flex gap-2 flex-wrap">
+        <div v-if="section === 'daily' || (section === 'monthly' && reauthToken)" class="flex gap-2 flex-wrap">
           <Button
             v-if="isAdmin"
             :label="t('expenses.categories.title')"
@@ -37,7 +37,12 @@
         @update:modelValue="onSectionChange"
       />
 
-      <div v-if="section !== 'report'" class="flex flex-col sm:flex-row gap-3 mt-6 sm:items-end">
+    </div>
+
+    <SensitiveGate :key="section" :required="section !== 'daily'" @unlocked="onUnlocked">
+    <div class="space-y-6">
+    <div v-if="section !== 'report'" class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+      <div class="flex flex-col sm:flex-row gap-3 sm:items-end">
         <div class="flex-1 min-w-0">
           <label class="block text-xs font-medium text-gray-500 mb-1">{{ t("expenses.from") }}</label>
           <Calendar v-model="filters.from" dateFormat="dd/mm/yy" showIcon class="w-full" inputClass="w-full" @update:modelValue="load" />
@@ -106,6 +111,8 @@
         </Column>
       </DataTable>
     </div>
+    </div>
+    </SensitiveGate>
 
     <Dialog v-model:visible="showDialog" modal :header="dialogTitle" :style="{ width: '28rem', maxWidth: '95vw' }">
       <div class="space-y-4">
@@ -165,6 +172,8 @@ import { useConfirm } from "primevue/useconfirm";
 import { toLocalDateStr } from "../utils/staffAvailability";
 import { useSettingsStore } from "../stores/settings";
 import { useAuthStore } from "../stores/auth";
+import { reauthToken } from "../utils/reauth";
+import SensitiveGate from "../components/SensitiveGate.vue";
 import ExpenseReport from "../components/expenses/ExpenseReport.vue";
 import ExpenseCategoriesDialog from "../components/expenses/ExpenseCategoriesDialog.vue";
 
@@ -305,7 +314,11 @@ const onSectionChange = () => {
   filters.from = section.value === "monthly" ? new Date(year, 0, 1) : monthStart();
   filters.to = section.value === "monthly" ? new Date(year, 11, 31) : monthEnd();
   expenses.value = [];
-  load();
+  if (section.value === "daily") load();
+};
+// Monthly and Reports open only after the password is retyped.
+const onUnlocked = () => {
+  if (section.value === "monthly") load();
 };
 
 const openNew = () => {

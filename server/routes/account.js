@@ -6,15 +6,40 @@ const { asyncHandler, withTransaction } = require("../http");
 const pool = require("../db");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const rateLimit = require("express-rate-limit");
 
 module.exports = function accountRouter({
   authenticateToken,
   isSessionToken,
   loginLimiter,
   notForClients,
+  requireAnalyticsAccess,
+  signReauth,
   signupLimiter,
 }) {
   const router = express.Router();
+
+  // Retyping the password to open a sensitive page. Counted per person, and
+  // only wrong attempts, since a right one is needed every time a page opens.
+  // Not 401: that means an expired login, and sends the app to the login page.
+  const reauthLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 5,
+    skipSuccessfulRequests: true,
+    keyGenerator: (req) => String(req.user.userId),
+    validate: false,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "too_many_attempts" },
+  });
+  router.post("/reauth", authenticateToken, requireAnalyticsAccess, reauthLimiter, asyncHandler(async (req, res) => {
+    const password = String(req.body?.password || "");
+    const { rows } = await pool.query("SELECT password FROM users WHERE id = $1 AND is_active IS NOT FALSE", [req.user.userId]);
+    if (!rows[0] || !(await bcrypt.compare(password, rows[0].password))) {
+      return res.status(403).json({ error: "wrong_password" });
+    }
+    res.json({ token: signReauth(req.user) });
+  }, { log: "Reauth error:" }));
 
   router.post("/login", loginLimiter, asyncHandler(async (req, res) => {
     const { username, password } = req.body;

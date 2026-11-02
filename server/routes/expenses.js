@@ -7,8 +7,10 @@ const pool = require("../db");
 
 module.exports = function expensesRouter({
   authenticateToken,
+  isReauthed,
   requireShopAdminAccess,
   requireAnalyticsAccess,
+  requireSensitiveAccess,
   safeUUID,
 }) {
   const router = express.Router();
@@ -44,6 +46,8 @@ module.exports = function expensesRouter({
   router.get("/expenses", authenticateToken, requireShopAdminAccess, asyncHandler(async (req, res) => {
     const { from, to, kind } = req.query;
     if (kind === "monthly" && !isAdmin(req)) return res.status(403).json({ error: "Admins only" });
+    // Monthly expenses need the password retyped; only asking for daily ones doesn't.
+    if (isAdmin(req) && kind !== "daily" && !isReauthed(req)) return res.status(403).json({ error: "reauth_required" });
     const params = [req.shopId];
     let filter = "";
     for (const [value, op] of [[from, ">="], [to, "<="]]) {
@@ -73,6 +77,7 @@ module.exports = function expensesRouter({
   router.post("/expenses", authenticateToken, requireShopAdminAccess, asyncHandler(async (req, res) => {
     const kind = req.body.kind === "monthly" ? "monthly" : "daily";
     if (kind === "monthly" && !isAdmin(req)) return res.status(403).json({ error: "Admins only" });
+    if (kind === "monthly" && !isReauthed(req)) return res.status(403).json({ error: "reauth_required" });
     const parsed = parseExpense(req.body);
     if (parsed.error) return res.status(400).json({ error: parsed.error });
     const e = parsed.value;
@@ -95,6 +100,10 @@ module.exports = function expensesRouter({
     const found = rows[0];
     if (!found || (found.kind === "monthly" && !isAdmin(req))) {
       res.status(404).json({ error: "Not found" });
+      return null;
+    }
+    if (found.kind === "monthly" && !isReauthed(req)) {
+      res.status(403).json({ error: "reauth_required" });
       return null;
     }
     if (!isAdmin(req) && !found.is_today) {
@@ -193,7 +202,7 @@ module.exports = function expensesRouter({
   // ==================== REPORT ====================
   // One month against the month before and the same month a year earlier, by
   // category, and the twelve months up to it. Admins only.
-  router.get("/reports/expenses", authenticateToken, requireAnalyticsAccess, asyncHandler(async (req, res) => {
+  router.get("/reports/expenses", authenticateToken, requireSensitiveAccess, asyncHandler(async (req, res) => {
     const month = String(req.query.month || "");
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return res.status(400).json({ error: "month must be YYYY-MM" });
     let methods = "";
