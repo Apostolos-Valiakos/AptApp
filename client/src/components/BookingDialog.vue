@@ -2193,9 +2193,9 @@ const recordPayment = async (
           severity: "success",
           summary: t("payment.split.paidToast"),
           detail: t("payment.split.paidToastDetail", {
-            method1: selectedPaymentMethod.value,
+            method1: t(`payment.methodLabels.${selectedPaymentMethod.value}`),
             amount1: formatMoney(amountToPayNow.value),
-            method2: split.payment_method2,
+            method2: t(`payment.methodLabels.${split.payment_method2}`),
             amount2: formatMoney(split.amount2),
           }),
           life: 5000,

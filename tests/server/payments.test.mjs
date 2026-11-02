@@ -432,3 +432,38 @@ test("a written-off visit stays in sales and staff figures, never as money colle
   assert.equal(Number(after.service.total_paid), 0, "not money received");
   assert.equal(Number(after.service.total_owed), 0, "nothing owed");
 });
+
+test("CASH is real money that counts with cash, and the cash filter never hides it", async () => {
+  const day = "2027-09-15";
+  const range = `from=${encodeURIComponent(`${day}T00:00:00+03:00`)}&to=${encodeURIComponent(`${day}T23:59:59+03:00`)}`;
+  const client = clientFor("Currency");
+  const foreign = bookAt(client, `'${day} 10:00:00+03'::timestamptz`, 30);
+  const normal = bookAt(client, `'${day} 12:00:00+03'::timestamptz`, 20);
+  assert.equal((await payPart(client, foreign, 30, { payment_method: "CASH" })).status, 200);
+  assert.equal((await payPart(client, normal, 20, { payment_method: "cash" })).status, 200);
+  assert.equal(statusOf(foreign), "completed paid");
+  sql(DB, `UPDATE transactions SET created_at = '${day} 12:00:00+03' WHERE appointment_id IN ('${foreign}', '${normal}')`);
+
+  const daily = await call("GET", `/api/v1/reports/daily?date=${day}`);
+  assert.equal(daily.data.total_collected, 50);
+  assert.deepEqual(daily.data.by_method, [{ method: "cash", amount: 50 }], "shown as one Μετρητά line");
+
+  const hidden = await call("GET", `/api/v1/reports/daily?date=${day}&excludeCash=true`);
+  assert.equal(hidden.data.total_collected, 30, "the filter hides cash but not CASH");
+  assert.deepEqual(hidden.data.by_method, [{ method: "cash", amount: 30 }]);
+  const noCard = await call("GET", `/api/v1/reports/daily?date=${day}&excludeCard=true`);
+  assert.equal(noCard.data.total_collected, 50, "the card filter doesn't touch it");
+  const finances = await call("GET", `/api/v1/reports/finances?${range}&excludeCash=true`);
+  assert.equal(finances.data.total_payments, 30);
+  assert.equal(finances.data.total_sales, 30);
+
+  const refund = await call("POST", `/api/v1/appointments/${foreign}/refund`, { amount: 5, payment_method: "CASH", reason: "test" });
+  assert.equal(refund.status, 200, JSON.stringify(refund.data));
+  const type = sql(DB, `INSERT INTO package_types (shop_id, name, service_id, visits, price) VALUES ('${SHOP}', 'CASH Test', '${ids.service}', 5, 40) RETURNING id`).split("\n")[0];
+  const debtAppt = bookAt(client, "NOW() - INTERVAL '2 days'", 10);
+  assert.equal((await call("POST", `/api/v1/appointments/${debtAppt}/resolve-debt`, { mode: "payment", payment_method: "CASH" })).status, 200);
+  const third = bookAt(client, `'${day} 14:00:00+03'::timestamptz`, 10);
+  const sale = await payPart(client, third, 0, { payment_method: "CASH", package_purchases: [{ package_type_id: type }] });
+  assert.equal(sale.status, 200, JSON.stringify(sale.data));
+  assert.equal(sql(DB, `SELECT payment_method FROM transactions WHERE client_id = '${client}' AND transaction_type = 'package_sale'`), "CASH");
+});

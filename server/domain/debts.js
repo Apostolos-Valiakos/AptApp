@@ -3,7 +3,7 @@
 // GET FULL CLIENT PROFILE (Info + History + File Metadata)
 // Lightweight: last N past appointments for the booking sidebar
 // ==================== DEBT ====================
-const DEBT_PAYMENT_METHODS = ["cash", "card", "bank-transfer"];
+const { MONEY_METHODS: DEBT_PAYMENT_METHODS } = require("./common");
 
 // "payment" records money received; "write_off" cancels the debt without revenue.
 const parseDebtResolution = (body) => {

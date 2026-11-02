@@ -6,6 +6,8 @@
 // Writes that must survive a lost connection go through fetchOrQueue
 // (offline/queue.ts) instead.
 
+import { reauthToken } from "../utils/reauth";
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -17,7 +19,15 @@ export class ApiError extends Error {
 
 const authHeaders = (): Record<string, string> => {
   const token = localStorage.getItem("token");
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  return {
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(reauthToken.value ? { "X-Reauth-Token": reauthToken.value } : {}),
+  };
+};
+
+// The proof of the retyped password has expired: the page asks again.
+const noteRefusal = (data: any) => {
+  if (data?.error === "reauth_required") reauthToken.value = null;
 };
 
 async function request<T>(method: string, url: string, body?: unknown, init: RequestInit = {}): Promise<T> {
@@ -32,7 +42,10 @@ async function request<T>(method: string, url: string, body?: unknown, init: Req
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const data = await res.json().catch(() => null);
-  if (!res.ok) throw new ApiError(res.status, data);
+  if (!res.ok) {
+    noteRefusal(data);
+    throw new ApiError(res.status, data);
+  }
   return data as T;
 }
 

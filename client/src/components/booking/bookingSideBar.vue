@@ -320,6 +320,7 @@
 </template>
 
 <script setup lang="ts">
+import { MONEY_METHODS, methodChoiceLabel } from "../../utils/paymentMethods";
 import { api, ApiError } from "../../api/http";
 import { ref, computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
@@ -352,7 +353,7 @@ const manualDebts = ref<any[]>([]);
 const openDebts = computed(() => manualDebts.value.filter((d) => Number(d.remaining) > 0));
 const debtSaving = ref(false);
 const methodOptions = computed(() =>
-  ["cash", "card", "bank-transfer"].map((m) => ({ value: m, label: t(`common.paymentMethod.${m}`) })),
+  MONEY_METHODS.map((m) => ({ value: m, label: methodChoiceLabel(t, m) })),
 );
 
 type ResolveTarget = { kind: "appointment" | "debt"; id: string; amount: number; label: string };

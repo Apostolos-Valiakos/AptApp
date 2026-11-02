@@ -98,11 +98,20 @@ export const token = (userId, role) => {
 // just closed. It never reached the server, so it's sent once more.
 const closedBeforeSent = (err) => err?.cause?.code === "UND_ERR_SOCKET" || err?.cause?.code === "ECONNRESET";
 
-export const api = (port, tok) => async (method, url, body, headers = {}) => {
+// A login token for tests of the sensitive pages' routes: `api` sends this proof
+// of a retyped password for admins, unless told not to ({ reauth: false }).
+export const reauthProof = (tok) => {
+  const jwt = require("jsonwebtoken");
+  const user = jwt.decode(tok);
+  if (!user || !["admin", "super_admin"].includes(user.role)) return {};
+  return { "X-Reauth-Token": jwt.sign({ typ: "reauth", userId: user.userId, shopId: user.shopId }, `${process.env.JWT_SECRET}:reauth`, { expiresIn: "1h" }) };
+};
+
+export const api = (port, tok, { reauth = true } = {}) => async (method, url, body, headers = {}) => {
   const send = () =>
     fetch(`http://localhost:${port}${url}`, {
       method,
-      headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json", ...headers },
+      headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json", ...(reauth ? reauthProof(tok) : {}), ...headers },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   const res = await send().catch((err) => {

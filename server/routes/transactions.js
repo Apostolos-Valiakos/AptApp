@@ -2,6 +2,7 @@
 // Helpers that still live in server.js are handed over when it mounts this
 // router (see "Area routers" near the end of server.js).
 const express = require("express");
+const { MONEY_METHODS } = require("../domain/common");
 const crypto = require("crypto");
 const { HttpError, asyncHandler, withTransaction } = require("../http");
 
@@ -53,7 +54,7 @@ module.exports = function transactionsRouter({
     ) {
       return res.status(400).json({ error: "Invalid payment amount" });
     }
-    if (hasExtras && !["cash", "card", "bank-transfer"].includes(payment_method)) {
+    if (hasExtras && !MONEY_METHODS.includes(payment_method)) {
       return res.status(400).json({ error: "Packages and gift cards can only be purchased with cash, card, or bank transfer" });
     }
     if (hasExtras && !canSellExtras(req.user)) {
@@ -68,7 +69,7 @@ module.exports = function transactionsRouter({
       return res.status(400).json({ error: "redemptions is required for membership payments" });
     }
     const extrasOnLeg2 = Number(extras_amount2) || 0;
-    if (extrasOnLeg2 < 0 || (extrasOnLeg2 > 0 && !["cash", "card", "bank-transfer"].includes(payment_method2))) {
+    if (extrasOnLeg2 < 0 || (extrasOnLeg2 > 0 && !MONEY_METHODS.includes(payment_method2))) {
       return res.status(400).json({ error: "Packages and gift cards can only be purchased with cash, card, or bank transfer" });
     }
     const hasSecondLeg =

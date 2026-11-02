@@ -1,9 +1,11 @@
 import { createRouter, createWebHistory } from "vue-router";
+import { defineAsyncComponent, defineComponent, h } from "vue";
 import { useAuthStore } from "../stores/auth";
 
 // Views — landing/login stay eager (first paint), the rest are lazy-loaded chunks
 import Layout from "../components/Layout.vue";
 import IndexView from "../views/IndexView.vue";
+import SensitiveGate from "../components/SensitiveGate.vue";
 import LoginView from "../views/LoginView.vue";
 const SchedulerView = () => import("../views/SchedulerView.vue");
 const StaffView = () => import("../views/StaffView.vue");
@@ -12,7 +14,13 @@ const ClientsView = () => import("../views/ClientsView.vue");
 const ServicesView = () => import("../views/ServicesView.vue");
 const ProductsView = () => import("../views/ProductsView.vue");
 const GiftCardsView = () => import("../views/GiftCardsView.vue");
-const FinancialsView = () => import("../components/FinancialsView.vue");
+// Opens only after the password is retyped, every time; the page itself (and
+// its requests) doesn't start before that.
+const sensitive = (load: () => Promise<any>) => {
+  const Page = defineAsyncComponent(load);
+  return defineComponent({ render: () => h(SensitiveGate, null, { default: () => h(Page) }) });
+};
+const FinancialsView = sensitive(() => import("../components/FinancialsView.vue"));
 const profileView = () => import("../views/profileView.vue");
 const ClientLayout = () => import("../components/ClientLayout.vue");
 const ClientHomeView = () => import("../views/portal/ClientHomeView.vue");
@@ -25,10 +33,10 @@ const MembershipTiersView = () => import("../views/MembershipTiersView.vue");
 const DailyReportView = () => import("../views/DailyReportView.vue");
 const PackageTypesView = () => import("../views/PackageTypesView.vue");
 const ExpensesView = () => import("../views/ExpensesView.vue");
-const MembershipReportView = () => import("../views/MembershipReportView.vue");
+const MembershipReportView = sensitive(() => import("../views/MembershipReportView.vue"));
 const QrScannerView = () => import("../views/QrScannerView.vue");
 const DemoRequestsView = () => import("../views/DemoRequestsView.vue");
-const ProductUsageView = () => import("../views/ProductUsageView.vue");
+const ProductUsageView = sensitive(() => import("../views/ProductUsageView.vue"));
 
 const routes = [
   {

@@ -1,6 +1,24 @@
 // Who may call a route: the login, and the role checks.
 const jwt = require("jsonwebtoken");
 
+// The sensitive pages ask for the password again. Retyping it gives a separate,
+// short-lived proof (POST /reauth), signed with its own secret so it can never
+// pass as a login, and sent in this header with the page's requests.
+const REAUTH_HEADER = "x-reauth-token";
+const REAUTH_LIFETIME = "2h";
+const reauthSecret = () => `${process.env.JWT_SECRET}:reauth`;
+const signReauth = (user) => jwt.sign({ typ: "reauth", userId: user.userId, shopId: user.shopId }, reauthSecret(), { expiresIn: REAUTH_LIFETIME });
+const isReauthed = (req) => {
+  try {
+    const proof = jwt.verify(String(req.headers[REAUTH_HEADER] || ""), reauthSecret());
+    return proof.typ === "reauth" && proof.userId === req.user.userId && proof.shopId === req.user.shopId;
+  } catch {
+    return false;
+  }
+};
+const requireReauth = (req, res, next) =>
+  isReauthed(req) ? next() : res.status(403).json({ error: "reauth_required" });
+
 // In-memory cache of shops.force_logout_at (shopId -> ms timestamp), so the
 // "disconnect all users" revocation check below never costs a DB round trip
 // on the hot path. Populated at startup and refreshed only when an admin
@@ -64,6 +82,9 @@ const requireAnalyticsAccess = (req, res, next) => {
   next();
 };
 
+// Admins, with the password just retyped (Analytics and the admin reports).
+const requireSensitiveAccess = [requireAnalyticsAccess, requireReauth];
+
 // Client portal logins only reach the portal's own routes and the few it
 // reads (the shop, the active contest, availability); every staff route
 // turns them away. After authenticateToken.
@@ -88,6 +109,10 @@ const isAdminRole = (u) => u.role === "admin" || u.role === "super_admin";
 const canSellExtras = (u) => isAdminRole(u) || u.role === "frontdesk";
 
 module.exports = {
+  isReauthed,
+  requireReauth,
+  requireSensitiveAccess,
+  signReauth,
   forceLogoutCache,
   userRevokedCache,
   isUserRevoked,

@@ -221,6 +221,7 @@ const editingId = ref<string | null>(null);
 
 const paymentMethodOptions = computed(() => [
   { label: t("common.paymentMethod.cash"), value: "cash" },
+  { label: "CASH", value: "CASH" },
   { label: t("common.paymentMethod.card"), value: "card" },
   { label: t("common.paymentMethod.bank-transfer"), value: "bank-transfer" },
 ]);

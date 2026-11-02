@@ -23,7 +23,7 @@ const { checkIdempotency, saveIdempotency } = require("./domain/idempotency");
 const { releasePackageUsage, loadClientPackages } = require("./domain/packages");
 const { parseDebtResolution, settleAmount } = require("./domain/debts");
 const { StaffUnavailableError, MissingStaffError, getGroupDetails, DiscountError, createAppointmentSeries, performSingleUpdate, SelfBookingNotAllowedError, sanitizeClientBookingPayload, OfflineConflictError, assertCapacity, assertNoNewOverlaps, assertBaseVersion } = require("./domain/bookings");
-const { forceLogoutCache, userRevokedCache, revokeUserSessions, isSessionToken, authenticateToken, requireAnalyticsAccess, notForClients, notForStaff, requireShopAdminAccess, isAdminRole, canSellExtras } = require("./middleware/auth");
+const { forceLogoutCache, userRevokedCache, revokeUserSessions, isSessionToken, authenticateToken, requireAnalyticsAccess, notForClients, notForStaff, requireShopAdminAccess, isAdminRole, canSellExtras, isReauthed, requireReauth, requireSensitiveAccess, signReauth } = require("./middleware/auth");
 const path = require("path");
 const cors = require("cors");
 const helmet = require("helmet");
@@ -102,7 +102,7 @@ app.use(
     origin: allowedOrigins,
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "Idempotency-Key"],
+    allowedHeaders: ["Content-Type", "Authorization", "Idempotency-Key", "X-Reauth-Token"],
   }),
 );
 // Compress responses (code, styles, HTML, JSON) — about 70-75% smaller on the
@@ -399,7 +399,7 @@ app.use(
     authenticateToken,
     getVisibilityClause,
     notForClients,
-    requireAnalyticsAccess,
+    requireAnalyticsAccess: requireSensitiveAccess,
   }),
 );
 app.use(
@@ -414,6 +414,8 @@ app.use(
   "/api/v1",
   require("./routes/account")({
     authenticateToken,
+    requireAnalyticsAccess,
+    signReauth,
     isSessionToken,
     loginLimiter,
     notForClients,
@@ -447,7 +449,7 @@ app.use(
   require("./routes/products")({
     authenticateToken,
     notForClients,
-    requireAnalyticsAccess,
+    requireAnalyticsAccess: requireSensitiveAccess,
     requireShopAdminAccess,
   }),
 );
@@ -498,6 +500,8 @@ app.use(
   "/api/v1",
   require("./routes/expenses")({
     authenticateToken,
+    isReauthed,
+    requireSensitiveAccess,
     requireShopAdminAccess,
     requireAnalyticsAccess,
     safeUUID,

@@ -6,6 +6,11 @@ const safeUUID = (id) => {
   return cleanId.length === 36 ? cleanId : null;
 };
 
+// Ways of paying with real money. "CASH" is cash in another currency: reports
+// count it with cash, but the cash filter, which matches "cash" exactly, never
+// hides it.
+const MONEY_METHODS = ["cash", "CASH", "card", "bank-transfer"];
+
 // Client and service names are kept in capitals, the Greek way (no accents).
 const upperName = (name) => (typeof name === "string" ? name.trim().toLocaleUpperCase("el") : name);
 
@@ -35,6 +40,7 @@ const clientInShop = async (db, clientId, shopId) =>
   (await db.query("SELECT 1 FROM clients WHERE id = $1 AND shop_id = $2", [clientId, shopId])).rowCount > 0;
 
 module.exports = {
+  MONEY_METHODS,
   safeUUID,
   upperName,
   getVisibilityClause,

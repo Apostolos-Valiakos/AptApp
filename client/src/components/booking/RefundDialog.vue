@@ -28,14 +28,14 @@
         }}</label>
         <Dropdown
           v-model="method"
-          :options="['cash', 'card', 'bank-transfer']"
+          :options="MONEY_METHODS"
           class="w-full"
         >
           <template #value="slotProps">
-            {{ slotProps.value ? t(`common.paymentMethod.${slotProps.value}`) : "" }}
+            {{ slotProps.value ? methodChoiceLabel(t, slotProps.value) : "" }}
           </template>
           <template #option="slotProps">
-            {{ t(`common.paymentMethod.${slotProps.option}`) }}
+            {{ methodChoiceLabel(t, slotProps.option) }}
           </template>
         </Dropdown>
       </div>
@@ -66,6 +66,7 @@
 </template>
 
 <script setup lang="ts">
+import { MONEY_METHODS, methodChoiceLabel } from "../../utils/paymentMethods";
 import { api, ApiError } from "../../api/http";
 import { formatMoney } from "../../utils/format";
 import { ref, computed, watch } from "vue";

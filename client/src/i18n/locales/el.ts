@@ -33,6 +33,7 @@ export default {
       noResponse: "Δεν απάντησε",
     },
     paymentMethod: {
+      CASH: "Μετρητά",
       'write-off': 'Διαγραφή οφειλής',
       cash: "Μετρητά",
       card: "Κάρτα",
@@ -1167,6 +1168,15 @@ export default {
       fileIdMissing: "Λείπει το αναγνωριστικό αρχείου",
     },
   },
+  sensitive: {
+    title: "Επιβεβαίωση κωδικού",
+    note: "Αυτή η σελίδα έχει ευαίσθητα στοιχεία. Πληκτρολογήστε ξανά τον κωδικό σας για να ανοίξει.",
+    password: "Κωδικός",
+    open: "Άνοιγμα σελίδας",
+    wrong: "Λάθος κωδικός.",
+    tooMany: "Πολλές λάθος προσπάθειες. Δοκιμάστε ξανά σε 15 λεπτά.",
+    failed: "Κάτι πήγε στραβά. Δοκιμάστε ξανά.",
+  },
   expenses: {
     subtitleFrontdesk: "Καταχωρήστε τα ημερήσια έξοδα του καταστήματος.",
     addMonthly: "Νέο μηνιαίο έξοδο",
@@ -1718,6 +1728,7 @@ export default {
     noOutstandingBalance: "Ο πελάτης δεν έχει εκκρεμές υπόλοιπο.",
     paidVia: "Πληρώθηκε με {method}",
     methodLabels: {
+      CASH: "Μετρητά",
       cash: "Μετρητά",
       card: "Κάρτα",
       "bank-transfer": "Μετρητά",

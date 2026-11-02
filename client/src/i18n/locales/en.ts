@@ -33,6 +33,7 @@ export default {
       noResponse: 'Did not Respond',
     },
     paymentMethod: {
+      CASH: "Cash",
       'write-off': 'Write-off',
       cash: 'Cash',
       card: 'Card',
@@ -1136,6 +1137,15 @@ export default {
       fileIdMissing: 'File ID is missing',
     },
   },
+  sensitive: {
+    title: "Confirm your password",
+    note: "This page has sensitive information. Type your password again to open it.",
+    password: "Password",
+    open: "Open page",
+    wrong: "Wrong password.",
+    tooMany: "Too many wrong attempts. Please try again in 15 minutes.",
+    failed: "Something went wrong. Please try again.",
+  },
   expenses: {
     subtitleFrontdesk: "Record the shop's daily expenses.",
     addMonthly: "Add monthly expense",
@@ -1668,6 +1678,7 @@ export default {
     noOutstandingBalance: 'This client has no outstanding balance.',
     paidVia: 'Paid via {method}',
     methodLabels: {
+      CASH: "Cash",
       cash: 'Cash',
       card: 'Card',
       'bank-transfer': 'Cash',
