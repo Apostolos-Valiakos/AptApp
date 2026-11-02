@@ -33,6 +33,7 @@ export default {
       noResponse: 'Did not Respond',
     },
     paymentMethod: {
+      CASH: "Cash",
       'write-off': 'Write-off',
       cash: 'Cash',
       card: 'Card',
@@ -1677,6 +1678,7 @@ export default {
     noOutstandingBalance: 'This client has no outstanding balance.',
     paidVia: 'Paid via {method}',
     methodLabels: {
+      CASH: "Cash",
       cash: 'Cash',
       card: 'Card',
       'bank-transfer': 'Cash',

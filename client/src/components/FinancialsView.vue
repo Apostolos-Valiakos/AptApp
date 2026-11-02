@@ -1283,7 +1283,7 @@ const exportPaymentsCSV = () => {
       d.toLocaleDateString("el-GR"),
       d.toLocaleTimeString("el-GR", { hour: "2-digit", minute: "2-digit" }),
       `${p.first_name} ${p.last_name}`,
-      p.payment_method,
+      p.payment_method === "CASH" ? "cash" : p.payment_method,
       Number(p.amount).toFixed(2),
     ];
   });
@@ -1295,6 +1295,7 @@ const exportPaymentsCSV = () => {
 const getMethodBadge = (method: string) => {
   const map: Record<string, string> = {
     cash: "bg-green-100 text-green-700",
+    CASH: "bg-green-100 text-green-700",
     card: "bg-blue-100 text-blue-700",
     "bank-transfer": "bg-purple-100 text-purple-700",
     migration: "bg-gray-100 text-gray-600",

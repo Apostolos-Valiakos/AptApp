@@ -3,7 +3,7 @@
 // router (see "Area routers" near the end of server.js).
 const express = require("express");
 const { HttpError, asyncHandler, withTransaction } = require("../http");
-const { upperName } = require("../domain/common");
+const { MONEY_METHODS, upperName } = require("../domain/common");
 const jwt = require("jsonwebtoken");
 const path = require("path");
 
@@ -1086,7 +1086,7 @@ module.exports = function clientsRouter({
     if (!canSellExtras(req.user)) return res.status(403).json({ error: "Not allowed" });
     const { package_type_id, payment_method = "cash", note } = req.body;
     if (!safeUUID(package_type_id)) return res.status(400).json({ error: "package_type_id is required" });
-    if (!["cash", "card", "bank-transfer"].includes(payment_method)) {
+    if (!MONEY_METHODS.includes(payment_method)) {
       return res.status(400).json({ error: "Invalid payment method" });
     }
     const { status, body } = await withTransaction(async (client) => {

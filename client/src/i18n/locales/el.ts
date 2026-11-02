@@ -33,6 +33,7 @@ export default {
       noResponse: "Δεν απάντησε",
     },
     paymentMethod: {
+      CASH: "Μετρητά",
       'write-off': 'Διαγραφή οφειλής',
       cash: "Μετρητά",
       card: "Κάρτα",
@@ -1727,6 +1728,7 @@ export default {
     noOutstandingBalance: "Ο πελάτης δεν έχει εκκρεμές υπόλοιπο.",
     paidVia: "Πληρώθηκε με {method}",
     methodLabels: {
+      CASH: "Μετρητά",
       cash: "Μετρητά",
       card: "Κάρτα",
       "bank-transfer": "Μετρητά",

@@ -319,15 +319,15 @@
               />
               <Dropdown
                 v-model="assignForm.payment_method"
-                :options="['cash', 'card', 'bank-transfer']"
+                :options="MONEY_METHODS"
                 :placeholder="t('clientProfile.membership.paymentMethod')"
                 class="w-full"
               >
                 <template #value="slotProps">
-                  {{ slotProps.value ? t(`common.paymentMethod.${slotProps.value}`) : "" }}
+                  {{ slotProps.value ? methodChoiceLabel(t, slotProps.value) : "" }}
                 </template>
                 <template #option="slotProps">
-                  {{ t(`common.paymentMethod.${slotProps.option}`) }}
+                  {{ methodChoiceLabel(t, slotProps.option) }}
                 </template>
               </Dropdown>
               <div class="flex gap-2">
@@ -422,6 +422,7 @@
 </template>
 
 <script setup lang="ts">
+import { MONEY_METHODS, methodChoiceLabel } from "../utils/paymentMethods";
 import { api, ApiError, ifRefused, saveBlob, withMessage } from "../api/http";
 import { formatMoney } from "../utils/format";
 import { ref, watch, computed } from "vue";

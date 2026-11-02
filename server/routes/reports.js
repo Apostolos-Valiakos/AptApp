@@ -244,7 +244,8 @@ module.exports = function reportsRouter({
     const byMethod = {};
     let total = 0;
     for (const p of payments) {
-      const m = p.payment_method || "other";
+      // CASH counts with cash here; only the filter treats them differently.
+      const m = p.payment_method === "CASH" ? "cash" : p.payment_method || "other";
       byMethod[m] = (byMethod[m] || 0) + Number(p.amount);
       total += Number(p.amount);
     }
