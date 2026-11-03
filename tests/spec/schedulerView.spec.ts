@@ -775,6 +775,17 @@ describe("a completed appointment's card", () => {
   test("other statuses get no line", async () => {
     expect((await serviceEvent("confirmed")).classNames).not.toContain("fc-completed");
   });
+
+  test.each(["cancelled", "no-show"])("a %s booking gets the red line instead", async (status) => {
+    const event = await serviceEvent(status);
+    expect(event.classNames).toContain("fc-did-not-happen");
+    expect(event.classNames).not.toContain("fc-completed");
+  });
+
+  test("an ordinary booking gets neither line", async () => {
+    const { classNames } = await serviceEvent("confirmed");
+    expect(classNames).not.toContain("fc-did-not-happen");
+  });
 });
 
 describe("the time on a computer's cards", () => {

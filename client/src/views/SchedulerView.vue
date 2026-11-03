@@ -1198,6 +1198,9 @@ const placesById = computed(
 // card that says how many are there together (see placeGroupHtml), except
 // the opened group (expandedGroupKey), which stays as separate cards.
 // Cancelled and no-show bookings keep their own cards.
+// Bookings that didn't happen: crossed out, with a red line on the left. The
+// database says "no-show"; "no_show" is older spelling.
+const DID_NOT_HAPPEN = ["cancelled", "no-show", "no_show"];
 const placeGroupEvents = (events: any[]) => {
   const byPlace = new Map<string, any[]>();
   const result: any[] = [];
@@ -1366,6 +1369,7 @@ const calendarEvents = computed(() => {
         classNames: [
           "fresha-event",
           ...(isCompleted ? ["fc-completed"] : []),
+          ...(DID_NOT_HAPPEN.includes(appt.status) ? ["fc-did-not-happen"] : []),
           ...(appt._offline === "conflict"
             ? ["fc-offline-conflict"]
             : appt._offline
@@ -2541,7 +2545,7 @@ const calendarOptions = ref({
     const timeText = arg.timeText;
     const status = props.fullAppointment?.status;
 
-    const isCancelled = status === "cancelled" || status === "no_show";
+    const isCancelled = DID_NOT_HAPPEN.includes(status);
     const isCashPaid =
       props.fullAppointment?.payment_status === "paid" &&
       props.fullAppointment?.payment_method === "cash";
@@ -3008,6 +3012,10 @@ onMounted(async () => {
 /* Completed appointments keep their colour and gain a blue line on the left. */
 .fc-event.fc-completed {
   border-left: 3px solid #2563eb !important;
+}
+/* Cancelled and no-show ones get a red line, and stay crossed out. */
+.fc-event.fc-did-not-happen {
+  border-left: 3px solid #dc2626 !important;
 }
 
 /* Shared places (ΣΑΟΥΝΑ, ΧΑΜΜΑΜ): the grouped card, and an opened group's cards. */
