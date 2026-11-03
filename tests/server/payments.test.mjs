@@ -467,3 +467,56 @@ test("CASH is real money that counts with cash, and the cash filter never hides 
   assert.equal(sale.status, 200, JSON.stringify(sale.data));
   assert.equal(sql(DB, `SELECT payment_method FROM transactions WHERE client_id = '${client}' AND transaction_type = 'package_sale'`), "CASH");
 });
+
+test("the debts tile's clients add up to the tile, for the same dates and filters", async () => {
+  const day = "2026-08-20";
+  const range = `from=${encodeURIComponent(`${day}T00:00:00+03:00`)}&to=${encodeURIComponent(`${day}T23:59:59+03:00`)}`;
+  const owes = clientFor("TileOwes");
+  const over = clientFor("TileOver");
+  bookAt(owes, `'${day} 10:00:00+03'::timestamptz`, 60);
+  const settled = bookAt(owes, `'${day} 09:00:00+03'::timestamptz`, 15);
+  const part = bookAt(owes, `'${day} 11:00:00+03'::timestamptz`, 40);
+  const extra = bookAt(over, `'${day} 12:00:00+03'::timestamptz`, 20);
+  sql(DB, `UPDATE appointments SET status = 'confirmed', save_receipt = true WHERE client_id IN ('${owes}', '${over}')`);
+  sql(DB, `INSERT INTO transactions (appointment_id, client_id, amount, payment_method, transaction_type, shop_id) VALUES ('${part}', '${owes}', 10, 'card', 'payment', '${SHOP}'), ('${settled}', '${owes}', 15, 'card', 'payment', '${SHOP}'), ('${extra}', '${over}', 25, 'card', 'payment', '${SHOP}')`);
+
+  const tile = (await call("GET", `/api/v1/reports/finances?${range}`)).data.total_debt;
+  const details = (await call("GET", `/api/v1/reports/finances/details?${range}&kind=debts`)).data;
+  const mine = details.rows.filter((d) => [owes, over].includes(d.client_id));
+  assert.deepEqual(mine.map((d) => [d.client, d.owed]), [["TileOwes Part", 60], ["TileOwes Part", 30], ["TileOver Part", -5]], "one row per booking still owing");
+  assert.equal(details.total, Math.round(tile * 100) / 100);
+  const bare = api(PORT, token(ids.admin, "admin"), { reauth: false });
+  assert.equal((await bare("GET", `/api/v1/reports/finances/details?${range}&kind=debts`)).status, 403, "behind the retyped password like the page");
+});
+
+test("every tile's list adds up to the tile, with and without the cash filter", async () => {
+  const day = "2026-08-21";
+  const client = clientFor("TileAll");
+  const done = bookAt(client, `'${day} 10:00:00+03'::timestamptz`, 70);
+  const gone = bookAt(client, `'${day} 12:00:00+03'::timestamptz`, 30);
+  sql(DB, `UPDATE appointments SET status = 'completed', save_receipt = true WHERE id = '${done}'`);
+  sql(DB, `UPDATE appointments SET status = 'cancelled' WHERE id = '${gone}'`);
+  sql(DB, `INSERT INTO transactions (appointment_id, client_id, amount, payment_method, transaction_type, shop_id, created_at) VALUES ('${done}', '${client}', 50, 'cash', 'payment', '${SHOP}', '${day} 10:30+03'), ('${done}', '${client}', 20, 'CASH', 'payment', '${SHOP}', '${day} 10:31+03')`);
+  sql(DB, `INSERT INTO expenses (shop_id, kind, expense_date, amount, description, payment_method) VALUES ('${SHOP}', 'daily', '${day}', 12, 'tile test', 'card')`);
+  for (const filter of ["", "&excludeCash=true"]) {
+    const range = `from=${encodeURIComponent(`${day}T00:00:00+03:00`)}&to=${encodeURIComponent(`${day}T23:59:59+03:00`)}${filter}`;
+    const tiles = (await call("GET", `/api/v1/reports/finances?${range}`)).data;
+    const analytics = (await call("GET", `/api/v1/reports/analytics?${range}`)).data;
+    const list = async (kind) => (await call("GET", `/api/v1/reports/finances/details?${range}&kind=${kind}`)).data;
+    const r2 = (n) => Math.round(n * 100) / 100;
+    assert.equal((await list("sales")).total, r2(tiles.total_sales), `sales${filter}`);
+    assert.equal((await list("payments")).total, r2(tiles.total_payments), `payments${filter}`);
+    assert.equal((await list("debts")).total, r2(tiles.total_debt), `debts${filter}`);
+    assert.equal((await list("expenses")).total, r2(tiles.total_expenses), `expenses${filter}`);
+    assert.equal((await list("net")).total, r2(tiles.net_profit), `net${filter}`);
+    assert.equal((await list("today")).total, r2(tiles.collected_today), `today${filter}`);
+    const cancels = await list("cancellations");
+    assert.equal(cancels.summary.rate.toFixed(1), analytics.cancellation_rate, `cancellations${filter}`);
+    assert.ok(cancels.rows.some((r) => r.appointment_id === gone));
+    const retention = await list("retention");
+    assert.equal(retention.summary.returning, analytics.returning_clients);
+    assert.equal(retention.summary.new, analytics.new_clients);
+  }
+  const bad = await call("GET", "/api/v1/reports/finances/details?kind=everything");
+  assert.equal(bad.status, 400);
+});
