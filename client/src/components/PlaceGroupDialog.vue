@@ -110,10 +110,13 @@
 </template>
 
 <script setup lang="ts">
+import { fullyHidden } from "../utils/paymentFilters";
+import { useSettingsStore } from "../stores/settings";
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { formatMoney } from "../utils/format";
 import { hhmm } from "../utils/capacity";
+const filterSettings = useSettingsStore();
 
 export type PlaceGroup = {
   resourceName: string;
@@ -160,14 +163,14 @@ const statusColor = (s: string | undefined) => STATUS_COLORS[s || ""] || "bg-gra
 
 // The whole booking's money (it may hold other services than this one too).
 const money = (m: any) => {
-  const total = Number(m.fullAppointment?.current_appt_total) || 0;
-  const paid = Number(m.fullAppointment?.deposit_amount) || 0;
+  const total = Number((m.shownMoney || m.fullAppointment)?.current_appt_total) || 0;
+  const paid = Number((m.shownMoney || m.fullAppointment)?.deposit_amount) || 0;
   return { total, paid, owed: Math.max(0, total - paid) };
 };
 
 const otherServices = (m: any) =>
   (m.fullAppointment?.services || [])
-    .filter((_: any, i: number) => i !== m.serviceIndex)
+    .filter((x: any, i: number) => i !== m.serviceIndex && !fullyHidden(x.charged, x.hidden, filterSettings))
     .map((s: any) => `${s.service_name || ""} ${hhmm(s.start_time)}${s.staff_name ? ` (${s.staff_name})` : ""}`.trim());
 
 const notes = (m: any) =>

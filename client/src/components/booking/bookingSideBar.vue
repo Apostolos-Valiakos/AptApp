@@ -120,11 +120,11 @@
             {{ f.label }}
           </button>
         </div>
-        <p v-if="!loadingHistory && !pastAppointments.length" class="text-xs text-gray-400 py-2">
+        <p v-if="!loadingHistory && !shownPast.length" class="text-xs text-gray-400 py-2">
           {{ t("bookingSidebar.noMatchingAppointments") }}
         </p>
         <div
-          v-for="appt in pastAppointments"
+          v-for="appt in shownPast"
           :key="appt.id"
           class="flex justify-between items-start gap-2 text-sm mb-2 border-b border-gray-50 pb-1.5 last:border-0 last:mb-0 -mx-1.5 px-1.5 pt-1 rounded cursor-pointer hover:bg-gray-50 transition-colors"
           role="button"
@@ -320,6 +320,8 @@
 </template>
 
 <script setup lang="ts">
+import { fullyHidden } from "../../utils/paymentFilters";
+import { useSettingsStore } from "../../stores/settings";
 import { MONEY_METHODS, methodChoiceLabel } from "../../utils/paymentMethods";
 import { api, ApiError } from "../../api/http";
 import { ref, computed, watch } from "vue";
@@ -520,6 +522,25 @@ const formatApptDate = (d: string) =>
     month: "2-digit",
     year: "2-digit",
   });
+
+// The cash and card filters hide the services paid that way (in whole); a visit left
+// with none isn't listed.
+const filterSettings = useSettingsStore();
+const shownPast = computed(() =>
+  pastAppointments.value
+    .map((a: any) => {
+      const services = a.services_paid || [];
+      const shown = services.filter((x: any) => !fullyHidden(x.charged, x.hidden, filterSettings));
+      if (shown.length === services.length) return a;
+      if (!shown.length) return null;
+      return {
+        ...a,
+        service_names: shown.map((x: any) => x.name).join(", "),
+        staff_names: [...new Set(shown.map((x: any) => x.staff).filter(Boolean))].join(", "),
+      };
+    })
+    .filter(Boolean),
+);
 
 const loadHistory = async (clientId: string) => {
   const filter = historyFilter.value;

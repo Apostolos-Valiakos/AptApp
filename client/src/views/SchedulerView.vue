@@ -506,6 +506,7 @@ import {
 } from "../utils/appointmentChanges";
 import ColorModelToggle from "../components/ColorModelToggle.vue";
 import { resolveServiceColor } from "../utils/serviceColors";
+import { fullyHidden, hiddenAmount, paidInCash } from "../utils/paymentFilters";
 import { useAuthStore } from "../stores/auth";
 import elLocale from "@fullcalendar/core/locales/el";
 import StaffReorderDialog from "../components/StaffReorderDialog.vue";
@@ -1201,6 +1202,7 @@ const placesById = computed(
 // Bookings that didn't happen: crossed out, with a red line on the left. The
 // database says "no-show"; "no_show" is older spelling.
 const DID_NOT_HAPPEN = ["cancelled", "no-show", "no_show"];
+
 const placeGroupEvents = (events: any[]) => {
   const byPlace = new Map<string, any[]>();
   const result: any[] = [];
@@ -1301,24 +1303,18 @@ const calendarEvents = computed(() => {
       status !== "no_show"
     )
       return;
-    const isCashEquivalent =
-      appt.payment_method === "cash" ||
-      (appt.payment_method === "gift-card" &&
-        appt.gift_card_source_method === "cash");
-    if (
-      settings.hideCashPaid &&
-      appt.payment_status === "paid" &&
-      isCashEquivalent
-    )
-      return;
-    if (
-      settings.hideCardPaid &&
-      appt.payment_status === "paid" &&
-      appt.payment_method === "card"
-    )
-      return;
+    // The cash and card filters hide the services paid that way, or part of
+    // one; the booking's other services stay. Its money shown leaves that out.
+    const hiddenCost = appt.services.reduce((sum: number, x: any) => sum + hiddenAmount(x.hidden, settings), 0);
+    // What the hover card and the sauna dialog show; the booking dialog still
+    // gets the whole booking.
+    const shownMoney = {
+      current_appt_total: Number(appt.current_appt_total || 0) - hiddenCost,
+      deposit_amount: Math.max(0, Number(appt.deposit_amount || 0) - hiddenCost),
+    };
 
     appt.services.forEach((svc: any, index: number) => {
+      if (fullyHidden(svc.charged, svc.hidden, settings)) return;
       const isCompleted = appt.status === "completed";
       const bgColor = resolveServiceColor(svc.service_color, svc.category_color);
       const duration = svc.duration_minutes || 60;
@@ -1382,6 +1378,8 @@ const calendarEvents = computed(() => {
           appointmentId: appt.id,
           group_id: appt.group_id,
           serviceIndex: index,
+          paidInCash: paidInCash(svc.paid_with),
+          shownMoney,
           fullAppointment: {
             ...appt,
             group_id: appt.group_id,
@@ -2002,8 +2000,7 @@ const placeGroupHtml = (props: any) => {
   const rows = members
     .map((m: any, i: number) => {
       const appt = m.fullAppointment || {};
-      const cashPaid =
-        appt.payment_status === "paid" && appt.payment_method === "cash";
+      const cashPaid = !!m.paidInCash;
       return `<div class="fc-place-group-row${cashPaid ? " is-cash-paid" : ""}${appt.status === "completed" ? " is-completed" : ""}" data-member="${i}"${m.dayClientKey ? ` data-day-client-key="${escapeHtml(m.dayClientKey)}"` : ""}>
           <span class="fc-place-group-name">${escapeHtml(m.client_name)}</span>
           ${m.persons > 1 ? `<span class="fc-place-group-persons">×${m.persons}</span>` : ""}
@@ -2546,9 +2543,7 @@ const calendarOptions = ref({
     const status = props.fullAppointment?.status;
 
     const isCancelled = DID_NOT_HAPPEN.includes(status);
-    const isCashPaid =
-      props.fullAppointment?.payment_status === "paid" &&
-      props.fullAppointment?.payment_method === "cash";
+    const isCashPaid = !!props.paidInCash;
     const isConfirmed = status === "confirmed";
     const isMonthView = arg.view.type === "dayGridMonth";
     const start = arg.event.start;
@@ -2684,6 +2679,7 @@ const calendarOptions = ref({
           ...m.fullAppointment,
           client_name: m.client_name,
           service_name: m.service_name,
+          ...m.shownMoney,
           start: new Date(m.start),
           end: new Date(m.end),
           day_services: dayServices(m),
@@ -2731,6 +2727,7 @@ const calendarOptions = ref({
       ...info.event.extendedProps.fullAppointment,
       client_name: info.event.extendedProps.client_name,
       service_name: info.event.extendedProps.service_name,
+      ...info.event.extendedProps.shownMoney,
       start: info.event.start,
       end: info.event.end,
       day_services: dayServices(info.event.extendedProps),

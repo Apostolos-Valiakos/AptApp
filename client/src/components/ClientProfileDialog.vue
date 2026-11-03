@@ -430,6 +430,7 @@ import Exercises from "./Exercises.vue";
 import ClientPackagesPanel from "./ClientPackagesPanel.vue";
 import { useAuthStore } from "../stores/auth";
 import { useSettingsStore } from "../stores/settings";
+import { fullyHidden, hiddenAmount } from "../utils/paymentFilters";
 import { storeToRefs } from "pinia";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
@@ -469,16 +470,26 @@ const initials = computed(() => {
   return `${f}${l}`.toUpperCase();
 });
 
-const visibleHistory = computed(() => {
-  return history.value.filter((a) => {
-    const isCashEquivalent =
-      a.payment_method === "cash" ||
-      (a.payment_method === "gift-card" && a.gift_card_source_method === "cash");
-    if (settingsStore.hideCashPaid && a.payment_status === "paid" && isCashEquivalent) return false;
-    if (settingsStore.hideCardPaid && a.payment_status === "paid" && a.payment_method === "card") return false;
-    return true;
-  });
-});
+// The cash and card filters hide the services paid that way, or part of one;
+// a visit left with none is hidden, and its money shown leaves that out.
+const visibleHistory = computed(() =>
+  history.value
+    .map((a) => {
+      const services = a.services_paid || [];
+      const hiddenCost = services.reduce((n: number, x: any) => n + hiddenAmount(x.hidden, settingsStore), 0);
+      if (!hiddenCost) return a;
+      const shown = services.filter((x: any) => !fullyHidden(x.charged, x.hidden, settingsStore));
+      if (!shown.length) return null;
+      return {
+        ...a,
+        service_names: shown.map((x: any) => x.name).join(", "),
+        staff_names: [...new Set(shown.map((x: any) => x.staff).filter(Boolean))].join(", "),
+        total_service_price: Number(a.total_service_price || 0) - hiddenCost,
+        deposit_amount: Math.max(0, Number(a.deposit_amount || 0) - hiddenCost),
+      };
+    })
+    .filter(Boolean),
+);
 
 const attendanceRate = computed(() => {
   if (!history.value || history.value.length === 0) return 0;

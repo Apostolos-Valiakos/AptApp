@@ -187,7 +187,11 @@ module.exports = function appointmentsRouter({
               'staff_id', aps.staff_id,
               'staff_name', st.name,
               'start_time', aps.start_time,
-              'persons', aps.persons
+              'persons', aps.persons,
+              'charged', COALESCE(aps.price_override, s.price, 0),
+              'paid_with', (SELECT paid_with FROM appointment_service_payments WHERE appointment_service_id = aps.id),
+              'hidden', (SELECT json_build_object('cash', hidden_cash, 'card', hidden_card, 'both', hidden_both)
+                         FROM appointment_service_payments WHERE appointment_service_id = aps.id)
             ) ORDER BY aps.start_time ASC)
             FROM appointment_services aps
             LEFT JOIN services s ON aps.service_id = s.id

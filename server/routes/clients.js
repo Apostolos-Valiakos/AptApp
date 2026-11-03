@@ -423,6 +423,20 @@ module.exports = function clientsRouter({
                FROM appointment_services aps
                JOIN services s ON aps.service_id = s.id
                WHERE aps.appointment_id = a.id) as service_names,
+              (
+            SELECT COALESCE(json_agg(json_build_object(
+              'name', s.name,
+              'staff', st.name,
+              'charged', COALESCE(aps.price_override, s.price, 0),
+              'paid_with', (SELECT paid_with FROM appointment_service_payments WHERE appointment_service_id = aps.id),
+              'hidden', (SELECT json_build_object('cash', hidden_cash, 'card', hidden_card, 'both', hidden_both)
+                         FROM appointment_service_payments WHERE appointment_service_id = aps.id)
+            ) ORDER BY aps.start_time), '[]')
+            FROM appointment_services aps
+            LEFT JOIN services s ON s.id = aps.service_id
+            LEFT JOIN staff st ON st.id = aps.staff_id
+            WHERE aps.appointment_id = a.id
+          ) as services_paid,
               (SELECT string_agg(DISTINCT st.name, ', ')
                FROM appointment_services aps
                JOIN staff st ON aps.staff_id = st.id
@@ -522,6 +536,20 @@ module.exports = function clientsRouter({
           ) as staff_names,
 
           a.payment_status,
+          (
+            SELECT COALESCE(json_agg(json_build_object(
+              'name', s.name,
+              'staff', st.name,
+              'charged', COALESCE(aps.price_override, s.price, 0),
+              'paid_with', (SELECT paid_with FROM appointment_service_payments WHERE appointment_service_id = aps.id),
+              'hidden', (SELECT json_build_object('cash', hidden_cash, 'card', hidden_card, 'both', hidden_both)
+                         FROM appointment_service_payments WHERE appointment_service_id = aps.id)
+            ) ORDER BY aps.start_time), '[]')
+            FROM appointment_services aps
+            LEFT JOIN services s ON s.id = aps.service_id
+            LEFT JOIN staff st ON st.id = aps.staff_id
+            WHERE aps.appointment_id = a.id
+          ) as services_paid,
 
           (
             SELECT payment_method FROM transactions

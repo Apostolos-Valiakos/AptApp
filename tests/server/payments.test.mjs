@@ -520,3 +520,44 @@ test("every tile's list adds up to the tile, with and without the cash filter", 
   const bad = await call("GET", "/api/v1/reports/finances/details?kind=everything");
   assert.equal(bad.status, 400);
 });
+
+test("a booking paid by two ways: the filters hide only the service that way paid for", async () => {
+  const day = "2027-10-12";
+  const range = `from=${encodeURIComponent(`${day}T00:00:00+03:00`)}&to=${encodeURIComponent(`${day}T23:59:59+03:00`)}`;
+  const client = clientFor("TwoWays");
+  const appt = bookAt(client, `'${day} 10:00:00+03'::timestamptz`, 40); // the massage
+  const sauna = sql(DB, `INSERT INTO appointment_services (appointment_id, service_id, staff_id, start_time, price_override, duration_override) VALUES ('${appt}', '${ids.service}', '${ids.staff}', '${day} 11:00:00+03', 15, 60) RETURNING id`);
+  const r = await payPart(client, appt, 40, { payment_method: "cash", amount2: 15, payment_method2: "card" });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  sql(DB, `UPDATE appointments SET status = 'completed', save_receipt = true WHERE id = '${appt}'`);
+  assert.equal(sql(DB, `SELECT string_agg(COALESCE(aps.price_override, 0) || '=' || sp.paid_with, ' ' ORDER BY aps.start_time) FROM appointment_services aps JOIN appointment_service_payments sp ON sp.appointment_service_id = aps.id WHERE aps.appointment_id = '${appt}'`), "40.00=cash 15.00=card", "matched by amount");
+
+  const day0 = await call("GET", `/api/v1/appointments?date=${day}`);
+  const svcs = day0.data.find((x) => x.id === appt).services;
+  assert.deepEqual(svcs.map((x) => x.paid_with), ["cash", "card"], "the calendar learns which way paid each");
+
+  const fin = async (filter) => (await call("GET", `/api/v1/reports/finances?${range}${filter}`)).data;
+  assert.equal((await fin("")).total_sales, 55);
+  assert.equal((await fin("&excludeCash=true")).total_sales, 15, "only the sauna stays");
+  assert.equal((await fin("&excludeCard=true")).total_sales, 40, "only the massage stays");
+  assert.equal((await fin("&excludeCash=true")).total_debt, 0, "nothing looks owed");
+  const sales = await call("GET", `/api/v1/reports/finances/details?${range}&excludeCash=true&kind=sales`);
+  assert.equal(sales.data.total, 15);
+
+  // Amounts that match no service: the filtered way's money comes off the
+  // cheapest service first, then reduces the next one, so what's shown is the
+  // other way's money.
+  sql(DB, `UPDATE transactions SET amount = 30 WHERE appointment_id = '${appt}' AND payment_method = 'cash'`);
+  sql(DB, `UPDATE transactions SET amount = 25 WHERE appointment_id = '${appt}' AND payment_method = 'card'`);
+  assert.equal(sql(DB, `SELECT string_agg(COALESCE(aps.price_override, 0) || ':' || sp.hidden_cash || '/' || sp.hidden_card || '/' || sp.hidden_both, ' ' ORDER BY aps.start_time) FROM appointment_services aps JOIN appointment_service_payments sp ON sp.appointment_service_id = aps.id WHERE aps.appointment_id = '${appt}'`),
+    "40.00:15.00/10.00/40.00 15.00:15.00/15.00/15.00", "cheapest first");
+  assert.equal((await fin("&excludeCash=true")).total_sales, 25, "the card's 25 shows");
+  assert.equal((await fin("&excludeCard=true")).total_sales, 30, "the cash's 30 shows");
+  assert.equal((await fin("&excludeCash=true&excludeCard=true")).total_sales, 0);
+  assert.equal((await fin("&excludeCash=true")).total_debt, 0, "still nothing looks owed");
+  const left = await call("GET", `/api/v1/reports/finances/details?${range}&excludeCash=true&kind=sales`);
+  assert.equal(left.data.total, 25);
+  const day1 = await call("GET", `/api/v1/appointments?date=${day}`);
+  assert.deepEqual(day1.data.find((x) => x.id === appt).services.map((x) => Number(x.hidden.cash)), [15, 15], "the calendar gets the hidden amounts");
+  assert.ok(sauna);
+});

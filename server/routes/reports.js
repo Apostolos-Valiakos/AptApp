@@ -24,18 +24,61 @@ module.exports = function reportsRouter({
   // as a 'membership_sale' transaction when the client bought/renewed the plan
   // (that transaction uses a real payment_method like cash/card, so it's counted
   // normally and is unaffected by this exclusion).
+  // The cash and card filters (Ctrl+1 / Ctrl+8) hide services, or part of
+  // one, not whole bookings: appointment_service_payments holds how much of
+  // each service each filter hides (migration 0011; a cash-bought gift card
+  // counts as cash, CASH never).
+  const hiddenColumn = (excludeCash, excludeCard) => {
+    if (excludeCash === "true" && excludeCard === "true") return "hidden_both";
+    if (excludeCash === "true") return "hidden_cash";
+    if (excludeCard === "true") return "hidden_card";
+    return null;
+  };
+  /** How much of a service the filters hide, in money. */
+  const hiddenAmountSql = (apsRef, excludeCash, excludeCard) => {
+    const col = hiddenColumn(excludeCash, excludeCard);
+    if (!col) return "0";
+    return `COALESCE((SELECT _sp.${col} FROM appointment_service_payments _sp WHERE _sp.appointment_service_id = ${apsRef}.id), 0)`;
+  };
+  /** What a service shows under the filters: its price less the hidden part. */
+  const shownPriceSql = (excludeCash, excludeCard, apsRef = "aps", sRef = "s") => {
+    const price = `COALESCE(${apsRef}.price_override, ${sRef}.price, 0)`;
+    const hidden = hiddenAmountSql(apsRef, excludeCash, excludeCard);
+    return hidden === "0" ? price : `(${price} - ${hidden})`;
+  };
+  /** True when the filters hide all of a service. */
+  const serviceHidden = (apsRef, excludeCash, excludeCard) => {
+    const col = hiddenColumn(excludeCash, excludeCard);
+    if (!col) return "FALSE";
+    return `EXISTS (SELECT 1 FROM appointment_service_payments _sp WHERE _sp.appointment_service_id = ${apsRef}.id
+              AND _sp.${col} > 0
+              AND _sp.${col} >= COALESCE(${apsRef}.price_override, (SELECT price FROM services WHERE id = ${apsRef}.service_id), 0) - 0.005)`;
+  };
+  /** For queries over appointment_services: leaves out the services the filters hide whole. */
+  const buildServiceExclusionClause = (excludeCash, excludeCard, apsRef = "aps") => {
+    const hidden = serviceHidden(apsRef, excludeCash, excludeCard);
+    return hidden === "FALSE" ? "" : `AND NOT ${hidden}`;
+  };
+  /** What the filters hide of a booking, in money. */
+  const hiddenCostSql = (apptRef, excludeCash, excludeCard) => {
+    const col = hiddenColumn(excludeCash, excludeCard);
+    if (!col) return "0";
+    return `COALESCE((SELECT SUM(_hp.${col}) FROM appointment_service_payments _hp WHERE _hp.appointment_id = ${apptRef}), 0)`;
+  };
+  /**
+   * For queries over bookings: a booking paid by membership or package visit
+   * isn't revenue at all, and one whose every service is hidden by the filters
+   * is left out. Sums of its services also need buildServiceExclusionClause.
+   */
   const buildRevenueExclusionClause = (excludeCash, excludeCard, alias = "a") => {
     // A written-off visit still happened: it stays in sales and staff figures.
     // The write-off itself is never money collected (buildTxnMethodExclusionClause).
-    const conditions = [`_t.payment_method IN ('membership', 'package')`];
-    if (excludeCash === "true") {
-      conditions.push(`_t.payment_method = 'cash'`);
-      conditions.push(
-        `(_t.payment_method = 'gift-card' AND EXISTS (SELECT 1 FROM gift_cards _gc WHERE _gc.id = _t.gift_card_id AND _gc.purchase_payment_method = 'cash'))`,
-      );
+    let clause = `AND NOT (${alias}.payment_status = 'paid' AND EXISTS (SELECT 1 FROM transactions _t WHERE _t.appointment_id = ${alias}.id AND _t.payment_method IN ('membership', 'package')))`;
+    const hidden = serviceHidden("_vs", excludeCash, excludeCard);
+    if (hidden !== "FALSE") {
+      clause += ` AND EXISTS (SELECT 1 FROM appointment_services _vs WHERE _vs.appointment_id = ${alias}.id AND NOT ${hidden})`;
     }
-    if (excludeCard === "true") conditions.push(`_t.payment_method = 'card'`);
-    return `AND NOT (${alias}.payment_status = 'paid' AND EXISTS (SELECT 1 FROM transactions _t WHERE _t.appointment_id = ${alias}.id AND (${conditions.join(" OR ")})))`;
+    return clause;
   };
 
   const buildTxnMethodExclusionClause = (excludeCash, excludeCard, columnPrefix = "") => {
@@ -318,7 +361,7 @@ module.exports = function reportsRouter({
         `SELECT st.name,
            SUM(COALESCE(aps.duration_override, s.duration_minutes))/60.0 as hours_booked,
            COUNT(aps.id) as appt_count,
-           SUM(COALESCE(aps.price_override, s.price)) as total_revenue,
+           SUM(${shownPriceSql(excludeCash, excludeCard)}) as total_revenue,
            COUNT(DISTINCT (aps.start_time AT TIME ZONE '${process.env.TZ || "Europe/Athens"}')::date) as days_worked,
            ROUND(COUNT(aps.id)::numeric
                  / NULLIF(COUNT(DISTINCT (aps.start_time AT TIME ZONE '${process.env.TZ || "Europe/Athens"}')::date), 0), 1) as avg_per_day
@@ -331,6 +374,7 @@ module.exports = function reportsRouter({
          AND a.status NOT IN ('cancelled', 'no-show', 'no_show')
          AND NOT COALESCE(a.is_block, false)
          ${buildRevenueExclusionClause(excludeCash, excludeCard, "a")}
+         ${buildServiceExclusionClause(excludeCash, excludeCard)}
          GROUP BY st.name`,
         [req.shopId, startDate, endDate],
       );
@@ -375,9 +419,9 @@ module.exports = function reportsRouter({
       FROM appointments a
       JOIN LATERAL (
         SELECT MIN(aps.start_time) AS first_start, COUNT(*) AS services,
-               SUM(COALESCE(aps.price_override, s.price, 0)) AS service_value
+               SUM(${shownPriceSql(excludeCash, excludeCard)}) AS service_value
         FROM appointment_services aps LEFT JOIN services s ON s.id = aps.service_id
-        WHERE aps.appointment_id = a.id
+        WHERE aps.appointment_id = a.id ${buildServiceExclusionClause(excludeCash, excludeCard)}
       ) fs ON fs.first_start IS NOT NULL
       WHERE a.shop_id = $1
         AND a.status NOT IN ('cancelled', 'no-show', 'no_show')
@@ -411,10 +455,11 @@ module.exports = function reportsRouter({
                        ROUND(100.0 * AVG(CASE WHEN local_start::date <= created_at THEN 1 ELSE 0 END) FILTER (WHERE created_at IS NOT NULL))::int AS same_day_pct
                 FROM b`),
       inPeriod(`SELECT s.name AS service_name, COUNT(DISTINCT b.id)::int AS bookings,
-                       ROUND(SUM(COALESCE(aps.price_override, s.price, 0)), 2)::float AS value
+                       ROUND(SUM(${shownPriceSql(excludeCash, excludeCard)}), 2)::float AS value
                 FROM b
                 JOIN appointment_services aps ON aps.appointment_id = b.id
                 JOIN services s ON s.id = aps.service_id
+                WHERE TRUE ${buildServiceExclusionClause(excludeCash, excludeCard)}
                 GROUP BY s.id, s.name ORDER BY 2 DESC, 3 DESC LIMIT 5`),
       topClients("visits DESC, value DESC"),
       topClients("value DESC, visits DESC"),
@@ -453,6 +498,7 @@ module.exports = function reportsRouter({
 
     let whereClause = " AND a.shop_id = $1" + getVisibilityClause(req.user, "a");
     whereClause += " " + buildRevenueExclusionClause(excludeCash, excludeCard, "a");
+    whereClause += " " + buildServiceExclusionClause(excludeCash, excludeCard);
 
     if (from) {
       params.push(from);
@@ -464,7 +510,7 @@ module.exports = function reportsRouter({
     }
     const { rows } = await pool.query(
       `SELECT a.id, a.client_id, a.status, a.created_at, c.first_name, c.last_name,
-        json_agg(json_build_object('service_name', s.name, 'price', aps.price_override)) as services
+        json_agg(json_build_object('service_name', s.name, 'price', aps.price_override - ${hiddenAmountSql("aps", excludeCash, excludeCard)})) as services
       FROM appointments a
       LEFT JOIN clients c ON a.client_id = c.id
       LEFT JOIN appointment_services aps ON aps.appointment_id = a.id
@@ -514,6 +560,7 @@ module.exports = function reportsRouter({
       whereClause += " AND a.save_receipt = true";
     }
     whereClause += " " + buildRevenueExclusionClause(excludeCash, excludeCard, "a");
+    whereClause += " " + buildServiceExclusionClause(excludeCash, excludeCard);
 
     if (from) {
       params.push(from);
@@ -527,7 +574,7 @@ module.exports = function reportsRouter({
       `SELECT 
         COALESCE(s.name, 'Deleted Service') as service_name, 
         COUNT(aps.id) as count, 
-        SUM(COALESCE(aps.price_override, s.price)) as total_revenue
+        SUM(${shownPriceSql(excludeCash, excludeCard)}) as total_revenue
       FROM appointment_services aps
       LEFT JOIN services s ON aps.service_id = s.id -- FIXED: LEFT JOIN
       JOIN appointments a ON aps.appointment_id = a.id
@@ -638,6 +685,7 @@ module.exports = function reportsRouter({
     // --- Service revenue/hours per staff (existing behavior) ---
     let svcWhere = "WHERE a.shop_id = $1" + getVisibilityClause(req.user, "a");
     svcWhere += " " + buildRevenueExclusionClause(excludeCash, excludeCard, "a");
+    svcWhere += " " + buildServiceExclusionClause(excludeCash, excludeCard);
     if (from) {
       params.push(from);
       svcWhere += ` AND aps.start_time >= $${params.length}`;
@@ -671,7 +719,7 @@ module.exports = function reportsRouter({
       LEFT JOIN (
         SELECT aps.staff_id, COUNT(aps.id) as appointment_count,
           SUM(COALESCE(aps.duration_override, s.duration_minutes)) as total_hours,
-          SUM(COALESCE(aps.price_override, s.price)) as total_revenue
+          SUM(${shownPriceSql(excludeCash, excludeCard)}) as total_revenue
         FROM appointment_services aps
         JOIN services s ON aps.service_id = s.id
         JOIN appointments a ON aps.appointment_id = a.id
@@ -820,16 +868,18 @@ module.exports = function reportsRouter({
   // as the tile, so the rows always add up to it.
   const DETAIL_KINDS = ["sales", "payments", "today", "debts", "expenses", "net", "cancellations", "retention"];
   const clientName = "TRIM(COALESCE(c.last_name, '') || ' ' || COALESCE(c.first_name, ''))";
-  const serviceNames = (ref) => `(SELECT string_agg(COALESCE(s.name, '—'), ', ' ORDER BY aps.start_time)
-    FROM appointment_services aps LEFT JOIN services s ON s.id = aps.service_id WHERE aps.appointment_id = ${ref})`;
-  const bookingsSql = (sql) => `
+  const serviceNames = (ref, extra = "") => `(SELECT string_agg(COALESCE(s.name, '—'), ', ' ORDER BY aps.start_time)
+    FROM appointment_services aps LEFT JOIN services s ON s.id = aps.service_id WHERE aps.appointment_id = ${ref} ${extra})`;
+  const bookingsSql = (sql, excludeCash, excludeCard) => `
     SELECT a.id AS appointment_id, a.client_id, ${clientName} AS client, c.phone, a.status,
            (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) AS date,
-           ${serviceNames("a.id")} AS services,
-           ROUND(COALESCE((SELECT SUM(COALESCE(aps.price_override, s.price)) FROM appointment_services aps
-                           LEFT JOIN services s ON s.id = aps.service_id WHERE aps.appointment_id = a.id), 0)
+           ${serviceNames("a.id", buildServiceExclusionClause(excludeCash, excludeCard))} AS services,
+           ROUND(COALESCE((SELECT SUM(${shownPriceSql(excludeCash, excludeCard)}) FROM appointment_services aps
+                           LEFT JOIN services s ON s.id = aps.service_id
+                           WHERE aps.appointment_id = a.id ${buildServiceExclusionClause(excludeCash, excludeCard)}), 0)
              + COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = a.id), 0), 2)::float AS value,
-           ROUND(COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0), 2)::float AS paid
+           ROUND(COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0)
+             - ${hiddenCostSql("a.id", excludeCash, excludeCard)}, 2)::float AS paid
     FROM appointments a LEFT JOIN clients c ON c.id = a.client_id
     WHERE a.id IN (${sql})`;
   const paymentsSql = (filter) => `
@@ -846,7 +896,7 @@ module.exports = function reportsRouter({
 
     if (kind === "sales" || kind === "debts") {
       const { params, sql } = periodAppointments(req, buildRevenueExclusionClause(excludeCash, excludeCard, "a2"));
-      let { rows } = await pool.query(`${bookingsSql(sql)} ORDER BY date`, params);
+      let { rows } = await pool.query(`${bookingsSql(sql, excludeCash, excludeCard)} ORDER BY date`, params);
       rows = rows.map((r) => ({ ...r, owed: Math.round((r.value - r.paid) * 100) / 100 }));
       if (kind === "debts") rows = rows.filter((r) => Math.abs(r.owed) > 0.005);
       return res.json({ rows, total: sum(rows, kind === "sales" ? "value" : "owed") });
@@ -933,10 +983,11 @@ module.exports = function reportsRouter({
       // --- A. TOTAL SALES (Services + Products) ---
       const salesRes = await client.query(
         `
-        SELECT SUM(COALESCE(aps.price_override, s.price)) as total
+        SELECT SUM(${shownPriceSql(excludeCash, excludeCard)}) as total
         FROM appointment_services aps
         LEFT JOIN services s ON aps.service_id = s.id
         WHERE aps.appointment_id IN (${appointmentSubquery})
+          ${buildServiceExclusionClause(excludeCash, excludeCard)}
       `,
         apptParams,
       );
@@ -955,7 +1006,9 @@ module.exports = function reportsRouter({
       // --- B. PERIOD DEBT ---
       const periodPaymentsRes = await client.query(
         `
-        SELECT SUM(amount) as total FROM transactions WHERE appointment_id IN (${appointmentSubquery})
+        SELECT COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id IN (${appointmentSubquery})), 0)
+               - COALESCE((SELECT SUM(${hiddenCostSql("_pa.id", excludeCash, excludeCard)}) FROM appointments _pa
+                           WHERE _pa.id IN (${appointmentSubquery})), 0) as total
       `,
         apptParams,
       );
@@ -1013,7 +1066,8 @@ module.exports = function reportsRouter({
       const { from, to, excludeCash, excludeCard } = req.query;
       const params = [req.shopId];
       let dateFilter = "";
-      const cashExclusion = buildRevenueExclusionClause(excludeCash, excludeCard, "a");
+      const cashExclusion =
+        buildRevenueExclusionClause(excludeCash, excludeCard, "a") + " " + buildServiceExclusionClause(excludeCash, excludeCard);
 
       if (from) {
         params.push(from);
@@ -1029,12 +1083,12 @@ module.exports = function reportsRouter({
         SELECT 
           s.name as service_name,
           COUNT(aps.id) as service_count,
-          SUM(COALESCE(aps.price_override, s.price)) as total_value,
+          SUM(${shownPriceSql(excludeCash, excludeCard)}) as total_value,
           SUM(COALESCE((
             SELECT SUM(t.amount) 
             FROM transactions t 
             WHERE t.appointment_id = a.id AND COALESCE(t.payment_method, '') <> 'write-off'
-          ), 0)) as total_paid,
+          ), 0) - ${hiddenCostSql("a.id", excludeCash, excludeCard)}) as total_paid,
           SUM(COALESCE((
             SELECT SUM(t.amount)
             FROM transactions t
