@@ -12,9 +12,9 @@
         style="background-color: var(--p-primary-color); color: white"
       >
         {{
-          modelValue.length === 1
-            ? t("bookingServices.countSingle", { n: modelValue.length })
-            : t("bookingServices.countPlural", { n: modelValue.length })
+          shownCount === 1
+            ? t("bookingServices.countSingle", { n: shownCount })
+            : t("bookingServices.countPlural", { n: shownCount })
         }}
       </span>
     </div>
@@ -35,6 +35,7 @@
       <div class="space-y-4" :data-testid="'service-group'">
     <div
       v-for="service in rowGroup.rows"
+      v-show="!isHidden(service)"
       :key="keyFor(service)"
       class="relative p-6 bg-white border border-transparent rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(255,147,212,0.12)] hover:border-[var(--p-primary-200)] transition-all duration-300 group"
       :data-testid="'service-row'"
@@ -162,7 +163,19 @@
           <label class="text-xs text-gray-500 block mb-1">{{
             t("bookingServices.price")
           }}</label>
+          <!-- Part of it hidden by the cash/card filters: shows what's left,
+               locked, so the real price is never saved changed. -->
           <InputNumber
+            v-if="hiddenPart(service) > 0"
+            :modelValue="Math.max(0, Number(service._charged ?? service.price_override ?? 0) - hiddenPart(service))"
+            mode="currency"
+            currency="EUR"
+            disabled
+            class="w-full p-inputtext-sm"
+            inputClass="w-full"
+          />
+          <InputNumber
+            v-else
             v-model="service.price_override"
             mode="currency"
             currency="EUR"
@@ -233,6 +246,10 @@ const isShopAdmin = authStore.isShopAdmin;
 
 const props = defineProps({
   modelValue: { type: Array as () => any[], required: true },
+  // Rows hidden by the cash/card filters: kept in the booking, not shown.
+  isHidden: { type: Function as unknown as () => (row: any) => boolean, default: () => false },
+  // How much of a row's price the cash/card filters hide (0 when none).
+  hiddenPart: { type: Function as unknown as () => (row: any) => number, default: () => 0 },
   services: { type: Array as () => any[], default: () => [] },
   staff: { type: Array as () => any[], default: () => [] },
   baseStartTime: { type: Date, default: () => new Date() },
@@ -473,6 +490,8 @@ const pickerVisible = computed({
     if (!v) pickerIndex.value = null;
   },
 });
+
+const shownCount = computed(() => props.modelValue.filter((row: any) => !props.isHidden(row)).length);
 
 const openPicker = (index: number) => {
   pickerIndex.value = index;

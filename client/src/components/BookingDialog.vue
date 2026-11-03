@@ -40,7 +40,7 @@
             </h2>
             <div class="text-sm text-gray-500 mt-1 flex items-center gap-2">
               <i class="pi pi-clock text-xs opacity-60"></i>
-              <span>{{ formatDate(form.start_time) }}</span>
+              <span>{{ formatDate(shownStartTime) }}</span>
               <span
                 v-if="isEditMode"
                 class="rounded-full px-3 py-1 text-xs font-bold uppercase"
@@ -152,6 +152,8 @@
 
             <!-- Services -->
             <BookingServices
+              :isHidden="isHiddenRow"
+              :hiddenPart="hiddenPart"
               v-model="servicesList"
               :services="services"
               :staff="staff"
@@ -242,14 +244,14 @@
             <div v-show="isPaymentSettled || paymentStep === 1" class="space-y-6">
               <PaymentSummary
                 :totalDueNow="combinedTotalDueNow"
-                :servicesTotal="servicesTotal"
+                :servicesTotal="servicesTotal - hiddenServicesTotal"
                 :productsTotal="productsTotal"
                 :discountAmount="discountAmount"
                 :previousDebt="previousDebt"
                 :packagesTotal="pendingPackagesTotal"
                 :giftCardsTotal="pendingGiftCardsTotal"
                 :sameDayAppointmentsTotal="selectedSiblingsOwedTotal"
-                :depositAmount="form.deposit_amount + selectedSiblingsDepositTotal"
+                :depositAmount="Math.max(0, form.deposit_amount - hiddenServicesTotal) + selectedSiblingsDepositTotal"
               />
 
               <!-- Same-day appointments (different staff) — visible to any
@@ -371,7 +373,7 @@
               :salesTotal="pendingPackagesTotal + pendingGiftCardsTotal"
               :depositAmount="form.deposit_amount + selectedSiblingsDepositTotal"
               :loading="paymentLoading"
-              :paidPaymentMethod="form.payment_method"
+              :paidPaymentMethod="shownPaidMethod"
               :clientId="form.client_id"
               :catalogServices="services"
               :appointmentServices="servicesList"
@@ -631,6 +633,8 @@
 </template>
 
 <script setup lang="ts">
+import { useSettingsStore } from "../stores/settings";
+import { fullyHidden, hiddenAmount } from "../utils/paymentFilters";
 import { api, ApiError } from "../api/http";
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from "vue";
 import { useI18n } from "vue-i18n";
@@ -1015,6 +1019,30 @@ const pendingGiftCardsTotal = computed(() =>
 const siblingAppointments = ref<any[]>([]);
 const selectedSiblingIds = ref<string[]>([]);
 const savedStatus = ref("");
+// Services the cash/card filters hide, whole or in part: still part of the
+// booking (saved with it), just not shown, and left out of the money shown.
+// The hidden part is paid, so what's due doesn't change.
+const settingsForFilters = useSettingsStore();
+const hiddenPart = (row: any) => hiddenAmount(row?._hidden, settingsForFilters);
+const isHiddenRow = (row: any) => fullyHidden(row?._charged, row?._hidden, settingsForFilters);
+// The header and the "paid with" note follow the services shown.
+const shownStartTime = computed(() => {
+  if (!hiddenServicesTotal.value) return form.value.start_time;
+  const times = servicesList.value
+    .filter((row: any) => !isHiddenRow(row) && row.start_time)
+    .map((row: any) => new Date(row.start_time).getTime());
+  return times.length ? new Date(Math.min(...times)) : form.value.start_time;
+});
+const shownPaidMethod = computed(() => {
+  if (!hiddenServicesTotal.value) return form.value.payment_method;
+  const ways = [
+    ...new Set(servicesList.value.filter((row: any) => !isHiddenRow(row) && row._paidWith).map((row: any) => row._paidWith)),
+  ];
+  return ways.length === 1 && !String(ways[0]).includes(",") ? ways[0] : null;
+});
+const hiddenServicesTotal = computed(() =>
+  servicesList.value.reduce((sum: number, row: any) => sum + hiddenPart(row), 0),
+);
 const siblingsLoading = ref(false);
 // The money side (totals, earlier debt, what's due now): see
 // composables/useBookingTotals.ts.
@@ -1221,6 +1249,9 @@ const loadExistingAppointment = (val: any, resolvedStaffId: any) => {
         variation_name: resolvedVariationName || null,
         persons: personsOf(s),
         service_archived: !!s.service_archived,
+        _paidWith: s.paid_with || null,
+        _hidden: s.hidden || null,
+        _charged: s.charged ?? null,
         _label: resolvedVariationName
           ? `${catalogService?.name || s.service_name || ""} — ${resolvedVariationName}`
           : catalogService?.name || s.service_name || "",

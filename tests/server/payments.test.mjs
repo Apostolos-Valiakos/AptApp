@@ -467,3 +467,97 @@ test("CASH is real money that counts with cash, and the cash filter never hides 
   assert.equal(sale.status, 200, JSON.stringify(sale.data));
   assert.equal(sql(DB, `SELECT payment_method FROM transactions WHERE client_id = '${client}' AND transaction_type = 'package_sale'`), "CASH");
 });
+
+test("the debts tile's clients add up to the tile, for the same dates and filters", async () => {
+  const day = "2026-08-20";
+  const range = `from=${encodeURIComponent(`${day}T00:00:00+03:00`)}&to=${encodeURIComponent(`${day}T23:59:59+03:00`)}`;
+  const owes = clientFor("TileOwes");
+  const over = clientFor("TileOver");
+  bookAt(owes, `'${day} 10:00:00+03'::timestamptz`, 60);
+  const settled = bookAt(owes, `'${day} 09:00:00+03'::timestamptz`, 15);
+  const part = bookAt(owes, `'${day} 11:00:00+03'::timestamptz`, 40);
+  const extra = bookAt(over, `'${day} 12:00:00+03'::timestamptz`, 20);
+  sql(DB, `UPDATE appointments SET status = 'confirmed', save_receipt = true WHERE client_id IN ('${owes}', '${over}')`);
+  sql(DB, `INSERT INTO transactions (appointment_id, client_id, amount, payment_method, transaction_type, shop_id) VALUES ('${part}', '${owes}', 10, 'card', 'payment', '${SHOP}'), ('${settled}', '${owes}', 15, 'card', 'payment', '${SHOP}'), ('${extra}', '${over}', 25, 'card', 'payment', '${SHOP}')`);
+
+  const tile = (await call("GET", `/api/v1/reports/finances?${range}`)).data.total_debt;
+  const details = (await call("GET", `/api/v1/reports/finances/details?${range}&kind=debts`)).data;
+  const mine = details.rows.filter((d) => [owes, over].includes(d.client_id));
+  assert.deepEqual(mine.map((d) => [d.client, d.owed]), [["TileOwes Part", 60], ["TileOwes Part", 30], ["TileOver Part", -5]], "one row per booking still owing");
+  assert.equal(details.total, Math.round(tile * 100) / 100);
+  const bare = api(PORT, token(ids.admin, "admin"), { reauth: false });
+  assert.equal((await bare("GET", `/api/v1/reports/finances/details?${range}&kind=debts`)).status, 403, "behind the retyped password like the page");
+});
+
+test("every tile's list adds up to the tile, with and without the cash filter", async () => {
+  const day = "2026-08-21";
+  const client = clientFor("TileAll");
+  const done = bookAt(client, `'${day} 10:00:00+03'::timestamptz`, 70);
+  const gone = bookAt(client, `'${day} 12:00:00+03'::timestamptz`, 30);
+  sql(DB, `UPDATE appointments SET status = 'completed', save_receipt = true WHERE id = '${done}'`);
+  sql(DB, `UPDATE appointments SET status = 'cancelled' WHERE id = '${gone}'`);
+  sql(DB, `INSERT INTO transactions (appointment_id, client_id, amount, payment_method, transaction_type, shop_id, created_at) VALUES ('${done}', '${client}', 50, 'cash', 'payment', '${SHOP}', '${day} 10:30+03'), ('${done}', '${client}', 20, 'CASH', 'payment', '${SHOP}', '${day} 10:31+03')`);
+  sql(DB, `INSERT INTO expenses (shop_id, kind, expense_date, amount, description, payment_method) VALUES ('${SHOP}', 'daily', '${day}', 12, 'tile test', 'card')`);
+  for (const filter of ["", "&excludeCash=true"]) {
+    const range = `from=${encodeURIComponent(`${day}T00:00:00+03:00`)}&to=${encodeURIComponent(`${day}T23:59:59+03:00`)}${filter}`;
+    const tiles = (await call("GET", `/api/v1/reports/finances?${range}`)).data;
+    const analytics = (await call("GET", `/api/v1/reports/analytics?${range}`)).data;
+    const list = async (kind) => (await call("GET", `/api/v1/reports/finances/details?${range}&kind=${kind}`)).data;
+    const r2 = (n) => Math.round(n * 100) / 100;
+    assert.equal((await list("sales")).total, r2(tiles.total_sales), `sales${filter}`);
+    assert.equal((await list("payments")).total, r2(tiles.total_payments), `payments${filter}`);
+    assert.equal((await list("debts")).total, r2(tiles.total_debt), `debts${filter}`);
+    assert.equal((await list("expenses")).total, r2(tiles.total_expenses), `expenses${filter}`);
+    assert.equal((await list("net")).total, r2(tiles.net_profit), `net${filter}`);
+    assert.equal((await list("today")).total, r2(tiles.collected_today), `today${filter}`);
+    const cancels = await list("cancellations");
+    assert.equal(cancels.summary.rate.toFixed(1), analytics.cancellation_rate, `cancellations${filter}`);
+    assert.ok(cancels.rows.some((r) => r.appointment_id === gone));
+    const retention = await list("retention");
+    assert.equal(retention.summary.returning, analytics.returning_clients);
+    assert.equal(retention.summary.new, analytics.new_clients);
+  }
+  const bad = await call("GET", "/api/v1/reports/finances/details?kind=everything");
+  assert.equal(bad.status, 400);
+});
+
+test("a booking paid by two ways: the filters hide only the service that way paid for", async () => {
+  const day = "2027-10-12";
+  const range = `from=${encodeURIComponent(`${day}T00:00:00+03:00`)}&to=${encodeURIComponent(`${day}T23:59:59+03:00`)}`;
+  const client = clientFor("TwoWays");
+  const appt = bookAt(client, `'${day} 10:00:00+03'::timestamptz`, 40); // the massage
+  const sauna = sql(DB, `INSERT INTO appointment_services (appointment_id, service_id, staff_id, start_time, price_override, duration_override) VALUES ('${appt}', '${ids.service}', '${ids.staff}', '${day} 11:00:00+03', 15, 60) RETURNING id`);
+  const r = await payPart(client, appt, 40, { payment_method: "cash", amount2: 15, payment_method2: "card" });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  sql(DB, `UPDATE appointments SET status = 'completed', save_receipt = true WHERE id = '${appt}'`);
+  assert.equal(sql(DB, `SELECT string_agg(COALESCE(aps.price_override, 0) || '=' || sp.paid_with, ' ' ORDER BY aps.start_time) FROM appointment_services aps JOIN appointment_service_payments sp ON sp.appointment_service_id = aps.id WHERE aps.appointment_id = '${appt}'`), "40.00=cash 15.00=card", "matched by amount");
+
+  const day0 = await call("GET", `/api/v1/appointments?date=${day}`);
+  const svcs = day0.data.find((x) => x.id === appt).services;
+  assert.deepEqual(svcs.map((x) => x.paid_with), ["cash", "card"], "the calendar learns which way paid each");
+
+  const fin = async (filter) => (await call("GET", `/api/v1/reports/finances?${range}${filter}`)).data;
+  assert.equal((await fin("")).total_sales, 55);
+  assert.equal((await fin("&excludeCash=true")).total_sales, 15, "only the sauna stays");
+  assert.equal((await fin("&excludeCard=true")).total_sales, 40, "only the massage stays");
+  assert.equal((await fin("&excludeCash=true")).total_debt, 0, "nothing looks owed");
+  const sales = await call("GET", `/api/v1/reports/finances/details?${range}&excludeCash=true&kind=sales`);
+  assert.equal(sales.data.total, 15);
+
+  // Amounts that match no service: the filtered way's money comes off the
+  // cheapest service first, then reduces the next one, so what's shown is the
+  // other way's money.
+  sql(DB, `UPDATE transactions SET amount = 30 WHERE appointment_id = '${appt}' AND payment_method = 'cash'`);
+  sql(DB, `UPDATE transactions SET amount = 25 WHERE appointment_id = '${appt}' AND payment_method = 'card'`);
+  assert.equal(sql(DB, `SELECT string_agg(COALESCE(aps.price_override, 0) || ':' || sp.hidden_cash || '/' || sp.hidden_card || '/' || sp.hidden_both, ' ' ORDER BY aps.start_time) FROM appointment_services aps JOIN appointment_service_payments sp ON sp.appointment_service_id = aps.id WHERE aps.appointment_id = '${appt}'`),
+    "40.00:15.00/10.00/40.00 15.00:15.00/15.00/15.00", "cheapest first");
+  assert.equal((await fin("&excludeCash=true")).total_sales, 25, "the card's 25 shows");
+  assert.equal((await fin("&excludeCard=true")).total_sales, 30, "the cash's 30 shows");
+  assert.equal((await fin("&excludeCash=true&excludeCard=true")).total_sales, 0);
+  assert.equal((await fin("&excludeCash=true")).total_debt, 0, "still nothing looks owed");
+  const left = await call("GET", `/api/v1/reports/finances/details?${range}&excludeCash=true&kind=sales`);
+  assert.equal(left.data.total, 25);
+  const day1 = await call("GET", `/api/v1/appointments?date=${day}`);
+  assert.deepEqual(day1.data.find((x) => x.id === appt).services.map((x) => Number(x.hidden.cash)), [15, 15], "the calendar gets the hidden amounts");
+  assert.ok(sauna);
+});

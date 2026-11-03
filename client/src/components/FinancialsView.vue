@@ -87,8 +87,11 @@
     <!-- KPI Cards Row 1 — 4 uniform cards -->
     <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
       <!-- Total Sales -->
-      <div
-        class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 border-l-4 border-l-indigo-500"
+      <button
+        type="button"
+        class="text-left bg-white rounded-2xl border border-gray-100 shadow-sm p-6 border-l-4 border-l-indigo-500 hover:shadow-md transition cursor-pointer"
+        data-testid="tile-sales"
+        @click="openDetails('sales')"
       >
         <div class="flex items-center justify-between mb-3">
           <span class="text-sm font-medium text-gray-500">{{
@@ -113,11 +116,14 @@
         <p class="text-[10px] text-gray-400 mt-1 leading-tight">
           * {{ t("analytics.serviceNote") }}
         </p>
-      </div>
+      </button>
 
       <!-- Collected Today -->
-      <div
-        class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 border-l-4 border-l-green-500"
+      <button
+        type="button"
+        class="text-left bg-white rounded-2xl border border-gray-100 shadow-sm p-6 border-l-4 border-l-green-500 hover:shadow-md transition cursor-pointer"
+        data-testid="tile-today"
+        @click="openDetails('today')"
       >
         <div class="flex items-center justify-between mb-3">
           <span class="text-sm font-medium text-gray-500">{{
@@ -139,11 +145,14 @@
         <p class="text-[10px] text-gray-400 mt-1 leading-tight">
           * {{ t("analytics.kpi.collectedTodayNote") }}
         </p>
-      </div>
+      </button>
 
-      <!-- Total Business Debt -->
-      <div
-        class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 border-l-4 border-l-red-400"
+      <!-- Total Business Debt: opens who owes it -->
+      <button
+        type="button"
+        class="text-left bg-white rounded-2xl border border-gray-100 shadow-sm p-6 border-l-4 border-l-red-400 hover:shadow-md hover:border-red-200 transition cursor-pointer"
+        data-testid="tile-debts"
+        @click="openDetails('debts')"
       >
         <div class="flex items-center justify-between mb-3">
           <span class="text-sm font-medium text-gray-500">{{
@@ -162,11 +171,14 @@
         <p class="text-xs text-gray-400 mt-2">
           {{ t("analytics.kpi.totalDebtNote") }}
         </p>
-      </div>
+      </button>
 
       <!-- Client Retention -->
-      <div
-        class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 border-l-4 border-l-blue-500"
+      <button
+        type="button"
+        class="text-left bg-white rounded-2xl border border-gray-100 shadow-sm p-6 border-l-4 border-l-blue-500 hover:shadow-md transition cursor-pointer"
+        data-testid="tile-retention"
+        @click="openDetails('retention')"
       >
         <div class="flex items-center justify-between mb-3">
           <span class="text-sm font-medium text-gray-500">{{
@@ -190,13 +202,18 @@
             })
           }}
         </p>
-      </div>
+      </button>
     </div>
 
     <!-- KPI Cards Row 2 — 4 mini cards, unified style -->
     <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-6">
       <!-- Cancellation Rate -->
-      <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+      <button
+        type="button"
+        class="text-left bg-white rounded-2xl border border-gray-100 shadow-sm p-6 hover:shadow-md transition cursor-pointer"
+        data-testid="tile-cancellations"
+        @click="openDetails('cancellations')"
+      >
         <div class="flex items-center justify-between">
           <div>
             <h4
@@ -218,10 +235,15 @@
             <i class="pi pi-ban text-xl"></i>
           </div>
         </div>
-      </div>
+      </button>
 
       <!-- Selected Period Payments -->
-      <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+      <button
+        type="button"
+        class="text-left bg-white rounded-2xl border border-gray-100 shadow-sm p-6 hover:shadow-md transition cursor-pointer"
+        data-testid="tile-payments"
+        @click="openDetails('payments')"
+      >
         <div class="flex items-center justify-between">
           <div>
             <h4
@@ -243,10 +265,15 @@
             <i class="pi pi-wallet text-xl"></i>
           </div>
         </div>
-      </div>
+      </button>
 
       <!-- Expenses in the selected period -->
-      <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+      <button
+        type="button"
+        class="text-left bg-white rounded-2xl border border-gray-100 shadow-sm p-6 hover:shadow-md transition cursor-pointer"
+        data-testid="tile-expenses"
+        @click="openDetails('expenses')"
+      >
         <div class="flex items-center justify-between">
           <div>
             <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide mb-1">
@@ -264,10 +291,15 @@
             <i class="pi pi-receipt text-xl"></i>
           </div>
         </div>
-      </div>
+      </button>
 
       <!-- Net: collected minus expenses -->
-      <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+      <button
+        type="button"
+        class="text-left bg-white rounded-2xl border border-gray-100 shadow-sm p-6 hover:shadow-md transition cursor-pointer"
+        data-testid="tile-net"
+        @click="openDetails('net')"
+      >
         <div class="flex items-center justify-between">
           <div>
             <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide mb-1">
@@ -289,7 +321,7 @@
             <i class="pi pi-calculator text-xl"></i>
           </div>
         </div>
-      </div>
+      </button>
     </div>
 
     <!-- Tab Section -->
@@ -911,6 +943,17 @@
         </DataTable>
       </TabPanel>
     </TabView>
+
+    <AnalyticsDetailsDialog
+      ref="detailsRef"
+      v-model:visible="detailsVisible"
+      :kind="detailsKind"
+      :query="lastQuery"
+      :closeOnEscape="!clientProfileVisible"
+      @open-client="openClient"
+    />
+
+    <ClientProfileDialog v-model:visible="clientProfileVisible" :clientId="clientProfileId" @refresh="onClientChanged" />
   </div>
 </template>
 
@@ -925,6 +968,8 @@ import TabView from "primevue/tabview";
 import TabPanel from "primevue/tabpanel";
 import Skeleton from "primevue/skeleton";
 import BookingInsights from "./BookingInsights.vue";
+import ClientProfileDialog from "./ClientProfileDialog.vue";
+import AnalyticsDetailsDialog, { type DetailKind } from "./AnalyticsDetailsDialog.vue";
 import { useSettingsStore } from "../stores/settings";
 
 // Sorts a column by a number field. DataTable compares whatever this returns;
@@ -977,6 +1022,28 @@ const paymentsReport = ref<any[]>([]);
 const priceAdjustmentsReport = ref<any[]>([]);
 const appointmentsReport = ref([]);
 const insights = ref<any>(null);
+// Who owes the Σύνολο Χρεών amount, for the dates the tile was loaded for.
+const lastQuery = ref("");
+// Clicking a tile lists what makes up its figure (AnalyticsDetailsDialog).
+const detailsVisible = ref(false);
+const detailsKind = ref<DetailKind | null>(null);
+const detailsRef = ref<any>(null);
+const openDetails = (kind: DetailKind) => {
+  detailsKind.value = kind;
+  detailsVisible.value = true;
+};
+// A client in the list opens their profile, as on the Clients page. A change
+// there (a payment, a write-off) is reflected in the list and the tile.
+const clientProfileVisible = ref(false);
+const clientProfileId = ref<string | null>(null);
+const openClient = (clientId: string) => {
+  clientProfileId.value = clientId;
+  clientProfileVisible.value = true;
+};
+const onClientChanged = () => {
+  fetchAllReports();
+  if (detailsVisible.value) detailsRef.value?.reload();
+};
 const deletedReport = ref<any[]>([]);
 const deletedSearch = ref("");
 const fmtDateTime = (d: string) =>
@@ -1084,6 +1151,7 @@ const fetchAllReports = async () => {
   }
 
   const qs = params.toString() ? `?${params.toString()}` : "";
+  lastQuery.value = qs;
 
   try {
     // Without these the page can't show anything; the others may be refused
