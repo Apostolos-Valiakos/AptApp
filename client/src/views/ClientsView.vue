@@ -1,16 +1,16 @@
 <template>
   <div class="space-y-6">
-    <!-- Page Header -->
-    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-      <div class="flex justify-between items-center">
-        <div class="flex items-center gap-3">
+    <!-- Page Header: on phones the buttons go under the title. -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
+      <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+        <div class="flex items-center gap-3 min-w-0">
           <div
             class="w-10 h-10 rounded-xl bg-[var(--p-primary-50)] flex items-center justify-center"
           >
             <i class="pi pi-users text-[var(--p-primary-600)]"></i>
           </div>
           <div>
-            <h1 class="text-2xl font-bold text-gray-900">
+            <h1 class="text-xl sm:text-2xl font-bold text-gray-900">
               {{ t("clients.title") }}
             </h1>
             <p class="text-sm text-gray-500">
@@ -18,9 +18,10 @@
             </p>
           </div>
         </div>
-        <div class="flex gap-2">
+        <div class="flex flex-col-reverse sm:flex-row gap-2 w-full sm:w-auto">
           <Button
             v-if="isShopAdmin"
+            class="flex-1 sm:flex-none whitespace-nowrap"
             icon="pi pi-file-excel"
             :label="t('clients.export.button')"
             severity="secondary"
@@ -29,6 +30,7 @@
             @click="openExport"
           />
           <Button
+            class="flex-1 sm:flex-none whitespace-nowrap"
             :label="t('clients.addNew')"
             icon="pi pi-plus"
             @click="openNew"
@@ -38,14 +40,16 @@
     </div>
 
     <!-- Data Table Card -->
-    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-3 sm:p-6">
       <DataTable
         :value="clients"
         :lazy="true"
         :paginator="true"
         :rows="pageRows"
         :totalRecords="totalClients"
-        :rowsPerPageOptions="[15, 30, 50, 100]"
+        :rowsPerPageOptions="isPhone ? undefined : [15, 30, 50, 100]"
+        :paginatorTemplate="isPhone ? PHONE_PAGINATOR_TEMPLATE : undefined"
+        currentPageReportTemplate="{currentPage} / {totalPages}"
         responsiveLayout="scroll"
         class="p-datatable-sm cursor-pointer hover:bg-gray-50"
         :loading="loading"
@@ -54,16 +58,17 @@
         @page="onPage"
       >
         <template #header>
-          <div class="flex justify-between items-center">
-            <span class="p-input-icon-left">
-              <i class="pi pi-search mr-3" />
+          <div class="flex justify-between items-center gap-3">
+            <div class="relative w-full sm:w-80">
+              <i class="pi pi-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
               <InputText
                 v-model="search"
+                type="search"
                 :placeholder="t('clients.search')"
-                class="w-80"
+                class="w-full !pl-10"
               />
-            </span>
-            <div class="text-sm text-gray-500">
+            </div>
+            <div class="hidden sm:block text-sm text-gray-500 whitespace-nowrap">
               {{ t("clients.subtitle", { count: totalClients }) }}
             </div>
           </div>
@@ -115,12 +120,26 @@
                 <div class="text-xs text-gray-400 truncate">
                   {{ slotProps.data.email || "—" }}
                 </div>
+                <a
+                  v-if="slotProps.data.phone"
+                  :href="'tel:' + slotProps.data.phone"
+                  class="md:hidden inline-block mt-0.5 text-sm text-green-600"
+                  @click.stop
+                >
+                  {{ formatPhone(slotProps.data.phone) }}
+                </a>
               </div>
             </div>
           </template>
         </Column>
 
-        <Column field="phone" :header="t('clients.table.phone')" sortable>
+        <Column
+          field="phone"
+          :header="t('clients.table.phone')"
+          sortable
+          headerClass="hidden md:table-cell"
+          bodyClass="hidden md:table-cell"
+        >
           <template #body="slotProps">
             <a
               :href="'tel:' + slotProps.data.phone"
@@ -132,9 +151,9 @@
           </template>
         </Column>
 
-        <Column :header="t('common.actions')">
+        <Column :header="isPhone ? '' : t('common.actions')" bodyClass="!px-1 md:!px-3">
           <template #body="slotProps">
-            <div class="flex gap-1.5 items-center">
+            <div class="flex gap-0.5 md:gap-1.5 items-center justify-end md:justify-start">
               <Button
                 icon="pi pi-envelope"
                 class="p-button-rounded p-button-text p-button-sm p-button-info"
@@ -143,6 +162,7 @@
                 @click.stop="inviteClient(slotProps.data)"
               />
               <Button
+                v-if="!isPhone"
                 icon="pi pi-pencil"
                 class="p-button-rounded p-button-text p-button-sm"
                 v-tooltip.top="t('clients.actions.viewProfile')"
@@ -415,10 +435,14 @@ import { useSettingsStore } from "../stores/settings";
 import { storeToRefs } from "pinia";
 import { toLocalDateStr } from "../utils/staffAvailability";
 import ClientProfileDialog from "../components/ClientProfileDialog.vue"; // Ensure correct path
+import { useIsPhone, PHONE_PAGINATOR_TEMPLATE } from "../composables/useIsPhone";
 
 const { t } = useI18n();
 const authStore = useAuthStore();
 const isShopAdmin = authStore.isShopAdmin;
+// Phones: a lighter table (phone under the name, no extra columns) and a
+// paginator that fits.
+const isPhone = useIsPhone();
 const settingsStore = useSettingsStore();
 const { shopSettings } = storeToRefs(settingsStore);
 

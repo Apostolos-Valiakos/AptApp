@@ -227,6 +227,7 @@ export default {
   staff: {
     title: 'Staff Management',
     addNew: 'Add Staff',
+    subtitle: '{count} members',
     search: 'Search staff...',
     table: {
       name: 'Name',

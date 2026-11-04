@@ -1,32 +1,32 @@
 <template>
   <div class="space-y-6">
-    <!-- Page Header -->
-    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-      <div class="flex justify-between items-center">
-        <div class="flex items-center gap-3">
+    <!-- Page Header: on phones the button goes under the title. -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
+      <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+        <div class="flex items-center gap-3 min-w-0">
           <div class="w-10 h-10 rounded-xl bg-[var(--p-primary-50)] flex items-center justify-center">
             <i class="pi pi-list-check text-[var(--p-primary-600)]"></i>
           </div>
           <div>
-            <h1 class="text-2xl font-bold text-gray-900">{{ t('services.title') }}</h1>
+            <h1 class="text-xl sm:text-2xl font-bold text-gray-900">{{ t('services.title') }}</h1>
             <p class="text-sm text-gray-500">{{ t('services.subtitle', { count: services.length }) }}</p>
           </div>
         </div>
         <Button
           :label="t('services.addNew')"
           icon="pi pi-plus"
+          class="w-full sm:w-auto whitespace-nowrap"
           @click="openNew"
         />
       </div>
-      <div class="mt-4">
-        <span class="p-input-icon-left">
-          <i class="pi pi-search mr-3" />
-          <InputText
-            v-model="search"
-            :placeholder="t('services.search')"
-            class="w-64"
-          />
-        </span>
+      <div class="mt-4 relative w-full sm:w-64">
+        <i class="pi pi-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+        <InputText
+          v-model="search"
+          type="search"
+          :placeholder="t('services.search')"
+          class="w-full !pl-10"
+        />
       </div>
     </div>
 
@@ -49,7 +49,7 @@
       <div
         v-for="service in searchResults"
         :key="service.id"
-        class="flex items-center gap-3 px-5 py-3 border-b border-gray-50 last:border-b-0 hover:bg-gray-50"
+        class="flex items-center gap-2 sm:gap-3 px-3 sm:px-5 py-3 border-b border-gray-50 last:border-b-0 hover:bg-gray-50"
       >
         <ServiceRowBody :service="service" @edit="editService(service)" @delete="confirmDelete(service)" />
       </div>
@@ -72,13 +72,13 @@
       >
         <template #item="{ element: group }">
           <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-            <div class="flex items-center gap-3 px-5 py-4 border-b border-gray-100 bg-gray-50/60">
+            <div class="flex items-center gap-2 sm:gap-3 px-3 sm:px-5 py-3 sm:py-4 border-b border-gray-100 bg-gray-50/60">
               <i class="pi pi-bars category-drag-handle cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500"></i>
-              <h3 class="font-bold text-gray-900">{{ group.label }}</h3>
+              <h3 class="font-bold text-gray-900 min-w-0 truncate">{{ group.label }}</h3>
               <span class="text-xs text-gray-400">({{ group.items.length }})</span>
               <button
                 type="button"
-                class="text-gray-400 hover:text-gray-700"
+                class="w-8 h-8 -m-1.5 flex-shrink-0 flex items-center justify-center text-gray-400 hover:text-gray-700"
                 v-tooltip="t('services.renameCategory.button')"
                 data-testid="rename-category"
                 @click="openRenameCategory(group.label)"
@@ -111,7 +111,7 @@
               @end="onServiceDragEnd(group)"
             >
               <template #item="{ element: service }">
-                <div class="flex items-center gap-3 px-5 py-3 border-b border-gray-50 last:border-b-0 hover:bg-gray-50">
+                <div class="flex items-center gap-2 sm:gap-3 px-3 sm:px-5 py-3 border-b border-gray-50 last:border-b-0 hover:bg-gray-50">
                   <i class="pi pi-bars service-drag-handle cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 text-sm"></i>
                   <ServiceRowBody :service="service" @edit="editService(service)" @delete="confirmDelete(service)" />
                 </div>
@@ -123,7 +123,7 @@
 
       <!-- Uncategorized — always last, service-level drag only (no category to reposition) -->
       <div v-if="uncategorizedGroup.items.length" class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mt-4">
-        <div class="flex items-center gap-3 px-5 py-4 border-b border-gray-100 bg-gray-50/60">
+        <div class="flex items-center gap-2 sm:gap-3 px-3 sm:px-5 py-3 sm:py-4 border-b border-gray-100 bg-gray-50/60">
           <h3 class="font-bold text-gray-900">{{ uncategorizedGroup.label }}</h3>
           <span class="text-xs text-gray-400">({{ uncategorizedGroup.items.length }})</span>
         </div>
@@ -135,7 +135,7 @@
           @end="onServiceDragEnd(uncategorizedGroup)"
         >
           <template #item="{ element: service }">
-            <div class="flex items-center gap-3 px-5 py-3 border-b border-gray-50 last:border-b-0 hover:bg-gray-50">
+            <div class="flex items-center gap-2 sm:gap-3 px-3 sm:px-5 py-3 border-b border-gray-50 last:border-b-0 hover:bg-gray-50">
               <i class="pi pi-bars service-drag-handle cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 text-sm"></i>
               <ServiceRowBody :service="service" @edit="editService(service)" @delete="confirmDelete(service)" />
             </div>
@@ -453,26 +453,37 @@ const ServiceRowBody = (props: { service: any }, { emit }: any) =>
             )
           : null,
       ]),
+      // Phones: duration · price · bookable online, under the name.
+      h("div", { class: "md:hidden flex items-center gap-3 mt-1 text-sm text-gray-600" }, [
+        h("span", { class: "inline-flex items-center gap-1" }, [
+          h("i", { class: "pi pi-clock text-gray-400 text-xs" }),
+          formatDurationLabel(props.service.duration_minutes),
+        ]),
+        h("span", { class: "font-medium text-gray-800" }, formatMoney(props.service.price)),
+        props.service.bookable_online
+          ? h("i", { class: "pi pi-check-circle text-green-600 text-xs", title: t("services.dialog.bookableOnline") })
+          : null,
+      ]),
     ]),
-    h("span", { class: "inline-flex items-center gap-1.5 text-sm text-gray-700 flex-shrink-0 w-24" }, [
+    h("span", { class: "hidden md:inline-flex items-center gap-1.5 text-sm text-gray-700 flex-shrink-0 w-24" }, [
       h("i", { class: "pi pi-clock text-gray-400 text-xs" }),
       formatDurationLabel(props.service.duration_minutes),
     ]),
-    h("span", { class: "inline-flex items-center gap-1 text-sm font-medium text-gray-800 flex-shrink-0 w-20" }, [
+    h("span", { class: "hidden md:inline-flex items-center gap-1 text-sm font-medium text-gray-800 flex-shrink-0 w-20" }, [
       formatMoney(props.service.price),
     ]),
     h("i", {
       class: props.service.bookable_online
-        ? "pi pi-check-circle text-green-600 flex-shrink-0"
-        : "pi pi-minus text-gray-300 flex-shrink-0",
+        ? "hidden md:inline pi pi-check-circle text-green-600 flex-shrink-0"
+        : "hidden md:inline pi pi-minus text-gray-300 flex-shrink-0",
       title: t("services.dialog.bookableOnline"),
     }),
-    h("div", { class: "flex gap-1 items-center flex-shrink-0" }, [
+    h("div", { class: "flex gap-0.5 sm:gap-1 items-center flex-shrink-0" }, [
       h(
         "button",
         {
           type: "button",
-          class: "p-2 rounded-full hover:bg-gray-100 text-gray-500",
+          class: "w-10 h-10 sm:w-auto sm:h-auto sm:p-2 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500",
           title: t("common.edit"),
           onClick: () => emit("edit"),
         },
@@ -482,7 +493,7 @@ const ServiceRowBody = (props: { service: any }, { emit }: any) =>
         "button",
         {
           type: "button",
-          class: "p-2 rounded-full hover:bg-red-50 text-red-500",
+          class: "w-10 h-10 sm:w-auto sm:h-auto sm:p-2 flex items-center justify-center rounded-full hover:bg-red-50 text-red-500",
           title: t("common.delete"),
           onClick: () => emit("delete"),
         },

@@ -227,6 +227,7 @@ export default {
   staff: {
     title: "Διαχείριση Προσωπικού",
     addNew: "Νέο Μέλος",
+    subtitle: "{count} μέλη",
     search: "Αναζήτηση προσωπικού...",
     table: {
       name: "Όνομα",

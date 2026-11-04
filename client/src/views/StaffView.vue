@@ -1,54 +1,55 @@
 <template>
   <div class="space-y-6">
-    <!-- Page Header -->
-    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-      <div class="flex justify-between items-center">
-        <div class="flex items-center gap-3">
+    <!-- Page Header: on phones the buttons go under the title. -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
+      <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+        <div class="flex items-center gap-3 min-w-0">
           <div
             class="w-10 h-10 rounded-xl bg-[var(--p-primary-50)] flex items-center justify-center"
           >
             <i class="pi pi-id-card text-[var(--p-primary-600)]"></i>
           </div>
           <div>
-            <h1 class="text-2xl font-bold text-gray-900">
+            <h1 class="text-xl sm:text-2xl font-bold text-gray-900">
               {{ t("staff.title") }}
             </h1>
-            <p class="text-sm text-gray-500">{{ t("staff.addNew") }}</p>
+            <p class="text-sm text-gray-500">{{ t("staff.subtitle", { count: staff.length }) }}</p>
           </div>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex flex-col-reverse sm:flex-row sm:items-center gap-2 w-full sm:w-auto">
           <Button
             :label="t('staffSchedule.title')"
             icon="pi pi-calendar-clock"
-            class="p-button-outlined"
+            class="p-button-outlined flex-1 sm:flex-none whitespace-nowrap"
             @click="router.push('/app/staff-schedule')"
           />
-          <Button :label="t('staff.addNew')" icon="pi pi-plus" @click="openNew" />
+          <Button :label="t('staff.addNew')" icon="pi pi-plus" class="flex-1 sm:flex-none whitespace-nowrap" @click="openNew" />
         </div>
       </div>
     </div>
 
     <!-- Data Table Card -->
-    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-3 sm:p-6">
       <DataTable
         :value="filteredStaff"
         :rows="10"
         paginator
-        :rowsPerPageOptions="[10, 20, 50]"
+        :rowsPerPageOptions="isPhone ? undefined : [10, 20, 50]"
+        :paginatorTemplate="isPhone ? PHONE_PAGINATOR_TEMPLATE : undefined"
+        currentPageReportTemplate="{currentPage} / {totalPages}"
         responsiveLayout="scroll"
         class="p-datatable-sm"
         :loading="tableLoading"
       >
         <template #header>
-          <div class="flex justify-between items-center">
-            <span class="p-input-icon-left">
-              <i class="pi pi-search mr-3" />
-              <InputText
-                v-model="search"
-                :placeholder="t('staff.search')"
-                class="w-80"
-              />
-            </span>
+          <div class="relative w-full sm:w-80">
+            <i class="pi pi-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+            <InputText
+              v-model="search"
+              type="search"
+              :placeholder="t('staff.search')"
+              class="w-full !pl-10"
+            />
           </div>
         </template>
 
@@ -82,12 +83,24 @@
                 <div class="text-xs text-gray-400 truncate">
                   {{ slotProps.data.email || "—" }}
                 </div>
+                <a
+                  v-if="slotProps.data.phone"
+                  :href="'tel:' + slotProps.data.phone"
+                  class="md:hidden inline-block mt-0.5 text-sm text-green-600"
+                >
+                  {{ slotProps.data.phone }}
+                </a>
               </div>
             </div>
           </template>
         </Column>
 
-        <Column field="phone" :header="t('staff.table.phone')">
+        <Column
+          field="phone"
+          :header="t('staff.table.phone')"
+          headerClass="hidden md:table-cell"
+          bodyClass="hidden md:table-cell"
+        >
           <template #body="slotProps">
             <span class="text-sm text-gray-700">{{
               slotProps.data.phone || "—"
@@ -95,7 +108,12 @@
           </template>
         </Column>
 
-        <Column field="specialty" :header="t('staff.table.specialty')">
+        <Column
+          field="specialty"
+          :header="t('staff.table.specialty')"
+          headerClass="hidden md:table-cell"
+          bodyClass="hidden md:table-cell"
+        >
           <template #body="slotProps">
             <Tag
               v-if="slotProps.data.specialty"
@@ -106,9 +124,20 @@
           </template>
         </Column>
 
-        <Column :header="t('common.actions')" style="width: 130px">
+        <Column :header="isPhone ? '' : t('common.actions')" bodyClass="!px-1 md:!px-3 md:w-[130px]">
           <template #body="slotProps">
-            <div class="flex gap-1.5 items-center">
+            <!-- Phones: the four actions behind one ⋯ button. -->
+            <div v-if="isPhone" class="flex justify-end">
+              <Button
+                icon="pi pi-ellipsis-v"
+                class="p-button-rounded p-button-text"
+                severity="secondary"
+                :aria-label="t('booking.moreActions')"
+                data-testid="staff-row-menu"
+                @click="openRowMenu($event, slotProps.data)"
+              />
+            </div>
+            <div v-else class="flex gap-1.5 items-center">
               <Button
                 icon="pi pi-pencil"
                 class="p-button-rounded p-button-text p-button-sm"
@@ -142,6 +171,7 @@
           </template>
         </Column>
       </DataTable>
+      <Menu ref="rowMenu" :model="rowMenuItems" :popup="true" />
     </div>
   </div>
 
@@ -525,6 +555,7 @@ import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 import { useCalendarStore } from "../stores/calendar";
 import StaffServiceOrder from "../components/StaffServiceOrder.vue";
+import { useIsPhone, PHONE_PAGINATOR_TEMPLATE } from "../composables/useIsPhone";
 
 const { t } = useI18n();
 
@@ -865,6 +896,21 @@ const deleteStaff = async (staff: any) => {
       life: 4000,
     });
   }
+};
+
+// Phones: a lighter table (phone under the name, actions behind ⋯) and a
+// paginator that fits.
+const isPhone = useIsPhone();
+const rowMenu = ref<any>(null);
+const rowMenuItems = ref<any[]>([]);
+const openRowMenu = (event: Event, member: any) => {
+  rowMenuItems.value = [
+    { label: t("staff.tooltips.edit"), icon: "pi pi-pencil", command: () => editStaff(member) },
+    { label: t("staff.tooltips.createLogin"), icon: "pi pi-key", command: () => openLoginDialog(member) },
+    { label: t("staff.tooltips.timeOff"), icon: "pi pi-calendar-times", command: () => openTimeOffDialog(member) },
+    { label: t("staff.tooltips.delete"), icon: "pi pi-trash", class: "menu-danger", command: () => confirmDelete(member) },
+  ];
+  rowMenu.value?.toggle(event);
 };
 
 const filteredStaff = computed(() => {

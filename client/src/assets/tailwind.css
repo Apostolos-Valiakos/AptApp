@@ -18,3 +18,9 @@
     display: none;
   }
 }
+
+/* A destructive item in a ⋯ menu (delete): red. */
+.menu-danger .p-menu-item-label,
+.menu-danger .p-menu-item-icon {
+  color: #dc2626 !important;
+}
