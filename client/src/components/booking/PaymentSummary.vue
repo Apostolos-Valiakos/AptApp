@@ -1,6 +1,6 @@
 <template>
   <div
-    class="bg-gradient-to-br from-gray-900 to-gray-800 text-white rounded-xl p-8 shadow-xl relative overflow-hidden"
+    class="bg-gradient-to-br from-gray-900 to-gray-800 text-white rounded-xl p-5 md:p-8 shadow-xl relative overflow-hidden"
   >
     <div class="flex justify-between items-center mb-1 opacity-70">
       <span class="text-xs uppercase tracking-wider font-bold">{{
@@ -8,7 +8,7 @@
       }}</span>
     </div>
     <div
-      class="text-5xl font-extrabold mb-6 tracking-tight"
+      class="text-4xl md:text-5xl font-extrabold mb-4 md:mb-6 tracking-tight"
       :class="{ 'animate-pulse': totalDueNow > 0 }"
     >
       {{ formatMoney(totalDueNow) }}

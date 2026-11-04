@@ -1473,6 +1473,7 @@ export default {
     emailClient: "Email στον πελάτη",
     save: "Αποθήκευση",
     cancelAppt: "Διαγραφή Ραντεβού",
+    moreActions: "Περισσότερες ενέργειες",
     groupedWithExisting: "Προστέθηκε στο υπάρχον ραντεβού του πελάτη στις {time}",
     overtime: {
       header: "Εκτός ωραρίου",

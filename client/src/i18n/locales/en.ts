@@ -1439,6 +1439,7 @@ export default {
     emailClient: 'Email client',
     save: 'Save',
     cancelAppt: 'Cancel Appt',
+    moreActions: 'More actions',
     groupedWithExisting: "Added to this client's existing appointment at {time}",
     overtime: {
       header: 'Outside working hours',

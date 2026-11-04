@@ -15,7 +15,7 @@
     }"
   >
     <div
-      class="flex flex-col md:flex-row h-full md:max-h-[90vh] md:h-[800px] bg-white"
+      class="relative flex flex-col md:flex-row flex-1 min-h-0 md:flex-none md:max-h-[90vh] md:h-[800px] bg-white"
     >
       <!-- Left pane: form -->
       <div
@@ -26,10 +26,10 @@
       >
         <!-- Header -->
         <div
-          class="px-4 md:px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-white sticky top-0 z-10 flex-shrink-0"
+          class="px-4 md:px-6 py-2.5 md:py-4 border-b border-gray-100 flex justify-between items-center gap-3 bg-white sticky top-0 z-10 flex-shrink-0"
         >
-          <div>
-            <h2 class="text-lg md:text-xl font-bold text-gray-900">
+          <div class="min-w-0">
+            <h2 class="text-base md:text-xl font-bold text-gray-900 truncate">
               {{
                 isEditMode
                   ? t("booking.editAppointment")
@@ -38,34 +38,52 @@
                     : t("booking.newAppointment")
               }}
             </h2>
-            <div class="text-sm text-gray-500 mt-1 flex items-center gap-2">
+            <div class="text-xs md:text-sm text-gray-500 mt-0.5 md:mt-1 flex items-center gap-2">
               <i class="pi pi-clock text-xs opacity-60"></i>
               <span>{{ formatDate(shownStartTime) }}</span>
               <span
                 v-if="isEditMode"
-                class="rounded-full px-3 py-1 text-xs font-bold uppercase"
+                class="rounded-full px-2 md:px-3 py-0.5 md:py-1 text-[10px] md:text-xs font-bold uppercase"
                 :class="getStatusColor(form.status)"
               >
                 {{ form.status }}
               </span>
             </div>
           </div>
-          <button
-            @click="dialogVisible = false"
-            class="w-8 h-8 rounded-full bg-gray-100 hover:bg-red-50 flex items-center justify-center text-gray-400 hover:text-red-500 transition-colors duration-200"
-          >
-            <i class="pi pi-times text-sm"></i>
-          </button>
+          <div class="flex items-center gap-2 flex-shrink-0">
+            <!-- Phones: the client's details (notes, history, debts) open
+                 over the form from here. -->
+            <button
+              v-if="isMobile"
+              type="button"
+              class="w-10 h-10 rounded-full bg-[var(--p-primary-50)] text-[var(--p-primary-700)] flex items-center justify-center disabled:opacity-40"
+              :disabled="!selectedClient"
+              :aria-label="t('bookingSidebar.clientDetails')"
+              data-testid="booking-client-panel"
+              @click="showMobileSidebar = true"
+            >
+              <i class="pi pi-user"></i>
+            </button>
+            <button
+              @click="dialogVisible = false"
+              :aria-label="t('common.close')"
+              class="w-10 h-10 md:w-8 md:h-8 rounded-full bg-gray-100 hover:bg-red-50 flex items-center justify-center text-gray-400 hover:text-red-500 transition-colors duration-200"
+            >
+              <i class="pi pi-times text-sm"></i>
+            </button>
+          </div>
         </div>
 
         <!-- Tab bar — pill group -->
-        <div class="flex px-4 md:px-6 py-2 flex-shrink-0">
-          <div class="flex gap-1 p-1 bg-gray-50 rounded-full">
+        <div class="flex px-3 md:px-6 py-2 flex-shrink-0">
+          <div class="flex w-full md:w-auto gap-1 p-1 bg-gray-50 rounded-full" role="tablist">
             <button
               v-for="tab in visibleTabs"
               :key="tab.key"
+              role="tab"
+              :aria-selected="currentTab === tab.key"
               @click="currentTab = tab.key"
-              class="py-2 px-4 text-sm font-medium transition-colors whitespace-nowrap rounded-full"
+              class="flex-1 md:flex-none min-w-0 truncate py-2 px-1 md:px-4 text-xs sm:text-sm font-medium transition-colors whitespace-nowrap rounded-full"
               :class="
                 currentTab === tab.key
                   ? 'bg-[var(--p-primary-50)] text-[var(--p-primary-700)] font-bold'
@@ -474,20 +492,30 @@
 
         <!-- Footer bar -->
         <div
-          class="px-4 md:px-6 py-4 border-t border-gray-200 flex flex-col-reverse sm:flex-row justify-between items-center bg-gradient-to-r from-gray-50 to-white flex-shrink-0 gap-3"
+          class="booking-footer px-3 md:px-6 py-2.5 md:py-4 border-t border-gray-200 flex flex-row justify-between items-center bg-gradient-to-r from-gray-50 to-white flex-shrink-0 gap-2 md:gap-3"
         >
+          <!-- Phones: one row. Repeat and delete go in this menu. -->
+          <template v-if="isMobile && moreItems.length && currentTab !== 'Payment'">
+            <Button
+              icon="pi pi-ellipsis-v"
+              severity="secondary"
+              outlined
+              class="flex-shrink-0"
+              :aria-label="t('booking.moreActions')"
+              data-testid="booking-more"
+              @click="moreMenu?.toggle($event)"
+            />
+            <Menu ref="moreMenu" :model="moreItems" :popup="true" />
+          </template>
           <Button
-            v-if="isEditMode && !isReadOnly && currentTab !== 'Payment'"
+            v-if="!isMobile && isEditMode && !isReadOnly && currentTab !== 'Payment'"
             :label="t('booking.cancelAppt')"
             icon="pi pi-trash"
             class="p-button-danger p-button-text p-button-sm w-full sm:w-auto"
             data-testid="booking-delete"
             @click="confirmDelete"
           />
-          <div
-            class="flex gap-3 ml-auto w-full sm:w-auto"
-            :class="currentTab === 'Payment' ? 'flex-row items-center' : 'flex-col sm:flex-row'"
-          >
+          <div class="flex flex-row items-center gap-2 md:gap-3 ml-auto flex-1 md:flex-none min-w-0">
             <Button
               v-if="showPaymentNav && paymentStep > 1"
               :label="t('payment.stepper.back')"
@@ -500,7 +528,7 @@
             />
             <div
               v-if="currentTab !== 'Payment'"
-              class="flex items-center gap-2 justify-center sm:justify-start sm:mr-4 mb-2 sm:mb-0"
+              class="flex items-center gap-2 md:mr-4"
             >
               <!-- <Checkbox v-model="notifyClient" binary inputId="notify" />
               <label for="notify" class="text-sm text-gray-600">
@@ -526,7 +554,7 @@
               />
             </div>
             <Button
-              v-if="!form.is_block && !isReadOnly && currentTab !== 'Payment'"
+              v-if="!isMobile && !form.is_block && !isReadOnly && currentTab !== 'Payment'"
               :label="t('booking.repeat.button')"
               icon="pi pi-copy"
               outlined
@@ -542,8 +570,7 @@
               :loading="loading"
               :disabled="!canSaveBooking"
               v-tooltip.top="!canSaveBooking ? t('booking.validation.staffRequired') : null"
-              class="w-full sm:w-auto px-8"
-              :class="{ 'flex-1 sm:flex-none': currentTab === 'Payment' }"
+              class="flex-1 md:flex-none md:px-8 min-w-0"
             />
             <Button
               v-if="showPaymentNav && paymentStep < 3"
@@ -572,23 +599,29 @@
 
       <!-- Right pane: client sidebar -->
       <div
-        class="w-full md:w-[35%] bg-gray-50 order-1 md:order-2 border-b md:border-b-0 md:border-l border-gray-200 md:h-full md:overflow-y-auto flex-shrink-0"
+        v-show="showMobileSidebar || !isMobile"
+        class="bg-gray-50 md:w-[35%] md:order-2 md:border-l border-gray-200 md:h-full md:overflow-y-auto flex-shrink-0"
+        :class="isMobile ? 'absolute inset-0 z-20 overflow-y-auto' : ''"
       >
         <div
-          class="md:hidden p-4 flex justify-between items-center bg-gray-100 border-b border-gray-200 cursor-pointer"
-          @click="toggleMobileSidebar"
+          v-if="isMobile"
+          class="sticky top-0 z-10 px-2 py-2 flex items-center gap-2 bg-white border-b border-gray-200"
         >
-          <span class="font-bold text-sm text-gray-700">
-            {{ t("bookingSidebar.clientDetails") }}:
+          <button
+            type="button"
+            class="w-10 h-10 rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-100"
+            :aria-label="t('common.back')"
+            data-testid="booking-client-panel-back"
+            @click="showMobileSidebar = false"
+          >
+            <i class="pi pi-arrow-left"></i>
+          </button>
+          <span class="font-bold text-sm text-gray-800 truncate">
             {{ selectedClient?.full_name || t("bookingSidebar.noneSelected") }}
           </span>
-          <i
-            class="pi"
-            :class="showMobileSidebar ? 'pi-chevron-up' : 'pi-chevron-down'"
-          ></i>
         </div>
 
-        <div v-show="showMobileSidebar || !isMobile" class="h-full" :inert="isReadOnly">
+        <div class="md:h-full" :inert="isReadOnly">
           <BookingSidebar
             class="w-full bg-gray-50 h-full"
             :client="selectedClient"
@@ -822,6 +855,17 @@ const checkMobile = () => {
 const toggleMobileSidebar = () => {
   showMobileSidebar.value = !showMobileSidebar.value;
 };
+
+// Phones: repeat and delete, behind the ⋯ button of the footer.
+const moreMenu = ref<any>(null);
+const moreItems = computed(() => [
+  ...(!form.value.is_block && !isReadOnly.value
+    ? [{ label: t("booking.repeat.button"), icon: "pi pi-copy", disabled: !canRepeatBooking.value, command: () => (showRepeatDialog.value = true) }]
+    : []),
+  ...(isEditMode.value && !isReadOnly.value
+    ? [{ label: t("booking.cancelAppt"), icon: "pi pi-trash", class: "booking-menu-danger", command: () => confirmDelete() }]
+    : []),
+]);
 
 onMounted(async () => {
   try {
@@ -2479,5 +2523,31 @@ const getStatusDot = (s: string) => {
 .p-inputtext,
 .p-calendar {
   border-radius: 0.5rem;
+}
+</style>
+
+<!-- Not scoped: the dialog and the ⋯ menu are drawn outside this component. -->
+<style>
+/* Phones: the whole visible screen (the backdrop is 100dvh, see tailwind.css). */
+@media (max-width: 767px) {
+  .p-dialog.fresha-dialog {
+    width: 100vw !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+  }
+  .p-dialog.fresha-dialog .p-dialog-content {
+    border-radius: 0 !important;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+  .booking-footer {
+    padding-bottom: calc(0.625rem + env(safe-area-inset-bottom));
+  }
+}
+.booking-menu-danger .p-menu-item-label,
+.booking-menu-danger .p-menu-item-icon {
+  color: #dc2626 !important;
 }
 </style>

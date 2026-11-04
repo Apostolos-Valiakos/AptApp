@@ -3,45 +3,51 @@
     v-model:visible="visibleModel"
     modal
     :showHeader="false"
+    class="service-picker-dialog"
     :style="{ width: '32rem', maxWidth: '95vw' }"
     :contentStyle="{ padding: 0 }"
     @show="scrollToCurrent"
   >
-    <div class="flex flex-col max-h-[85vh]">
-      <div class="flex items-center justify-between px-5 pt-5 pb-3">
+    <!-- dvh: the height actually visible on a phone, so the add button at the
+         bottom is never behind the browser's bars. -->
+    <div class="flex flex-col flex-1 min-h-0 md:flex-none md:max-h-[85dvh]">
+      <div class="flex items-center justify-between px-3 md:px-5 pt-2 md:pt-5 pb-2 md:pb-3">
         <div class="flex items-center gap-3">
           <button
             type="button"
-            class="text-gray-400 hover:text-gray-700"
+            class="w-10 h-10 -ml-1 md:w-auto md:h-auto md:ml-0 flex items-center justify-center text-gray-400 hover:text-gray-700"
+            :aria-label="t('common.back')"
             @click="visibleModel = false"
           >
             <i class="pi pi-arrow-left text-lg"></i>
           </button>
-          <h3 class="text-xl font-bold text-gray-900">
+          <h3 class="text-lg md:text-xl font-bold text-gray-900">
             {{ t("servicePicker.title") }}
           </h3>
         </div>
         <button
           type="button"
-          class="text-gray-400 hover:text-gray-700"
+          class="w-10 h-10 md:w-auto md:h-auto flex items-center justify-center text-gray-400 hover:text-gray-700"
+          :aria-label="t('common.close')"
           @click="visibleModel = false"
         >
           <i class="pi pi-times text-lg"></i>
         </button>
       </div>
 
-      <div class="px-5 pb-3">
-        <span class="p-input-icon-left w-full block">
-          <i class="pi pi-search"></i>
+      <div class="px-4 md:px-5 pb-3">
+        <div class="relative">
+          <i class="pi pi-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"></i>
           <InputText
             v-model="search"
+            type="search"
             :placeholder="t('servicePicker.searchPlaceholder')"
-            class="w-full"
+            class="w-full !pl-10"
           />
-        </span>
+        </div>
       </div>
 
-      <div v-if="staffFilter" class="px-5 pb-3">
+      <div v-if="staffFilter" class="px-4 md:px-5 pb-3">
         <span
           class="inline-flex items-center gap-2 bg-[var(--p-primary-color)] text-white text-sm font-medium pl-3 pr-2 py-1.5 rounded-full"
         >
@@ -56,7 +62,7 @@
         </span>
       </div>
 
-      <div ref="listEl" class="flex-1 overflow-y-auto px-5 pb-5">
+      <div ref="listEl" class="flex-1 min-h-0 overflow-y-auto px-4 md:px-5 pb-5">
         <div v-if="groupedServices.length === 0" class="text-center text-gray-400 py-10 text-sm">
           {{ t("servicePicker.noResults") }}
         </div>
@@ -141,7 +147,7 @@
       </div>
 
       <!-- Ticked services are added in the order they were ticked. -->
-      <div class="flex items-center justify-between gap-3 px-5 py-3 border-t border-gray-100 bg-white">
+      <div class="picker-footer flex items-center justify-between gap-3 px-4 md:px-5 py-3 border-t border-gray-100 bg-white flex-shrink-0">
         <span class="text-sm text-gray-500">
           {{ selected.length ? t("servicePicker.selectedCount", { n: selected.length }) : t("servicePicker.selectHint") }}
         </span>
@@ -327,5 +333,29 @@ const formatDuration = (minutes: number) => {
 .picker-check.is-checked {
   background: var(--p-primary-color);
   border-color: var(--p-primary-color);
+}
+</style>
+
+<!-- Not scoped: the dialog is drawn outside this component. -->
+<style>
+/* Phones: the whole visible screen (the backdrop is 100dvh, see tailwind.css). */
+@media (max-width: 767px) {
+  .p-dialog.service-picker-dialog {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+  }
+  .service-picker-dialog .p-dialog-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+  .service-picker-dialog .picker-footer {
+    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom));
+  }
 }
 </style>

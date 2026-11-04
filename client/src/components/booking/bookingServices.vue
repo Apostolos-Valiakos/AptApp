@@ -37,7 +37,7 @@
       v-for="service in rowGroup.rows"
       v-show="!isHidden(service)"
       :key="keyFor(service)"
-      class="relative p-6 bg-white border border-transparent rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(255,147,212,0.12)] hover:border-[var(--p-primary-200)] transition-all duration-300 group"
+      class="relative px-4 pb-4 pt-7 md:p-6 bg-white border border-transparent rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(255,147,212,0.12)] hover:border-[var(--p-primary-200)] transition-all duration-300 group"
       :data-testid="'service-row'"
     >
       <i
@@ -80,12 +80,12 @@
             </span>
             <i class="pi pi-chevron-down text-gray-400 text-xs"></i>
           </button>
-          <div v-if="otherVariations(service).length" class="flex flex-wrap gap-1.5 mt-2">
+          <div v-if="otherVariations(service).length" class="flex gap-1.5 mt-2 overflow-x-auto pb-1 -mx-1 px-1 md:flex-wrap md:overflow-visible md:pb-0 md:mx-0 md:px-0">
             <button
               v-for="v in otherVariations(service)"
               :key="v.id"
               type="button"
-              class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border border-[var(--p-primary-200)] text-[var(--p-primary-700)] bg-[var(--p-primary-50)] hover:bg-[var(--p-primary-100)] transition-colors"
+              class="inline-flex flex-shrink-0 whitespace-nowrap items-center gap-1 px-2.5 py-1.5 md:py-1 rounded-full text-xs font-medium border border-[var(--p-primary-200)] text-[var(--p-primary-700)] bg-[var(--p-primary-50)] hover:bg-[var(--p-primary-100)] transition-colors"
               :title="t('bookingServices.addVariationAfter')"
               @click="addVariationAfter(modelValue.indexOf(service), v)"
             >
@@ -128,8 +128,8 @@
               <Calendar
                 :modelValue="service.start_time"
                 dateFormat="dd/mm/yy"
-                class="w-full min-w-0 p-inputtext-sm"
-                inputClass="w-full"
+                class="w-full min-w-0"
+                inputClass="w-full h-[54px] text-sm"
                 @update:modelValue="(d: Date) => onDateChange(service, d)"
               />
             </div>
@@ -154,8 +154,8 @@
           <InputNumber
             v-model="service.duration_override"
             suffix=" min"
-            class="w-full p-inputtext-sm"
-            inputClass="w-full"
+            class="w-full"
+            inputClass="w-full h-[54px] text-sm"
             @update:modelValue="() => recalcTimes()"
           />
         </div>
@@ -171,16 +171,16 @@
             mode="currency"
             currency="EUR"
             disabled
-            class="w-full p-inputtext-sm"
-            inputClass="w-full"
+            class="w-full"
+            inputClass="w-full h-[54px] text-sm"
           />
           <InputNumber
             v-else
             v-model="service.price_override"
             mode="currency"
             currency="EUR"
-            class="w-full p-inputtext-sm"
-            inputClass="w-full"
+            class="w-full"
+            inputClass="w-full h-[54px] text-sm"
           />
         </div>
       </div>
