@@ -6,22 +6,20 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD} # From .env
       POSTGRES_DB: ${POSTGRES_DB} # e.g., book4beauty
       POSTGRES_USER: postgres # Or custom user
-      TZ: "UTC"
+      # Must match the app service's TZ below — appointment scheduling, the
+      # staff working-hours/time-off day-of-week logic, and reminder emails
+      # all depend on wall-clock day/time, not UTC. Change both if the shop
+      # is not in Greece.
+      TZ: "Europe/Athens"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    ports:
+      # Bound to localhost only, for pgAdmin through an SSH tunnel to the VPS
+      # (see DEPLOY.md, "Connecting with pgAdmin"). Never "5432:5432": that
+      # would put the database on the internet.
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    volumes:
-      - redisdata:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -34,31 +32,39 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      redis:
-        condition: service_healthy
     environment:
       POSTGRES_URI: postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
-      REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET}
       PORT: 3000
       NODE_ENV: production
       MESSAGE_ENCRYPTION_KEY: ${MESSAGE_ENCRYPTION_KEY}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS} # Comma-separated list, e.g. https://yourdomain.com
-      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL} # e.g. https://yourdomain.com — no port; used in email links
       EMAIL_HOST: ${EMAIL_HOST}
       EMAIL_PORT: ${EMAIL_PORT}
       EMAIL_USER: ${EMAIL_USER}
       EMAIL_PASS: ${EMAIL_PASS}
-      OWNER_USERNAME: ${OWNER_USERNAME}
+      APP_NAME: ${APP_NAME}
+      FRONTEND_URL: ${FRONTEND_URL}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL} # e.g. https://yourdomain.com — no port; used in email links
+      API_URL: ${API_URL}
+      OWNER_USERNAME: ${OWNER_USERNAME} # without these, there is no way to log into the Platform console
       OWNER_PASSWORD: ${OWNER_PASSWORD}
+      TZ: "Europe/Athens" # must match the db service above
     ports:
-      - "3000:3000" # Expose to host (access http://your-vps-ip:3000)
+      # Bound to localhost only — Nginx on the host is the public entry point
+      # (see DEPLOY.md). Do not change this to "3000:3000" in production.
+      - "127.0.0.1:3000:3000"
     volumes:
       - uploads:/app/uploads # Persistent file uploads (adjust path if your uploadDir is different)
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
 volumes:
   pgdata:
-  redisdata:
   uploads:
 # docker compose up -d
 # docker compose exec -i db psql -U postgres -d book4beauty < backup.sql

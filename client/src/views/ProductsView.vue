@@ -11,11 +11,21 @@
           <p class="text-sm text-gray-500 mt-0.5">{{ t('products.subtitle') }}</p>
         </div>
       </div>
-      <Button
-        :label="t('products.addNew')"
-        icon="pi pi-plus"
-        @click="openNewProductDialog"
-      />
+      <div class="flex gap-2">
+        <Button
+          v-if="authStore.isAnalyticsAllowed"
+          :label="t('products.usageTracking')"
+          icon="pi pi-chart-line"
+          severity="secondary"
+          outlined
+          @click="router.push('/app/product-usage')"
+        />
+        <Button
+          :label="t('products.addNew')"
+          icon="pi pi-plus"
+          @click="openNewProductDialog"
+        />
+      </div>
     </div>
 
     <DataTable
@@ -57,7 +67,7 @@
                   {{ variation.variation_name || t('products.table.standard') }}
                 </span>
                 <span class="text-xs text-gray-500">
-                  {{ t('products.table.price') }}: {{ variation.price }}€
+                  {{ t('products.table.price') }}: {{ formatMoney(variation.price) }}
                 </span>
               </div>
 
@@ -239,13 +249,19 @@
 </template>
 
 <script setup lang="ts">
+import { api, ApiError } from "../api/http";
+import { formatMoney } from "../utils/format";
 import { ref, onMounted } from "vue";
+import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { useProductStore } from "../stores/products";
+import { useAuthStore } from "../stores/auth";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 
 const { t } = useI18n();
+const router = useRouter();
+const authStore = useAuthStore();
 
 // --- Type Definitions to fix errors ---
 interface Variation {
@@ -344,22 +360,20 @@ const removeVariationRow = (index: number) => {
 
 const saveProduct = async () => {
   try {
-    const token = localStorage.getItem("token");
     const method = isEdit.value ? "PUT" : "POST";
     const url = isEdit.value
       ? `/api/v1/products/${newProduct.value.id}`
       : "/api/v1/products";
 
-    const res = await fetch(url, {
-      method: method,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(newProduct.value),
-    });
+    const refused = await api
+      .request(method, url, newProduct.value)
+      .then(() => null)
+      .catch((e) => {
+        if (e instanceof ApiError) return e;
+        throw e;
+      });
 
-    if (res.ok) {
+    if (!refused) {
       toast.add({
         severity: "success",
         summary: t('common.success'),
@@ -369,11 +383,10 @@ const saveProduct = async () => {
       productDialog.value = false;
       await productStore.fetchProducts();
     } else {
-      const errorData = await res.json();
       toast.add({
         severity: "error",
         summary: t('common.error'),
-        detail: errorData.error || t('products.toast.saveFailed'),
+        detail: refused.data?.error || t('products.toast.saveFailed'),
         life: 3000,
       });
     }
@@ -396,23 +409,14 @@ const confirmDeleteProduct = (product: Product) => {
     accept: async () => {
       if (!product.id) return;
       try {
-        const token = localStorage.getItem("token");
-        const res = await fetch(`/api/v1/products/${product.id}`, {
-          method: "DELETE",
-          headers: { Authorization: `Bearer ${token}` },
+        await api.del(`/api/v1/products/${product.id}`);
+        toast.add({
+          severity: "success",
+          summary: t('common.success'),
+          detail: t('products.toast.deleted'),
+          life: 3000,
         });
-
-        if (res.ok) {
-          toast.add({
-            severity: "success",
-            summary: t('common.success'),
-            detail: t('products.toast.deleted'),
-            life: 3000,
-          });
-          await productStore.fetchProducts();
-        } else {
-          throw new Error("Failed to delete");
-        }
+        await productStore.fetchProducts();
       } catch (err) {
         toast.add({
           severity: "error",

@@ -22,7 +22,7 @@
             <div class="text-sm font-semibold text-gray-900">{{ card.customer_name }}</div>
             <div class="text-xs text-gray-400">{{ card.card_number }} · {{ t('payment.giftCard.expires') }} {{ formatDate(card.expires_at) }}</div>
           </div>
-          <div class="text-sm font-bold text-green-600">€{{ Number(card.remaining_balance).toFixed(2) }}</div>
+          <div class="text-sm font-bold text-green-600">{{ formatMoney(card.remaining_balance) }}</div>
         </button>
       </div>
       <p v-else-if="search.trim().length > 0 && searched" class="text-xs text-gray-400 mt-2">
@@ -36,7 +36,7 @@
         <div class="text-xs text-gray-400">{{ selectedCard.card_number }}</div>
       </div>
       <div class="flex items-center gap-3">
-        <span class="text-sm font-bold text-green-600">€{{ Number(selectedCard.remaining_balance).toFixed(2) }}</span>
+        <span class="text-sm font-bold text-green-600">{{ formatMoney(selectedCard.remaining_balance) }}</span>
         <button type="button" class="text-gray-400 hover:text-red-500" @click="clear">
           <i class="pi pi-times"></i>
         </button>
@@ -46,12 +46,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { api } from "../../api/http";
+import { formatMoney } from "../../utils/format";
+import { ref, watch, type PropType } from "vue";
 import { useI18n } from "vue-i18n";
 const { t } = useI18n();
 
 const props = defineProps({
-  modelValue: { type: String, default: null }, // selected gift_card_id
+  modelValue: { type: String as PropType<string | null>, default: null }, // selected gift_card_id
 });
 
 const emit = defineEmits(["update:modelValue", "update:card"]);
@@ -74,12 +76,8 @@ const searchCards = () => {
     return;
   }
   searchTimeout = setTimeout(async () => {
-    const token = localStorage.getItem("token");
     try {
-      const res = await fetch(`/api/v1/gift-cards/search?q=${encodeURIComponent(q)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      results.value = res.ok ? await res.json() : [];
+      results.value = await api.get(`/api/v1/gift-cards/search?q=${encodeURIComponent(q)}`);
     } catch {
       results.value = [];
     } finally {

@@ -1,11 +1,34 @@
 <template>
   <div class="p-6 max-w-7xl mx-auto">
     <!-- Page Header -->
-    <div class="mb-8">
-      <h1 class="text-2xl font-bold text-gray-900">
-        {{ t("analytics.title") }}
-      </h1>
-      <p class="text-gray-500 mt-1 text-sm">{{ t("analytics.subtitle") }}</p>
+    <div class="mb-8 flex items-start justify-between gap-4 flex-wrap">
+      <div>
+        <h1 class="text-2xl font-bold text-gray-900">
+          {{ t("analytics.title") }}
+        </h1>
+        <p class="text-gray-500 mt-1 text-sm">{{ t("analytics.subtitle") }}</p>
+      </div>
+      <div class="flex gap-2 flex-wrap">
+        <Button
+          :label="t('nav.expenses')"
+          icon="pi pi-receipt"
+          class="p-button-outlined flex-shrink-0"
+          @click="router.push('/app/expenses')"
+        />
+        <Button
+          :label="t('nav.dailyReport')"
+          icon="pi pi-wallet"
+          class="p-button-outlined flex-shrink-0"
+          data-testid="analytics-daily-report"
+          @click="router.push('/app/daily-report')"
+        />
+        <Button
+          :label="t('nav.membershipReport')"
+          icon="pi pi-chart-pie"
+          class="p-button-outlined flex-shrink-0"
+          @click="router.push('/app/membership-report')"
+        />
+      </div>
     </div>
 
     <!-- Filter Bar -->
@@ -64,8 +87,11 @@
     <!-- KPI Cards Row 1 — 4 uniform cards -->
     <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
       <!-- Total Sales -->
-      <div
-        class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 border-l-4 border-l-indigo-500"
+      <button
+        type="button"
+        class="text-left bg-white rounded-2xl border border-gray-100 shadow-sm p-6 border-l-4 border-l-indigo-500 hover:shadow-md transition cursor-pointer"
+        data-testid="tile-sales"
+        @click="openDetails('sales')"
       >
         <div class="flex items-center justify-between mb-3">
           <span class="text-sm font-medium text-gray-500">{{
@@ -79,7 +105,7 @@
         </div>
         <Skeleton v-if="loading" height="2.25rem" width="60%" />
         <div v-else class="text-3xl font-bold text-gray-900">
-          €{{ formatCurrency(finances.total_sales) }}
+          {{ formatMoney(finances.total_sales) }}
         </div>
         <p class="text-xs text-gray-400 mt-2">
           {{ t("analytics.kpi.totalSalesNote") }} ({{
@@ -90,11 +116,14 @@
         <p class="text-[10px] text-gray-400 mt-1 leading-tight">
           * {{ t("analytics.serviceNote") }}
         </p>
-      </div>
+      </button>
 
       <!-- Collected Today -->
-      <div
-        class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 border-l-4 border-l-green-500"
+      <button
+        type="button"
+        class="text-left bg-white rounded-2xl border border-gray-100 shadow-sm p-6 border-l-4 border-l-green-500 hover:shadow-md transition cursor-pointer"
+        data-testid="tile-today"
+        @click="openDetails('today')"
       >
         <div class="flex items-center justify-between mb-3">
           <span class="text-sm font-medium text-gray-500">{{
@@ -108,7 +137,7 @@
         </div>
         <Skeleton v-if="loading" height="2.25rem" width="60%" />
         <div v-else class="text-3xl font-bold text-gray-900">
-          €{{ formatCurrency(finances.collected_today) }}
+          {{ formatMoney(finances.collected_today) }}
         </div>
         <p class="text-xs text-gray-400 mt-2">
           {{ t("analytics.kpi.collectedTodayNote") }}
@@ -116,11 +145,14 @@
         <p class="text-[10px] text-gray-400 mt-1 leading-tight">
           * {{ t("analytics.kpi.collectedTodayNote") }}
         </p>
-      </div>
+      </button>
 
-      <!-- Total Business Debt -->
-      <div
-        class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 border-l-4 border-l-red-400"
+      <!-- Total Business Debt: opens who owes it -->
+      <button
+        type="button"
+        class="text-left bg-white rounded-2xl border border-gray-100 shadow-sm p-6 border-l-4 border-l-red-400 hover:shadow-md hover:border-red-200 transition cursor-pointer"
+        data-testid="tile-debts"
+        @click="openDetails('debts')"
       >
         <div class="flex items-center justify-between mb-3">
           <span class="text-sm font-medium text-gray-500">{{
@@ -134,16 +166,19 @@
         </div>
         <Skeleton v-if="loading" height="2.25rem" width="60%" />
         <div v-else class="text-3xl font-bold text-gray-900">
-          €{{ formatCurrency(finances.total_debt) }}
+          {{ formatMoney(finances.total_debt) }}
         </div>
         <p class="text-xs text-gray-400 mt-2">
           {{ t("analytics.kpi.totalDebtNote") }}
         </p>
-      </div>
+      </button>
 
       <!-- Client Retention -->
-      <div
-        class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 border-l-4 border-l-blue-500"
+      <button
+        type="button"
+        class="text-left bg-white rounded-2xl border border-gray-100 shadow-sm p-6 border-l-4 border-l-blue-500 hover:shadow-md transition cursor-pointer"
+        data-testid="tile-retention"
+        @click="openDetails('retention')"
       >
         <div class="flex items-center justify-between mb-3">
           <span class="text-sm font-medium text-gray-500">{{
@@ -167,13 +202,18 @@
             })
           }}
         </p>
-      </div>
+      </button>
     </div>
 
-    <!-- KPI Cards Row 2 — 2 mini cards, unified style -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+    <!-- KPI Cards Row 2 — 4 mini cards, unified style -->
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-6">
       <!-- Cancellation Rate -->
-      <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+      <button
+        type="button"
+        class="text-left bg-white rounded-2xl border border-gray-100 shadow-sm p-6 hover:shadow-md transition cursor-pointer"
+        data-testid="tile-cancellations"
+        @click="openDetails('cancellations')"
+      >
         <div class="flex items-center justify-between">
           <div>
             <h4
@@ -195,10 +235,15 @@
             <i class="pi pi-ban text-xl"></i>
           </div>
         </div>
-      </div>
+      </button>
 
       <!-- Selected Period Payments -->
-      <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+      <button
+        type="button"
+        class="text-left bg-white rounded-2xl border border-gray-100 shadow-sm p-6 hover:shadow-md transition cursor-pointer"
+        data-testid="tile-payments"
+        @click="openDetails('payments')"
+      >
         <div class="flex items-center justify-between">
           <div>
             <h4
@@ -208,7 +253,7 @@
             </h4>
             <Skeleton v-if="loading" height="1.75rem" width="6rem" />
             <div v-else class="text-2xl font-bold text-gray-800">
-              €{{ formatCurrency(finances.total_payments) }}
+              {{ formatMoney(finances.total_payments) }}
             </div>
             <div class="text-xs text-gray-400 mt-1">
               {{ t("analytics.kpi.periodPaymentsNote") }}
@@ -220,105 +265,76 @@
             <i class="pi pi-wallet text-xl"></i>
           </div>
         </div>
-      </div>
+      </button>
+
+      <!-- Expenses in the selected period -->
+      <button
+        type="button"
+        class="text-left bg-white rounded-2xl border border-gray-100 shadow-sm p-6 hover:shadow-md transition cursor-pointer"
+        data-testid="tile-expenses"
+        @click="openDetails('expenses')"
+      >
+        <div class="flex items-center justify-between">
+          <div>
+            <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide mb-1">
+              {{ t("analytics.kpi.periodExpenses") }}
+            </h4>
+            <Skeleton v-if="loading" height="1.75rem" width="6rem" />
+            <div v-else class="text-2xl font-bold text-gray-800">
+              {{ formatMoney(finances.total_expenses) }}
+            </div>
+            <div class="text-xs text-gray-400 mt-1">
+              {{ t("analytics.kpi.periodExpensesNote") }}
+            </div>
+          </div>
+          <div class="w-12 h-12 rounded-full flex items-center justify-center bg-red-50 text-red-600">
+            <i class="pi pi-receipt text-xl"></i>
+          </div>
+        </div>
+      </button>
+
+      <!-- Net: collected minus expenses -->
+      <button
+        type="button"
+        class="text-left bg-white rounded-2xl border border-gray-100 shadow-sm p-6 hover:shadow-md transition cursor-pointer"
+        data-testid="tile-net"
+        @click="openDetails('net')"
+      >
+        <div class="flex items-center justify-between">
+          <div>
+            <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide mb-1">
+              {{ t("analytics.kpi.netProfit") }}
+            </h4>
+            <Skeleton v-if="loading" height="1.75rem" width="6rem" />
+            <div
+              v-else
+              class="text-2xl font-bold"
+              :class="finances.net_profit < 0 ? 'text-red-600' : 'text-gray-800'"
+            >
+              {{ finances.net_profit < 0 ? "−" : "" }}{{ formatMoney(Math.abs(finances.net_profit)) }}
+            </div>
+            <div class="text-xs text-gray-400 mt-1">
+              {{ t("analytics.kpi.netProfitNote") }}
+            </div>
+          </div>
+          <div class="w-12 h-12 rounded-full flex items-center justify-center bg-indigo-50 text-indigo-600">
+            <i class="pi pi-calculator text-xl"></i>
+          </div>
+        </div>
+      </button>
     </div>
 
     <!-- Tab Section -->
     <TabView class="bg-white rounded-2xl shadow-sm border border-gray-100 p-2">
-      <!-- Tab: Client Demographics -->
-      <TabPanel :header="t('analytics.tabs.demographics')">
-        <div class="p-6 max-w-7xl mx-auto">
-          <div class="grid grid-cols-1 gap-6 mb-8">
-            <div
-              class="bg-white p-6 rounded-xl shadow-sm border border-gray-100"
-            >
-              <h2 class="text-xl font-bold mb-6 text-gray-800">
-                {{ t("analytics.demographics.title") }}
-              </h2>
-              <ClientDemographics
-                :clients="clientsReport"
-                @view-group="openAgeGroupDialog"
-              />
-            </div>
-          </div>
-
-          <Dialog
-            v-model:visible="displayGroupDialog"
-            :header="
-              t('analytics.demographics.clientsLabel', {
-                name: selectedGroupName,
-              })
-            "
-            modal
-            :style="{ width: '50vw' }"
-            :breakpoints="{ '960px': '90vw' }"
-          >
-            <DataTable
-              :value="selectedGroupClients"
-              paginator
-              :rows="10"
-              stripedRows
-              class="p-datatable-sm"
-              responsiveLayout="scroll"
-            >
-              <Column :header="t('analytics.demographics.clientCol')">
-                <template #body="slotProps">
-                  <div class="flex flex-col">
-                    <span class="font-bold"
-                      >{{ slotProps.data.first_name }}
-                      {{ slotProps.data.last_name }}</span
-                    >
-                    <span class="text-xs text-gray-500">{{
-                      slotProps.data.email
-                    }}</span>
-                  </div>
-                </template>
-              </Column>
-              <Column field="phone" header="Τηλέφωνο"></Column>
-              <Column
-                field="appointment_count"
-                :header="t('analytics.demographics.apptsCol')"
-                sortable
-                class="text-center"
-              ></Column>
-              <Column :header="t('analytics.demographics.balanceCol')">
-                <template #body="slotProps">
-                  <span
-                    :class="
-                      Number(slotProps.data.outstanding_balance || 0) > 0
-                        ? 'text-red-600 font-bold'
-                        : ''
-                    "
-                  >
-                    €{{
-                      formatCurrency(slotProps.data.outstanding_balance || 0)
-                    }}
-                  </span>
-                </template>
-              </Column>
-              <Column :header="t('analytics.demographics.servicesCol')">
-                <template #body="slotProps">
-                  <div class="flex gap-1">
-                    <span
-                      v-if="slotProps.data.ergotherapia"
-                      class="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold"
-                      >ΕΡΓΟ</span
-                    >
-                    <span
-                      v-if="slotProps.data.physiotherapia"
-                      class="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-[10px] font-bold"
-                      >ΦΥΣΙΟ</span
-                    >
-                  </div>
-                </template>
-              </Column>
-            </DataTable>
-          </Dialog>
+      <!-- Tab: Booking insights -->
+      <TabPanel :value="0" :header="t('analytics.tabs.insights')">
+        <div class="p-1 sm:p-4 md:p-6">
+          <BookingInsights :insights="insights" :loading="loading" :period="insightsPeriod" />
         </div>
       </TabPanel>
 
       <!-- Tab: Service Performance (All Statuses) -->
-      <TabPanel :header="t('analytics.tabs.servicePerformance')">
+      <TabPanel :value="1" :header="t('analytics.tabs.servicePerformance')">
         <DataTable
           :value="serviceSummaryReport"
           responsiveLayout="scroll"
@@ -351,7 +367,7 @@
           >
             <template #body="slotProps">
               <span class="text-green-700 font-bold"
-                >€{{ formatCurrency(slotProps.data.total_paid) }}</span
+                >{{ formatMoney(slotProps.data.total_paid) }}</span
               >
             </template>
           </Column>
@@ -368,7 +384,7 @@
                     : 'text-gray-400'
                 "
               >
-                €{{ formatCurrency(slotProps.data.total_owed) }}
+                {{ formatMoney(slotProps.data.total_owed) }}
               </span>
             </template>
           </Column>
@@ -379,7 +395,7 @@
           >
             <template #body="slotProps">
               <span class="text-gray-600 italic"
-                >€{{ formatCurrency(slotProps.data.total_value) }}</span
+                >{{ formatMoney(slotProps.data.total_value) }}</span
               >
             </template>
           </Column>
@@ -390,7 +406,7 @@
       </TabPanel>
 
       <!-- Tab: Sales by Service -->
-      <TabPanel :header="t('analytics.tabs.sales')">
+      <TabPanel :value="2" :header="t('analytics.tabs.sales')">
         <!-- Pie Chart -->
         <div
           class="mb-6 bg-white rounded-xl border border-gray-100 p-4"
@@ -425,14 +441,14 @@
             sortable
           >
             <template #body="slotProps">
-              €{{ formatCurrency(slotProps.data.total_revenue) }}
+              {{ formatMoney(slotProps.data.total_revenue) }}
             </template>
           </Column>
         </DataTable>
       </TabPanel>
 
       <!-- Tab: Products -->
-      <TabPanel :header="t('analytics.tabs.products')">
+      <TabPanel :value="3" :header="t('analytics.tabs.products')">
         <!-- Summary cards -->
         <div class="grid grid-cols-2 gap-4 mb-6">
           <div class="bg-white rounded-xl border border-gray-100 p-5">
@@ -442,7 +458,7 @@
               {{ t("analytics.products.totalRevenue") }}
             </div>
             <div class="text-2xl font-black text-gray-900">
-              €{{ formatCurrency(productsSummary.total_revenue) }}
+              {{ formatMoney(productsSummary.total_revenue) }}
             </div>
           </div>
           <div class="bg-white rounded-xl border border-gray-100 p-5">
@@ -489,7 +505,7 @@
             sortable
           >
             <template #body="slotProps">
-              €{{ formatCurrency(slotProps.data.total_revenue) }}
+              {{ formatMoney(slotProps.data.total_revenue) }}
             </template>
           </Column>
           <Column
@@ -513,15 +529,78 @@
         </DataTable>
       </TabPanel>
 
+      <!-- Tab: Product Usage -->
+      <TabPanel :value="4" :header="t('analytics.tabs.productUsage')">
+        <div class="flex justify-end mb-4">
+          <router-link to="/app/product-usage" class="text-sm text-[var(--p-primary-600)] hover:underline flex items-center gap-1">
+            <i class="pi pi-cog text-xs"></i>
+            {{ t("analytics.productUsage.manageLink") }}
+          </router-link>
+        </div>
+        <DataTable
+          :value="productUsageReport"
+          responsiveLayout="scroll"
+          :paginator="true"
+          :rows="10"
+          class="p-datatable-sm"
+        >
+          <template #empty>
+            <div class="text-center text-gray-400 py-8">
+              {{ t("analytics.productUsage.empty") }}
+            </div>
+          </template>
+          <Column :header="t('analytics.productUsage.product')">
+            <template #body="slotProps">
+              {{ slotProps.data.product_name }}
+              <span class="text-gray-400 text-xs" v-if="slotProps.data.variation_name">— {{ slotProps.data.variation_name }}</span>
+            </template>
+          </Column>
+          <Column field="unit" :header="t('analytics.productUsage.unit')"></Column>
+          <Column :header="t('analytics.productUsage.expected')">
+            <template #body="slotProps">
+              {{ formatUsageRange(slotProps.data.expected_min, slotProps.data.expected_max) }}
+            </template>
+          </Column>
+          <Column :header="t('analytics.productUsage.actual')">
+            <template #body="slotProps">
+              {{ slotProps.data.actual === null ? "—" : slotProps.data.actual }}
+            </template>
+          </Column>
+          <Column :header="t('analytics.productUsage.usedBy')">
+            <template #body="slotProps">
+              <div class="text-xs text-gray-500">
+                <div v-for="(svc, i) in slotProps.data.services" :key="i">
+                  {{ svc.service_name }} ({{ svc.count }} {{ t("analytics.productUsage.bookings") }})
+                </div>
+              </div>
+            </template>
+          </Column>
+          <Column :header="t('analytics.productUsage.status')">
+            <template #body="slotProps">
+              <Tag
+                :value="usageStatusLabel(slotProps.data.status)"
+                :severity="
+                  slotProps.data.status === 'ok'
+                    ? 'success'
+                    : slotProps.data.status === 'no_data'
+                      ? 'secondary'
+                      : 'warn'
+                "
+              />
+            </template>
+          </Column>
+        </DataTable>
+      </TabPanel>
+
       <!-- Tab: Gift Cards -->
-      <TabPanel :header="t('analytics.tabs.giftCards')">
+      <TabPanel :value="5" :header="t('analytics.tabs.giftCards')">
         <div class="grid grid-cols-3 gap-4 mb-6">
           <div class="bg-white rounded-xl border border-gray-100 p-5">
             <div class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">
               {{ t("analytics.giftCards.totalRevenue") }}
             </div>
             <div class="text-2xl font-black text-gray-900">
-              €{{ formatCurrency(giftCardsSummary.total_revenue) }}
+              {{ formatMoney(giftCardsSummary.total_revenue) }}
             </div>
           </div>
           <div class="bg-white rounded-xl border border-gray-100 p-5">
@@ -529,7 +608,7 @@
               {{ t("analytics.giftCards.totalOutstanding") }}
             </div>
             <div class="text-2xl font-black text-gray-900">
-              €{{ formatCurrency(giftCardsSummary.total_outstanding) }}
+              {{ formatMoney(giftCardsSummary.total_outstanding) }}
             </div>
           </div>
           <div class="bg-white rounded-xl border border-gray-100 p-5">
@@ -558,12 +637,12 @@
           <Column field="customer_name" :header="t('giftCards.table.customer')" sortable></Column>
           <Column field="initial_amount" :header="t('giftCards.table.initialAmount')" sortable>
             <template #body="slotProps">
-              €{{ formatCurrency(slotProps.data.initial_amount) }}
+              {{ formatMoney(slotProps.data.initial_amount) }}
             </template>
           </Column>
           <Column field="remaining_balance" :header="t('giftCards.table.remainingBalance')" sortable>
             <template #body="slotProps">
-              €{{ formatCurrency(slotProps.data.remaining_balance) }}
+              {{ formatMoney(slotProps.data.remaining_balance) }}
             </template>
           </Column>
           <Column field="issued_at" :header="t('giftCards.table.issued')" sortable>
@@ -575,7 +654,7 @@
       </TabPanel>
 
       <!-- Tab: Staff Performance -->
-      <TabPanel :header="t('analytics.tabs.staffPerformance')">
+      <TabPanel :value="6" :header="t('analytics.tabs.staffPerformance')">
         <!-- Bar Chart -->
         <div
           class="mb-6 bg-white rounded-xl border border-gray-100 p-4"
@@ -591,8 +670,6 @@
         <DataTable
           :value="analytics.staff_utilization"
           responsiveLayout="scroll"
-          :paginator="true"
-          :rows="10"
           class="p-datatable-sm"
         >
           <Column
@@ -604,6 +681,28 @@
             :header="t('analytics.tables.appointments')"
             sortable
           ></Column>
+          <Column
+            field="days_worked"
+            :header="t('analytics.tables.daysWorked')"
+            sortable
+          >
+            <template #body="slotProps">
+              {{ Number(slotProps.data.days_worked || 0) }}
+            </template>
+          </Column>
+          <!-- Appointments ÷ days with appointments, e.g. 79 ÷ 20 = 4.0 -->
+          <Column
+            field="avg_per_day"
+            :header="t('analytics.tables.avgPerDay')"
+            sortable
+            :sortField="numericSort('avg_per_day')"
+          >
+            <template #body="slotProps">
+              <span v-tooltip.top="`${slotProps.data.appt_count} ÷ ${slotProps.data.days_worked}`">
+                {{ Number(slotProps.data.avg_per_day || 0).toFixed(1) }}
+              </span>
+            </template>
+          </Column>
           <Column
             field="hours_booked"
             :header="t('analytics.tables.hoursBooked')"
@@ -619,14 +718,14 @@
             sortable
           >
             <template #body="slotProps">
-              €{{ formatCurrency(slotProps.data.total_revenue || 0) }}
+              {{ formatMoney(slotProps.data.total_revenue || 0) }}
             </template>
           </Column>
         </DataTable>
       </TabPanel>
 
       <!-- Tab: Payments Log -->
-      <TabPanel :header="t('analytics.tabs.paymentsLog')">
+      <TabPanel :value="7" :header="t('analytics.tabs.paymentsLog')">
         <!-- Revenue Over Time Chart -->
         <div
           class="mb-6 bg-white rounded-xl border border-gray-100 p-4"
@@ -693,6 +792,12 @@
           <Column field="payment_method" :header="t('analytics.tables.method')">
             <template #body="slotProps">
               <span
+                v-if="slotProps.data.transaction_type === 'refund'"
+                class="mr-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-red-100 text-red-700"
+              >
+                {{ t('analytics.tables.refund') }}
+              </span>
+              <span
                 :class="[
                   'px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase',
                   getMethodBadge(slotProps.data.payment_method),
@@ -714,34 +819,165 @@
               </span>
             </template>
           </Column>
+          <Column :header="t('analytics.tables.reason')">
+            <template #body="slotProps">
+              <span class="text-xs text-gray-500">{{ slotProps.data.reason || '—' }}</span>
+            </template>
+          </Column>
           <Column
             field="amount"
             :header="t('analytics.tables.amount')"
             sortable
           >
             <template #body="slotProps">
-              <span class="font-bold text-green-700"
-                >+€{{ formatCurrency(slotProps.data.amount) }}</span
+              <span
+                :class="Number(slotProps.data.amount) < 0 ? 'font-bold text-red-700' : 'font-bold text-green-700'"
+                >{{ Number(slotProps.data.amount) < 0 ? '−' : '+' }}{{ formatMoney(Math.abs(slotProps.data.amount)) }}</span
               >
             </template>
           </Column>
         </DataTable>
+
+        <!-- Checkout Price Changes -->
+        <h4 class="text-sm font-bold text-gray-600 mt-8 mb-3">
+          {{ t('analytics.tables.priceChangesTitle') }}
+        </h4>
+        <DataTable
+          :value="priceAdjustmentsReport"
+          responsiveLayout="scroll"
+          :paginator="true"
+          :rows="10"
+          class="p-datatable-sm"
+          sortField="created_at"
+          :sortOrder="-1"
+        >
+          <template #empty>
+            <p class="text-sm text-gray-400 py-4">{{ t('analytics.tables.priceChangesEmpty') }}</p>
+          </template>
+          <Column field="created_at" :header="t('analytics.tables.date')" sortable>
+            <template #body="slotProps">
+              {{ new Date(slotProps.data.created_at).toLocaleDateString('el-GR') }}
+              <span class="text-gray-400 text-xs">
+                {{
+                  new Date(slotProps.data.created_at).toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })
+                }}
+              </span>
+            </template>
+          </Column>
+          <Column :header="t('analytics.tables.client')">
+            <template #body="slotProps">
+              <span class="font-medium">{{ slotProps.data.first_name }} {{ slotProps.data.last_name }}</span>
+            </template>
+          </Column>
+          <Column :header="t('analytics.tables.reason')">
+            <template #body="slotProps">
+              <span class="text-xs text-gray-500">{{ slotProps.data.reason }}</span>
+            </template>
+          </Column>
+          <Column :header="t('analytics.tables.oldTotal')">
+            <template #body="slotProps">
+              {{ formatMoney(slotProps.data.old_total) }}
+            </template>
+          </Column>
+          <Column :header="t('analytics.tables.newTotal')">
+            <template #body="slotProps">
+              <b>{{ formatMoney(slotProps.data.new_total) }}</b>
+            </template>
+          </Column>
+        </DataTable>
+      </TabPanel>
+
+      <!-- Tab: Deleted bookings (by when they were deleted) -->
+      <TabPanel :value="8" :header="t('analytics.tabs.deleted')">
+        <div class="flex items-center justify-between flex-wrap gap-3 mb-3">
+          <p class="text-xs text-gray-400">{{ t("analytics.deleted.note") }}</p>
+          <InputText v-model="deletedSearch" size="small" :placeholder="t('analytics.deleted.search')" data-testid="deleted-search" />
+        </div>
+        <DataTable
+          :value="shownDeleted"
+          dataKey="id"
+          responsiveLayout="scroll"
+          :paginator="true"
+          :alwaysShowPaginator="false"
+          :rows="15"
+          class="p-datatable-sm"
+          data-testid="deleted-table"
+        >
+          <template #empty>
+            <span class="text-sm text-gray-400">{{ t("analytics.deleted.none") }}</span>
+          </template>
+          <Column field="deleted_at" :header="t('analytics.deleted.deletedAt')" sortable>
+            <template #body="{ data }"><span class="whitespace-nowrap">{{ fmtDateTime(data.deleted_at) }}</span></template>
+          </Column>
+          <Column field="deleted_by_name" :header="t('analytics.deleted.deletedBy')" sortable />
+          <Column field="client_name" :header="t('analytics.deleted.client')" sortable>
+            <template #body="{ data }">
+              <div class="font-medium uppercase">{{ data.client_name || "—" }}</div>
+              <div v-if="data.client_phone" class="text-xs text-gray-400">{{ data.client_phone }}</div>
+            </template>
+          </Column>
+          <Column field="start_time" :header="t('analytics.deleted.bookingDate')" sortable>
+            <template #body="{ data }"><span class="whitespace-nowrap">{{ data.start_time ? fmtDateTime(data.start_time) : "—" }}</span></template>
+          </Column>
+          <Column :header="t('analytics.deleted.services')">
+            <template #body="{ data }">
+              <div v-for="(s, i) in data.services" :key="i" class="text-sm">
+                {{ s.service || "—" }}<template v-if="s.variation"> — {{ s.variation }}</template>
+                <span v-if="s.staff" class="text-xs text-gray-400"> · {{ s.staff }}</span>
+              </div>
+              <div v-for="(p, i) in data.products" :key="`p${i}`" class="text-xs text-gray-500">{{ p.quantity }} × {{ p.product || "—" }}</div>
+            </template>
+          </Column>
+          <Column field="total" :header="t('analytics.deleted.total')" sortable :sortField="numericSort('total')">
+            <template #body="{ data }">{{ formatMoney(data.total) }}</template>
+          </Column>
+          <Column field="status" :header="t('analytics.deleted.status')">
+            <template #body="{ data }">{{ deletedStatusLabel(data.status) }}</template>
+          </Column>
+          <Column field="reason" :header="t('analytics.deleted.reason')">
+            <template #body="{ data }">{{ data.reason || "—" }}</template>
+          </Column>
+        </DataTable>
       </TabPanel>
     </TabView>
+
+    <AnalyticsDetailsDialog
+      ref="detailsRef"
+      v-model:visible="detailsVisible"
+      :kind="detailsKind"
+      :query="lastQuery"
+      :closeOnEscape="!clientProfileVisible"
+      @open-client="openClient"
+    />
+
+    <ClientProfileDialog v-model:visible="clientProfileVisible" :clientId="clientProfileId" @refresh="onClientChanged" />
   </div>
 </template>
 
 <script setup lang="ts">
+import { api, ApiError, ifRefused, saveBlob } from "../api/http";
+import { formatMoney } from "../utils/format";
 import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import { useRouter } from "vue-router";
 import { useToast } from "primevue/usetoast";
 import TabView from "primevue/tabview";
 import TabPanel from "primevue/tabpanel";
 import Skeleton from "primevue/skeleton";
-import ClientDemographics from "./ClientDemographics.vue";
+import BookingInsights from "./BookingInsights.vue";
+import ClientProfileDialog from "./ClientProfileDialog.vue";
+import AnalyticsDetailsDialog, { type DetailKind } from "./AnalyticsDetailsDialog.vue";
 import { useSettingsStore } from "../stores/settings";
 
-const { t } = useI18n();
+// Sorts a column by a number field. DataTable compares whatever this returns;
+// its types only allow a string, hence the cast.
+const numericSort = (key: string) => ((row: any) => Number(row[key] || 0)) as unknown as (item: any) => string;
+
+const { t, te, locale } = useI18n();
+const router = useRouter();
 const toast = useToast();
 const settingsStore = useSettingsStore();
 const loading = ref(true);
@@ -763,6 +999,8 @@ const finances = ref({
   total_payments: 0,
   collected_today: 0,
   total_debt: 0,
+  total_expenses: 0,
+  net_profit: 0,
 });
 
 const analytics = ref<any>({
@@ -776,28 +1014,83 @@ const analytics = ref<any>({
 const salesReport = ref<any[]>([]);
 const productsReport = ref<any[]>([]);
 const productsSummary = ref<any>({ total_revenue: 0, total_units: 0 });
+const productUsageReport = ref<any[]>([]);
 const giftCardsReport = ref<any[]>([]);
 const giftCardsSummary = ref<any>({ total_revenue: 0, total_outstanding: 0, total_cards: 0 });
 const staffReport = ref([]);
 const paymentsReport = ref<any[]>([]);
+const priceAdjustmentsReport = ref<any[]>([]);
 const appointmentsReport = ref([]);
-const clientsReport = ref<any[]>([]);
-const displayGroupDialog = ref(false);
-const selectedGroupName = ref("");
-const selectedGroupClients = ref([]);
-
-const openAgeGroupDialog = (data: any) => {
-  selectedGroupName.value = data.label;
-  selectedGroupClients.value = data.clients;
-  displayGroupDialog.value = true;
+const insights = ref<any>(null);
+// Who owes the Σύνολο Χρεών amount, for the dates the tile was loaded for.
+const lastQuery = ref("");
+// Clicking a tile lists what makes up its figure (AnalyticsDetailsDialog).
+const detailsVisible = ref(false);
+const detailsKind = ref<DetailKind | null>(null);
+const detailsRef = ref<any>(null);
+const openDetails = (kind: DetailKind) => {
+  detailsKind.value = kind;
+  detailsVisible.value = true;
 };
-
-const formatCurrency = (val: any) => {
-  return Number(val).toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+// A client in the list opens their profile, as on the Clients page. A change
+// there (a payment, a write-off) is reflected in the list and the tile.
+const clientProfileVisible = ref(false);
+const clientProfileId = ref<string | null>(null);
+const openClient = (clientId: string) => {
+  clientProfileId.value = clientId;
+  clientProfileVisible.value = true;
+};
+const onClientChanged = () => {
+  fetchAllReports();
+  if (detailsVisible.value) detailsRef.value?.reload();
+};
+const deletedReport = ref<any[]>([]);
+const deletedSearch = ref("");
+const fmtDateTime = (d: string) =>
+  new Date(d).toLocaleString(locale.value === "el" ? "el-GR" : "en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   });
+const DELETED_STATUS_KEYS: Record<string, string> = { "no-show": "noShow", "no-response": "noResponse" };
+const deletedStatusLabel = (status: string) => {
+  const key = `common.status.${DELETED_STATUS_KEYS[status] || status}`;
+  return te(key) ? t(key) : status;
 };
+// Greek names are often typed without accents or in capitals.
+const plainText = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/ς/g, "σ");
+const shownDeleted = computed(() => {
+  const words = plainText(deletedSearch.value).split(/\s+/).filter(Boolean);
+  if (!words.length) return deletedReport.value;
+  return deletedReport.value.filter((d) => {
+    const text = plainText(
+      [
+        d.client_name,
+        d.client_phone,
+        d.deleted_by_name,
+        d.reason,
+        ...d.services.flatMap((s: any) => [s.service, s.staff]),
+      ]
+        .filter(Boolean)
+        .join(" "),
+    );
+    return words.every((w) => text.includes(w));
+  });
+});
+// The dates the insights shown were asked for: the pickers may have moved on.
+const insightsRange = ref<{ from: Date | null; to: Date | null }>({ from: null, to: null });
+const insightsPeriod = computed(() => {
+  const day = (d: Date | null) =>
+    d
+      ? new Date(d).toLocaleDateString(locale.value === "el" ? "el-GR" : "en-GB", { day: "numeric", month: "short", year: "numeric" })
+      : "";
+  const from = day(insightsRange.value.from);
+  const to = day(insightsRange.value.to);
+  return from === to ? from : `${from} – ${to}`;
+});
+
 
 const formatDate = (d: Date | null) => {
   if (!d) return "";
@@ -805,6 +1098,18 @@ const formatDate = (d: Date | null) => {
     day: "numeric",
     month: "short",
   });
+};
+
+const formatUsageRange = (min: number, max: number) => (min === max ? `${min}` : `${min} - ${max}`);
+
+const usageStatusLabel = (status: string) => {
+  const map: Record<string, string> = {
+    ok: t("analytics.productUsage.statusOk"),
+    over: t("analytics.productUsage.statusOver"),
+    under: t("analytics.productUsage.statusUnder"),
+    no_data: t("analytics.productUsage.statusNoData"),
+  };
+  return map[status] || status;
 };
 
 const clearFilters = () => {
@@ -822,8 +1127,7 @@ const setToday = () => {
 
 const fetchAllReports = async () => {
   loading.value = true;
-  const token = localStorage.getItem("token");
-  const headers = { Authorization: `Bearer ${token}` };
+  const requested = { ...filters.value };
 
   const params = new URLSearchParams();
 
@@ -848,67 +1152,66 @@ const fetchAllReports = async () => {
   // }
 
   const qs = params.toString() ? `?${params.toString()}` : "";
+  lastQuery.value = qs;
 
   try {
+    // Without these the page can't show anything; the others may be refused
+    // (e.g. for a role that doesn't see them) and are then left as they were.
+    const optional = (url: string) => api.get(url).catch(ifRefused(null));
     const [
-      finRes,
-      salesRes,
-      staffRes,
-      payRes,
-      apptRes,
-      anaRes,
-      clientsRes,
-      serviceSumRes,
-      productsRes,
-      giftCardsRes,
+      finData,
+      salesData,
+      staffData,
+      payData,
+      apptData,
+      anaData,
+      insightsData,
+      serviceSumData,
+      productsData,
+      productUsageData,
+      giftCardsData,
+      priceAdjustmentsData,
+      deletedData,
     ] = await Promise.all([
-      fetch(`/api/v1/reports/finances${qs}`, { headers }),
-      fetch(`/api/v1/reports/sales${qs}`, { headers }),
-      fetch(`/api/v1/reports/staff${qs}`, { headers }),
-      fetch(`/api/v1/reports/payments${qs}`, { headers }),
-      fetch(`/api/v1/reports/appointments${qs}`, { headers }),
-      fetch(`/api/v1/reports/analytics${qs}`, { headers }),
-      fetch(`/api/v1/reports/clients`, { headers }),
-      fetch(`/api/v1/reports/service-summary${qs}`, { headers }),
-      fetch(`/api/v1/reports/products${qs}`, { headers }),
-      fetch(`/api/v1/reports/gift-cards${qs}`, { headers }),
+      api.get(`/api/v1/reports/finances${qs}`),
+      api.get(`/api/v1/reports/sales${qs}`),
+      optional(`/api/v1/reports/staff${qs}`),
+      api.get(`/api/v1/reports/payments${qs}`),
+      optional(`/api/v1/reports/appointments${qs}`),
+      api.get(`/api/v1/reports/analytics${qs}`),
+      optional(`/api/v1/reports/insights${qs}`),
+      api.get(`/api/v1/reports/service-summary${qs}`),
+      optional(`/api/v1/reports/products${qs}`),
+      optional(`/api/v1/reports/product-usage${qs}`),
+      optional(`/api/v1/reports/gift-cards${qs}`),
+      optional(`/api/v1/reports/price-adjustments${qs}`),
+      optional(`/api/v1/reports/deleted-appointments${qs}`),
     ]);
-
-    if (finRes.status === 401) throw new Error("unauthorized");
-
-    if (
-      !finRes.ok ||
-      !salesRes.ok ||
-      !anaRes.ok ||
-      !payRes.ok ||
-      !clientsRes.ok
-    ) {
-      throw new Error("loadFailed");
-    }
-    if (!serviceSumRes.ok) throw new Error("loadFailed");
-
-    const finData = await finRes.json();
-    const salesData = await salesRes.json();
-    const anaData = await anaRes.json();
 
     finances.value = finData;
     salesReport.value = salesData.details || [];
     analytics.value = anaData;
-    staffReport.value = await staffRes.json();
-    paymentsReport.value = await payRes.json();
-    appointmentsReport.value = await apptRes.json();
-    clientsReport.value = await clientsRes.json();
-    serviceSummaryReport.value = await serviceSumRes.json();
-    if (productsRes.ok) {
-      const productsData = await productsRes.json();
+    staffReport.value = staffData ?? [];
+    paymentsReport.value = payData;
+    if (priceAdjustmentsData) {
+      priceAdjustmentsReport.value = priceAdjustmentsData;
+    }
+    if (deletedData) deletedReport.value = deletedData;
+    appointmentsReport.value = apptData ?? [];
+    insights.value = insightsData;
+    insightsRange.value = requested;
+    serviceSummaryReport.value = serviceSumData;
+    if (productsData) {
       productsReport.value = productsData.details || [];
       productsSummary.value = productsData.summary || {
         total_revenue: 0,
         total_units: 0,
       };
     }
-    if (giftCardsRes.ok) {
-      const giftCardsData = await giftCardsRes.json();
+    if (productUsageData) {
+      productUsageReport.value = productUsageData;
+    }
+    if (giftCardsData) {
       giftCardsReport.value = giftCardsData.details || [];
       giftCardsSummary.value = giftCardsData.summary || {
         total_revenue: 0,
@@ -919,7 +1222,7 @@ const fetchAllReports = async () => {
   } catch (err: any) {
     console.error(err);
     const toastKey =
-      err.message === "unauthorized"
+      err instanceof ApiError && err.status === 401
         ? "analytics.toast.unauthorized"
         : "analytics.toast.loadFailed";
     toast.add({
@@ -1049,24 +1352,19 @@ const exportPaymentsCSV = () => {
       d.toLocaleDateString("el-GR"),
       d.toLocaleTimeString("el-GR", { hour: "2-digit", minute: "2-digit" }),
       `${p.first_name} ${p.last_name}`,
-      p.payment_method,
+      p.payment_method === "CASH" ? "cash" : p.payment_method,
       Number(p.amount).toFixed(2),
     ];
   });
   const csv = [headers, ...rows].map((r) => r.join(",")).join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `payments-export-${new Date().toISOString().split("T")[0]}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+  saveBlob(new Blob([csv], { type: "text/csv;charset=utf-8;" }), `payments-export-${new Date().toISOString().split("T")[0]}.csv`);
 };
 
 // Payment method badge helper
 const getMethodBadge = (method: string) => {
   const map: Record<string, string> = {
     cash: "bg-green-100 text-green-700",
+    CASH: "bg-green-100 text-green-700",
     card: "bg-blue-100 text-blue-700",
     "bank-transfer": "bg-purple-100 text-purple-700",
     migration: "bg-gray-100 text-gray-600",

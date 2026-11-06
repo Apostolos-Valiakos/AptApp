@@ -1,50 +1,69 @@
 <template>
   <div class="space-y-6">
-    <!-- Page Header -->
-    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-      <div class="flex justify-between items-center">
-        <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-xl bg-[var(--p-primary-50)] flex items-center justify-center">
+    <!-- Page Header: on phones the buttons go under the title. -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
+      <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+        <div class="flex items-center gap-3 min-w-0">
+          <div
+            class="w-10 h-10 rounded-xl bg-[var(--p-primary-50)] flex items-center justify-center"
+          >
             <i class="pi pi-id-card text-[var(--p-primary-600)]"></i>
           </div>
           <div>
-            <h1 class="text-2xl font-bold text-gray-900">{{ t('staff.title') }}</h1>
-            <p class="text-sm text-gray-500">{{ t('staff.addNew') }}</p>
+            <h1 class="text-xl sm:text-2xl font-bold text-gray-900">
+              {{ t("staff.title") }}
+            </h1>
+            <p class="text-sm text-gray-500">{{ t("staff.subtitle", { count: staff.length }) }}</p>
           </div>
         </div>
-        <Button :label="t('staff.addNew')" icon="pi pi-plus" @click="openNew" />
+        <div class="flex flex-col-reverse sm:flex-row sm:items-center gap-2 w-full sm:w-auto">
+          <Button
+            :label="t('staffSchedule.title')"
+            icon="pi pi-calendar-clock"
+            class="p-button-outlined flex-1 sm:flex-none whitespace-nowrap"
+            @click="router.push('/app/staff-schedule')"
+          />
+          <Button :label="t('staff.addNew')" icon="pi pi-plus" class="flex-1 sm:flex-none whitespace-nowrap" @click="openNew" />
+        </div>
       </div>
     </div>
 
     <!-- Data Table Card -->
-    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-3 sm:p-6">
       <DataTable
         :value="filteredStaff"
         :rows="10"
         paginator
-        :rowsPerPageOptions="[10, 20, 50]"
+        :rowsPerPageOptions="isPhone ? undefined : [10, 20, 50]"
+        :paginatorTemplate="isPhone ? PHONE_PAGINATOR_TEMPLATE : undefined"
+        currentPageReportTemplate="{currentPage} / {totalPages}"
         responsiveLayout="scroll"
         class="p-datatable-sm"
         :loading="tableLoading"
       >
         <template #header>
-          <div class="flex justify-between items-center">
-            <span class="p-input-icon-left">
-              <i class="pi pi-search mr-3" />
-              <InputText
-                v-model="search"
-                :placeholder="t('staff.search')"
-                class="w-80"
-              />
-            </span>
+          <div class="relative w-full sm:w-80">
+            <i class="pi pi-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+            <InputText
+              v-model="search"
+              type="search"
+              :placeholder="t('staff.search')"
+              class="w-full !pl-10"
+            />
           </div>
         </template>
 
         <template #empty>
-          <div class="flex flex-col items-center justify-center py-16 text-center">
+          <div
+            class="flex flex-col items-center justify-center py-16 text-center"
+          >
             <i class="pi pi-users text-5xl text-gray-200 mb-4"></i>
-            <p class="text-gray-500 font-semibold text-lg">{{ t('staff.empty.title') }}</p>
-            <p class="text-gray-400 text-sm mt-1">{{ t('staff.empty.subtitle') }}</p>
+            <p class="text-gray-500 font-semibold text-lg">
+              {{ t("staff.empty.title") }}
+            </p>
+            <p class="text-gray-400 text-sm mt-1">
+              {{ t("staff.empty.subtitle") }}
+            </p>
           </div>
         </template>
 
@@ -52,24 +71,49 @@
         <Column field="name" :header="t('staff.table.name')">
           <template #body="slotProps">
             <div class="flex items-center gap-3">
-              <div class="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm bg-[var(--p-primary-100)] text-[var(--p-primary-600)] flex-shrink-0">
+              <div
+                class="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm bg-[var(--p-primary-100)] text-[var(--p-primary-600)] flex-shrink-0"
+              >
                 {{ slotProps.data.name?.charAt(0)?.toUpperCase() }}
               </div>
               <div class="min-w-0">
-                <div class="font-semibold text-gray-900">{{ slotProps.data.name }}</div>
-                <div class="text-xs text-gray-400 truncate">{{ slotProps.data.email || '—' }}</div>
+                <div class="font-semibold text-gray-900">
+                  {{ slotProps.data.name }}
+                </div>
+                <div class="text-xs text-gray-400 truncate">
+                  {{ slotProps.data.email || "—" }}
+                </div>
+                <a
+                  v-if="slotProps.data.phone"
+                  :href="'tel:' + slotProps.data.phone"
+                  class="md:hidden inline-block mt-0.5 text-sm text-green-600"
+                >
+                  {{ slotProps.data.phone }}
+                </a>
               </div>
             </div>
           </template>
         </Column>
 
-        <Column field="phone" :header="t('staff.table.phone')">
+        <Column
+          field="phone"
+          :header="t('staff.table.phone')"
+          headerClass="hidden md:table-cell"
+          bodyClass="hidden md:table-cell"
+        >
           <template #body="slotProps">
-            <span class="text-sm text-gray-700">{{ slotProps.data.phone || '—' }}</span>
+            <span class="text-sm text-gray-700">{{
+              slotProps.data.phone || "—"
+            }}</span>
           </template>
         </Column>
 
-        <Column field="specialty" :header="t('staff.table.specialty')">
+        <Column
+          field="specialty"
+          :header="t('staff.table.specialty')"
+          headerClass="hidden md:table-cell"
+          bodyClass="hidden md:table-cell"
+        >
           <template #body="slotProps">
             <Tag
               v-if="slotProps.data.specialty"
@@ -80,9 +124,20 @@
           </template>
         </Column>
 
-        <Column :header="t('common.actions')" style="width: 130px">
+        <Column :header="isPhone ? '' : t('common.actions')" bodyClass="!px-1 md:!px-3 md:w-[130px]">
           <template #body="slotProps">
-            <div class="flex gap-1.5 items-center">
+            <!-- Phones: the four actions behind one ⋯ button. -->
+            <div v-if="isPhone" class="flex justify-end">
+              <Button
+                icon="pi pi-ellipsis-v"
+                class="p-button-rounded p-button-text"
+                severity="secondary"
+                :aria-label="t('booking.moreActions')"
+                data-testid="staff-row-menu"
+                @click="openRowMenu($event, slotProps.data)"
+              />
+            </div>
+            <div v-else class="flex gap-1.5 items-center">
               <Button
                 icon="pi pi-pencil"
                 class="p-button-rounded p-button-text p-button-sm"
@@ -98,6 +153,14 @@
                 @click="openLoginDialog(slotProps.data)"
               />
               <Button
+                icon="pi pi-calendar-times"
+                class="p-button-rounded p-button-text p-button-sm"
+                severity="warn"
+                v-tooltip.top="t('staff.tooltips.timeOff')"
+                :aria-label="t('staff.tooltips.timeOff')"
+                @click="openTimeOffDialog(slotProps.data)"
+              />
+              <Button
                 icon="pi pi-trash"
                 class="p-button-rounded p-button-text p-button-danger p-button-sm"
                 v-tooltip.top="t('staff.tooltips.delete')"
@@ -108,40 +171,55 @@
           </template>
         </Column>
       </DataTable>
+      <Menu ref="rowMenu" :model="rowMenuItems" :popup="true" />
     </div>
   </div>
 
   <!-- Add/Edit Staff Dialog -->
   <Dialog
     v-model:visible="showDialog"
-    :header="editingStaff.id ? t('staff.dialog.editStaff') : t('staff.dialog.newStaff')"
+    :header="
+      editingStaff.id ? t('staff.dialog.editStaff') : t('staff.dialog.newStaff')
+    "
     modal
     class="w-full max-w-2xl"
   >
     <div class="space-y-5 mt-2">
       <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('staff.dialog.firstName') }}</label>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{
+            t("staff.dialog.firstName")
+          }}</label>
           <InputText v-model="editingStaff.first_name" class="w-full" />
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('staff.dialog.lastName') }}</label>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{
+            t("staff.dialog.lastName")
+          }}</label>
           <InputText v-model="editingStaff.last_name" class="w-full" />
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('common.email') }}</label>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{
+            t("common.email")
+          }}</label>
           <InputText v-model="editingStaff.email" class="w-full" />
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('common.phone') }}</label>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{
+            t("common.phone")
+          }}</label>
           <InputText v-model="editingStaff.phone" class="w-full" />
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('staff.dialog.specialty') }}</label>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{
+            t("staff.dialog.specialty")
+          }}</label>
           <InputText v-model="editingStaff.specialty" class="w-full" />
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('staff.dialog.hourlyRate') }}</label>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{
+            t("staff.dialog.hourlyRate")
+          }}</label>
           <InputNumber
             v-model="editingStaff.hourly_rate"
             mode="currency"
@@ -149,8 +227,26 @@
             class="w-full"
           />
         </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{
+            t("staff.dialog.capacity")
+          }}</label>
+          <InputNumber
+            v-model="editingStaff.capacity"
+            :min="1"
+            :max="50"
+            showButtons
+            class="w-full"
+            data-testid="staff-capacity"
+          />
+          <div class="text-xs text-gray-400 mt-1">
+            {{ t("staff.dialog.capacityNote") }}
+          </div>
+        </div>
         <div class="md:col-span-2">
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('staff.dialog.servicesProvided') }}</label>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{
+            t("staff.dialog.servicesProvided")
+          }}</label>
           <MultiSelect
             v-model="editingStaff.service_ids"
             :options="services"
@@ -161,12 +257,21 @@
             class="w-full"
             filter
           />
+          <StaffServiceOrder
+            v-if="editingStaff.service_ids?.length > 1"
+            v-model="editingStaff.service_ids"
+            :services="services"
+          />
         </div>
         <div class="md:col-span-2 flex items-center gap-3">
           <ToggleSwitch v-model="editingStaff.visible_in_calendar" />
           <div>
-            <div class="text-sm font-medium text-gray-700">{{ t('staff.dialog.visibleInCalendar') }}</div>
-            <div class="text-xs text-gray-400">{{ t('staff.dialog.visibleInCalendarNote') }}</div>
+            <div class="text-sm font-medium text-gray-700">
+              {{ t("staff.dialog.visibleInCalendar") }}
+            </div>
+            <div class="text-xs text-gray-400">
+              {{ t("staff.dialog.visibleInCalendarNote") }}
+            </div>
           </div>
         </div>
       </div>
@@ -196,10 +301,14 @@
   >
     <div class="space-y-5 pt-2">
       <p class="text-sm text-gray-600">
-        {{ t('staff.loginDialog.description', { name: loginStaffTarget?.name }) }}
+        {{
+          t("staff.loginDialog.description", { name: loginStaffTarget?.name })
+        }}
       </p>
       <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('staff.loginDialog.username') }}</label>
+        <label class="block text-sm font-medium text-gray-700 mb-1">{{
+          t("staff.loginDialog.username")
+        }}</label>
         <InputText
           v-model="newLogin.username"
           class="w-full"
@@ -207,7 +316,9 @@
         />
       </div>
       <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('staff.loginDialog.password') }}</label>
+        <label class="block text-sm font-medium text-gray-700 mb-1">{{
+          t("staff.loginDialog.password")
+        }}</label>
         <InputText
           v-model="newLogin.password"
           class="w-full"
@@ -216,7 +327,9 @@
         />
       </div>
       <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('staff.loginDialog.role') }}</label>
+        <label class="block text-sm font-medium text-gray-700 mb-1">{{
+          t("staff.loginDialog.role")
+        }}</label>
         <Dropdown
           v-model="newLogin.role"
           :options="loginRoleOptions"
@@ -243,14 +356,206 @@
     </template>
   </Dialog>
 
+  <!-- Time Off (Leave / Break) Dialog -->
+  <Dialog
+    v-model:visible="showTimeOffDialog"
+    :header="t('staff.timeOff.title', { name: timeOffTarget?.name })"
+    modal
+    class="w-full max-w-2xl"
+  >
+    <div class="space-y-4 mt-2">
+      <!-- Existing entries -->
+      <div v-if="timeOffLoading" class="text-center py-6 text-gray-400 text-sm">
+        {{ t("common.loading") }}
+      </div>
+      <div
+        v-else-if="timeOffEntries.length === 0"
+        class="text-center py-6 text-gray-400 text-sm"
+      >
+        {{ t("staff.timeOff.empty") }}
+      </div>
+      <div v-else class="space-y-2 max-h-64 overflow-y-auto">
+        <div
+          v-for="entry in timeOffEntries"
+          :key="entry.id"
+          class="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100"
+        >
+          <div class="flex items-center gap-3">
+            <Tag
+              :value="
+                entry.type === 'leave'
+                  ? t('staff.timeOff.leave')
+                  : t('staff.timeOff.break')
+              "
+              :severity="entry.type === 'leave' ? 'warn' : 'info'"
+            />
+            <div>
+              <div class="text-sm font-medium text-gray-800">
+                <template v-if="entry.type === 'leave'">
+                  {{ formatDate(entry.start_date) }}
+                  <span v-if="entry.start_date !== entry.end_date">
+                    — {{ formatDate(entry.end_date) }}</span
+                  >
+                </template>
+                <template v-else>
+                  {{ formatDate(entry.start_date) }},
+                  {{ entry.start_time?.slice(0, 5) }}–{{
+                    entry.end_time?.slice(0, 5)
+                  }}
+                </template>
+              </div>
+              <div v-if="entry.reason" class="text-xs text-gray-400">
+                {{ entry.reason }}
+              </div>
+            </div>
+          </div>
+          <Button
+            icon="pi pi-trash"
+            class="p-button-rounded p-button-text p-button-sm p-button-danger"
+            @click="deleteTimeOffEntry(entry.id)"
+          />
+        </div>
+      </div>
+
+      <!-- Add new entry -->
+      <div v-if="!addMode" class="flex gap-2 pt-2 border-t border-gray-100">
+        <Button
+          :label="t('staff.timeOff.addLeave')"
+          icon="pi pi-plus"
+          text
+          size="small"
+          @click="startAddLeave"
+        />
+        <Button
+          :label="t('staff.timeOff.addBreak')"
+          icon="pi pi-plus"
+          text
+          size="small"
+          @click="startAddBreak"
+        />
+      </div>
+
+      <div
+        v-else
+        class="p-4 bg-[var(--p-primary-50)] rounded-xl space-y-3 border border-[var(--p-primary-100)]"
+      >
+        <div class="text-sm font-bold text-gray-700">
+          {{
+            addMode === "leave"
+              ? t("staff.timeOff.addLeave")
+              : t("staff.timeOff.addBreak")
+          }}
+        </div>
+
+        <div v-if="addMode === 'leave'" class="grid grid-cols-2 gap-3">
+          <div class="min-w-0">
+            <label class="block text-xs text-gray-500 mb-1">{{
+              t("staff.timeOff.startDate")
+            }}</label>
+            <DatePicker
+              v-model="newTimeOff.start_date"
+              dateFormat="dd/mm/yy"
+              showIcon
+              class="w-full"
+              inputClass="w-full"
+            />
+          </div>
+          <div class="min-w-0">
+            <label class="block text-xs text-gray-500 mb-1">{{
+              t("staff.timeOff.endDate")
+            }}</label>
+            <DatePicker
+              v-model="newTimeOff.end_date"
+              dateFormat="dd/mm/yy"
+              showIcon
+              class="w-full"
+              inputClass="w-full"
+            />
+          </div>
+        </div>
+
+        <div v-else class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div class="min-w-0">
+            <label class="block text-xs text-gray-500 mb-1">{{
+              t("staff.timeOff.date")
+            }}</label>
+            <DatePicker
+              v-model="newTimeOff.start_date"
+              dateFormat="dd/mm/yy"
+              showIcon
+              class="w-full"
+              inputClass="w-full"
+            />
+          </div>
+          <div class="min-w-0">
+            <label class="block text-xs text-gray-500 mb-1">{{
+              t("staff.timeOff.startTime")
+            }}</label>
+            <DatePicker
+              v-model="newTimeOff.start_time"
+              timeOnly
+              hourFormat="24"
+              class="w-full"
+              inputClass="w-full"
+            />
+          </div>
+          <div class="min-w-0">
+            <label class="block text-xs text-gray-500 mb-1">{{
+              t("staff.timeOff.endTime")
+            }}</label>
+            <DatePicker
+              v-model="newTimeOff.end_time"
+              timeOnly
+              hourFormat="24"
+              class="w-full"
+              inputClass="w-full"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">{{
+            t("staff.timeOff.reason")
+          }}</label>
+          <InputText
+            v-model="newTimeOff.reason"
+            class="w-full"
+            :placeholder="t('staff.timeOff.reasonPlaceholder')"
+          />
+        </div>
+
+        <div class="flex justify-end gap-2 pt-1">
+          <Button
+            :label="t('common.cancel')"
+            text
+            size="small"
+            @click="cancelAddTimeOff"
+          />
+          <Button
+            :label="t('common.save')"
+            size="small"
+            @click="saveTimeOff()"
+            :loading="timeOffSaving"
+          />
+        </div>
+      </div>
+    </div>
+  </Dialog>
+
+
   <ConfirmDialog></ConfirmDialog>
 </template>
 
 <script setup lang="ts">
+import { api, ApiError, ifRefused, withMessage } from "../api/http";
 import { ref, onMounted, computed } from "vue";
+import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
+import { useCalendarStore } from "../stores/calendar";
+import StaffServiceOrder from "../components/StaffServiceOrder.vue";
+import { useIsPhone, PHONE_PAGINATOR_TEMPLATE } from "../composables/useIsPhone";
 
 const { t } = useI18n();
 
@@ -258,6 +563,8 @@ const { t } = useI18n();
 
 const toast = useToast();
 const confirm = useConfirm();
+const calendarStore = useCalendarStore();
+const router = useRouter();
 const staff = ref([]);
 const services = ref([]);
 const loading = ref(false);
@@ -276,25 +583,32 @@ const loginRoleOptions = computed(() => [
   { label: t("staff.loginDialog.roleFrontdesk"), value: "frontdesk" },
 ]);
 
+// Time Off (Leave / Break) Dialog State
+const showTimeOffDialog = ref(false);
+const timeOffTarget = ref<any>(null);
+const timeOffEntries = ref<any[]>([]);
+const timeOffLoading = ref(false);
+const timeOffSaving = ref(false);
+const addMode = ref<"leave" | "break" | null>(null);
+const newTimeOff = ref<any>({
+  start_date: null,
+  end_date: null,
+  start_time: null,
+  end_time: null,
+  reason: "",
+});
+
 // ... (Existing fetch/save logic remains same) ...
 const fetchData = async () => {
   tableLoading.value = true;
   try {
-    const token = localStorage.getItem("token");
-    const headers = { Authorization: `Bearer ${token}` };
-    const [staffRes, servicesRes] = await Promise.all([
-      fetch("/api/v1/staff", { headers }),
-      fetch("/api/v1/services", { headers }),
-    ]);
-    if (!staffRes.ok || !servicesRes.ok) throw new Error("Request failed");
-    staff.value = await staffRes.json();
-    services.value = await servicesRes.json();
+    [staff.value, services.value] = await Promise.all([api.get("/api/v1/staff"), api.get("/api/v1/services")]);
   } catch (err) {
     console.error(err);
     toast.add({
       severity: "error",
-      summary: t('common.error'),
-      detail: t('staff.toast.loadFailed'),
+      summary: t("common.error"),
+      detail: t("staff.toast.loadFailed"),
       life: 4000,
     });
   } finally {
@@ -309,6 +623,7 @@ const openNew = () => {
     last_name: "",
     service_ids: [],
     visible_in_calendar: true,
+    capacity: 1,
   };
   showDialog.value = true;
 };
@@ -320,6 +635,7 @@ const editStaff = (data: any) => {
     first_name: nameParts[0],
     last_name: nameParts.slice(1).join(" "),
     service_ids: data.service_ids || [],
+    capacity: data.capacity || 1,
   };
   showDialog.value = true;
 };
@@ -327,27 +643,17 @@ const editStaff = (data: any) => {
 const saveStaff = async () => {
   // ... (Keep existing save logic, ensure you add Authorization header) ...
   loading.value = true;
-  const token = localStorage.getItem("token");
   const url = editingStaff.value.id
     ? `/api/v1/staff/${editingStaff.value.id}`
     : "/api/v1/staff";
   const method = editingStaff.value.id ? "PUT" : "POST";
 
   try {
-    const res = await fetch(url, {
-      method,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(editingStaff.value),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Failed");
+    await api.request(method, url, editingStaff.value);
     toast.add({
       severity: "success",
-      summary: t('common.success'),
-      detail: t('staff.toast.saved'),
+      summary: t("common.success"),
+      detail: t("staff.toast.saved"),
       life: 3000,
     });
     showDialog.value = false;
@@ -377,36 +683,23 @@ const createLogin = async () => {
   if (!newLogin.value.username || !newLogin.value.password) return;
 
   loading.value = true;
-  const token = localStorage.getItem("token");
 
   try {
-    const res = await fetch(
-      `/api/v1/staff/${loginStaffTarget.value.id}/login`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(newLogin.value),
-      },
-    );
-
-    const data = await res.json();
-
-    if (!res.ok) throw new Error(data.error || "Failed");
+    await api.post(`/api/v1/staff/${loginStaffTarget.value.id}/login`, newLogin.value).catch(withMessage("Failed"));
 
     toast.add({
       severity: "success",
-      summary: t('staff.toast.accountCreated'),
-      detail: t('staff.toast.accountDetail', { name: loginStaffTarget.value.name }),
+      summary: t("staff.toast.accountCreated"),
+      detail: t("staff.toast.accountDetail", {
+        name: loginStaffTarget.value.name,
+      }),
       life: 4000,
     });
     showLoginDialog.value = false;
   } catch (e: any) {
     toast.add({
       severity: "error",
-      summary: t('common.error'),
+      summary: t("common.error"),
       detail: e.message,
       life: 4000,
     });
@@ -416,10 +709,168 @@ const createLogin = async () => {
 };
 
 // Add confirmDelete and deleteStaff functions
+// --- Time Off (Leave / Break) Handlers ---
+const formatDate = (d: string) =>
+  new Date(d).toLocaleDateString("el-GR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+
+const toDateStr = (d: Date) => {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const toTimeStr = (d: Date) => {
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
+};
+
+const openTimeOffDialog = async (staffMember: any) => {
+  timeOffTarget.value = staffMember;
+  addMode.value = null;
+  showTimeOffDialog.value = true;
+  await fetchTimeOffEntries();
+};
+
+const fetchTimeOffEntries = async () => {
+  timeOffLoading.value = true;
+  try {
+    timeOffEntries.value = await api.get(`/api/v1/staff/${timeOffTarget.value.id}/time-off`).catch(ifRefused([]));
+  } finally {
+    timeOffLoading.value = false;
+  }
+};
+
+const startAddLeave = () => {
+  addMode.value = "leave";
+  newTimeOff.value = {
+    start_date: new Date(),
+    end_date: new Date(),
+    start_time: null,
+    end_time: null,
+    reason: "",
+  };
+};
+
+const startAddBreak = () => {
+  addMode.value = "break";
+  const defaultStart = new Date();
+  defaultStart.setHours(13, 0, 0, 0);
+  const defaultEnd = new Date();
+  defaultEnd.setHours(14, 0, 0, 0);
+  newTimeOff.value = {
+    start_date: new Date(),
+    end_date: new Date(),
+    start_time: defaultStart,
+    end_time: defaultEnd,
+    reason: "",
+  };
+};
+
+const cancelAddTimeOff = () => {
+  addMode.value = null;
+};
+
+const saveTimeOff = async (force = false) => {
+  timeOffSaving.value = true;
+  const isLeave = addMode.value === "leave";
+
+  const payload: any = {
+    type: addMode.value,
+    start_date: toDateStr(newTimeOff.value.start_date),
+    end_date: toDateStr(
+      isLeave ? newTimeOff.value.end_date : newTimeOff.value.start_date,
+    ),
+    reason: newTimeOff.value.reason || null,
+    force,
+  };
+  if (!isLeave) {
+    payload.start_time = toTimeStr(newTimeOff.value.start_time);
+    payload.end_time = toTimeStr(newTimeOff.value.end_time);
+  }
+
+  try {
+    // Overlapping bookings: 409 with the list, asked about before forcing.
+    const conflict = await api
+      .post(`/api/v1/staff/${timeOffTarget.value.id}/time-off`, payload)
+      .then(() => null)
+      .catch((e) => {
+        if (e instanceof ApiError && e.status === 409) return e.data || {};
+        throw e;
+      });
+
+    if (conflict) {
+      const data = conflict;
+      const list = (data.conflicts || [])
+        .map(
+          (c: any) =>
+            `• ${c.client_name || "—"} — ${c.service_name || ""} (${formatDate(c.start_time)})`,
+        )
+        .join("\n");
+      confirm.require({
+        message: t("staff.timeOff.conflictMessage", {
+          count: (data.conflicts || []).length,
+          list,
+        }),
+        header: t("staff.timeOff.conflictHeader"),
+        icon: "pi pi-exclamation-triangle",
+        acceptClass: "p-button-warning",
+        accept: () => saveTimeOff(true),
+      });
+      return;
+    }
+
+    toast.add({
+      severity: "success",
+      summary: t("common.success"),
+      detail: t("staff.timeOff.saved"),
+      life: 3000,
+    });
+    addMode.value = null;
+    await fetchTimeOffEntries();
+    await calendarStore.refreshTimeOff();
+  } catch (err) {
+    toast.add({
+      severity: "error",
+      summary: t("common.error"),
+      detail: t("staff.timeOff.saveFailed"),
+      life: 4000,
+    });
+  } finally {
+    timeOffSaving.value = false;
+  }
+};
+
+const deleteTimeOffEntry = async (entryId: string) => {
+  try {
+    await api.del(`/api/v1/staff/${timeOffTarget.value.id}/time-off/${entryId}`);
+    timeOffEntries.value = timeOffEntries.value.filter((e) => e.id !== entryId);
+    toast.add({
+      severity: "success",
+      summary: t("staff.timeOff.deleted"),
+      life: 3000,
+    });
+    await calendarStore.refreshTimeOff();
+  } catch {
+    toast.add({
+      severity: "error",
+      summary: t("common.error"),
+      detail: t("staff.timeOff.deleteFailed"),
+      life: 4000,
+    });
+  }
+};
+
+
 const confirmDelete = (staff: any) => {
   confirm.require({
-    message: t('staff.confirmDelete', { name: staff.name }),
-    header: t('common.confirmDelete'),
+    message: t("staff.confirmDelete", { name: staff.name }),
+    header: t("common.confirmDelete"),
     icon: "pi pi-exclamation-triangle",
     acceptClass: "p-button-danger",
     accept: () => deleteStaff(staff),
@@ -427,30 +878,39 @@ const confirmDelete = (staff: any) => {
 };
 
 const deleteStaff = async (staff: any) => {
-  const token = localStorage.getItem("token");
   try {
-    const res = await fetch(`/api/v1/staff/${staff.id}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    if (!res.ok) throw new Error("Failed to delete");
+    await api.del(`/api/v1/staff/${staff.id}`);
 
     toast.add({
       severity: "success",
-      summary: t('common.success'),
-      detail: t('staff.toast.deleted'),
+      summary: t("common.success"),
+      detail: t("staff.toast.deleted"),
       life: 3000,
     });
     fetchData();
   } catch (err) {
     toast.add({
       severity: "error",
-      summary: t('common.error'),
-      detail: t('staff.toast.deleteFailed'),
+      summary: t("common.error"),
+      detail: t("staff.toast.deleteFailed"),
       life: 4000,
     });
   }
+};
+
+// Phones: a lighter table (phone under the name, actions behind ⋯) and a
+// paginator that fits.
+const isPhone = useIsPhone();
+const rowMenu = ref<any>(null);
+const rowMenuItems = ref<any[]>([]);
+const openRowMenu = (event: Event, member: any) => {
+  rowMenuItems.value = [
+    { label: t("staff.tooltips.edit"), icon: "pi pi-pencil", command: () => editStaff(member) },
+    { label: t("staff.tooltips.createLogin"), icon: "pi pi-key", command: () => openLoginDialog(member) },
+    { label: t("staff.tooltips.timeOff"), icon: "pi pi-calendar-times", command: () => openTimeOffDialog(member) },
+    { label: t("staff.tooltips.delete"), icon: "pi pi-trash", class: "menu-danger", command: () => confirmDelete(member) },
+  ];
+  rowMenu.value?.toggle(event);
 };
 
 const filteredStaff = computed(() => {

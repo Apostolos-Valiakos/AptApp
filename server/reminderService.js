@@ -6,12 +6,14 @@ const cron = require("node-cron");
 const nodemailer = require("nodemailer");
 const pool = require("./db");
 const crypto = require("crypto");
+const { sendPushToClient, recordNotification } = require("./pushService");
 
-// In production behind a reverse proxy (Nginx/TLS), the public URL has no port
-// to append — set PUBLIC_BASE_URL explicitly (e.g. https://yourdomain.com) and
-// it takes precedence. Falls back to the old ${API_URL}:${PORT} convention
-// (matches vite.config.mjs's dev proxy) for local/dev environments that don't
-// set it.
+// Local/LAN dev derives this from API_URL:PORT (same convention as
+// vite.config.mjs), since there's no reverse proxy hiding the port there.
+// In production this must be set explicitly — behind Nginx the app only
+// listens on 127.0.0.1:3000, so a link built as https://domain:3000/...
+// would be unreachable from outside the VPS. Same override pattern as
+// FRONTEND_URL below (an explicit full origin, used as-is, no port math).
 const PUBLIC_BASE_URL =
   process.env.PUBLIC_BASE_URL || `${process.env.API_URL}:${process.env.PORT}`;
 
@@ -75,7 +77,7 @@ const describeReminderWindow = (hoursBefore) => {
 const processReminders = async () => {
   try {
     const query = `
-        SELECT
+        SELECT DISTINCT ON (a.id)
             a.id AS appointment_id,
             c.first_name AS client_name,
             c.id AS client_id,
@@ -100,7 +102,8 @@ const processReminders = async () => {
             AND a.status != 'cancelled'
             AND c.receive_emails = true
             AND a.is_block = false
-            AND s.plan != 'trial';
+            AND s.plan != 'trial'
+        ORDER BY a.id, aps.start_time;
         `;
 
     const { rows } = await pool.query(query);
@@ -117,6 +120,8 @@ const processReminders = async () => {
       const endTimeStr = formatTime(appt.end_time);
       const dayStr = formatDay(appt.start_time);
       const windowText = describeReminderWindow(appt.reminder_hours_before);
+      const therapistFullName =
+        `${appt.staff_name}`.trim() || "Επαγγελματίας Υγείας";
       const formatCalendarDate = (date) => {
         return new Date(date).toISOString().replace(/-|:|\.\d\d\d/g, "");
       };
@@ -477,6 +482,14 @@ const processReminders = async () => {
             </html>
             `;
 
+      // Marked before sending, by whoever gets there first, so an overlapping
+      // run can't send it too; a failed send gives it back for the next run.
+      const claim = await pool.query(
+        "UPDATE appointments SET email_reminder_sent = true WHERE id = $1 AND email_reminder_sent = false RETURNING id",
+        [appt.appointment_id],
+      );
+      if (claim.rowCount === 0) continue;
+
       try {
         await transporter.sendMail({
           from: `"${appt.shop_name}" <${process.env.EMAIL_USER}>`,
@@ -485,14 +498,12 @@ const processReminders = async () => {
           subject: `Υπενθύμιση Ραντεβού - ${windowText}`,
           html: htmlContent,
         });
-
-        // 3. Mark as sent using your specific column name
-        await pool.query(
-          "UPDATE appointments SET email_reminder_sent = true WHERE id = $1",
-          [appt.appointment_id],
-        );
       } catch (mailErr) {
         console.error("Mail send error:", mailErr);
+        await pool.query(
+          "UPDATE appointments SET email_reminder_sent = false WHERE id = $1",
+          [appt.appointment_id],
+        ).catch((err) => console.error("Reminder retry mark error:", err));
       }
     }
   } catch (err) {
@@ -500,8 +511,76 @@ const processReminders = async () => {
   }
 };
 
-// Runs every 5 minutes, matching the ±5 minute window used in the query above
-cron.schedule("*/1 * * * *", processReminders);
+// Same reminder window as the email job above, gated on its own
+// push_reminder_sent flag (independent of email_reminder_sent — a client can
+// have push enabled with emails off, or vice versa). Runs for every client
+// due a reminder, not just ones with a push subscription: the in-app
+// notification history (recordNotification) should show the reminder either
+// way, and sendPushToClient below is already a safe no-op when there's no
+// subscription to deliver to.
+const processPushReminders = async () => {
+  try {
+    const query = `
+        SELECT DISTINCT ON (a.id)
+            a.id AS appointment_id,
+            a.client_id,
+            a.shop_id,
+            s.name AS shop_name,
+            aps.start_time,
+            ser.name AS service_name
+        FROM appointments a
+        JOIN shops s ON a.shop_id = s.id
+        JOIN appointment_services aps ON a.id = aps.appointment_id
+        JOIN services ser ON aps.service_id = ser.id
+        WHERE aps.start_time <= (NOW() + ((s.reminder_hours_before || ' hours')::interval) + INTERVAL '5 minutes')
+            AND aps.start_time >= (NOW() + ((s.reminder_hours_before || ' hours')::interval) - INTERVAL '5 minutes')
+            AND a.push_reminder_sent = false
+            AND a.status != 'cancelled'
+            AND a.is_block = false
+            AND s.plan != 'trial'
+        ORDER BY a.id, aps.start_time;
+        `;
+    const { rows } = await pool.query(query);
+
+    for (const appt of rows) {
+      const claim = await pool.query(
+        "UPDATE appointments SET push_reminder_sent = true WHERE id = $1 AND push_reminder_sent = false RETURNING id",
+        [appt.appointment_id],
+      );
+      if (claim.rowCount === 0) continue;
+
+      try {
+        const startTimeStr = formatTime(appt.start_time);
+        const title = `Ραντεβού: ${appt.service_name}`;
+        const body = `${appt.shop_name} · ${startTimeStr}`;
+        const url = "/portal/appointments";
+        await recordNotification(appt.client_id, appt.shop_id, {
+          type: "reminder",
+          title,
+          body,
+          url,
+        });
+        await sendPushToClient(appt.client_id, { title, body, url });
+      } catch (pushErr) {
+        console.error("Push reminder error:", pushErr);
+        await pool.query(
+          "UPDATE appointments SET push_reminder_sent = false WHERE id = $1",
+          [appt.appointment_id],
+        ).catch((err) => console.error("Reminder retry mark error:", err));
+      }
+    }
+  } catch (err) {
+    console.error("Push reminder cron DB error:", err);
+  }
+};
+
+// Runs every 1 minute, matching the ±5 minute window used in the queries above.
+// RUN_JOBS=0 turns the schedule off (test servers run on copies of real data
+// and must never email or notify real clients).
+if (process.env.RUN_JOBS !== "0") {
+  cron.schedule("*/1 * * * *", processReminders);
+  cron.schedule("*/1 * * * *", processPushReminders);
+}
 
 // Suspends trial shops once their trial period has passed. Hourly is plenty —
 // shop status is only ever checked at login, same tolerance as everywhere else.
@@ -516,6 +595,8 @@ const expireTrials = async () => {
     console.error("Failed to expire trials:", err);
   }
 };
-cron.schedule("0 * * * *", expireTrials);
+if (process.env.RUN_JOBS !== "0") {
+  cron.schedule("0 * * * *", expireTrials);
+}
 
-module.exports = { processReminders, PUBLIC_BASE_URL };
+module.exports = { processReminders, processPushReminders, PUBLIC_BASE_URL };

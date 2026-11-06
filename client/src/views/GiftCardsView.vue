@@ -19,7 +19,7 @@
     </div>
 
     <DataTable
-      :value="giftCards"
+      :value="visibleGiftCards"
       :loading="loading"
       responsiveLayout="scroll"
       class="p-datatable-sm"
@@ -38,14 +38,19 @@
       <Column field="card_number" :header="t('giftCards.table.cardNumber')" sortable></Column>
       <Column field="customer_name" :header="t('giftCards.table.customer')" sortable></Column>
 
-      <!-- Cash revenue-hiding macro disabled (was: v-if="!settingsStore.hideCashPaid") -->
+      <Column :header="t('giftCards.table.soldBy')" sortable field="sold_by_name">
+        <template #body="slotProps">
+          {{ slotProps.data.sold_by_name || t('giftCards.dialog.frontdesk') }}
+        </template>
+      </Column>
+
       <Column
         :header="t('giftCards.table.initialAmount')"
         sortable
         field="initial_amount"
       >
         <template #body="slotProps">
-          €{{ Number(slotProps.data.initial_amount).toFixed(2) }}
+          {{ formatMoney(slotProps.data.initial_amount) }}
         </template>
       </Column>
 
@@ -56,7 +61,7 @@
         field="remaining_balance"
       >
         <template #body="slotProps">
-          €{{ Number(slotProps.data.remaining_balance).toFixed(2) }}
+          {{ formatMoney(slotProps.data.remaining_balance) }}
         </template>
       </Column>
 
@@ -78,6 +83,12 @@
       <Column :header="t('giftCards.table.expires')" sortable field="expires_at">
         <template #body="slotProps">
           {{ formatDate(slotProps.data.expires_at) }}
+        </template>
+      </Column>
+
+      <Column :header="t('giftCards.table.usedOn')" sortable field="last_used_at">
+        <template #body="slotProps">
+          {{ slotProps.data.last_used_at ? formatDate(slotProps.data.last_used_at) : t('giftCards.table.neverUsed') }}
         </template>
       </Column>
 
@@ -116,25 +127,16 @@
         </div>
 
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('giftCards.dialog.existingClient') }}</label>
-          <AutoComplete
-            v-model="selectedClient"
-            :suggestions="clientSuggestions"
-            optionLabel="full_name"
-            :placeholder="t('giftCards.dialog.existingClientPlaceholder')"
-            :loading="searchingClients"
-            forceSelection
-            showClear
-            class="w-full"
-            inputClass="w-full"
-            @complete="searchClients"
-            @update:modelValue="onClientPicked"
-          />
-        </div>
-
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('giftCards.dialog.customerName') }}</label>
-          <InputText v-model="form.customer_name" class="w-full" />
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('giftCards.dialog.client') }}</label>
+          <ClientSelector v-if="!form.client_id" allow-walk-in @select="onClientPicked" />
+          <div
+            v-else
+            class="flex justify-between items-center p-3 border border-gray-200 rounded-xl bg-gray-50 hover:bg-red-50 hover:border-red-200 transition-colors cursor-pointer"
+            @click="clearClient"
+          >
+            <span class="font-bold text-gray-900 text-sm">{{ selectedClient?.full_name }}</span>
+            <i class="pi pi-times text-gray-400 text-xs"></i>
+          </div>
         </div>
 
         <div>
@@ -159,6 +161,17 @@
             class="w-full"
           />
         </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('giftCards.dialog.soldBy') }}</label>
+          <Dropdown
+            v-model="form.sold_by_staff_id"
+            :options="soldByOptions"
+            optionLabel="name"
+            optionValue="id"
+            class="w-full"
+          />
+        </div>
       </div>
 
       <template #footer>
@@ -168,7 +181,7 @@
           icon="pi pi-check"
           @click="saveCard"
           :loading="saving"
-          :disabled="!form.card_number || !form.customer_name || !form.initial_amount"
+          :disabled="!form.card_number || !form.client_id || !form.initial_amount"
         />
       </template>
     </Dialog>
@@ -178,11 +191,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { api, ifRefused, withMessage } from "../api/http";
+import { formatMoney } from "../utils/format";
+import { ref, computed, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 import { useSettingsStore } from "../stores/settings";
+import ClientSelector from "../components/ClientSelector.vue";
 
 const { t } = useI18n();
 const toast = useToast();
@@ -190,17 +206,24 @@ const confirm = useConfirm();
 const settingsStore = useSettingsStore();
 
 const giftCards = ref<any[]>([]);
+
+const visibleGiftCards = computed(() =>
+  settingsStore.hideCashPaid
+    ? giftCards.value.filter((c) => c.purchase_payment_method !== "cash")
+    : giftCards.value,
+);
 const loading = ref(true);
 const saving = ref(false);
 const cardDialog = ref(false);
 const isEdit = ref(false);
 const editingId = ref<string | null>(null);
 
-const paymentMethodOptions = [
-  { label: "Cash", value: "cash" },
-  { label: "Card", value: "card" },
-  { label: "Bank Transfer", value: "bank-transfer" },
-];
+const paymentMethodOptions = computed(() => [
+  { label: t("common.paymentMethod.cash"), value: "cash" },
+  { label: "CASH", value: "CASH" },
+  { label: t("common.paymentMethod.card"), value: "card" },
+  { label: t("common.paymentMethod.bank-transfer"), value: "bank-transfer" },
+]);
 
 const form = ref<any>({
   card_number: "",
@@ -208,73 +231,65 @@ const form = ref<any>({
   customer_name: "",
   initial_amount: null,
   purchase_payment_method: "cash",
+  sold_by_staff_id: null,
 });
 
-const token = () => localStorage.getItem("token");
 
 const fetchGiftCards = async () => {
   loading.value = true;
   try {
-    const res = await fetch("/api/v1/gift-cards", {
-      headers: { Authorization: `Bearer ${token()}` },
-    });
-    if (res.ok) giftCards.value = await res.json();
+    giftCards.value = await api.get("/api/v1/gift-cards").catch(ifRefused(giftCards.value));
   } finally {
     loading.value = false;
   }
 };
 
-onMounted(() => {
-  fetchGiftCards();
-});
+// --- Staff list for the "Sold By" picker (small dataset — plain fetch is fine) ---
+const staffList = ref<any[]>([]);
+const soldByOptions = computed(() => [
+  { id: null, name: t("giftCards.dialog.frontdesk") },
+  ...staffList.value,
+]);
 
-// --- Client autocomplete (server-side search, no upfront full-list load) ---
-const selectedClient = ref<any>(null);
-const clientSuggestions = ref<any[]>([]);
-const searchingClients = ref(false);
-let clientSearchTimeout: ReturnType<typeof setTimeout> | null = null;
-
-const searchClients = (event: { query: string }) => {
-  const q = event.query.trim();
-  if (clientSearchTimeout) clearTimeout(clientSearchTimeout);
-  if (!q) {
-    clientSuggestions.value = [];
-    return;
+const fetchStaff = async () => {
+  try {
+    const data = await api.get("/api/v1/staff");
+    staffList.value = data.filter((s: any) => s.is_active);
+  } catch {
+    // non-critical — the dropdown just falls back to "Frontdesk" only
   }
-  searchingClients.value = true;
-  clientSearchTimeout = setTimeout(async () => {
-    try {
-      const res = await fetch(
-        `/api/v1/clients?slim=true&search=${encodeURIComponent(q)}&limit=10`,
-        { headers: { Authorization: `Bearer ${token()}` } },
-      );
-      clientSuggestions.value = res.ok ? await res.json() : [];
-    } finally {
-      searchingClients.value = false;
-    }
-  }, 300);
 };
 
+onMounted(() => {
+  fetchGiftCards();
+  fetchStaff();
+});
+
+const selectedClient = ref<any>(null);
+
 const onClientPicked = (client: any) => {
-  if (client && typeof client === "object") {
-    form.value.client_id = client.id;
-    form.value.customer_name = client.full_name;
-  } else {
-    form.value.client_id = null;
-  }
+  selectedClient.value = client;
+  form.value.client_id = client.id;
+  form.value.customer_name = client.full_name;
+};
+
+const clearClient = () => {
+  selectedClient.value = null;
+  form.value.client_id = null;
+  form.value.customer_name = "";
 };
 
 const openNewDialog = () => {
   isEdit.value = false;
   editingId.value = null;
   selectedClient.value = null;
-  clientSuggestions.value = [];
   form.value = {
     card_number: "",
     client_id: null,
     customer_name: "",
     initial_amount: null,
     purchase_payment_method: "cash",
+    sold_by_staff_id: null,
   };
   cardDialog.value = true;
 };
@@ -286,13 +301,13 @@ const editCard = (card: any) => {
   selectedClient.value = card.client_id
     ? { id: card.client_id, full_name: card.customer_name }
     : null;
-  clientSuggestions.value = [];
   form.value = {
     card_number: card.card_number,
     client_id: card.client_id,
     customer_name: card.customer_name,
     initial_amount: card.initial_amount,
     purchase_payment_method: card.purchase_payment_method,
+    sold_by_staff_id: card.sold_by_staff_id || null,
   };
   cardDialog.value = true;
 };
@@ -311,18 +326,7 @@ const saveCard = async () => {
   try {
     const url = isEdit.value ? `/api/v1/gift-cards/${editingId.value}` : "/api/v1/gift-cards";
     const method = isEdit.value ? "PUT" : "POST";
-    const res = await fetch(url, {
-      method,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token()}`,
-      },
-      body: JSON.stringify(form.value),
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || "Failed to save gift card");
-    }
+    await api.request(method, url, form.value).catch(withMessage("Failed to save gift card"));
     toast.add({
       severity: "success",
       summary: t("common.success"),
@@ -346,11 +350,7 @@ const confirmDeleteCard = (card: any) => {
     acceptClass: "p-button-danger",
     accept: async () => {
       try {
-        const res = await fetch(`/api/v1/gift-cards/${card.id}`, {
-          method: "DELETE",
-          headers: { Authorization: `Bearer ${token()}` },
-        });
-        if (!res.ok) throw new Error("Failed to delete");
+        await api.del(`/api/v1/gift-cards/${card.id}`);
         giftCards.value = giftCards.value.filter((c) => c.id !== card.id);
         toast.add({ severity: "success", summary: t("giftCards.toast.deleted"), life: 3000 });
       } catch {

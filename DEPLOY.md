@@ -93,6 +93,14 @@ EMAIL_PASS=<app password, not your real Gmail password>
 # --- Owner account bootstrap (see server/reminderService.js / server.js schema IIFE) ---
 OWNER_USERNAME=<pick a username>
 OWNER_PASSWORD=<pick a strong password>
+
+# --- Backups (Section 8) ---
+BACKUP_ENCRYPTION_KEY=<generate: openssl rand -base64 32>
+
+# --- Web Push (client portal "Turn On Notifications") ---
+VAPID_PUBLIC_KEY=<generate: see note below>
+VAPID_PRIVATE_KEY=<generate: see note below>
+VAPID_CONTACT_EMAIL=<a real support address>
 ```
 
 Notes:
@@ -101,6 +109,8 @@ Notes:
 - `PUBLIC_BASE_URL` is used to build links inside emails (appointment reminders, unsubscribe, client-portal invites) — set it to your real public URL with **no port** (Nginx handles 443 externally; the app never needs `:3000` in a link anyone outside the VPS will click).
 - `ALLOWED_ORIGINS` is a comma-separated list if you ever serve from more than one origin (e.g. a Capacitor app). Since the app serves its own frontend from the same origin, this mainly matters for Socket.IO's CORS check and any cross-origin API callers.
 - `EMAIL_PASS` for Gmail must be an **App Password** (16 chars, unrelated to your normal login password) — an actual password will fail with a `535 5.7.8 Username and Password not accepted` auth error.
+- Generate the VAPID pair once with `node -e "console.log(require('web-push').generateVAPIDKeys())"` and paste both values in — **this pair must never change once real clients have subscribed**: every stored subscription is tied to it, and swapping keys silently breaks push delivery for everyone until they re-enable notifications.
+- `BACKUP_ENCRYPTION_KEY` is covered in Section 8 — included here so you generate it once, up front, alongside everything else.
 
 ---
 
@@ -274,6 +284,35 @@ Your firewall should now only allow 22 (SSH), 80, and 443.
 
 ---
 
+## 8. Set up daily backups
+
+This app already ships with `scripts/backup_db.sh` and `scripts/restore_db.sh` — same-server, AES-256-encrypted daily dumps, pruned automatically past a retention window. This section just activates them; there's no new code to write.
+
+**Deliberate scope note**: these backups live on the same VPS as the app. That protects against bad migrations, accidental deletes, and app-level data corruption — it does **not** protect against the VPS's disk failing or the whole machine being lost, since the backups would go down with it. Off-site replication (e.g. syncing the encrypted `.enc` files to S3/Backblaze B2, or another machine) was deliberately left out of this pass; the files are already encrypted, so adding a second upload target later is a small, low-risk follow-up whenever you want it — worth revisiting once the app is live.
+
+1. Confirm `BACKUP_ENCRYPTION_KEY` is in the production `.env` (Section 3 already had you generate it — this is the only required variable; `BACKUP_DIR` and `BACKUP_RETENTION_DAYS` are optional overrides, defaulting to `$HOME/book4beauty-backups` and 7 days).
+2. The scripts are already executable in git (`scripts/backup_db.sh`, `scripts/restore_db.sh` — no `chmod` needed on a fresh clone).
+3. Add the daily cron entry:
+   ```bash
+   crontab -e
+   ```
+   ```cron
+   30 23 * * * cd /opt/book4beauty && ./scripts/backup_db.sh >> /home/deploy/book4beauty-backups/backup.log 2>&1
+   ```
+   (Adjust the log path if you're not using the `deploy` user, or if you set a custom `BACKUP_DIR`.)
+4. Run it once by hand to confirm it actually works, rather than waiting until 23:30 to find out:
+   ```bash
+   cd /opt/book4beauty && ./scripts/backup_db.sh
+   ls -la ~/book4beauty-backups/
+   ```
+5. **Rehearse the restore once now**, against this fresh backup, while it's low-stakes — not for the first time during an actual emergency:
+   ```bash
+   ./scripts/restore_db.sh ~/book4beauty-backups/book4beauty_<timestamp>.sql.gz.enc
+   ```
+6. Point an external uptime monitor at `https://your-domain.com/health` (UptimeRobot, Better Uptime, or similar — pick whichever you're comfortable with; none is wired up by default). This is the only piece of this whole setup that needs an account outside the VPS itself.
+
+---
+
 ## Ongoing operations
 
 **Deploying an update:**
@@ -282,6 +321,25 @@ cd /opt/book4beauty
 git pull
 docker compose up -d --build
 ```
+
+**Connecting with pgAdmin** (through an SSH tunnel). The database is
+published on the VPS at `127.0.0.1:5432` only (`docker-compose.yml`, db
+service), so it can't be reached from the internet, only from the VPS itself.
+pgAdmin reaches it through SSH:
+1. After pulling this change, recreate the db container once so the port is
+   published: `docker compose up -d db` (the data stays in the `pgdata` volume).
+2. In pgAdmin, Register → Server:
+   - **Connection** tab: Host `127.0.0.1`, Port `5432`, Maintenance database
+     = `POSTGRES_DB` from the VPS `.env`, Username `postgres`, Password =
+     `POSTGRES_PASSWORD` from the VPS `.env`.
+   - **SSH Tunnel** tab: Use SSH tunneling = on, Tunnel host = the VPS address,
+     Tunnel port `22`, Username = your SSH user on the VPS, Authentication =
+     your SSH key (identity file) or password.
+3. Check from the VPS that the port is local only:
+   `ss -ltnp | grep 5432` should show `127.0.0.1:5432`, never `0.0.0.0:5432`.
+
+The `postgres` login can change anything. Use pgAdmin for looking, and run
+data fixes as reviewed scripts with a preview first (`BEGIN … ROLLBACK`).
 
 **Logs:**
 ```bash

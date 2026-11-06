@@ -1,14 +1,20 @@
 import { defineStore } from "pinia";
+import { api } from "../api/http";
+import { readSavedJson } from "../utils/savedLogin";
 import { ref, watch } from "vue";
 
 export const useSettingsStore = defineStore("settings", () => {
-  const user = JSON.parse(localStorage.getItem("user") || "null");
+  const user = readSavedJson("user");
   const isStaff = user?.role === "staff";
 
-  const savedFilter = localStorage.getItem("scheduler_resource_filter");
-  const resourceFilter = ref<"all" | "me">(
-    isStaff ? "me" : (savedFilter as "all" | "me") || "all",
-  );
+  // "me" is currently only ever a deliberate choice for the "staff" role —
+  // the UI has no way for any other role to select it (ColorModelToggle only
+  // renders for staff; see below). Reading a saved value for non-staff roles
+  // let a stale "me" from an earlier staff login on a shared/reception
+  // device silently carry over into e.g. a frontdesk session, whose own
+  // staff profile is deliberately hidden from the calendar — leaving them
+  // with an empty schedule. Non-staff always start on "all".
+  const resourceFilter = ref<"all" | "me">(isStaff ? "me" : "all");
 
   const setResourceFilter = (mode: "all" | "me") => {
     if (isStaff) return;
@@ -34,6 +40,24 @@ export const useSettingsStore = defineStore("settings", () => {
     localStorage.setItem("hideCashPaid", String(newVal));
   });
 
+  // Persisted, shop-wide Ctrl+1 lock (set by an admin or super_admin's
+  // Ctrl+1, or by "Disconnect all users") — unlike hideCashPaid/hideCardPaid
+  // above, this isn't something the user chose; it applies from the very
+  // first render on any device, seeded from the user object the login
+  // response already carries. cashLockedByRole records WHICH tier owns the
+  // lock ('admin' | 'super_admin' | null) — an admin's lock can be released
+  // by any admin or a super_admin, but a super_admin's lock is exclusive to
+  // super_admin (mirrors canUnlockCashFilter in server.js).
+  const cashLockedByShop = ref(!!user?.shop_force_hide_cash);
+  const cashLockedByRole = ref<string | null>(user?.shop_force_hide_cash_locked_by || null);
+  if (cashLockedByShop.value) hideCashPaid.value = true;
+
+  const setCashLockedByShop = (locked: boolean, lockedByRole: string | null = null) => {
+    cashLockedByShop.value = locked;
+    cashLockedByRole.value = locked ? lockedByRole : null;
+    if (locked) hideCashPaid.value = true;
+  };
+
   // Ctrl+8 "hide card-paid revenue" macro — independent of the cash one, same mechanics.
   const hideCardPaid = ref(localStorage.getItem("hideCardPaid") === "true");
 
@@ -58,11 +82,8 @@ export const useSettingsStore = defineStore("settings", () => {
     if (shopSettings.value && !force) return shopSettings.value;
     if (shopSettingsPromise) return shopSettingsPromise;
 
-    const token = localStorage.getItem("token");
-    shopSettingsPromise = fetch("/api/v1/shop", {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((res) => res.json())
+    shopSettingsPromise = api
+      .get("/api/v1/shop")
       .then((data) => {
         shopSettings.value = data;
         return data;
@@ -79,11 +100,15 @@ export const useSettingsStore = defineStore("settings", () => {
   };
 
   return {
+    isStaff,
     resourceFilter,
     setResourceFilter,
     hideCashPaid,
     setHideCashPaid,
     toggleHideCashPaid,
+    cashLockedByShop,
+    cashLockedByRole,
+    setCashLockedByShop,
     hideCardPaid,
     setHideCardPaid,
     toggleHideCardPaid,

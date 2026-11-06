@@ -1,22 +1,42 @@
 import { createRouter, createWebHistory } from "vue-router";
+import { defineAsyncComponent, defineComponent, h } from "vue";
 import { useAuthStore } from "../stores/auth";
 
 // Views — landing/login stay eager (first paint), the rest are lazy-loaded chunks
 import Layout from "../components/Layout.vue";
 import IndexView from "../views/IndexView.vue";
+import SensitiveGate from "../components/SensitiveGate.vue";
 import LoginView from "../views/LoginView.vue";
 const SchedulerView = () => import("../views/SchedulerView.vue");
 const StaffView = () => import("../views/StaffView.vue");
+const StaffScheduleView = () => import("../views/StaffScheduleView.vue");
 const ClientsView = () => import("../views/ClientsView.vue");
 const ServicesView = () => import("../views/ServicesView.vue");
 const ProductsView = () => import("../views/ProductsView.vue");
 const GiftCardsView = () => import("../views/GiftCardsView.vue");
-const FinancialsView = () => import("../components/FinancialsView.vue");
+// Opens only after the password is retyped, every time; the page itself (and
+// its requests) doesn't start before that.
+const sensitive = (load: () => Promise<any>) => {
+  const Page = defineAsyncComponent(load);
+  return defineComponent({ render: () => h(SensitiveGate, null, { default: () => h(Page) }) });
+};
+const FinancialsView = sensitive(() => import("../components/FinancialsView.vue"));
 const profileView = () => import("../views/profileView.vue");
-const ClientPortalView = () => import("../views/ClientPortalView.vue");
+const ClientLayout = () => import("../components/ClientLayout.vue");
+const ClientHomeView = () => import("../views/portal/ClientHomeView.vue");
+const ClientAppointmentsView = () =>
+  import("../views/portal/ClientAppointmentsView.vue");
+const ClientMoreView = () => import("../views/portal/ClientMoreView.vue");
 const SignupView = () => import("../views/SignupView.vue");
 const ShopsView = () => import("../views/ShopsView.vue");
+const MembershipTiersView = () => import("../views/MembershipTiersView.vue");
+const DailyReportView = () => import("../views/DailyReportView.vue");
+const PackageTypesView = () => import("../views/PackageTypesView.vue");
+const ExpensesView = () => import("../views/ExpensesView.vue");
+const MembershipReportView = sensitive(() => import("../views/MembershipReportView.vue"));
+const QrScannerView = () => import("../views/QrScannerView.vue");
 const DemoRequestsView = () => import("../views/DemoRequestsView.vue");
+const ProductUsageView = sensitive(() => import("../views/ProductUsageView.vue"));
 
 const routes = [
   {
@@ -39,26 +59,48 @@ const routes = [
         component: SignupView,
       },
       {
-        path: "/portal",
-        name: "ClientPortal",
-        component: ClientPortalView,
-        meta: { requiresAuth: true, role: "client" },
-      },
-      {
         path: "app", // Εσωτερικές σελίδες
         meta: { requiresAuth: true },
         children: [
           { path: "scheduler", component: SchedulerView },
           { path: "staff", component: StaffView },
+          { path: "staff-schedule", component: StaffScheduleView },
           { path: "clients", component: ClientsView },
           { path: "services", component: ServicesView },
           { path: "products", component: ProductsView },
+          {
+            path: "product-usage",
+            component: ProductUsageView,
+            meta: { requiresAnalytics: true },
+          },
           { path: "gift-cards", component: GiftCardsView },
           {
             path: "financials",
             component: FinancialsView,
             meta: { requiresAnalytics: true },
           },
+          {
+            path: "membership-tiers",
+            component: MembershipTiersView,
+            meta: { requiresShopAdmin: true },
+          },
+          { path: "daily-report", component: DailyReportView },
+          {
+            path: "expenses",
+            component: ExpensesView,
+            meta: { requiresShopAdmin: true },
+          },
+          {
+            path: "packages",
+            component: PackageTypesView,
+            meta: { requiresShopAdmin: true },
+          },
+          {
+            path: "membership-report",
+            component: MembershipReportView,
+            meta: { requiresAnalytics: true },
+          },
+          { path: "qr-scanner", component: QrScannerView },
           {
             path: "platform/shops",
             component: ShopsView,
@@ -74,6 +116,21 @@ const routes = [
       },
     ],
   },
+  {
+    path: "/portal",
+    component: ClientLayout,
+    meta: { requiresAuth: true, role: "client" },
+    children: [
+      { path: "", redirect: "/portal/home" },
+      { path: "home", name: "ClientHome", component: ClientHomeView },
+      {
+        path: "appointments",
+        name: "ClientAppointments",
+        component: ClientAppointmentsView,
+      },
+      { path: "more", name: "ClientMore", component: ClientMoreView },
+    ],
+  },
   // Redirects για να μη σπάνε τα παλιά links - ΠΡΟΣΟΧΗ ΣΤΑ "/"
   { path: "/scheduler", redirect: "/app/scheduler" },
   { path: "/staff", redirect: "/app/staff" },
@@ -83,6 +140,9 @@ const routes = [
   { path: "/financials", redirect: "/app/financials" },
   { path: "/profile", redirect: "/app/profile" },
 ];
+
+// The only pages of the staff app a plain "staff" login may open.
+const STAFF_PAGES = ["/app/scheduler", "/app/profile"];
 
 const router = createRouter({
   history: createWebHistory(),
@@ -97,14 +157,23 @@ router.beforeEach((to, from, next) => {
   }
 
   if (to.path === "/login" && authStore.isAuthenticated) {
-    return authStore.isClient ? next("/portal") : next("/app/scheduler");
+    if (authStore.isClient) return next("/portal/home");
+    return next(authStore.isOwner ? "/app/platform/shops" : "/app/scheduler");
   }
 
   if (to.path.startsWith("/app") && authStore.isClient) {
-    return next("/portal");
+    return next("/portal/home");
+  }
+
+  if (authStore.user?.role === "staff" && to.path.startsWith("/app") && !STAFF_PAGES.includes(to.path)) {
+    return next("/app/scheduler");
   }
 
   if (to.meta.requiresAnalytics && !authStore.isAnalyticsAllowed) {
+    return next("/app/scheduler");
+  }
+
+  if (to.meta.requiresShopAdmin && !authStore.isShopAdmin) {
     return next("/app/scheduler");
   }
 
@@ -113,7 +182,7 @@ router.beforeEach((to, from, next) => {
   }
 
   if (
-    to.path === "/portal" &&
+    to.path.startsWith("/portal") &&
     !authStore.isClient &&
     authStore.isAuthenticated
   ) {

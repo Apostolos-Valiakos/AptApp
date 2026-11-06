@@ -2,7 +2,7 @@
   <Dialog
     v-model:visible="isVisible"
     modal
-    header="Client Profile"
+    :header="t('clientProfile.header')"
     :style="{ width: '800px', maxWidth: '95vw', maxHeight: '100%' }"
     :draggable="false"
     class="client-profile-dialog"
@@ -31,11 +31,11 @@
           >
             <span
               ><i class="pi pi-phone mr-1"></i>
-              {{ clientData.phone || "No Phone" }}</span
+              {{ clientData.phone || t('clientProfile.noPhone') }}</span
             >
             <span
               ><i class="pi pi-envelope mr-1"></i>
-              {{ clientData.email || "No Email" }}</span
+              {{ clientData.email || t('clientProfile.noEmail') }}</span
             >
           </div>
         </div>
@@ -44,7 +44,7 @@
           v-if="isShopAdmin"
         >
           <div class="text-xs text-gray-500 uppercase tracking-wider font-bold">
-            Balance
+            {{ t('clientProfile.balance') }}
           </div>
           <div
             class="text-2xl font-bold"
@@ -54,14 +54,14 @@
                 : 'text-green-600'
             "
           >
-            €{{ Number(clientData.outstanding_balance || 0).toFixed(2) }}
+            {{ formatMoney(clientData.outstanding_balance || 0) }}
           </div>
         </div>
       </div>
 
       <div class="flex gap-6 border-b border-gray-200 mb-6 overflow-x-auto">
         <button
-          v-for="tab in ['Info', 'Αρχεία', 'History']"
+          v-for="tab in ['Info', 'Files', 'History', 'Membership', 'Packages']"
           :key="tab"
           @click="activeTab = tab"
           class="pb-2 px-1 text-sm font-medium transition-colors border-b-2 whitespace-nowrap"
@@ -71,28 +71,37 @@
               : 'border-transparent text-gray-500 hover:text-gray-700'
           "
         >
-          {{ tab }}
+          {{ t(`clientProfile.tabs.${tab}`) }}
         </button>
       </div>
 
       <div class="flex-grow overflow-y-auto pr-2 pb-4">
         <div v-if="activeTab === 'Info'" class="space-y-4">
+          <!-- The walk-in client stands for "no specific client"; its name
+               and contact details are locked (the server refuses changes). -->
+          <div
+            v-if="clientData.is_walk_in"
+            class="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-800"
+          >
+            <i class="pi pi-lock text-xs mt-1"></i>
+            <span>{{ t("clientProfile.walkInLocked") }}</span>
+          </div>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label
                 class="block text-xs font-bold text-gray-500 uppercase mb-1"
               >
-                First Name
+                {{ t('clientProfile.info.firstName') }}
               </label>
-              <InputText v-model="editForm.first_name" class="w-full" />
+              <InputText v-model="editForm.first_name" class="w-full" :disabled="clientData.is_walk_in" />
             </div>
             <div>
               <label
                 class="block text-xs font-bold text-gray-500 uppercase mb-1"
               >
-                Last Name
+                {{ t('clientProfile.info.lastName') }}
               </label>
-              <InputText v-model="editForm.last_name" class="w-full" />
+              <InputText v-model="editForm.last_name" class="w-full" :disabled="clientData.is_walk_in" />
             </div>
           </div>
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -100,23 +109,23 @@
               <label
                 class="block text-xs font-bold text-gray-500 uppercase mb-1"
               >
-                Email
+                {{ t('clientProfile.info.email') }}
               </label>
-              <InputText v-model="editForm.email" class="w-full" />
+              <InputText v-model="editForm.email" class="w-full" :disabled="clientData.is_walk_in" />
             </div>
             <div>
               <label
                 class="block text-xs font-bold text-gray-500 uppercase mb-1"
               >
-                Phone
+                {{ t('clientProfile.info.phone') }}
               </label>
-              <InputText v-model="editForm.phone" class="w-full" />
+              <InputText v-model="editForm.phone" class="w-full" :disabled="clientData.is_walk_in" />
             </div>
             <div>
               <label
                 class="block text-xs font-bold text-gray-500 uppercase mb-1"
               >
-                Date of Birth
+                {{ t('clientProfile.info.dateOfBirth') }}
               </label>
               <Calendar
                 v-model="editForm.date_of_birth"
@@ -128,14 +137,14 @@
           </div>
           <div>
             <label class="block text-xs font-bold text-gray-500 uppercase mb-1">
-              Notes
+              {{ t('clientProfile.info.notes') }}
             </label>
             <Textarea v-model="editForm.notes" rows="3" class="w-full" />
           </div>
           <div class="bg-gray-50 p-4 rounded-lg border border-gray-100">
             <div class="flex justify-between items-center mb-2">
               <span class="text-xs font-bold text-gray-500 uppercase"
-                >Additional Details</span
+                >{{ t('clientProfile.info.additionalDetails') }}</span
               >
               <Button
                 icon="pi pi-plus"
@@ -149,7 +158,7 @@
               v-if="editForm.custom_fields.length === 0"
               class="text-center py-4 text-gray-400 text-sm italic"
             >
-              No additional details added.
+              {{ t('clientProfile.info.noAdditionalDetails') }}
             </div>
 
             <div
@@ -160,14 +169,14 @@
               <div class="w-full sm:w-1/3">
                 <InputText
                   v-model="field.title"
-                  placeholder="Label"
+                  :placeholder="t('clientProfile.info.labelPlaceholder')"
                   class="w-full font-bold p-inputtext-sm bg-white"
                 />
               </div>
               <div class="flex-grow flex gap-2">
                 <InputText
                   v-model="field.value"
-                  placeholder="Value"
+                  :placeholder="t('clientProfile.info.valuePlaceholder')"
                   class="w-full p-inputtext-sm"
                 />
                 <Button
@@ -181,7 +190,7 @@
 
           <div class="pt-4 flex justify-end">
             <Button
-              label="Save Changes"
+              :label="t('clientProfile.info.saveChanges')"
               icon="pi pi-check"
               @click="saveClientInfo"
               :loading="saving"
@@ -195,7 +204,7 @@
             v-if="visibleHistory.length === 0"
             class="text-center text-gray-400 py-8"
           >
-            No appointment history found.
+            {{ t('clientProfile.history.empty') }}
           </div>
           <div
             v-for="appt in visibleHistory"
@@ -213,7 +222,10 @@
                 }}</span>
               </div>
               <div class="text-sm text-gray-600 mt-1">
-                {{ appt.service_names || "No Services" }}
+                {{ appt.service_names || t('clientProfile.history.noServices') }}
+              </div>
+              <div v-if="appt.staff_names" class="text-xs text-gray-400 mt-0.5">
+                {{ appt.staff_names }}
               </div>
             </div>
             <div
@@ -223,23 +235,118 @@
                 class="text-xs px-2 py-0.5 rounded uppercase font-bold mr-2"
                 :class="getStatusColor(appt.status)"
               >
-                {{ appt.status }}
+                {{ t(`common.status.${statusKey(appt.status)}`) }}
               </span>
               <span class="font-bold">
-                €{{
-                  (
-                    Number(appt.total_service_price || 0) +
-                    Number(appt.total_product_price || 0)
-                  ).toFixed(2)
-                }}
+                {{ formatMoney(Number(appt.total_service_price || 0) + Number(appt.total_product_price || 0)) }}
               </span>
             </div>
           </div>
         </div>
-        <div v-if="activeTab === 'Αρχεία'" class="space-y-4">
+        <div v-if="activeTab === 'Packages'">
+          <ClientPackagesPanel :clientId="clientId" />
+        </div>
+        <div v-if="activeTab === 'Membership'" class="space-y-4">
+          <div v-if="membershipLoading" class="text-center py-8">
+            <i class="pi pi-spin pi-spinner text-2xl text-gray-400"></i>
+          </div>
+
+          <template v-else>
+            <div v-if="membership" class="space-y-4">
+              <div class="flex justify-between items-center p-4 bg-gray-50 rounded-lg border border-gray-100">
+                <div>
+                  <div class="font-bold text-gray-900">{{ membership.tier_name }}</div>
+                  <span
+                    class="text-xs px-2 py-0.5 rounded uppercase font-bold mt-1 inline-block"
+                    :class="membershipStatusClass(membership.status)"
+                  >
+                    {{ t(`clientProfile.membership.status.${membership.status}`) }}
+                  </span>
+                </div>
+                <div class="text-right text-sm text-gray-500">
+                  {{ t('clientProfile.membership.renewsOn') }}<br />
+                  <span class="font-bold text-gray-900">{{ new Date(membership.current_period_end).toLocaleDateString("en-GB") }}</span>
+                </div>
+              </div>
+
+              <div v-if="membershipUsage.length" class="space-y-2">
+                <div
+                  v-for="u in membershipUsage"
+                  :key="u.service_id"
+                  class="flex justify-between items-center text-sm p-2 border-b border-gray-50 last:border-0"
+                >
+                  <span class="text-gray-700">{{ u.service_name }}</span>
+                  <span class="font-medium text-gray-900">
+                    {{
+                      u.quota_per_month === null
+                        ? t('clientProfile.membership.usedUnlimited', { used: u.used_this_month })
+                        : t('clientProfile.membership.usedOfQuota', { used: u.used_this_month, quota: u.quota_per_month })
+                    }}
+                  </span>
+                </div>
+              </div>
+
+              <div v-if="isShopAdmin" class="flex flex-wrap gap-2 pt-2">
+                <Button :label="t('clientProfile.membership.renew')" size="small" @click="renewMembership" :loading="membershipActionLoading" />
+                <Button :label="t('clientProfile.membership.changeTier')" size="small" text @click="showAssignMembership = !showAssignMembership" />
+                <Button :label="t('clientProfile.membership.cancelMembership')" size="small" severity="danger" text @click="confirmCancelMembership" />
+              </div>
+            </div>
+
+            <div v-else class="text-center text-gray-400 py-8">
+              {{ t('clientProfile.membership.noActive') }}
+            </div>
+
+            <div v-if="isShopAdmin && (!membership || showAssignMembership)" class="border-t border-gray-100 pt-4 space-y-3">
+              <h4 class="text-sm font-bold text-gray-700">{{ membership ? t('clientProfile.membership.changeTier') : t('clientProfile.membership.assignTitle') }}</h4>
+              <Dropdown
+                v-model="assignForm.tier_id"
+                :options="allTiers"
+                optionLabel="name"
+                optionValue="id"
+                :placeholder="t('clientProfile.membership.selectTier')"
+                class="w-full"
+              />
+              <Dropdown
+                v-model="assignForm.billing_cycle"
+                :options="[
+                  { label: t('common.billingCycle.monthly'), value: 'monthly' },
+                  { label: t('common.billingCycle.yearly'), value: 'yearly' },
+                ]"
+                optionLabel="label"
+                optionValue="value"
+                class="w-full"
+              />
+              <Dropdown
+                v-model="assignForm.payment_method"
+                :options="MONEY_METHODS"
+                :placeholder="t('clientProfile.membership.paymentMethod')"
+                class="w-full"
+              >
+                <template #value="slotProps">
+                  {{ slotProps.value ? methodChoiceLabel(t, slotProps.value) : "" }}
+                </template>
+                <template #option="slotProps">
+                  {{ methodChoiceLabel(t, slotProps.option) }}
+                </template>
+              </Dropdown>
+              <div class="flex gap-2">
+                <Button
+                  :label="t('common.confirm')"
+                  size="small"
+                  @click="assignMembership"
+                  :loading="membershipActionLoading"
+                  :disabled="!assignForm.tier_id"
+                />
+                <Button v-if="showAssignMembership" :label="t('common.cancel')" size="small" text @click="showAssignMembership = false" />
+              </div>
+            </div>
+          </template>
+        </div>
+        <div v-if="activeTab === 'Files'" class="space-y-4">
           <div
             class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:bg-gray-50 transition-colors cursor-pointer"
-            @click="$refs.fileInput.click()"
+            @click="fileInput?.click()"
           >
             <input
               type="file"
@@ -250,14 +357,14 @@
             <div v-if="!uploading">
               <i class="pi pi-cloud-upload text-3xl text-gray-400"></i>
               <p class="text-sm text-gray-600 font-medium">
-                Click to upload documents
+                {{ t('clientProfile.files.uploadPrompt') }}
               </p>
-              <p class="text-xs text-gray-400 mt-1">Max 5MB per file</p>
-              <Button label="Select File" size="small" class="mt-1" />
+              <p class="text-xs text-gray-400 mt-1">{{ t('clientProfile.files.maxSize') }}</p>
+              <Button :label="t('clientProfile.files.selectFile')" size="small" class="mt-1" />
             </div>
             <div v-else>
               <i class="pi pi-spin pi-spinner text-2xl text-indigo-600"></i>
-              <p class="text-sm text-indigo-600 mt-2">Uploading...</p>
+              <p class="text-sm text-indigo-600 mt-2">{{ t('clientProfile.files.uploading') }}</p>
             </div>
           </div>
 
@@ -284,19 +391,18 @@
                 </div>
               </div>
               <div class="flex gap-1">
-                <a
+                <Button
                   v-if="isShopAdmin"
-                  :href="`/api/v1/clients/files/${file.id}?token=${token}`"
-                  target="_blank"
-                  class="p-button p-component p-button-icon-only p-button-text p-button-rounded p-button-secondary"
-                >
-                  <span class="pi pi-download"></span>
-                </a>
+                  icon="pi pi-download"
+                  class="p-button-text p-button-secondary p-button-rounded"
+                  :loading="downloadingFileId === file.id"
+                  @click="downloadFile(file)"
+                />
                 <Button
                   icon="pi pi-eye"
                   class="p-button-text p-button-secondary p-button-rounded"
                   @click="viewFile(file)"
-                  v-tooltip="'View in new tab'"
+                  v-tooltip="t('clientProfile.files.viewInNewTab')"
                   :loading="viewingFileId === file.id"
                 />
                 <Button
@@ -316,12 +422,19 @@
 </template>
 
 <script setup lang="ts">
+import { MONEY_METHODS, methodChoiceLabel } from "../utils/paymentMethods";
+import { api, ApiError, ifRefused, saveBlob, withMessage } from "../api/http";
+import { formatMoney } from "../utils/format";
 import { ref, watch, computed } from "vue";
+import ClientPackagesPanel from "./ClientPackagesPanel.vue";
 import { useAuthStore } from "../stores/auth";
 import { useSettingsStore } from "../stores/settings";
+import { fullyHidden, hiddenAmount } from "../utils/paymentFilters";
 import { storeToRefs } from "pinia";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
+import { useI18n } from "vue-i18n";
+const { t } = useI18n();
 const authStore = useAuthStore();
 const toast = useToast();
 const confirm = useConfirm();
@@ -329,7 +442,7 @@ const isShopAdmin = authStore.isShopAdmin;
 const settingsStore = useSettingsStore();
 const { shopSettings } = storeToRefs(settingsStore);
 
-const props = defineProps(["visible", "clientId"]);
+const props = defineProps(["visible", "clientId", "initialTab"]);
 const emit = defineEmits(["update:visible", "refresh"]);
 
 const isVisible = computed({
@@ -337,7 +450,6 @@ const isVisible = computed({
   set: (val) => emit("update:visible", val),
 });
 
-const token = localStorage.getItem("token");
 const activeTab = ref("Info");
 const loading = ref(false);
 const saving = ref(false);
@@ -346,7 +458,7 @@ const clientData = ref<any>(null);
 const history = ref<any[]>([]);
 const files = ref<any[]>([]);
 const editForm = ref<any>({});
-const fileInput = ref<any>(null);
+const fileInput = ref<HTMLInputElement | null>(null);
 const viewingFileId = ref<number | null>(null); // Track which file is loading
 
 // Computed property for the Avatar initials
@@ -357,14 +469,26 @@ const initials = computed(() => {
   return `${f}${l}`.toUpperCase();
 });
 
-const visibleHistory = computed(() => {
-  return history.value.filter((a) => {
-    // Cash/card revenue-hiding macros disabled.
-    // if (settingsStore.hideCashPaid && a.payment_status === "paid" && a.payment_method === "cash") return false;
-    // if (settingsStore.hideCardPaid && a.payment_status === "paid" && a.payment_method === "card") return false;
-    return true;
-  });
-});
+// The cash and card filters hide the services paid that way, or part of one;
+// a visit left with none is hidden, and its money shown leaves that out.
+const visibleHistory = computed(() =>
+  history.value
+    .map((a) => {
+      const services = a.services_paid || [];
+      const hiddenCost = services.reduce((n: number, x: any) => n + hiddenAmount(x.hidden, settingsStore), 0);
+      if (!hiddenCost) return a;
+      const shown = services.filter((x: any) => !fullyHidden(x.charged, x.hidden, settingsStore));
+      if (!shown.length) return null;
+      return {
+        ...a,
+        service_names: shown.map((x: any) => x.name).join(", "),
+        staff_names: [...new Set(shown.map((x: any) => x.staff).filter(Boolean))].join(", "),
+        total_service_price: Number(a.total_service_price || 0) - hiddenCost,
+        deposit_amount: Math.max(0, Number(a.deposit_amount || 0) - hiddenCost),
+      };
+    })
+    .filter(Boolean),
+);
 
 const attendanceRate = computed(() => {
   if (!history.value || history.value.length === 0) return 0;
@@ -407,10 +531,7 @@ const fetchClientData = async () => {
   if (!props.clientId) return;
   loading.value = true;
   try {
-    const res = await fetch(`/api/v1/clients/${props.clientId}/full`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const data = await res.json();
+    const data = await api.get(`/api/v1/clients/${props.clientId}/full`);
     clientData.value = data.client;
     history.value = data.history;
     files.value = data.files;
@@ -425,12 +546,99 @@ const fetchClientData = async () => {
     loading.value = false;
   }
 };
+
+// --- Membership ---
+const membership = ref<any>(null);
+const membershipUsage = ref<any[]>([]);
+const membershipLoading = ref(false);
+const membershipActionLoading = ref(false);
+const allTiers = ref<any[]>([]);
+const showAssignMembership = ref(false);
+const assignForm = ref<any>({ tier_id: null, billing_cycle: "monthly", payment_method: "cash" });
+
+const membershipStatusClass = (status: string) => {
+  if (status === "active") return "bg-green-100 text-green-700";
+  if (status === "expired" || status === "cancelled") return "bg-red-100 text-red-700";
+  return "bg-gray-100 text-gray-600";
+};
+
+const fetchMembership = async () => {
+  if (!props.clientId) return;
+  membershipLoading.value = true;
+  try {
+    const data = await api.get(`/api/v1/clients/${props.clientId}/membership`);
+    membership.value = data.membership;
+    membershipUsage.value = data.usage || [];
+    showAssignMembership.value = false;
+  } finally {
+    membershipLoading.value = false;
+  }
+};
+
+const fetchAllTiers = async () => {
+  const tiers = await api.get("/api/v1/membership-tiers").catch(ifRefused(null));
+  if (tiers) allTiers.value = tiers.filter((t: any) => t.is_active);
+};
+
+const assignMembership = async () => {
+  if (!assignForm.value.tier_id) return;
+  membershipActionLoading.value = true;
+  try {
+    await api
+      .post(`/api/v1/clients/${props.clientId}/membership`, assignForm.value)
+      .catch(withMessage(t('clientProfile.membership.toasts.assignFailed')));
+    toast.add({ severity: "success", summary: t('clientProfile.membership.toasts.assigned'), life: 3000 });
+    await fetchMembership();
+  } catch (e: any) {
+    toast.add({ severity: "error", summary: t('common.error'), detail: e.message, life: 4000 });
+  } finally {
+    membershipActionLoading.value = false;
+  }
+};
+
+const renewMembership = async () => {
+  membershipActionLoading.value = true;
+  try {
+    await api
+      .post(`/api/v1/clients/${props.clientId}/membership/renew`, { payment_method: "cash" })
+      .catch(withMessage(t('clientProfile.membership.toasts.renewFailed')));
+    toast.add({ severity: "success", summary: t('clientProfile.membership.toasts.renewed'), life: 3000 });
+    await fetchMembership();
+  } catch (e: any) {
+    toast.add({ severity: "error", summary: t('common.error'), detail: e.message, life: 4000 });
+  } finally {
+    membershipActionLoading.value = false;
+  }
+};
+
+const confirmCancelMembership = () => {
+  confirm.require({
+    message: t('clientProfile.membership.cancelConfirmMessage'),
+    header: t('clientProfile.membership.cancelMembership'),
+    icon: "pi pi-exclamation-triangle",
+    acceptClass: "p-button-danger",
+    accept: async () => {
+      try {
+        await api.del(`/api/v1/clients/${props.clientId}/membership`).catch((e) => {
+          throw e instanceof ApiError ? new Error(t('clientProfile.membership.toasts.cancelFailed')) : e;
+        });
+        toast.add({ severity: "success", summary: t('clientProfile.membership.toasts.cancelled'), life: 3000 });
+        await fetchMembership();
+      } catch (e: any) {
+        toast.add({ severity: "error", summary: t('common.error'), detail: e.message, life: 4000 });
+      }
+    },
+  });
+};
+
 watch(
   () => props.visible,
   (val) => {
     if (val && props.clientId) {
-      activeTab.value = "Info";
+      activeTab.value = props.initialTab || "Info";
       fetchClientData();
+      fetchMembership();
+      fetchAllTiers();
       settingsStore.fetchShopSettings();
     }
   },
@@ -450,15 +658,15 @@ const saveClientInfo = async () => {
       payload.date_of_birth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     }
 
-    const res = await fetch(`/api/v1/clients/${props.clientId}`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(payload),
-    });
-    if (res.ok) {
+    const saved = await api
+      .put(`/api/v1/clients/${props.clientId}`, payload)
+      .then(() => true)
+      .catch((e) => {
+        if (!(e instanceof ApiError)) throw e;
+        if (e.status === 409) toast.add({ severity: "warn", summary: t("clientProfile.walkInLocked"), life: 6000 });
+        return false;
+      });
+    if (saved) {
       clientData.value = { ...clientData.value, ...payload };
       emit("refresh");
     }
@@ -476,18 +684,17 @@ const handleFileUpload = async (event: any) => {
   formData.append("file", file);
 
   try {
-    const res = await fetch(`/api/v1/clients/${props.clientId}/files`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-      body: formData,
-    });
-    if (res.ok) {
+    const uploaded = await api
+      .upload(`/api/v1/clients/${props.clientId}/files`, formData)
+      .then(() => true)
+      .catch(ifRefused(false));
+    if (uploaded) {
       await fetchClientData();
     } else {
       toast.add({
         severity: "error",
-        summary: "Upload Failed",
-        detail: "File upload failed. Ensure it is under 5MB.",
+        summary: t('clientProfile.files.uploadFailedSummary'),
+        detail: t('clientProfile.files.uploadFailedDetail'),
         life: 4000,
       });
     }
@@ -500,23 +707,19 @@ const handleFileUpload = async (event: any) => {
 const deleteFile = (fileId: number) => {
   confirm.require({
     group: "clientProfileFile",
-    message: "Delete this file?",
-    header: "Confirm Delete",
+    message: t('clientProfile.files.deleteConfirmMessage'),
+    header: t('clientProfile.files.deleteConfirmHeader'),
     icon: "pi pi-exclamation-triangle",
     acceptClass: "p-button-danger",
     accept: async () => {
       try {
-        const res = await fetch(`/api/v1/clients/files/${fileId}`, {
-          method: "DELETE",
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) throw new Error("Request failed");
+        await api.del(`/api/v1/clients/files/${fileId}`);
         files.value = files.value.filter((f: any) => f.id !== fileId);
       } catch (e) {
         toast.add({
           severity: "error",
-          summary: "Delete Failed",
-          detail: "Could not delete the file. Please try again.",
+          summary: t('clientProfile.files.deleteFailedSummary'),
+          detail: t('clientProfile.files.deleteFailedDetail'),
           life: 4000,
         });
       }
@@ -536,6 +739,12 @@ const getFileIcon = (type: string) => {
   return "pi-file";
 };
 
+const STATUS_KEYS: Record<string, string> = {
+  new: "new", confirmed: "confirmed", started: "started", arrived: "arrived",
+  completed: "completed", cancelled: "cancelled", "no-show": "noShow", "no-response": "noResponse",
+};
+const statusKey = (s: string) => STATUS_KEYS[s] || s;
+
 const getStatusColor = (s: string) => {
   const map: any = {
     new: "bg-blue-100 text-blue-800",
@@ -543,19 +752,33 @@ const getStatusColor = (s: string) => {
     completed: "bg-green-100 text-green-800",
     cancelled: "bg-red-100 text-red-800",
     "no-show": "bg-red-200 text-red-900",
+    "no-response": "bg-amber-100 text-amber-800",
   };
   return map[s] || "bg-gray-100";
 };
+// Downloads a file under its own name, with the login in the request header
+// (not ?token= in a link).
+const downloadingFileId = ref<any>(null);
+const downloadFile = async (file: any) => {
+  downloadingFileId.value = file.id;
+  try {
+    saveBlob(await api.blob(`/api/v1/clients/files/${file.id}`), file.file_name || "file");
+  } catch {
+    toast.add({
+      severity: "error",
+      summary: t('clientProfile.files.previewFailedSummary'),
+      detail: t('clientProfile.files.previewFailedDetail'),
+      life: 3000,
+    });
+  } finally {
+    downloadingFileId.value = null;
+  }
+};
+
 const viewFile = async (file: any) => {
   viewingFileId.value = file.id;
   try {
-    const response = await fetch(`/api/v1/clients/files/${file.id}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    if (!response.ok) throw new Error("Failed to fetch file");
-
-    const blob = await response.blob();
+    const blob = await api.blob(`/api/v1/clients/files/${file.id}`);
     const fileType = file.file_type || "application/pdf";
     const newBlob = new Blob([blob], { type: fileType });
 
@@ -564,14 +787,15 @@ const viewFile = async (file: any) => {
     // Open the tab
     window.open(blobUrl, "_blank");
 
+    // Kept a minute: freed after 100 ms, a slow tab could find it gone.
     setTimeout(() => {
       window.URL.revokeObjectURL(blobUrl);
-    }, 100);
+    }, 60000);
   } catch (err) {
     toast.add({
       severity: "error",
-      summary: "Preview Failed",
-      detail: "Could not open file preview.",
+      summary: t('clientProfile.files.previewFailedSummary'),
+      detail: t('clientProfile.files.previewFailedDetail'),
       life: 3000,
     });
   } finally {
