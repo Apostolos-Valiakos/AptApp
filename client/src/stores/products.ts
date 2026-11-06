@@ -1,3 +1,4 @@
+import { api } from "../api/http";
 import { defineStore } from "pinia";
 import { ref } from "vue";
 
@@ -5,23 +6,11 @@ export const useProductStore = defineStore("products", () => {
   const products = ref([]);
 
   const fetchProducts = async () => {
-    const token = localStorage.getItem("token");
-    const res = await fetch("/api/v1/products", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    products.value = await res.json();
+    products.value = await api.get("/api/v1/products");
   };
 
   const updateStock = async (inventoryId: string, change: number) => {
-    const token = localStorage.getItem("token");
-    await fetch(`/api/v1/inventory/${inventoryId}/stock`, {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ quantity: change }),
-    });
+    await api.patch(`/api/v1/inventory/${inventoryId}/stock`, { quantity: change });
     await fetchProducts(); // Refresh UI
   };
 

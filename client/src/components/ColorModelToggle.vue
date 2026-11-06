@@ -7,7 +7,7 @@
         class="text-sm border rounded-md px-3 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-500"
       >
         <!-- <option value="all">All Staff</option> -->
-        <option value="me" :disabled="!hasStaffProfile">My Schedule</option>
+        <option value="me" :disabled="!hasStaffProfile">{{ t("scheduler.mySchedule") }}</option>
       </select>
     </div>
   </div>
@@ -15,8 +15,11 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
+import { useI18n } from "vue-i18n";
 import { useSettingsStore } from "../stores/settings";
 import { useAuthStore } from "../stores/auth";
+
+const { t } = useI18n();
 
 const settings = useSettingsStore();
 const authStore = useAuthStore();

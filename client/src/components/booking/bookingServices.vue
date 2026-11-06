@@ -19,17 +19,38 @@
       </span>
     </div>
 
-    <div
-      v-for="(service, index) in modelValue"
-      :key="index"
-      class="relative p-6 bg-white border border-transparent rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(255,147,212,0.12)] hover:border-[var(--p-primary-200)] transition-all duration-300 group"
+    <!-- Drag a row by its handle to change the order; a combo service moves
+         with the rows it generated. Times then follow each other again. -->
+    <draggable
+      :model-value="rowGroups"
+      item-key="key"
+      handle=".service-drag-handle"
+      ghost-class="drag-ghost"
+      :animation="150"
+      :force-fallback="true"
+      class="space-y-4"
+      @update:model-value="onReorder"
     >
+      <template #item="{ element: rowGroup }">
+      <div class="space-y-4" :data-testid="'service-group'">
+    <div
+      v-for="service in rowGroup.rows"
+      :key="keyFor(service)"
+      class="relative px-4 pb-4 pt-7 md:p-6 bg-white border border-transparent rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(255,147,212,0.12)] hover:border-[var(--p-primary-200)] transition-all duration-300 group"
+      :data-testid="'service-row'"
+    >
+      <i
+        v-if="rowGroups.length > 1 && service === rowGroup.rows[0]"
+        class="pi pi-bars service-drag-handle absolute left-2 top-2 cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 text-sm"
+        :title="t('bookingServices.dragToReorder')"
+        data-testid="service-drag-handle"
+      ></i>
       <div
         class="absolute left-0 top-6 bottom-6 w-1 bg-[var(--p-primary-300)] rounded-r-full opacity-0 group-hover:opacity-100 transition-opacity"
       ></div>
       <button
         v-if="modelValue.length > 1"
-        @click="removeService(index)"
+        @click="removeService(modelValue.indexOf(service))"
         class="absolute -right-2 -top-2 bg-white p-1 rounded-full shadow border border-gray-200 text-gray-400 hover:text-red-600 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity z-10"
       >
         <i class="pi pi-trash text-xs"></i>
@@ -40,45 +61,89 @@
           <label class="text-xs text-gray-500 block mb-1">{{
             t("bookingServices.service")
           }}</label>
-          <Dropdown
-            v-model="service.service_id"
-            :options="services"
-            optionLabel="name"
-            optionValue="id"
-            :placeholder="t('bookingServices.selectService')"
-            class="w-full p-inputtext-sm"
-            @change="() => updateServiceDetails(index)"
-          />
+          <button
+            type="button"
+            class="h-[54px] w-full flex items-center justify-between gap-2 px-3 text-sm border border-gray-300 rounded-md bg-white hover:border-gray-400 transition-colors"
+            data-testid="service-picker"
+            @click="openPicker(modelValue.indexOf(service))"
+          >
+            <span class="flex items-center gap-2 min-w-0">
+              <span :class="displayName(service) ? 'text-gray-900' : 'text-gray-400'" class="truncate">
+                {{ displayName(service) || t('bookingServices.selectService') }}
+              </span>
+              <i
+                v-if="service.service_archived"
+                class="pi pi-box text-gray-400 text-xs flex-shrink-0"
+                :title="t('services.archivedTooltip')"
+              ></i>
+            </span>
+            <i class="pi pi-chevron-down text-gray-400 text-xs"></i>
+          </button>
+          <div v-if="otherVariations(service).length" class="flex gap-1.5 mt-2 overflow-x-auto pb-1 -mx-1 px-1 md:flex-wrap md:overflow-visible md:pb-0 md:mx-0 md:px-0">
+            <button
+              v-for="v in otherVariations(service)"
+              :key="v.id"
+              type="button"
+              class="inline-flex flex-shrink-0 whitespace-nowrap items-center gap-1 px-2.5 py-1.5 md:py-1 rounded-full text-xs font-medium border border-[var(--p-primary-200)] text-[var(--p-primary-700)] bg-[var(--p-primary-50)] hover:bg-[var(--p-primary-100)] transition-colors"
+              :title="t('bookingServices.addVariationAfter')"
+              @click="addVariationAfter(modelValue.indexOf(service), v)"
+            >
+              <i class="pi pi-plus text-[10px]"></i>
+              {{ v.name }} · {{ v.duration_minutes }}′ · {{ formatMoney(v.price, { compact: true }) }}
+            </button>
+          </div>
         </div>
 
         <div class="w-full sm:w-1/3">
-          <label class="text-xs text-gray-500 block mb-1">{{
-            t("bookingServices.staff")
-          }}</label>
+          <label class="text-xs text-gray-500 block mb-1">
+            {{ t("bookingServices.staff") }}
+            <span v-if="requireStaff" class="text-red-500">*</span>
+          </label>
           <Dropdown
             v-model="service.staff_id"
-            :options="getFilteredStaff(service.service_id)"
-            optionLabel="name"
+            :options="getFilteredStaff(service)"
+            optionLabel="label"
             optionValue="id"
             class="w-full p-inputtext-sm"
-            :placeholder="t('bookingServices.anyStaff')"
+            :class="{ 'p-invalid': isStaffMissing(service) }"
+            :placeholder="requireStaff ? t('bookingServices.selectStaff') : t('bookingServices.anyStaff')"
           />
+          <p v-if="isStaffMissing(service)" class="text-xs text-red-500 mt-1">
+            {{ t("bookingServices.staffRequired") }}
+          </p>
+          <p v-else-if="overtimeNote(service)" class="text-xs text-amber-700 mt-1">
+            <i class="pi pi-clock text-[10px] mr-0.5"></i>{{ overtimeNote(service) }}
+          </p>
         </div>
       </div>
 
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div class="col-span-2 min-w-0">
-          <label class="text-xs text-gray-500 block mb-1">{{
-            t("bookingServices.time")
-          }}</label>
-          <Calendar
-            v-model="service.start_time"
-            showTime
-            hourFormat="24"
-            dateFormat="dd/mm/yy"
-            class="w-full p-inputtext-sm"
-            @hide="recalcTimes"
-          />
+          <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
+            <div class="min-w-0">
+              <label class="text-xs text-gray-500 block mb-1">{{
+                t("bookingServices.date")
+              }}</label>
+              <Calendar
+                :modelValue="service.start_time"
+                dateFormat="dd/mm/yy"
+                class="w-full min-w-0"
+                inputClass="w-full h-[54px] text-sm"
+                @update:modelValue="(d: Date) => onDateChange(service, d)"
+              />
+            </div>
+            <div class="min-w-0">
+              <label class="text-xs text-gray-500 block mb-1">{{
+                t("bookingServices.startTime")
+              }}</label>
+              <TimeDropdown
+                :modelValue="formatTime(service.start_time)"
+                :minTime="shopMinTime"
+                :maxTime="shopMaxTime"
+                @update:modelValue="(t: string) => onTimeChange(service, t)"
+              />
+            </div>
+          </div>
         </div>
 
         <div class="col-span-1 min-w-0">
@@ -88,9 +153,9 @@
           <InputNumber
             v-model="service.duration_override"
             suffix=" min"
-            class="w-full p-inputtext-sm"
-            inputClass="w-full"
-            @update:modelValue="recalcTimes"
+            class="w-full"
+            inputClass="w-full h-[54px] text-sm"
+            @update:modelValue="() => recalcTimes()"
           />
         </div>
         <div class="col-span-1 min-w-0" v-if="isShopAdmin">
@@ -101,12 +166,32 @@
             v-model="service.price_override"
             mode="currency"
             currency="EUR"
-            class="w-full p-inputtext-sm"
-            inputClass="w-full"
+            class="w-full"
+            inputClass="w-full h-[54px] text-sm"
           />
         </div>
       </div>
+
+      <!-- A shared place (the sauna, the hammam) takes several persons; one
+           row can be for a few of them together. -->
+      <div v-if="placesFor(service.staff_id) > 1" class="mt-4 flex items-center gap-3">
+        <label class="text-xs text-gray-500">{{ t("bookingServices.persons") }}</label>
+        <InputNumber
+          :modelValue="personsOf(service)"
+          :min="1"
+          :max="99"
+          showButtons
+          buttonLayout="horizontal"
+          class="p-inputtext-sm"
+          inputClass="w-12 text-center"
+          data-testid="service-persons"
+          @update:modelValue="(v: number | null) => (service.persons = v || 1)"
+        />
+      </div>
     </div>
+      </div>
+      </template>
+    </draggable>
 
     <button
       @click="addService"
@@ -117,12 +202,31 @@
       ></i>
       <span>{{ t("bookingServices.addService") }}</span>
     </button>
+
+    <ServicePickerDialog
+      v-model:visible="pickerVisible"
+      :services="services"
+      :staff="staff"
+      :currentStaffId="pickerIndex !== null ? modelValue[pickerIndex]?.staff_id : null"
+      :currentServiceId="pickerIndex !== null ? modelValue[pickerIndex]?.service_id : null"
+      :currentVariationName="pickerIndex !== null ? modelValue[pickerIndex]?.variation_name : null"
+      @picked="onServicePicked"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
+import { formatMoney } from "../../utils/format";
+import { ref, computed, type PropType } from "vue";
 import { useI18n } from "vue-i18n";
 import { useAuthStore } from "../../stores/auth";
+import { isStaffAvailable, describeWorkingDay } from "../../utils/staffAvailability";
+import { displayServiceName } from "../../utils/serviceVariations";
+import ServicePickerDialog, { type PickedService } from "./ServicePickerDialog.vue";
+import draggable from "vuedraggable";
+import TimeDropdown from "./TimeDropdown.vue";
+import { pinStartTimes } from "../../utils/serviceSequence";
+import { personsOf, placesOf } from "../../utils/capacity";
 const { t } = useI18n();
 const authStore = useAuthStore();
 const isShopAdmin = authStore.isShopAdmin;
@@ -132,19 +236,97 @@ const props = defineProps({
   services: { type: Array as () => any[], default: () => [] },
   staff: { type: Array as () => any[], default: () => [] },
   baseStartTime: { type: Date, default: () => new Date() },
-  defaultStaffId: { type: [Number, String], default: null },
+  defaultStaffId: { type: [Number, String] as PropType<number | string | null>, default: null },
+  timeOff: { type: Array as () => any[], default: () => [] },
+  workingHours: { type: Array as () => any[], default: () => [] },
+  requireStaff: { type: Boolean, default: true },
+  shopMinTime: { type: String, default: "00:00" },
+  shopMaxTime: { type: String, default: "23:45" },
 });
 
 const emit = defineEmits(["update:modelValue"]);
 
-const getFilteredStaff = (serviceId: any) => {
-  if (!serviceId) return props.staff;
-  return props.staff.filter(
-    (s: any) =>
-      !s.service_ids ||
-      s.service_ids.length === 0 ||
-      s.service_ids.includes(serviceId),
-  );
+// null = available; otherwise why not ("time_off" or "outside_hours").
+const staffUnavailableReason = (staffId: any, serviceStart: any, durationMinutes: number) => {
+  if (!serviceStart) return null;
+  const start = new Date(serviceStart);
+  const end = new Date(start.getTime() + (durationMinutes || 60) * 60000);
+  const result = isStaffAvailable({
+    staffList: props.staff,
+    workingHours: props.workingHours,
+    timeOff: props.timeOff,
+    staffId,
+    start,
+    end,
+  });
+  return result.available ? null : result.reason || "time_off";
+};
+
+// Admin, super admin and frontdesk may book staff outside their working
+// hours (overtime) after confirming on save; leave and breaks stay blocked.
+const canBookOvertime = computed(() => authStore.isShopAdmin);
+
+const overtimeNote = (service: any) => {
+  if (!service.staff_id || !service.start_time) return "";
+  if (staffUnavailableReason(service.staff_id, service.start_time, service.duration_override) !== "outside_hours") return "";
+  const hours = describeWorkingDay(props.workingHours, props.staff, service.staff_id, new Date(service.start_time));
+  return hours
+    ? t("bookingServices.overtimeNote", { hours })
+    : t("bookingServices.overtimeNoteDayOff");
+};
+
+const placesFor = (staffId: any) => placesOf(props.staff.find((s: any) => String(s.id) === String(staffId)));
+
+const isStaffMissing = (service: any) =>
+  props.requireStaff && !!service.service_id && !service.staff_id;
+
+// Date and time are edited as two separate widgets (a plain date picker +
+// the 5-min TimeDropdown) but both write back into the same underlying
+// start_time Date — everything else (recalcTimes, combo splitting, save)
+// keeps working off that single field unchanged.
+const formatTime = (d: Date) => {
+  const date = new Date(d);
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+};
+
+const onDateChange = (service: any, newDate: Date) => {
+  const merged = new Date(service.start_time);
+  merged.setFullYear(newDate.getFullYear(), newDate.getMonth(), newDate.getDate());
+  service.start_time = merged;
+  pinStartTimes(props.modelValue, props.modelValue.indexOf(service));
+  recalcTimes();
+};
+
+const onTimeChange = (service: any, time: string) => {
+  const [hours, minutes] = time.split(":").map(Number);
+  const merged = new Date(service.start_time);
+  merged.setHours(hours, minutes, 0, 0);
+  service.start_time = merged;
+  pinStartTimes(props.modelValue, props.modelValue.indexOf(service));
+  recalcTimes();
+};
+
+const getFilteredStaff = (service: any) => {
+  const serviceId = service.service_id;
+  let list = !serviceId
+    ? props.staff
+    : props.staff.filter(
+        (s: any) =>
+          !s.service_ids ||
+          s.service_ids.length === 0 ||
+          s.service_ids.includes(serviceId),
+      );
+
+  const available: any[] = [];
+  const overtime: any[] = [];
+  for (const s of list) {
+    const reason = staffUnavailableReason(s.id, service.start_time, service.duration_override);
+    if (!reason) available.push({ ...s, label: s.name });
+    else if (reason === "outside_hours" && canBookOvertime.value) {
+      overtime.push({ ...s, label: `${s.name} · ${t("bookingServices.outsideHours")}` });
+    }
+  }
+  return [...available, ...overtime];
 };
 
 const addService = () => {
@@ -170,26 +352,207 @@ const addService = () => {
   emit("update:modelValue", list);
 };
 
+// The service's variations other than the one this row already is.
+const otherVariations = (service: any) => {
+  if (!service.service_id) return [];
+  const found = props.services.find((s: any) => s.id === service.service_id);
+  return (found?.variations || []).filter((v: any) => v.name !== service.variation_name);
+};
+
+// Adds the variation as a new row right after this one (and after any sauna/
+// hammam blocks it generated), starting when it ends, with the same staff.
+const addVariationAfter = (index: number, variation: any) => {
+  const list = [...props.modelValue];
+  const svc = list[index];
+  const found = props.services.find((s: any) => s.id === svc.service_id);
+  let insertAt = index + 1;
+  while (list[insertAt]?._autoGenFor) insertAt++;
+  const prev = list[insertAt - 1];
+  const start = new Date(
+    new Date(prev.start_time).getTime() + (prev.duration_override || 60) * 60000,
+  );
+  list.splice(insertAt, 0, {
+    service_id: svc.service_id,
+    staff_id: svc.staff_id,
+    start_time: start,
+    duration_override: variation.duration_minutes,
+    price_override: Number(variation.price),
+    variation_name: variation.name,
+    _label: `${found?.name || ""} — ${variation.name}`,
+  });
+  recalcTimes(list);
+};
+
 const removeService = (index: number) => {
   const list = [...props.modelValue];
   list.splice(index, 1);
   recalcTimes(list);
 };
 
-const updateServiceDetails = (index: number) => {
-  const list = [...props.modelValue];
+// `pickedOverride` comes from ServicePickerDialog when a variation (rather
+// than the service's own flat price) was chosen — its price/duration wins
+// over the base service's, everything else (combo splitting, etc.) is
+// unaffected since that's keyed off the service itself, not the variation.
+// Works on `list` in place (the caller emits it).
+const applyServiceDetails = (
+  list: any[],
+  index: number,
+  pickedOverride?: { duration_minutes: number; price: number },
+) => {
   const svc = list[index];
   const found = props.services.find((s: any) => s.id === svc.service_id);
 
+  // Rows immediately after this one that were auto-generated from its
+  // previous combo components — drop them before recomputing, so switching
+  // the service (combo -> plain, or to a different combo) never stacks
+  // stale blocks. They're re-inserted fresh below if still applicable.
+  let removeCount = 0;
+  while (list[index + 1 + removeCount]?._autoGenFor) {
+    removeCount++;
+  }
+  list.splice(index + 1, removeCount);
+
   if (found) {
-    svc.price_override = Number(found.price);
-    svc.duration_override = found.duration_minutes || 60;
-    const staffMember = props.staff.find((s) => s.id === svc.staff_id);
-    if (staffMember && staffMember.service_ids?.length > 0) {
-      if (!staffMember.service_ids.includes(svc.service_id)) {
+    svc.price_override = Number(pickedOverride ? pickedOverride.price : found.price);
+    svc.duration_override = pickedOverride
+      ? pickedOverride.duration_minutes
+      : found.duration_minutes || 60;
+
+    const components = found.combo_components || [];
+    if (components.length > 0) {
+      // The combo keeps its own listed price/duration; each component is
+      // carved out of it rather than added on top, so the original total
+      // stays what was priced/listed for the combo.
+      const componentMinutes = components.reduce(
+        (sum: number, c: any) => sum + (c.duration_minutes || 0),
+        0,
+      );
+      const componentPrice = components.reduce(
+        (sum: number, c: any) => sum + Number(c.price || 0),
+        0,
+      );
+      const remainingMinutes = svc.duration_override - componentMinutes;
+      const remainingPrice = svc.price_override - componentPrice;
+
+      const newBlocks = components.map((c: any) => {
+        return {
+          service_id: c.id,
+          staff_id: c.default_staff_id || null,
+          start_time: svc.start_time,
+          duration_override: c.duration_minutes || 30,
+          price_override: Number(c.price || 0),
+          _autoGenFor: svc.service_id,
+        };
+      });
+
+      if (remainingMinutes <= 0 && remainingPrice <= 0) {
+        // The configured components already account for the combo's entire
+        // own price/duration (e.g. Sport + Χαμαμ: both halves are explicit
+        // components) — there's no real leftover treatment to keep a block
+        // for, so replace the combo row itself with just its components
+        // instead of leaving a degenerate near-zero third block behind.
+        list.splice(index, 1, ...newBlocks);
+      } else {
+        // A genuine remainder is left (e.g. Sport + Sauna: only the sauna
+        // add-on is an explicit component, the base massage stays as this
+        // row's own carved-down price/duration) — keep the combo row for it.
+        svc.duration_override = Math.max(5, remainingMinutes);
+        svc.price_override = Math.max(0, remainingPrice);
+        list.splice(index + 1, 0, ...newBlocks);
       }
     }
   }
+  return list;
+};
+
+// --- Service picker modal (replaces the old inline dropdown) ---
+const pickerIndex = ref<number | null>(null);
+const pickerVisible = computed({
+  get: () => pickerIndex.value !== null,
+  set: (v: boolean) => {
+    if (!v) pickerIndex.value = null;
+  },
+});
+
+const openPicker = (index: number) => {
+  pickerIndex.value = index;
+};
+
+const displayName = (service: any) => {
+  if (service._label) return service._label;
+  const found = props.services.find((s: any) => s.id === service.service_id);
+  // variation_name is now persisted (appointment_services.variation_name)
+  // independently of price/duration, so it stays correct even after either
+  // is edited later — see utils/serviceVariations.ts and BookingDialog's
+  // EDIT MODE load, which sets _label from this same field on open.
+  if (service.variation_name) {
+    return found ? `${found.name} — ${service.variation_name}` : service.variation_name;
+  }
+  // Legacy fallback, for appointments saved before variation_name existed:
+  // reverse-match the saved price/duration against the service's current
+  // variation list. Breaks the moment either is edited afterward, which is
+  // exactly why new saves no longer rely on this.
+  return displayServiceName(found, service.price_override, service.duration_override);
+};
+
+// The picker's ticked services, in ticking order: the first goes on the row
+// the picker was opened from, each next one in a new row right after the
+// previous (after any sauna/hammam rows it generated), same staff member,
+// starting when the previous ends.
+const onServicePicked = (pickedList: PickedService[]) => {
+  if (pickerIndex.value === null || pickedList.length === 0) return;
+  const list = [...props.modelValue];
+  let at = pickerIndex.value;
+  const staffId = list[at]?.staff_id ?? props.defaultStaffId;
+  pickedList.forEach((picked, n) => {
+    if (n > 0) {
+      let insertAt = at + 1;
+      while (list[insertAt]?._autoGenFor) insertAt++;
+      list.splice(insertAt, 0, { staff_id: staffId, start_time: list[insertAt - 1].start_time, duration_override: 60, price_override: 0 });
+      at = insertAt;
+    }
+    const svc = list[at];
+    svc.service_id = picked.service_id;
+    svc._label = picked.name;
+    // Saved alongside price/duration so which variation this row is survives
+    // later edits to either (see utils/serviceVariations.ts) — always
+    // overwritten here, including to null, since switching services/
+    // variations must never leave a stale variation_name from a previous pick.
+    svc.variation_name = picked.variation_name;
+    svc.service_archived = false;
+    svc._manualStart = false;
+    applyServiceDetails(list, at, { duration_minutes: picked.duration_minutes, price: picked.price });
+  });
+  recalcTimes(list);
+};
+
+// --- Reordering (drag and drop) ---
+// Stable keys for the rows (not stored on them, so nothing extra is saved).
+const rowKeys = new WeakMap<object, number>();
+let nextRowKey = 0;
+const keyFor = (row: object) => {
+  if (!rowKeys.has(row)) rowKeys.set(row, ++nextRowKey);
+  return rowKeys.get(row)!;
+};
+// A row and the rows generated from it (a combo's sauna/hammam blocks) move together.
+const rowGroups = computed(() => {
+  const groups: { key: number; rows: any[] }[] = [];
+  for (const row of props.modelValue) {
+    const last = groups[groups.length - 1];
+    const prev = last?.rows[last.rows.length - 1];
+    const belongs = row._autoGenFor && prev && (prev.service_id === row._autoGenFor || prev._autoGenFor === row._autoGenFor);
+    if (belongs) last.rows.push(row);
+    else groups.push({ key: keyFor(row), rows: [row] });
+  }
+  return groups;
+});
+// New order: all rows follow each other again, from the first row's start.
+const onReorder = (groups: { rows: any[] }[]) => {
+  const start = props.modelValue[0]?.start_time;
+  const list = groups.flatMap((g) => g.rows);
+  if (list.length === 0) return;
+  list.forEach((row) => (row._manualStart = false));
+  list[0].start_time = new Date(start);
   recalcTimes(list);
 };
 
@@ -204,7 +567,11 @@ const recalcTimes = (existingList?: any[]) => {
   let currentStart = new Date(list[0].start_time);
 
   for (let i = 0; i < list.length; i++) {
-    list[i].start_time = new Date(currentStart);
+    if (i > 0 && list[i]._manualStart) {
+      currentStart = new Date(list[i].start_time);
+    } else {
+      list[i].start_time = new Date(currentStart);
+    }
     currentStart = new Date(
       currentStart.getTime() + (list[i].duration_override || 60) * 60000,
     );
@@ -213,3 +580,10 @@ const recalcTimes = (existingList?: any[]) => {
   emit("update:modelValue", list);
 };
 </script>
+
+<style scoped>
+/* The row being dragged leaves a faint placeholder where it will land. */
+:deep(.drag-ghost) {
+  opacity: 0.4;
+}
+</style>

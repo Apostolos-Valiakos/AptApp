@@ -52,7 +52,7 @@
                 <label
                   v-if="profile.staff_id"
                   class="absolute bottom-0 right-0 w-7 h-7 bg-[var(--p-primary-color)] rounded-full flex items-center justify-center cursor-pointer shadow-md hover:brightness-110 transition-all"
-                  title="Upload photo"
+                  :title="t('profile.uploadPhoto')"
                 >
                   <i class="pi pi-camera text-white text-xs"></i>
                   <input
@@ -150,11 +150,11 @@
           <div class="flex items-center justify-between mb-4">
             <div class="flex items-center gap-2">
               <i class="pi pi-building text-[var(--p-primary-color)]"></i>
-              <h3 class="font-bold text-gray-900 text-sm">Clinic Info</h3>
+              <h3 class="font-bold text-gray-900 text-sm">{{ t('profile.clinicInfo.title') }}</h3>
             </div>
             <Button
               size="small"
-              label="Save"
+              :label="t('common.save')"
               :loading="isSavingContact"
               @click="saveContact"
             />
@@ -162,7 +162,7 @@
           <div class="space-y-3">
             <div>
               <label class="text-xs font-medium text-gray-500 block mb-1"
-                >Phone</label
+                >{{ t('common.phone') }}</label
               >
               <InputText
                 v-model="contactForm.phone"
@@ -172,17 +172,17 @@
             </div>
             <div>
               <label class="text-xs font-medium text-gray-500 block mb-1"
-                >Address</label
+                >{{ t('profile.clinicInfo.address') }}</label
               >
               <InputText
                 v-model="contactForm.address"
                 class="w-full"
-                placeholder="Street, City"
+                :placeholder="t('profile.clinicInfo.addressPlaceholder')"
               />
             </div>
             <div>
               <label class="text-xs font-medium text-gray-500 block mb-1"
-                >Website</label
+                >{{ t('profile.clinicInfo.website') }}</label
               >
               <InputText
                 v-model="contactForm.website"
@@ -254,6 +254,26 @@
                 v-tooltip="t('profile.branding.customColor')"
               />
             </div>
+          </div>
+        </div>
+
+        <!-- Force Logout Everyone (super_admin only) -->
+        <div
+          v-if="isSuperAdmin"
+          class="bg-white rounded-2xl shadow-sm border border-red-100 p-6"
+        >
+          <h3 class="text-base font-bold text-gray-900 mb-1">{{ t('profile.forceLogout.title') }}</h3>
+          <p class="text-sm text-gray-500 mb-4">{{ t('profile.forceLogout.description') }}</p>
+
+          <div class="flex flex-col gap-2">
+            <Button
+              :label="t('profile.forceLogout.button')"
+              icon="pi pi-power-off"
+              severity="danger"
+              class="w-full"
+              :loading="forcingLogout"
+              @click="confirmForceLogout"
+            />
           </div>
         </div>
       </div>
@@ -374,7 +394,7 @@
                     : 'text-gray-700'
                 "
               >
-                Εργοθεραπεία
+                {{ t("common.services.ergotherapia") }}
               </span>
               <ToggleSwitch v-model="shopForm.ergotherapia" @click.stop />
             </div>
@@ -406,7 +426,7 @@
                     : 'text-gray-700'
                 "
               >
-                Φυσιοθεραπεία
+                {{ t("common.services.physiotherapia") }}
               </span>
               <ToggleSwitch v-model="shopForm.physiotherapia" @click.stop />
             </div>
@@ -438,7 +458,7 @@
                     : 'text-gray-700'
                 "
               >
-                Λογοθεραπεία
+                {{ t("common.services.logotherapia") }}
               </span>
               <ToggleSwitch v-model="shopForm.logotherapia" @click.stop />
             </div>
@@ -452,13 +472,13 @@
         >
           <div class="flex justify-between items-center mb-6">
             <div>
-              <h3 class="text-lg font-bold text-gray-900">Clinic Settings</h3>
+              <h3 class="text-lg font-bold text-gray-900">{{ t('profile.clinicSettings.title') }}</h3>
               <p class="text-sm text-gray-500">
-                Email address clients see when they reply to booking emails.
+                {{ t('profile.clinicSettings.subtitle') }}
               </p>
             </div>
             <Button
-              label="Save"
+              :label="t('common.save')"
               class="p-button-sm p-button-rounded"
               :loading="isSavingReplyEmail"
               @click="saveReplyEmail"
@@ -466,7 +486,7 @@
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">
-              <i class="pi pi-reply mr-2 text-gray-400"></i>Reply-To Email
+              <i class="pi pi-reply mr-2 text-gray-400"></i>{{ t('profile.clinicSettings.replyToEmail') }}
             </label>
             <InputText
               v-model="replyEmailForm"
@@ -475,9 +495,7 @@
               type="email"
             />
             <p class="text-xs text-gray-400 mt-1.5">
-              When clients reply to appointment reminders or portal invitations,
-              their email will go to this address. Leave blank to use the system
-              default.
+              {{ t('profile.clinicSettings.replyToEmailNote') }}
             </p>
           </div>
         </div>
@@ -489,13 +507,13 @@
         >
           <div class="flex justify-between items-center mb-6">
             <div>
-              <h3 class="text-lg font-bold text-gray-900">Calendar Settings</h3>
+              <h3 class="text-lg font-bold text-gray-900">{{ t('profile.calendarSettings.title') }}</h3>
               <p class="text-sm text-gray-500">
-                Control the scheduler and reminder behaviour.
+                {{ t('profile.calendarSettings.subtitle') }}
               </p>
             </div>
             <Button
-              label="Save"
+              :label="t('common.save')"
               class="p-button-sm p-button-rounded"
               :loading="isSavingCalSettings"
               @click="saveCalendarSettings"
@@ -504,7 +522,7 @@
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1"
-                >Opening Time</label
+                >{{ t('profile.calendarSettings.openingTime') }}</label
               >
               <InputText
                 v-model="calSettings.slotMinTime"
@@ -512,12 +530,12 @@
                 placeholder="07:00"
               />
               <p class="text-xs text-gray-400 mt-1">
-                Format: HH:MM (e.g. 08:00)
+                {{ t('profile.calendarSettings.timeFormat') }}
               </p>
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1"
-                >Closing Time</label
+                >{{ t('profile.calendarSettings.closingTime') }}</label
               >
               <InputText
                 v-model="calSettings.slotMaxTime"
@@ -527,7 +545,7 @@
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1"
-                >Reminder (hours before)</label
+                >{{ t('profile.calendarSettings.reminderHoursBefore') }}</label
               >
               <InputNumber
                 v-model="calSettings.reminderHoursBefore"
@@ -536,18 +554,110 @@
                 :max="72"
               />
               <p class="text-xs text-gray-400 mt-1">
-                How many hours before the appointment to send the email
-                reminder.
+                {{ t('profile.calendarSettings.reminderHoursNote') }}
               </p>
             </div>
             <div class="flex items-center justify-between pt-2">
               <div>
-                <p class="text-sm font-medium text-gray-700">Show Weekends</p>
+                <p class="text-sm font-medium text-gray-700">{{ t('profile.calendarSettings.showWeekends') }}</p>
                 <p class="text-xs text-gray-400">
-                  Display Saturday and Sunday in the calendar.
+                  {{ t('profile.calendarSettings.showWeekendsNote') }}
                 </p>
               </div>
               <ToggleSwitch v-model="calSettings.showWeekends" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Client Self-Booking (admin only) -->
+        <div
+          v-if="authStore.isAnalyticsAllowed"
+          class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8"
+        >
+          <div class="flex justify-between items-center">
+            <div>
+              <h3 class="text-lg font-bold text-gray-900">
+                {{ t('profile.selfBooking.title') }}
+              </h3>
+              <p class="text-sm text-gray-500 max-w-xl">
+                {{ t('profile.selfBooking.description') }}
+              </p>
+            </div>
+            <ToggleSwitch
+              :modelValue="selfBookingEnabled"
+              :disabled="isSavingSelfBooking"
+              @update:modelValue="saveSelfBooking"
+            />
+          </div>
+        </div>
+
+        <DiscountCodesAdmin v-if="authStore.isAnalyticsAllowed" />
+
+        <!-- Push Broadcast (admin only) -->
+        <div
+          v-if="authStore.isAnalyticsAllowed"
+          class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8"
+        >
+          <div class="mb-6">
+            <h3 class="text-lg font-bold text-gray-900">
+              {{ t('profile.broadcast.title') }}
+            </h3>
+            <p class="text-sm text-gray-500 max-w-xl">
+              {{ t('profile.broadcast.description') }}
+            </p>
+          </div>
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1"
+                >{{ t('profile.broadcast.notificationTitle') }}</label
+              >
+              <InputText
+                v-model="broadcastForm.title"
+                class="w-full"
+                :placeholder="t('profile.broadcast.notificationTitlePlaceholder')"
+                maxlength="80"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1"
+                >{{ t('profile.broadcast.message') }}</label
+              >
+              <Textarea
+                v-model="broadcastForm.body"
+                class="w-full"
+                rows="3"
+                autoResize
+                :placeholder="t('profile.broadcast.messagePlaceholder')"
+                maxlength="300"
+              />
+            </div>
+            <div class="flex justify-end">
+              <Button
+                :label="t('profile.broadcast.send')"
+                icon="pi pi-send"
+                :loading="isSendingBroadcast"
+                :disabled="!broadcastForm.title.trim() || !broadcastForm.body.trim()"
+                @click="sendBroadcast"
+              />
+            </div>
+          </div>
+
+          <div v-if="recentBroadcasts.length" class="mt-6 pt-6 border-t border-gray-100">
+            <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
+              {{ t('profile.broadcast.recentlySent') }}
+            </p>
+            <div
+              v-for="b in recentBroadcasts"
+              :key="b.id"
+              class="flex items-start justify-between gap-3 py-2 text-sm"
+            >
+              <div class="min-w-0">
+                <p class="font-medium text-gray-800 truncate">{{ b.title }}</p>
+                <p class="text-xs text-gray-400 truncate">{{ b.body }}</p>
+              </div>
+              <span class="text-xs text-gray-400 flex-shrink-0"
+                >{{ t('profile.broadcast.sentCount', { n: b.recipient_count }) }}</span
+              >
             </div>
           </div>
         </div>
@@ -641,20 +751,20 @@
           </form>
         </div>
 
-        <!-- ── Contests (admin only) — disabled ──
+        <!-- ── Contests (admin only) — disabled, see CONTESTS_ENABLED ── -->
         <div
-          v-if="isShopAdmin"
+          v-if="CONTESTS_ENABLED && authStore.isAnalyticsAllowed"
           class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8"
         >
           <div class="flex items-center justify-between mb-6">
             <div>
-              <h3 class="text-lg font-bold text-gray-900">Διαγωνισμοί</h3>
+              <h3 class="text-lg font-bold text-gray-900">{{ t("profile.contests.title") }}</h3>
               <p class="text-sm text-gray-500">
-                Διαχείριση διαγωνισμών για πελάτες.
+                {{ t("profile.contests.subtitle") }}
               </p>
             </div>
             <Button
-              label="Νέος"
+              :label="t('profile.contests.addNew')"
               icon="pi pi-plus"
               size="small"
               class="!bg-[var(--p-primary-color)] border-none !text-white"
@@ -662,6 +772,7 @@
             />
           </div>
 
+          <!-- Loading -->
           <div v-if="isLoadingContests" class="space-y-3">
             <Skeleton
               v-for="n in 2"
@@ -671,14 +782,16 @@
             />
           </div>
 
+          <!-- Empty state -->
           <div
             v-else-if="contests.length === 0"
             class="text-center py-10 text-gray-400"
           >
             <i class="pi pi-trophy text-4xl mb-3 block"></i>
-            <p class="text-sm">Δεν υπάρχουν διαγωνισμοί ακόμα.</p>
+            <p class="text-sm">{{ t("profile.contests.empty") }}</p>
           </div>
 
+          <!-- Contest list -->
           <div v-else class="space-y-3">
             <div
               v-for="c in contests"
@@ -716,10 +829,10 @@
                   >
                     {{
                       contestStatus(c) === "active"
-                        ? "Ενεργός"
+                        ? t("profile.contests.active")
                         : contestStatus(c) === "upcoming"
-                          ? "Προσεχώς"
-                          : "Έληξε"
+                          ? t("profile.contests.upcoming")
+                          : t("profile.contests.ended")
                     }}
                   </span>
                 </div>
@@ -749,44 +862,44 @@
             </div>
           </div>
         </div>
-        -->
       </div>
     </div>
   </div>
 
-  <!-- Contest create / edit dialog — disabled
+  <!-- Contest create / edit dialog -->
   <Dialog
+    v-if="CONTESTS_ENABLED"
     v-model:visible="contestDialogVisible"
-    :header="editingContest ? 'Επεξεργασία Διαγωνισμού' : 'Νέος Διαγωνισμός'"
+    :header="editingContest ? t('profile.contests.editTitle') : t('profile.contests.newTitle')"
     :style="{ width: '580px', maxWidth: '105vw' }"
     modal
   >
     <div class="space-y-4 pt-2">
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1"
-          >Όνομα *</label
+          >{{ t("profile.contests.name") }} *</label
         >
         <InputText
           v-model="contestForm.name"
           class="w-full"
-          placeholder="π.χ. Καλοκαιρινός Διαγωνισμός"
+          :placeholder="t('profile.contests.namePlaceholder')"
         />
       </div>
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1"
-          >Περιγραφή</label
+          >{{ t("profile.contests.description") }}</label
         >
         <Textarea
           v-model="contestForm.description"
           class="w-full"
           rows="3"
-          placeholder="Περιγραφή του διαγωνισμού..."
+          :placeholder="t('profile.contests.descriptionPlaceholder')"
         />
       </div>
       <div class="grid grid-cols-2 gap-4">
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1"
-            >Έναρξη *</label
+            >{{ t("profile.contests.start") }} *</label
           >
           <DatePicker
             v-model="contestForm.start_date"
@@ -797,7 +910,7 @@
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1"
-            >Λήξη *</label
+            >{{ t("profile.contests.end") }} *</label
           >
           <DatePicker
             v-model="contestForm.end_date"
@@ -809,7 +922,7 @@
       </div>
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1"
-          >Εικόνα</label
+          >{{ t("profile.contests.image") }}</label
         >
         <div
           class="border-2 border-dashed border-gray-200 rounded-xl p-4 text-center cursor-pointer hover:border-[var(--p-primary-color)] transition-colors"
@@ -822,10 +935,10 @@
           />
           <div v-else class="text-gray-400 py-4">
             <i class="pi pi-image text-3xl block mb-2"></i>
-            <span class="text-sm">Κλικ για επιλογή εικόνας</span>
+            <span class="text-sm">{{ t("profile.contests.pickImage") }}</span>
           </div>
           <p v-if="contestImagePreview" class="text-xs text-gray-400">
-            Κλικ για αλλαγή
+            {{ t("profile.contests.changeImage") }}
           </p>
         </div>
         <input
@@ -838,9 +951,9 @@
       </div>
     </div>
     <template #footer>
-      <Button label="Ακύρωση" text @click="contestDialogVisible = false" />
+      <Button :label="t('common.cancel')" text @click="contestDialogVisible = false" />
       <Button
-        :label="editingContest ? 'Αποθήκευση' : 'Δημιουργία'"
+        :label="editingContest ? t('common.save') : t('profile.contests.create')"
         icon="pi pi-check"
         class="!bg-[var(--p-primary-color)] border-none"
         :loading="isSavingContest"
@@ -848,13 +961,17 @@
       />
     </template>
   </Dialog>
-  -->
+
+  <ConfirmDialog></ConfirmDialog>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed, reactive } from "vue";
+import { api, ifRefused, withMessage } from "../api/http";
+import { ref, onMounted, computed, reactive, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
+import DiscountCodesAdmin from "../components/DiscountCodesAdmin.vue";
+import { useConfirm } from "primevue/useconfirm";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "../stores/auth";
 import { useThemeStore } from "../stores/themes"; // Import Theme Store
@@ -868,9 +985,11 @@ import InputSwitch from "primevue/inputswitch";
 import ColorPicker from "primevue/colorpicker";
 import Dialog from "primevue/dialog";
 import DatePicker from "primevue/datepicker";
+import { useLogout } from "../composables/useLogout";
 
 const { t } = useI18n();
 const toast = useToast();
+const confirm = useConfirm();
 const router = useRouter();
 const authStore = useAuthStore();
 const themeStore = useThemeStore(); // Init Theme Store
@@ -883,6 +1002,8 @@ const replyEmailForm = ref("");
 const staffPhotoUrl = ref("");
 const isSavingContact = ref(false);
 const isSavingCalSettings = ref(false);
+const isSavingSelfBooking = ref(false);
+const selfBookingEnabled = ref(false);
 const contactForm = reactive({ phone: "", address: "", website: "" });
 const calSettings = reactive({
   slotMinTime: "07:00",
@@ -917,12 +1038,22 @@ const security = reactive({
 });
 
 // --- Theme / Branding Logic ---
+// Contests are switched off in this product (see server/routes/contests.js).
+const CONTESTS_ENABLED = false;
+
 const pickerColor = ref("7A1F44");
 const selectedColor = computed(() => themeStore.primaryColor);
 
 const isShopAdmin = computed(() => {
   const role = authStore.user?.role || profile.value?.role;
   return role === "admin" || role === "super_admin" || role === "frontdesk";
+});
+
+// Shop-wide "disconnect everyone" is destructive and shop-wide — restricted
+// to super_admin only, not plain admin.
+const isSuperAdmin = computed(() => {
+  const role = authStore.user?.role || profile.value?.role;
+  return role === "super_admin";
 });
 
 const presets = [
@@ -962,37 +1093,29 @@ const isValidSecurityForm = computed(
 
 const fetchProfile = async () => {
   isLoadingProfile.value = true;
-  const token = localStorage.getItem("token");
   try {
-    const res = await fetch("/api/v1/profile", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const data = await api.get("/api/v1/profile");
+    profile.value = data;
 
-    if (res.ok) {
-      const data = await res.json();
-      profile.value = data;
-
-      // Parse Name
-      const nameParts = (data.staff_name || data.username).split(" ");
-      profileForm.firstName = nameParts[0] || "";
-      profileForm.lastName = nameParts.slice(1).join(" ") || "";
-      profileForm.email = data.staff_email || "";
-      profileForm.phone = data.staff_phone || "";
-      shopForm.ergotherapia = data.ergotherapia;
-      shopForm.physiotherapia = data.physiotherapia;
-      shopForm.logotherapia = data.logotherapia;
-      replyEmailForm.value = data.shop_reply_email || "";
-      contactForm.phone = data.shop_phone || "";
-      contactForm.address = data.shop_address || "";
-      contactForm.website = data.shop_website || "";
-      calSettings.slotMinTime = data.slot_min_time || "07:00";
-      calSettings.slotMaxTime = data.slot_max_time || "23:00";
-      calSettings.showWeekends = data.show_weekends ?? true;
-      calSettings.reminderHoursBefore = data.reminder_hours_before ?? 24;
-      staffPhotoUrl.value = data.staff_photo_url || "";
-    } else {
-      throw new Error("Failed to load profile");
-    }
+    // Parse Name
+    const nameParts = (data.staff_name || data.username).split(" ");
+    profileForm.firstName = nameParts[0] || "";
+    profileForm.lastName = nameParts.slice(1).join(" ") || "";
+    profileForm.email = data.staff_email || "";
+    profileForm.phone = data.staff_phone || "";
+    shopForm.ergotherapia = data.ergotherapia;
+    shopForm.physiotherapia = data.physiotherapia;
+    shopForm.logotherapia = data.logotherapia;
+    replyEmailForm.value = data.shop_reply_email || "";
+    contactForm.phone = data.shop_phone || "";
+    contactForm.address = data.shop_address || "";
+    contactForm.website = data.shop_website || "";
+    calSettings.slotMinTime = data.slot_min_time || "07:00";
+    calSettings.slotMaxTime = data.slot_max_time || "23:00";
+    calSettings.showWeekends = data.show_weekends ?? true;
+    calSettings.reminderHoursBefore = data.reminder_hours_before ?? 24;
+    selfBookingEnabled.value = data.self_booking_enabled ?? false;
+    staffPhotoUrl.value = data.staff_photo_url || "";
   } catch (e) {
     console.error(e);
     toast.add({
@@ -1019,37 +1142,22 @@ const copyToClipboard = (text: string) => {
 
 const updateProfile = async () => {
   isSavingProfile.value = true;
-  const token = localStorage.getItem("token");
-
   try {
-    const res = await fetch("/api/v1/profile", {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        firstName: profileForm.firstName,
-        lastName: profileForm.lastName,
-        email: profileForm.email,
-        phone: profileForm.phone,
-      }),
+    await api.put("/api/v1/profile", {
+      firstName: profileForm.firstName,
+      lastName: profileForm.lastName,
+      email: profileForm.email,
+      phone: profileForm.phone,
     });
-
-    if (res.ok) {
-      toast.add({
-        severity: "success",
-        summary: t("common.success"),
-        detail: t("profile.toast.profileUpdated"),
-        life: 3000,
-      });
-      // Refresh local data display
-      profile.value.staff_name = `${profileForm.firstName} ${profileForm.lastName}`;
-      profile.value.staff_email = profileForm.email;
-    } else {
-      const err = await res.json();
-      throw new Error(err.error || "Update failed");
-    }
+    toast.add({
+      severity: "success",
+      summary: t("common.success"),
+      detail: t("profile.toast.profileUpdated"),
+      life: 3000,
+    });
+    // Refresh local data display
+    profile.value.staff_name = `${profileForm.firstName} ${profileForm.lastName}`;
+    profile.value.staff_email = profileForm.email;
   } catch (e: any) {
     toast.add({
       severity: "error",
@@ -1063,25 +1171,12 @@ const updateProfile = async () => {
 };
 const updateShopServices = async () => {
   isSavingProfile.value = true;
-  const token = localStorage.getItem("token");
-
   try {
-    const res = await fetch("/api/v1/shop/services", {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        ergotherapia: shopForm.ergotherapia,
-        physiotherapia: shopForm.physiotherapia,
-        logotherapia: shopForm.logotherapia,
-      }),
+    await api.put("/api/v1/shop/services", {
+      ergotherapia: shopForm.ergotherapia,
+      physiotherapia: shopForm.physiotherapia,
+      logotherapia: shopForm.logotherapia,
     });
-
-    const data = await res.json();
-
-    if (!res.ok) throw new Error(data.error || "Failed to update services");
 
     toast.add({
       severity: "success",
@@ -1102,22 +1197,14 @@ const updateShopServices = async () => {
 };
 const saveReplyEmail = async () => {
   isSavingReplyEmail.value = true;
-  const token = localStorage.getItem("token");
   try {
-    const res = await fetch("/api/v1/shop/reply-email", {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ reply_email: replyEmailForm.value || null }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Failed to save");
+    await api
+      .put("/api/v1/shop/reply-email", { reply_email: replyEmailForm.value || null })
+      .catch(withMessage(t("profile.toast.saveFailed")));
     toast.add({
       severity: "success",
       summary: t("common.success"),
-      detail: "Reply-to email saved",
+      detail: t("profile.clinicSettings.replyEmailSaved"),
       life: 3000,
     });
     profile.value.shop_reply_email = replyEmailForm.value || null;
@@ -1136,24 +1223,11 @@ const saveReplyEmail = async () => {
 const updatePassword = async () => {
   if (!isValidSecurityForm.value) return;
   isSavingPassword.value = true;
-  const token = localStorage.getItem("token");
-
   try {
-    const res = await fetch("/api/v1/profile/password", {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        currentPassword: security.currentPassword,
-        newPassword: security.newPassword,
-      }),
+    await api.put("/api/v1/profile/password", {
+      currentPassword: security.currentPassword,
+      newPassword: security.newPassword,
     });
-
-    const data = await res.json();
-
-    if (!res.ok) throw new Error(data.error || "Failed to update password");
 
     toast.add({
       severity: "success",
@@ -1180,31 +1254,24 @@ const updatePassword = async () => {
 
 const saveContact = async () => {
   isSavingContact.value = true;
-  const token = localStorage.getItem("token");
   try {
-    const res = await fetch("/api/v1/shop/contact", {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
+    await api
+      .put("/api/v1/shop/contact", {
         phone: contactForm.phone,
         address: contactForm.address,
         website: contactForm.website,
-      }),
-    });
-    if (!res.ok) throw new Error((await res.json()).error || "Failed");
+      })
+      .catch(withMessage(t("profile.toast.saveFailed")));
     toast.add({
       severity: "success",
-      summary: "Saved",
-      detail: "Clinic info updated",
+      summary: t("common.success"),
+      detail: t("profile.clinicInfo.updated"),
       life: 3000,
     });
   } catch (e: any) {
     toast.add({
       severity: "error",
-      summary: "Error",
+      summary: t("common.error"),
       detail: e.message,
       life: 3000,
     });
@@ -1215,32 +1282,25 @@ const saveContact = async () => {
 
 const saveCalendarSettings = async () => {
   isSavingCalSettings.value = true;
-  const token = localStorage.getItem("token");
   try {
-    const res = await fetch("/api/v1/shop/calendar-settings", {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
+    await api
+      .put("/api/v1/shop/calendar-settings", {
         slot_min_time: calSettings.slotMinTime,
         slot_max_time: calSettings.slotMaxTime,
         show_weekends: calSettings.showWeekends,
         reminder_hours_before: calSettings.reminderHoursBefore,
-      }),
-    });
-    if (!res.ok) throw new Error((await res.json()).error || "Failed");
+      })
+      .catch(withMessage(t("profile.toast.saveFailed")));
     toast.add({
       severity: "success",
-      summary: "Saved",
-      detail: "Calendar settings updated",
+      summary: t("common.success"),
+      detail: t("profile.calendarSettings.updated"),
       life: 3000,
     });
   } catch (e: any) {
     toast.add({
       severity: "error",
-      summary: "Error",
+      summary: t("common.error"),
       detail: e.message,
       life: 3000,
     });
@@ -1249,37 +1309,128 @@ const saveCalendarSettings = async () => {
   }
 };
 
+const saveSelfBooking = async (value: boolean) => {
+  isSavingSelfBooking.value = true;
+  const previous = selfBookingEnabled.value;
+  selfBookingEnabled.value = value;
+  try {
+    await api
+      .put("/api/v1/shop/self-booking", { self_booking_enabled: value })
+      .catch(withMessage(t("profile.toast.saveFailed")));
+    toast.add({
+      severity: "success",
+      summary: t("common.success"),
+      detail: value
+        ? t("profile.selfBooking.enabledDetail")
+        : t("profile.selfBooking.disabledDetail"),
+      life: 3000,
+    });
+  } catch (e: any) {
+    selfBookingEnabled.value = previous;
+    toast.add({
+      severity: "error",
+      summary: t("common.error"),
+      detail: e.message,
+      life: 3000,
+    });
+  } finally {
+    isSavingSelfBooking.value = false;
+  }
+};
+
+const isSendingBroadcast = ref(false);
+const broadcastForm = reactive({ title: "", body: "" });
+const recentBroadcasts = ref<any[]>([]);
+
+const fetchRecentBroadcasts = async () => {
+  try {
+    recentBroadcasts.value = await api.get("/api/v1/broadcasts").catch(ifRefused(recentBroadcasts.value));
+  } catch {}
+};
+
+const sendBroadcast = async () => {
+  isSendingBroadcast.value = true;
+  try {
+    const data = await api.post("/api/v1/broadcasts", broadcastForm).catch(withMessage(t("profile.toast.saveFailed")));
+    toast.add({
+      severity: "success",
+      summary: t("profile.broadcast.sent"),
+      detail: t("profile.broadcast.deliveredDetail", { n: data.recipient_count }),
+      life: 3000,
+    });
+    broadcastForm.title = "";
+    broadcastForm.body = "";
+    fetchRecentBroadcasts();
+  } catch (e: any) {
+    toast.add({ severity: "error", summary: t("common.error"), detail: e.message, life: 3000 });
+  } finally {
+    isSendingBroadcast.value = false;
+  }
+};
+
 const uploadPhoto = async (e: Event) => {
   const file = (e.target as HTMLInputElement).files?.[0];
   if (!file) return;
-  const token = localStorage.getItem("token");
   const staffId = profile.value.staff_id;
   if (!staffId) return;
   const formData = new FormData();
   formData.append("photo", file);
   try {
-    const res = await fetch(`/api/v1/staff/${staffId}/photo`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-      body: formData,
-    });
-    if (!res.ok) throw new Error((await res.json()).error || "Upload failed");
-    const data = await res.json();
+    const data = await api
+      .upload(`/api/v1/staff/${staffId}/photo`, formData)
+      .catch(withMessage(t("profile.toast.uploadFailed")));
     staffPhotoUrl.value = data.photo_url;
-    toast.add({ severity: "success", summary: "Photo updated", life: 2000 });
+    toast.add({ severity: "success", summary: t("profile.toast.photoUpdated"), life: 2000 });
   } catch (e: any) {
     toast.add({
       severity: "error",
-      summary: "Upload failed",
+      summary: t("profile.toast.uploadFailed"),
       detail: e.message,
       life: 3000,
     });
   }
 };
 
-const handleLogout = () => {
-  authStore.logout();
-  router.push("/login");
+const logoutAndClear = useLogout();
+const handleLogout = () => logoutAndClear("/login");
+
+// --- Force Logout Everyone (super_admin only) ---
+const forcingLogout = ref(false);
+
+const confirmForceLogout = () => {
+  confirm.require({
+    message: t("profile.forceLogout.confirmMessage"),
+    header: t("profile.forceLogout.confirmHeader"),
+    icon: "pi pi-exclamation-triangle",
+    acceptClass: "p-button-danger",
+    accept: forceLogout,
+  });
+};
+
+const forceLogout = async () => {
+  forcingLogout.value = true;
+  try {
+    const data = await api.post("/api/v1/shop/force-logout");
+
+    // Keep the calling admin's own session alive with a fresh token.
+    authStore.refreshToken(data.token);
+
+    toast.add({
+      severity: "success",
+      summary: t("common.success"),
+      detail: t("profile.forceLogout.toastSuccess"),
+      life: 4000,
+    });
+  } catch (e) {
+    toast.add({
+      severity: "error",
+      summary: t("common.error"),
+      detail: t("profile.forceLogout.toastFailed"),
+      life: 4000,
+    });
+  } finally {
+    forcingLogout.value = false;
+  }
 };
 
 const toggleDarkMode = () => {
@@ -1295,12 +1446,13 @@ onMounted(() => {
   if (themeStore.primaryColor) {
     pickerColor.value = themeStore.primaryColor.replace("#", "");
   }
-  // Contests feature disabled.
-  // if (isShopAdmin.value) fetchContests();
+  if (authStore.isAnalyticsAllowed) {
+    if (CONTESTS_ENABLED) fetchContests();
+    fetchRecentBroadcasts();
+  }
 });
 
-// ── Contests (disabled) ──────────────────────────────────────────────
-/*
+// ── Contests ──────────────────────────────────────────────
 const contests = ref<any[]>([]);
 const isLoadingContests = ref(false);
 const contestDialogVisible = ref(false);
@@ -1335,12 +1487,8 @@ const formatDate = (d: string) =>
 
 const fetchContests = async () => {
   isLoadingContests.value = true;
-  const token = localStorage.getItem("token");
   try {
-    const res = await fetch("/api/v1/contests", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (res.ok) contests.value = await res.json();
+    contests.value = await api.get("/api/v1/contests").catch(ifRefused(contests.value));
   } finally {
     isLoadingContests.value = false;
   }
@@ -1374,14 +1522,13 @@ const saveContest = async () => {
   if (!contestForm.name || !contestForm.start_date || !contestForm.end_date) {
     toast.add({
       severity: "warn",
-      summary: "Απαιτείται",
-      detail: "Συμπληρώστε όνομα και περίοδο.",
+      summary: t("profile.contestToast.required"),
+      detail: t("profile.contestToast.requiredDetail"),
       life: 3000,
     });
     return;
   }
   isSavingContest.value = true;
-  const token = localStorage.getItem("token");
   const fd = new FormData();
   fd.append("name", contestForm.name);
   fd.append("description", contestForm.description || "");
@@ -1394,19 +1541,14 @@ const saveContest = async () => {
       ? `/api/v1/contests/${editingContest.value.id}`
       : "/api/v1/contests";
     const method = editingContest.value ? "PUT" : "POST";
-    const res = await fetch(url, {
-      method,
-      headers: { Authorization: `Bearer ${token}` },
-      body: fd,
-    });
-    if (!res.ok) throw new Error((await res.json()).error || "Failed");
+    await api.upload(url, fd, method).catch(withMessage(t("profile.toast.saveFailed")));
     contestDialogVisible.value = false;
     await fetchContests();
-    toast.add({ severity: "success", summary: "Αποθηκεύτηκε", life: 2000 });
+    toast.add({ severity: "success", summary: t("profile.contestToast.saved"), life: 2000 });
   } catch (e: any) {
     toast.add({
       severity: "error",
-      summary: "Σφάλμα",
+      summary: t("common.error"),
       detail: e.message,
       life: 3000,
     });
@@ -1416,23 +1558,17 @@ const saveContest = async () => {
 };
 
 const deleteContest = async (id: number) => {
-  const token = localStorage.getItem("token");
   try {
-    const res = await fetch(`/api/v1/contests/${id}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error((await res.json()).error || "Failed");
+    await api.del(`/api/v1/contests/${id}`).catch(withMessage(t("profile.toast.saveFailed")));
     contests.value = contests.value.filter((c) => c.id !== id);
-    toast.add({ severity: "success", summary: "Διαγράφηκε", life: 2000 });
+    toast.add({ severity: "success", summary: t("profile.contestToast.deleted"), life: 2000 });
   } catch (e: any) {
     toast.add({
       severity: "error",
-      summary: "Σφάλμα",
+      summary: t("common.error"),
       detail: e.message,
       life: 3000,
     });
   }
 };
-*/
 </script>

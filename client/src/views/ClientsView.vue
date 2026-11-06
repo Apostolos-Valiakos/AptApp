@@ -1,16 +1,16 @@
 <template>
   <div class="space-y-6">
-    <!-- Page Header -->
-    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-      <div class="flex justify-between items-center">
-        <div class="flex items-center gap-3">
+    <!-- Page Header: on phones the buttons go under the title. -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
+      <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+        <div class="flex items-center gap-3 min-w-0">
           <div
             class="w-10 h-10 rounded-xl bg-[var(--p-primary-50)] flex items-center justify-center"
           >
             <i class="pi pi-users text-[var(--p-primary-600)]"></i>
           </div>
           <div>
-            <h1 class="text-2xl font-bold text-gray-900">
+            <h1 class="text-xl sm:text-2xl font-bold text-gray-900">
               {{ t("clients.title") }}
             </h1>
             <p class="text-sm text-gray-500">
@@ -18,15 +18,19 @@
             </p>
           </div>
         </div>
-        <div class="flex gap-2">
+        <div class="flex flex-col-reverse sm:flex-row gap-2 w-full sm:w-auto">
           <Button
+            v-if="isShopAdmin"
+            class="flex-1 sm:flex-none whitespace-nowrap"
             icon="pi pi-file-excel"
+            :label="t('clients.export.button')"
             severity="secondary"
             outlined
-            v-tooltip.top="'Εξαγωγή Excel'"
-            @click="exportExcel"
+            data-testid="clients-export"
+            @click="openExport"
           />
           <Button
+            class="flex-1 sm:flex-none whitespace-nowrap"
             :label="t('clients.addNew')"
             icon="pi pi-plus"
             @click="openNew"
@@ -36,14 +40,16 @@
     </div>
 
     <!-- Data Table Card -->
-    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-3 sm:p-6">
       <DataTable
         :value="clients"
         :lazy="true"
         :paginator="true"
         :rows="pageRows"
         :totalRecords="totalClients"
-        :rowsPerPageOptions="[15, 30, 50, 100]"
+        :rowsPerPageOptions="isPhone ? undefined : [15, 30, 50, 100]"
+        :paginatorTemplate="isPhone ? PHONE_PAGINATOR_TEMPLATE : undefined"
+        currentPageReportTemplate="{currentPage} / {totalPages}"
         responsiveLayout="scroll"
         class="p-datatable-sm cursor-pointer hover:bg-gray-50"
         :loading="loading"
@@ -52,16 +58,17 @@
         @page="onPage"
       >
         <template #header>
-          <div class="flex justify-between items-center">
-            <span class="p-input-icon-left">
-              <i class="pi pi-search mr-3" />
+          <div class="flex justify-between items-center gap-3">
+            <div class="relative w-full sm:w-80">
+              <i class="pi pi-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
               <InputText
                 v-model="search"
+                type="search"
                 :placeholder="t('clients.search')"
-                class="w-80"
+                class="w-full !pl-10"
               />
-            </span>
-            <div class="text-sm text-gray-500">
+            </div>
+            <div class="hidden sm:block text-sm text-gray-500 whitespace-nowrap">
               {{ t("clients.subtitle", { count: totalClients }) }}
             </div>
           </div>
@@ -113,12 +120,26 @@
                 <div class="text-xs text-gray-400 truncate">
                   {{ slotProps.data.email || "—" }}
                 </div>
+                <a
+                  v-if="slotProps.data.phone"
+                  :href="'tel:' + slotProps.data.phone"
+                  class="md:hidden inline-block mt-0.5 text-sm text-green-600"
+                  @click.stop
+                >
+                  {{ formatPhone(slotProps.data.phone) }}
+                </a>
               </div>
             </div>
           </template>
         </Column>
 
-        <Column field="phone" :header="t('clients.table.phone')" sortable>
+        <Column
+          field="phone"
+          :header="t('clients.table.phone')"
+          sortable
+          headerClass="hidden md:table-cell"
+          bodyClass="hidden md:table-cell"
+        >
           <template #body="slotProps">
             <a
               :href="'tel:' + slotProps.data.phone"
@@ -130,9 +151,9 @@
           </template>
         </Column>
 
-        <Column :header="t('common.actions')">
+        <Column :header="isPhone ? '' : t('common.actions')" bodyClass="!px-1 md:!px-3">
           <template #body="slotProps">
-            <div class="flex gap-1.5 items-center">
+            <div class="flex gap-0.5 md:gap-1.5 items-center justify-end md:justify-start">
               <Button
                 icon="pi pi-envelope"
                 class="p-button-rounded p-button-text p-button-sm p-button-info"
@@ -141,6 +162,7 @@
                 @click.stop="inviteClient(slotProps.data)"
               />
               <Button
+                v-if="!isPhone"
                 icon="pi pi-pencil"
                 class="p-button-rounded p-button-text p-button-sm"
                 v-tooltip.top="t('clients.actions.viewProfile')"
@@ -161,6 +183,42 @@
         </Column>
       </DataTable>
     </div>
+
+    <!-- Excel export: the columns to include -->
+    <Dialog
+      v-model:visible="exportVisible"
+      :header="t('clients.export.title')"
+      modal
+      class="w-full max-w-lg"
+      data-testid="clients-export-dialog"
+    >
+      <p class="text-sm text-gray-500 mb-3">{{ t("clients.export.intro") }}</p>
+      <div class="flex gap-3 mb-3 text-sm">
+        <button type="button" class="font-semibold text-[var(--p-primary-700)] hover:underline" data-testid="export-all" @click="chosenColumns = exportColumns.map((c) => c.key)">
+          {{ t("clients.export.selectAll") }}
+        </button>
+        <button type="button" class="font-semibold text-[var(--p-primary-700)] hover:underline" data-testid="export-none" @click="chosenColumns = []">
+          {{ t("clients.export.clearAll") }}
+        </button>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <label v-for="c in exportColumns" :key="c.key" class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+          <Checkbox v-model="chosenColumns" :value="c.key" :data-testid="`export-col-${c.key}`" />
+          {{ c.label }}
+        </label>
+      </div>
+      <template #footer>
+        <Button :label="t('common.cancel')" severity="secondary" text @click="exportVisible = false" />
+        <Button
+          icon="pi pi-file-excel"
+          :label="t('clients.export.download')"
+          :disabled="!chosenColumns.length"
+          :loading="exporting"
+          data-testid="export-download"
+          @click="exportExcel"
+        />
+      </template>
+    </Dialog>
 
     <!-- New Client Dialog -->
     <Dialog
@@ -366,18 +424,25 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch } from "vue";
+import { api, ifRefused, withMessage } from "../api/http";
+import { ref, onMounted, computed, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 import { useAuthStore } from "../stores/auth";
 import { useSettingsStore } from "../stores/settings";
 import { storeToRefs } from "pinia";
+import { toLocalDateStr } from "../utils/staffAvailability";
 import ClientProfileDialog from "../components/ClientProfileDialog.vue"; // Ensure correct path
+import { useIsPhone, PHONE_PAGINATOR_TEMPLATE } from "../composables/useIsPhone";
 
 const { t } = useI18n();
 const authStore = useAuthStore();
 const isShopAdmin = authStore.isShopAdmin;
+// Phones: a lighter table (phone under the name, no extra columns) and a
+// paginator that fits.
+const isPhone = useIsPhone();
 const settingsStore = useSettingsStore();
 const { shopSettings } = storeToRefs(settingsStore);
 
@@ -388,11 +453,10 @@ const clients = ref<any[]>([]);
 const loading = ref(true);
 const dialogVisible = ref(false); // For creating NEW clients
 const search = ref("");
-const token = localStorage.getItem("token");
 
 // NEW: State for the Profile Dialog
 const profileVisible = ref(false);
-const selectedClientId = ref(null);
+const selectedClientId = ref<string | null>(null);
 
 const editingClient = ref<any>({
   id: null,
@@ -407,9 +471,19 @@ const editingClient = ref<any>({
   logotherapia: false,
 });
 
+const route = useRoute();
+const router = useRouter();
+
 onMounted(() => {
   fetchClients();
   settingsStore.fetchShopSettings();
+  // Deep link from the QR scanner's "Open full profile" button.
+  if (route.query.open) {
+    selectedClientId.value = String(route.query.open);
+    profileVisible.value = true;
+    const { open, ...rest } = route.query;
+    router.replace({ query: rest });
+  }
 });
 
 // Server-side pagination + search
@@ -426,11 +500,7 @@ const fetchClients = async () => {
     });
     if (search.value.trim()) params.append("search", search.value.trim());
 
-    const res = await fetch(`/api/v1/clients?${params}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error("Request failed");
-    const data = await res.json();
+    const data = await api.get(`/api/v1/clients?${params}`);
     clients.value = data.clients || [];
     totalClients.value = data.total || 0;
   } catch (err) {
@@ -462,30 +532,58 @@ watch(search, () => {
   }, 300);
 });
 
+// Excel export: every client, with the columns picked in the dialog (in this
+// order). Service columns only for the services the shop has turned on.
+const exportVisible = ref(false);
+const exporting = ref(false);
+const chosenColumns = ref<any>(null);
+const dmy = (iso: string | null) => (iso ? iso.split("-").reverse().join("/") : "");
+const yesNo = (v: boolean) => t(v ? "clients.export.yes" : "clients.export.no");
+const exportColumns = computed(() => [
+  { key: "first_name", label: t("clients.dialog.firstName"), value: (c: any) => c.first_name || "" },
+  { key: "last_name", label: t("clients.dialog.lastName"), value: (c: any) => c.last_name || "" },
+  { key: "email", label: t("common.email"), value: (c: any) => c.email || "" },
+  { key: "phone", label: t("common.phone"), value: (c: any) => c.phone || "" },
+  { key: "date_of_birth", label: t("clients.export.dateOfBirth"), value: (c: any) => dmy(c.date_of_birth) },
+  { key: "balance", label: t("clients.export.balance"), value: (c: any) => Number(c.outstanding_balance || 0) },
+  { key: "visits", label: t("clients.export.visits"), value: (c: any) => c.visits },
+  { key: "last_visit", label: t("clients.export.lastVisit"), value: (c: any) => dmy(c.last_visit) },
+  { key: "no_shows", label: t("clients.export.noShows"), value: (c: any) => c.no_shows },
+  { key: "receive_emails", label: t("clients.export.receiveEmails"), value: (c: any) => yesNo(c.receive_emails) },
+  ...["ergotherapia", "physiotherapia", "logotherapia"]
+    .filter((s) => shopSettings.value?.[s])
+    .map((s) => ({ key: s, label: t(`common.services.${s}`), value: (c: any) => yesNo(c[s]) })),
+  { key: "notes", label: t("common.notes"), value: (c: any) => c.notes || "" },
+  {
+    key: "custom_fields",
+    label: t("clients.dialog.customDetails"),
+    value: (c: any) => (c.custom_fields || []).map((f: any) => `${f.title}: ${f.value}`).join("; "),
+  },
+]);
+const openExport = () => {
+  if (!chosenColumns.value) chosenColumns.value = exportColumns.value.map((c) => c.key);
+  exportVisible.value = true;
+};
 const exportExcel = async () => {
-  // Export ALL matching clients (not just the current page)
-  const params = new URLSearchParams();
-  if (search.value.trim()) params.append("search", search.value.trim());
-  const res = await fetch(`/api/v1/clients?${params}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) return;
-  const allClients = await res.json();
-
-  const data = allClients.map((c: any) => ({
-    Όνομα: c.first_name || "",
-    Επώνυμο: c.last_name || "",
-    Email: c.email || "",
-    Τηλέφωνο: c.phone || "",
-    Υπόλοιπο: c.outstanding_balance ?? 0,
-    "Σύνολο πωλήσεων": c.total_sales ?? 0,
-    "No-shows": c.no_show_count ?? 0,
-  }));
-  const XLSX = await import("xlsx");
-  const ws = XLSX.utils.json_to_sheet(data);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Πελάτες");
-  XLSX.writeFile(wb, `clients_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  exporting.value = true;
+  try {
+    const all = await api.get("/api/v1/clients/export");
+    const columns = exportColumns.value.filter((c) => chosenColumns.value.includes(c.key));
+    const rows = all.map((client: any) => Object.fromEntries(columns.map((c) => [c.label, c.value(client)])));
+    const XLSX = await import("xlsx");
+    const ws = XLSX.utils.json_to_sheet(rows, { header: columns.map((c) => c.label) });
+    ws["!cols"] = columns.map((c) => ({
+      wch: Math.min(40, Math.max(c.label.length, ...rows.map((r: any) => String(r[c.label]).length)) + 2),
+    }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, t("clients.export.sheetName"));
+    XLSX.writeFile(wb, `clients_${toLocalDateStr(new Date())}.xlsx`);
+    exportVisible.value = false;
+  } catch {
+    toast.add({ severity: "error", summary: t("common.error"), detail: t("clients.export.failed"), life: 4000 });
+  } finally {
+    exporting.value = false;
+  }
 };
 
 // NEW: Open the full profile dialog
@@ -505,13 +603,7 @@ const inviteClient = async (client: any) => {
   }
 
   try {
-    const res = await fetch(`/api/v1/clients/${client.id}/invite`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Failed to invite client");
+    await api.post(`/api/v1/clients/${client.id}/invite`).catch(withMessage("Failed to invite client"));
 
     toast.add({
       severity: "success",
@@ -550,8 +642,8 @@ const addCustomField = () => {
   editingClient.value.custom_fields.push({ title: "", value: "" });
 };
 
-const removeCustomField = (index: number) => {
-  editingClient.value.custom_fields.splice(index, 1);
+const removeCustomField = (index: number | string) => {
+  editingClient.value.custom_fields.splice(Number(index), 1);
 };
 
 // Save logic (Only for Creation now)
@@ -568,16 +660,7 @@ const saveClient = async () => {
 
   // Since we use ClientProfileDialog for edits, this is strictly for POST (Create)
   try {
-    const res = await fetch("/api/v1/clients", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(editingClient.value),
-    });
-
-    if (!res.ok) throw new Error("Failed to save");
+    await api.post("/api/v1/clients", editingClient.value).catch(withMessage("Failed to save"));
 
     toast.add({
       severity: "success",
@@ -611,16 +694,7 @@ const confirmDelete = (client: any) => {
 
 const deleteClient = async (client: any) => {
   try {
-    const res = await fetch(`/api/v1/clients/${client.id}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    const data = await res.json().catch(() => ({}));
-
-    if (!res.ok) {
-      throw new Error(data.error || "Failed to delete client");
-    }
+    await api.del(`/api/v1/clients/${client.id}`).catch(withMessage("Failed to delete client"));
 
     toast.add({
       severity: "success",

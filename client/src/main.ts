@@ -1,4 +1,4 @@
-import { createApp } from "vue";
+import { createApp, watch } from "vue";
 
 // In the Capacitor native build there is no Vite proxy, so relative /api
 // URLs would resolve to capacitor://localhost/api and fail. Patch fetch to
@@ -9,7 +9,9 @@ if (_apiBase) {
   window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
     if (
       typeof input === "string" &&
-      (input.startsWith("/api") || input.startsWith("/socket.io"))
+      (input.startsWith("/api") ||
+        input.startsWith("/socket.io") ||
+        input.startsWith("/health"))
     ) {
       return _orig(_apiBase + input, init);
     }
@@ -20,6 +22,7 @@ import { createPinia } from "pinia";
 import PrimeVue from "primevue/config";
 import App from "./App.vue";
 import router from "./router";
+import { installSessionRecovery } from "./utils/sessionRecovery";
 
 // === PrimeVue v4 Theming ===
 import Aura from "@primevue/themes/aura";
@@ -35,34 +38,15 @@ import ConfirmationService from "primevue/confirmationservice";
 import Tooltip from "primevue/tooltip";
 
 // === COMPONENTS ===
-import Button from "primevue/button";
-import Dialog from "primevue/dialog";
-import Select from "primevue/select";
-import AutoComplete from "primevue/autocomplete";
-import InputText from "primevue/inputtext";
-import InputNumber from "primevue/inputnumber";
-import DatePicker from "primevue/datepicker";
-import Textarea from "primevue/textarea";
-import Checkbox from "primevue/checkbox";
-import ProgressBar from "primevue/progressbar";
-import { MultiSelect } from "primevue";
-
-import Chip from "primevue/chip";
-import Card from "primevue/card";
-import Avatar from "primevue/avatar";
-import ScrollPanel from "primevue/scrollpanel";
-import Divider from "primevue/divider";
-import FloatLabel from "primevue/floatlabel";
-import ColorPicker from "primevue/colorpicker";
-import ToggleSwitch from "primevue/toggleswitch";
-import Tag from "primevue/tag";
-import Toast from "primevue/toast";
-import ConfirmDialog from "primevue/confirmdialog";
-import DataTable from "primevue/datatable";
-import Column from "primevue/column";
-import Chart from "primevue/chart";
+// PrimeVue components aren't registered here: the build imports each one in
+// the screens that use it (unplugin-vue-components, see vite.config.mjs), so
+// the first download only carries what the first screen needs.
 import { useThemeStore } from "./stores/themes";
 import { i18n } from "./i18n";
+import { elDatePickerNames } from "./i18n/datePicker";
+import { initOfflineSync } from "./offline/queue";
+
+declare const __APP_SW__: boolean; // set by vite.config.mjs
 
 const MyPreset = definePreset(Aura, {
   semantic: {
@@ -78,16 +62,21 @@ const initApp = async () => {
   app.use(pinia);
 
   // 3. Use the store to fetch/apply theme before mounting
+  // At most 3s: with a hung connection the app must still open (offline mode).
   const themeStore = useThemeStore();
-  await themeStore.fetchAndApplyTheme();
+  await Promise.race([themeStore.fetchAndApplyTheme(), new Promise((r) => setTimeout(r, 3000))]);
 
   app.use(router);
+  // Expired session → login page; stale build after a rebuild → reload.
+  installSessionRecovery(router);
   app.use(i18n);
   app.use(ToastService);
   app.use(ConfirmationService);
 
   // Initialize PrimeVue with the dynamic v4 Theme Preset
   app.use(PrimeVue, {
+    // Weeks start on Monday in every date picker.
+    locale: { firstDayOfWeek: 1 },
     theme: {
       preset: MyPreset,
       options: {
@@ -97,39 +86,32 @@ const initApp = async () => {
     ripple: true,
   });
 
+  // Date pickers show months and days in the app's language, and follow it
+  // when it changes.
+  const primevue = app.config.globalProperties.$primevue;
+  const defaultLocale: any = { ...primevue.config.locale };
+  watch(
+    i18n.global.locale,
+    (lang) => {
+      primevue.config.locale = lang === "el" ? { ...defaultLocale, ...elDatePickerNames } : defaultLocale;
+    },
+    { immediate: true },
+  );
+
   // Directives
   app.directive("tooltip", Tooltip);
 
-  // === REGISTER COMPONENTS ===
-  app.component("Button", Button);
-  app.component("Dialog", Dialog);
-  app.component("Dropdown", Select);
-  app.component("AutoComplete", AutoComplete);
-  app.component("InputText", InputText);
-  app.component("InputNumber", InputNumber);
-  app.component("Chart", Chart);
-  app.component("ColorPicker", ColorPicker);
-  app.component("ProgressBar", ProgressBar);
 
-  app.component("DatePicker", DatePicker);
-  app.component("Calendar", DatePicker);
-
-  app.component("Textarea", Textarea);
-  app.component("Tag", Tag);
-  app.component("Checkbox", Checkbox);
-  app.component("MultiSelect", MultiSelect);
-
-  app.component("Chip", Chip);
-  app.component("Card", Card);
-  app.component("Avatar", Avatar);
-  app.component("ScrollPanel", ScrollPanel);
-  app.component("Divider", Divider);
-  app.component("FloatLabel", FloatLabel);
-  app.component("ToggleSwitch", ToggleSwitch);
-  app.component("Toast", Toast);
-  app.component("ConfirmDialog", ConfirmDialog);
-  app.component("DataTable", DataTable);
-  app.component("Column", Column);
+  // Offline write queue: safe to init even when logged out, it just sits
+  // idle with an empty queue until a booking/payment write actually needs it.
+  initOfflineSync();
+  // Keeps the staff app's files in the browser, so /app/* opens offline
+  // (client/sw/app-sw.js; production builds only).
+  if (__APP_SW__ && "serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/app-sw.js", { scope: "/app/" }).catch((err) => {
+      console.warn("App service worker not registered", err);
+    });
+  }
 
   // 6. Mount the app (Removes the index.html spinner)
   app.mount("#app");

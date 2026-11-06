@@ -24,10 +24,10 @@
         <div class="flex items-center gap-2">
           <i class="pi pi-comments"></i>
           <span class="font-semibold truncate max-w-[200px]">
-            {{ chatStore.activeChannel?.name || "Messages" }}
+            {{ chatStore.activeChannel?.name || t('chat.messages') }}
           </span>
           <span v-if="!chatStore.isConnected" class="text-xs text-red-200"
-            >(Offline)</span
+            >({{ t('chat.offline') }})</span
           >
         </div>
         <div class="flex gap-2">
@@ -43,7 +43,7 @@
       <div v-if="!chatStore.activeChannelId" class="chat-body">
         <div class="p-3 border-b">
           <Button
-            label="New Channel"
+            :label="t('chat.newChannel')"
             icon="pi pi-plus"
             size="small"
             outlined
@@ -70,7 +70,7 @@
                     {{ channel.name }}
                   </div>
                   <div class="text-xs text-gray-500 truncate">
-                    {{ channel.member_count }} members
+                    {{ t('chat.membersCount', { n: channel.member_count }) }}
                   </div>
                 </div>
               </div>
@@ -87,7 +87,7 @@
               class="p-8 text-center text-gray-500 flex flex-col items-center"
             >
               <i class="pi pi-comments text-4xl mb-2 text-gray-300"></i>
-              <p>No channels yet.</p>
+              <p>{{ t('chat.noChannels') }}</p>
             </div>
           </ScrollPanel>
         </div>
@@ -109,7 +109,7 @@
               {{ chatStore.activeChannel?.name }}
             </div>
             <div class="text-xs text-gray-500 truncate">
-              {{ chatStore.activeChannel?.member_count }} members
+              {{ t('chat.membersCount', { n: chatStore.activeChannel?.member_count }) }}
             </div>
           </div>
         </div>
@@ -186,8 +186,8 @@
 
                     <div v-else-if="message.message_type === 'file'">
                       <a
-                        :href="resolveImageUrl(message)"
-                        target="_blank"
+                        href="#"
+                        @click.prevent="downloadChatFile(message)"
                         class="flex items-center gap-3 p-2 bg-black/5 rounded hover:bg-black/10 transition text-inherit no-underline"
                       >
                         <i class="pi pi-file text-xl"></i>
@@ -212,15 +212,15 @@
                       v-if="message.id.startsWith('temp-')"
                       class="text-gray-400"
                     >
-                      <i class="pi pi-spin pi-spinner text-[9px]"></i> Sending
+                      <i class="pi pi-spin pi-spinner text-[9px]"></i> {{ t('chat.sending') }}
                     </span>
                     <span
                       v-else-if="message.read_by && message.read_by.length > 0"
                       class="text-[var(--p-primary-color)] font-bold flex items-center gap-1"
                     >
-                      <i class="pi pi-check-circle text-[9px]"></i> Read
+                      <i class="pi pi-check-circle text-[9px]"></i> {{ t('chat.read') }}
                     </span>
-                    <span v-else class="text-gray-400">Delivered</span>
+                    <span v-else class="text-gray-400">{{ t('chat.delivered') }}</span>
                   </div>
                 </div>
               </div>
@@ -230,7 +230,7 @@
                   <div class="typing-dots">
                     <span></span><span></span><span></span>
                   </div>
-                  <span>{{ typingUsers.join(", ") }} is typing...</span>
+                  <span>{{ t('chat.isTyping', { names: typingUsers.join(", ") }) }}</span>
                 </div>
               </div>
             </div>
@@ -267,13 +267,13 @@
               text
               rounded
               class="text-gray-500 hover:text-gray-700"
-              @click="$refs.fileInput.click()"
+              @click="fileInput?.click()"
             />
 
             <textarea
               v-model="messageText"
               rows="1"
-              placeholder="Type a message..."
+              :placeholder="t('chat.typeMessage')"
               class="flex-1 bg-gray-100 border-0 rounded-2xl py-2 px-4 focus:ring-2 focus:ring-indigo-500 focus:outline-none resize-none text-sm max-h-24 overflow-y-auto"
               @keydown.enter.exact.prevent="sendMessage"
               @input="handleTyping"
@@ -293,34 +293,34 @@
 
     <Dialog
       v-model:visible="showCreateChannel"
-      header="Create New Channel"
+      :header="t('chat.createNewChannel')"
       modal
       class="p-4"
       :style="{ width: '90vw', maxWidth: '400px' }"
     >
       <div class="space-y-4">
         <div>
-          <label class="block text-sm font-medium mb-1">Channel Name</label>
+          <label class="block text-sm font-medium mb-1">{{ t('chat.channelName') }}</label>
           <InputText
             v-model="newChannel.name"
             class="w-full"
-            placeholder="e.g., Team Chat"
+            :placeholder="t('chat.channelNamePlaceholder')"
           />
         </div>
         <div>
-          <label class="block text-sm font-medium mb-1">Description</label>
+          <label class="block text-sm font-medium mb-1">{{ t('chat.description') }}</label>
           <Textarea v-model="newChannel.description" class="w-full" rows="3" />
         </div>
         <div>
           <label class="block text-sm font-medium mb-1 text-gray-700"
-            >Add Members</label
+            >{{ t('chat.addMembers') }}</label
           >
           <MultiSelect
             v-model="newChannel.memberIds"
             :options="shopUsers"
             optionLabel="staff_name"
             optionValue="id"
-            placeholder="Select team members"
+            :placeholder="t('chat.selectMembers')"
             class="w-full"
             :filter="true"
             display="chip"
@@ -336,9 +336,9 @@
         </div>
       </div>
       <template #footer>
-        <Button label="Cancel" text @click="showCreateChannel = false" />
+        <Button :label="t('common.cancel')" text @click="showCreateChannel = false" />
         <Button
-          label="Create"
+          :label="t('common.create')"
           @click="createChannel"
           :disabled="!newChannel.name"
         />
@@ -348,14 +348,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch, nextTick } from "vue";
+import { api, saveBlob } from "../api/http";
+import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from "vue";
 import { useChatStore } from "../stores/chat";
 import { useAuthStore } from "../stores/auth";
 import { useToast } from "primevue/usetoast";
+import { useI18n } from "vue-i18n";
 
 const chatStore = useChatStore();
 const authStore = useAuthStore();
 const toast = useToast();
+const { t } = useI18n();
 
 // UI State
 const isMobile = ref(window.innerWidth < 768);
@@ -407,11 +410,7 @@ onUnmounted(() => {
 
 const fetchShopUsers = async () => {
   try {
-    const token = localStorage.getItem("token");
-    const res = await fetch("/api/v1/chat/shop-users", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const data = await res.json();
+    const data = await api.get("/api/v1/chat/shop-users");
     shopUsers.value = Array.isArray(data) ? data : [];
   } catch (err) {
     console.error("Error fetching shop users:", err);
@@ -523,7 +522,7 @@ const createChannel = async () => {
     showCreateChannel.value = false;
     newChannel.value = { name: "", description: "", memberIds: [] };
   } catch (err) {
-    toast.add({ severity: "error", summary: "Error", detail: "Failed to create channel", life: 3000 });
+    toast.add({ severity: "error", summary: t('common.error'), detail: t('chat.createChannelFailed'), life: 3000 });
   }
 };
 
@@ -546,7 +545,7 @@ const formatTime = (timestamp: string) => {
   return date.toLocaleDateString("en-GB");
 };
 
-const formatFileSize = (bytes: number | undefined) => {
+const formatFileSize = (bytes: number | null | undefined) => {
   if (!bytes) return "0 B";
   const k = 1024;
   const sizes = ["B", "KB", "MB", "GB"];
@@ -568,15 +567,41 @@ const resolveImageUrl = (message: any) => {
     return message.file_url;
   }
   if (message.id && !String(message.id).startsWith("temp-")) {
-    const token = localStorage.getItem("token");
-
-    const baseUrl =
-      (import.meta.env.VITE_API_BASE_URL as string) || window.location.origin;
-
-    return `${baseUrl}/api/v1/chat/file/${message.id}?token=${token}`;
+    const id = String(message.id);
+    const local = chatFileUrls.get(id);
+    if (local) return local;
+    if (!chatFilesAsked.has(id)) {
+      chatFilesAsked.add(id);
+      api
+        .blob(chatFileUrl(id))
+        .then((data) => chatFileUrls.set(id, URL.createObjectURL(data)))
+        .catch(() => {});
+    }
   }
   return "";
 };
+
+// Chat files come with the login in the request header (never ?token= in a
+// link): an image is fetched once and shown from a local copy; a file is
+// fetched when clicked and saved under its own name.
+const chatFileUrl = (id: string) =>
+  `${(import.meta.env.VITE_API_BASE_URL as string) || window.location.origin}/api/v1/chat/file/${id}`;
+const chatFileUrls = reactive(new Map<string, string>());
+const chatFilesAsked = new Set<string>();
+const downloadChatFile = async (message: any) => {
+  if (!message) return;
+  if (message.file_url && /^(blob|data):/.test(message.file_url)) {
+    window.open(message.file_url, "_blank");
+    return;
+  }
+  if (!message.id || String(message.id).startsWith("temp-")) return;
+  try {
+    saveBlob(await api.blob(chatFileUrl(String(message.id))), message.file_name || "file");
+  } catch {
+    toast.add({ severity: "error", summary: t("common.error"), life: 3000 });
+  }
+};
+onUnmounted(() => chatFileUrls.forEach((url) => URL.revokeObjectURL(url)));
 
 watch(
   () => chatStore.activeMessages,

@@ -1,14 +1,23 @@
-node_modules
-client/node_modules
+# Without this, the Dockerfile's `COPY . .` pulls all of this into the build
+# context and bakes it into intermediate image layers — including real
+# secrets in .env and the full git history.
 .env
 .env.*
 .git
 .gitignore
-*.sql
+node_modules
+client/node_modules
 dist
 client/dist
 android
-.claude
-.vscode
+capacitor.config.json
+*.sql
+*.dump
+scripts/__pycache__/
+server/tests/
 Installation Steps.pdf
 npm-debug.log*
+.vscode
+.claude
+DEPLOY.md
+README.md

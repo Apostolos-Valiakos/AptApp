@@ -1,3 +1,26 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Dialogs on phones: the backdrop behind a dialog is 100% of the screen
+   height, which phone browsers measure as if their address and bottom bars
+   were hidden, so a tall dialog's footer (its save button) could end up
+   behind them. 100dvh is the height actually visible, and changes as the bars
+   show and hide; dialogs (90% of the backdrop at most, or all of it) follow. */
+.p-dialog-mask {
+  height: 100dvh !important;
+}
+
+/* The chat button floats over everything; on a phone it would cover a
+   dialog's buttons, so it steps aside while a dialog is open. */
+@media (max-width: 767px) {
+  body:has(.p-dialog-mask) .floating-chat {
+    display: none;
+  }
+}
+
+/* A destructive item in a ⋯ menu (delete): red. */
+.menu-danger .p-menu-item-label,
+.menu-danger .p-menu-item-icon {
+  color: #dc2626 !important;
+}
