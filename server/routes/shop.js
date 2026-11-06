@@ -9,8 +9,6 @@ const { sendPushToShop, recordNotificationForShop } = require("../pushService");
 
 module.exports = function shopRouter({
   authenticateToken,
-  cardFilterCache,
-  cashFilterCache,
   forceLogoutCache,
   io,
   notForClients,
@@ -19,17 +17,6 @@ module.exports = function shopRouter({
   TIME_HHMM,
 }) {
   const router = express.Router();
-
-  // Whether `userRole` is allowed to change the cash-hide filter given who
-  // currently holds the lock. An admin's lock can be released by any admin (or
-  // a super_admin); a super_admin's lock is exclusive to super_admin — a
-  // deliberate safety valve so the shop can never get stuck hidden waiting on
-  // one specific person.
-  const canUnlockCashFilter = (userRole, lockedBy) => {
-    if (!lockedBy) return true;
-    if (userRole === "super_admin") return true;
-    return userRole === lockedBy;
-  };
 
   router.get("/shop", authenticateToken, asyncHandler(async (req, res) => {
     // 2. Add the WHERE clause with the $1 placeholder
@@ -72,8 +59,8 @@ module.exports = function shopRouter({
   }, { log: "Error updating theme:" }));
 
   // Force-logout every user in this shop (revokes all previously-issued tokens
-  // on their next request) and locks Ctrl+1 (hide cash) shop-wide. The calling
-  // admin is transparently re-issued a fresh token so their own session survives.
+  // on their next request). The calling admin is transparently re-issued a
+  // fresh token so their own session survives.
   router.post("/shop/force-logout", authenticateToken, notForClients, asyncHandler(async (req, res) => {
     if (req.user.role !== "super_admin") {
       return res.status(403).json({ error: "Super admins only" });
@@ -83,7 +70,7 @@ module.exports = function shopRouter({
     // request, could land in the same second but "before" a sub-second NOW()
     // and get spuriously rejected as revoked.
     const { rows } = await pool.query(
-      `UPDATE shops SET force_logout_at = date_trunc('second', NOW()), force_hide_cash = true, force_hide_cash_locked_by = 'super_admin'
+      `UPDATE shops SET force_logout_at = date_trunc('second', NOW())
        WHERE id = $1 RETURNING force_logout_at`,
       [req.shopId],
     );
@@ -92,7 +79,6 @@ module.exports = function shopRouter({
     }
 
     forceLogoutCache.set(req.shopId, new Date(rows[0].force_logout_at).getTime());
-    cashFilterCache.set(req.shopId, true);
 
     // Re-issue the calling admin a fresh token (new iat) so their own session
     // survives the revocation that just invalidated everyone else's.
@@ -112,109 +98,9 @@ module.exports = function shopRouter({
     // Immediate effect for anyone currently connected; the revocation above
     // guarantees it for everyone else on their next request regardless.
     io.to(`shop:${req.shopId}`).emit("force:logout");
-    io.to(`shop:${req.shopId}`).emit("cash:filter:set", { hidden: true, lockedBy: "super_admin" });
 
     res.json({ token: freshToken });
   }, { log: "Error forcing shop logout:" }));
-
-  // Releases the shop-wide Ctrl+1 lock set by force-logout above.
-  router.post("/shop/release-cash-lock", authenticateToken, notForClients, asyncHandler(async (req, res) => {
-    if (req.user.role !== "super_admin") {
-      return res.status(403).json({ error: "Super admins only" });
-    }
-    const { rowCount } = await pool.query(
-      `UPDATE shops SET force_hide_cash = false, force_hide_cash_locked_by = NULL WHERE id = $1`,
-      [req.shopId],
-    );
-    if (rowCount === 0) {
-      return res.status(404).json({ error: "Shop not found" });
-    }
-    cashFilterCache.delete(req.shopId);
-
-    // Distinct from cash:filter:set on purpose — releasing the lock hands
-    // control back to each staff member, it should not also force-unhide
-    // cash figures for everyone the instant an admin clicks it.
-    io.to(`shop:${req.shopId}`).emit("cash:lock:released");
-
-    res.json({ success: true });
-  }, { log: "Error releasing cash lock:" }));
-
-  // Toggles the shop-wide cash-hide filter and broadcasts it live — used by
-  // both admin and super_admin (via Ctrl+1). Turning it ON locks it to the
-  // caller's tier (see canUnlockCashFilter); turning it OFF clears the lock
-  // entirely. Persisted in shops.force_hide_cash(_locked_by) — not just a live
-  // socket push — so it's also correct for anyone who logs in fresh or
-  // reconnects later (see the socket connection handler and /filter-state).
-  router.post("/shop/cash-filter", authenticateToken, notForClients, asyncHandler(async (req, res) => {
-    if (req.user.role !== "admin" && req.user.role !== "super_admin") {
-      return res.status(403).json({ error: "Admins only" });
-    }
-    const hidden = !!req.body.hidden;
-    const shopRes = await pool.query(
-      `SELECT force_hide_cash_locked_by FROM shops WHERE id = $1`,
-      [req.shopId],
-    );
-    if (shopRes.rows.length === 0) {
-      return res.status(404).json({ error: "Shop not found" });
-    }
-    const lockedBy = shopRes.rows[0].force_hide_cash_locked_by;
-    if (!canUnlockCashFilter(req.user.role, lockedBy)) {
-      return res.status(403).json({
-        error:
-          lockedBy === "super_admin"
-            ? "This filter is locked by a super admin. Only a super admin can change it."
-            : "This filter is locked by another admin. Ask them, or a super admin can override it.",
-      });
-    }
-
-    const newLockedBy = hidden ? req.user.role : null;
-    await pool.query(
-      `UPDATE shops SET force_hide_cash = $1, force_hide_cash_locked_by = $2 WHERE id = $3`,
-      [hidden, newLockedBy, req.shopId],
-    );
-    if (hidden) {
-      cashFilterCache.set(req.shopId, true);
-    } else {
-      cashFilterCache.delete(req.shopId);
-    }
-
-    if (hidden) {
-      io.to(`shop:${req.shopId}`).emit("cash:filter:set", { hidden: true, lockedBy: newLockedBy });
-    } else {
-      io.to(`shop:${req.shopId}`).emit("cash:lock:released");
-      io.to(`shop:${req.shopId}`).emit("cash:filter:set", { hidden: false, lockedBy: null });
-    }
-
-    res.json({ success: true, hidden, lockedBy: newLockedBy });
-  }, { log: "Error updating cash filter:" }));
-
-  // Plain-HTTP fallback for the cash/card-filter socket broadcasts above.
-  // A phone browser suspends JS and silently drops its WebSocket while
-  // backgrounded — the socket-connect sync only helps once the app is running
-  // again to receive it, which can lag well behind the user actually reopening
-  // the tab. A normal fetch on foreground/mount doesn't depend on a live
-  // socket at all, so the client calls this instead of waiting on one.
-  router.get("/shop/filter-state", authenticateToken, notForClients, asyncHandler(async (req, res) => {
-    if (!req.shopId) {
-      return res.json({ cashLocked: false, cashLockedBy: null, cashHidden: null, cardHidden: null });
-    }
-    const { rows } = await pool.query(
-      `SELECT force_hide_cash, force_hide_cash_locked_by FROM shops WHERE id = $1`,
-      [req.shopId],
-    );
-    const hardLocked = !!rows[0]?.force_hide_cash;
-    const lockedBy = rows[0]?.force_hide_cash_locked_by || null;
-    res.json({
-      cashLocked: hardLocked,
-      cashLockedBy: hardLocked ? lockedBy : null,
-      cashHidden: hardLocked
-        ? true
-        : cashFilterCache.has(req.shopId)
-          ? cashFilterCache.get(req.shopId)
-          : null,
-      cardHidden: cardFilterCache.has(req.shopId) ? cardFilterCache.get(req.shopId) : null,
-    });
-  }, { log: "Error fetching filter state:" }));
 
   router.put("/shop/services", authenticateToken, requireShopAdminAccess, asyncHandler(async (req, res) => {
     const { ergotherapia, physiotherapia, logotherapia } = req.body;

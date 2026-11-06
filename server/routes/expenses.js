@@ -206,8 +206,6 @@ module.exports = function expensesRouter({
     const month = String(req.query.month || "");
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return res.status(400).json({ error: "month must be YYYY-MM" });
     let methods = "";
-    if (req.query.excludeCash === "true") methods += " AND e.payment_method <> 'cash'";
-    if (req.query.excludeCard === "true") methods += " AND e.payment_method <> 'card'";
     const start = `${month}-01`;
 
     const { rows: months } = await pool.query(

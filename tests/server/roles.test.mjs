@@ -47,7 +47,7 @@ test("a client login is turned away from every staff route", async () => {
     ["GET", "/api/v1/service-categories"], ["PUT", "/api/v1/service-categories/color", { name: "X", color_code: null }],
     ["GET", "/api/v1/products"], ["POST", "/api/v1/products", { name: "X", variations: [] }],
     ["GET", "/api/v1/exercises"], ["GET", "/api/v1/profile"], ["GET", "/api/v1/gift-cards"], ["GET", "/api/v1/gift-cards/search?q=1"],
-    ["GET", "/api/v1/membership-tiers"], ["GET", "/api/v1/chat/channels"], ["GET", "/api/v1/shop/filter-state"], ["GET", "/api/v1/shop-hours"],
+    ["GET", "/api/v1/membership-tiers"], ["GET", "/api/v1/chat/channels"], ["GET", "/api/v1/shop-hours"],
     ["PUT", "/api/v1/shop/theme", { primaryColor: "#000000" }], ["PUT", "/api/v1/shop/contact", { phone: "1" }],
     ["PUT", "/api/v1/shop/calendar-settings", {}], ["GET", "/api/v1/reports/daily"], ["GET", "/api/v1/discount-codes"],
   ];
@@ -96,7 +96,7 @@ test("plain staff can't change what's behind the admin-only pages", async () => 
 });
 
 test("plain staff keep what their screens use", async () => {
-  for (const url of ["/api/v1/staff", "/api/v1/services", "/api/v1/products", "/api/v1/time-off", "/api/v1/working-hours", "/api/v1/shop", "/api/v1/shop-hours", "/api/v1/shop/filter-state", "/api/v1/profile", "/api/v1/exercises", "/api/v1/chat/channels"]) {
+  for (const url of ["/api/v1/staff", "/api/v1/services", "/api/v1/products", "/api/v1/time-off", "/api/v1/working-hours", "/api/v1/shop", "/api/v1/shop-hours", "/api/v1/profile", "/api/v1/exercises", "/api/v1/chat/channels"]) {
     const r = await as.staff("GET", url);
     assert.equal(r.status, 200, `${url}: ${r.status} ${JSON.stringify(r.data)?.slice(0, 80)}`);
   }

@@ -3,7 +3,6 @@
 // router (see "Area routers" near the end of server.js).
 const crypto = require("crypto");
 const express = require("express");
-const { MONEY_METHODS } = require("../domain/common");
 const { HttpError, asyncHandler, withTransaction } = require("../http");
 
 module.exports = function appointmentsRouter({
@@ -187,11 +186,7 @@ module.exports = function appointmentsRouter({
               'staff_id', aps.staff_id,
               'staff_name', st.name,
               'start_time', aps.start_time,
-              'persons', aps.persons,
-              'charged', COALESCE(aps.price_override, s.price, 0),
-              'paid_with', (SELECT paid_with FROM appointment_service_payments WHERE appointment_service_id = aps.id),
-              'hidden', (SELECT json_build_object('cash', hidden_cash, 'card', hidden_card, 'both', hidden_both)
-                         FROM appointment_service_payments WHERE appointment_service_id = aps.id)
+              'persons', aps.persons
             ) ORDER BY aps.start_time ASC)
             FROM appointment_services aps
             LEFT JOIN services s ON aps.service_id = s.id
@@ -697,7 +692,7 @@ module.exports = function appointmentsRouter({
       if (!refundAmount || refundAmount <= 0) {
         return res.status(400).json({ error: "amount must be a positive number" });
       }
-      if (!MONEY_METHODS.includes(payment_method)) {
+      if (!["cash", "card", "bank-transfer"].includes(payment_method)) {
         return res.status(400).json({ error: "Invalid payment_method" });
       }
       if (!reason?.trim()) {

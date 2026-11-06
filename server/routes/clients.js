@@ -3,7 +3,7 @@
 // router (see "Area routers" near the end of server.js).
 const express = require("express");
 const { HttpError, asyncHandler, withTransaction } = require("../http");
-const { MONEY_METHODS, upperName } = require("../domain/common");
+const { upperName } = require("../domain/common");
 const jwt = require("jsonwebtoken");
 const { getPlanLimits } = require("../middleware/plan");
 
@@ -423,20 +423,6 @@ module.exports = function clientsRouter({
                FROM appointment_services aps
                JOIN services s ON aps.service_id = s.id
                WHERE aps.appointment_id = a.id) as service_names,
-              (
-            SELECT COALESCE(json_agg(json_build_object(
-              'name', s.name,
-              'staff', st.name,
-              'charged', COALESCE(aps.price_override, s.price, 0),
-              'paid_with', (SELECT paid_with FROM appointment_service_payments WHERE appointment_service_id = aps.id),
-              'hidden', (SELECT json_build_object('cash', hidden_cash, 'card', hidden_card, 'both', hidden_both)
-                         FROM appointment_service_payments WHERE appointment_service_id = aps.id)
-            ) ORDER BY aps.start_time), '[]')
-            FROM appointment_services aps
-            LEFT JOIN services s ON s.id = aps.service_id
-            LEFT JOIN staff st ON st.id = aps.staff_id
-            WHERE aps.appointment_id = a.id
-          ) as services_paid,
               (SELECT string_agg(DISTINCT st.name, ', ')
                FROM appointment_services aps
                JOIN staff st ON aps.staff_id = st.id
@@ -536,20 +522,6 @@ module.exports = function clientsRouter({
           ) as staff_names,
 
           a.payment_status,
-          (
-            SELECT COALESCE(json_agg(json_build_object(
-              'name', s.name,
-              'staff', st.name,
-              'charged', COALESCE(aps.price_override, s.price, 0),
-              'paid_with', (SELECT paid_with FROM appointment_service_payments WHERE appointment_service_id = aps.id),
-              'hidden', (SELECT json_build_object('cash', hidden_cash, 'card', hidden_card, 'both', hidden_both)
-                         FROM appointment_service_payments WHERE appointment_service_id = aps.id)
-            ) ORDER BY aps.start_time), '[]')
-            FROM appointment_services aps
-            LEFT JOIN services s ON s.id = aps.service_id
-            LEFT JOIN staff st ON st.id = aps.staff_id
-            WHERE aps.appointment_id = a.id
-          ) as services_paid,
 
           (
             SELECT payment_method FROM transactions
@@ -1111,7 +1083,7 @@ module.exports = function clientsRouter({
     if (!canSellExtras(req.user)) return res.status(403).json({ error: "Not allowed" });
     const { package_type_id, payment_method = "cash", note } = req.body;
     if (!safeUUID(package_type_id)) return res.status(400).json({ error: "package_type_id is required" });
-    if (!MONEY_METHODS.includes(payment_method)) {
+    if (!["cash", "card", "bank-transfer"].includes(payment_method)) {
       return res.status(400).json({ error: "Invalid payment method" });
     }
     const { status, body } = await withTransaction(async (client) => {

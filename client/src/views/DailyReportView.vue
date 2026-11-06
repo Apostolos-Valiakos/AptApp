@@ -151,12 +151,10 @@ import { formatMoney } from "../utils/format";
 import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
-import { useSettingsStore } from "../stores/settings";
 import { toLocalDateStr } from "../utils/staffAvailability";
 
 const { t, te, locale } = useI18n();
 const toast = useToast();
-const settingsStore = useSettingsStore();
 const data = ref<any>(null);
 const loading = ref(false);
 
@@ -253,8 +251,6 @@ const load = async () => {
   loading.value = true;
   try {
     const params = new URLSearchParams({ date: toLocalDateStr(selectedDay.value) });
-    if (settingsStore.hideCashPaid) params.append("excludeCash", "true");
-    if (settingsStore.hideCardPaid) params.append("excludeCard", "true");
     const answer = await api.get(`/api/v1/reports/daily?${params}`).catch(withMessage("Failed"));
     if (thisLoad === latestLoad) data.value = answer;
   } catch (e: any) {
@@ -269,5 +265,4 @@ onMounted(() => {
   document.addEventListener("click", closePicker);
 });
 onUnmounted(() => document.removeEventListener("click", closePicker));
-watch(() => [settingsStore.hideCashPaid, settingsStore.hideCardPaid], load);
 </script>

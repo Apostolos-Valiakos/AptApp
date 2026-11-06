@@ -33,7 +33,6 @@ export default {
       noResponse: 'Did not Respond',
     },
     paymentMethod: {
-      CASH: "Cash",
       'write-off': 'Write-off',
       cash: 'Cash',
       card: 'Card',
@@ -949,14 +948,11 @@ export default {
     },
     forceLogout: {
       title: 'Disconnect All Users',
-      description: 'Immediately logs out every user in this shop on every device, and locks the Ctrl+1 cash-hiding filter on for everyone. Your own session stays active.',
+      description: 'Immediately logs out every user in this shop on every device. Your own session stays active.',
       button: 'Disconnect All Users',
-      release: 'Release Cash Filter Lock',
-      currentlyLocked: 'The cash-hiding filter is currently locked shop-wide.',
       confirmHeader: 'Disconnect All Users?',
-      confirmMessage: 'This will immediately log out every other user in this shop, on every device, and lock the cash-hiding filter on for everyone. This cannot be undone except by releasing the lock afterward. Continue?',
-      toastSuccess: 'All other users have been disconnected and the cash filter is now locked.',
-      releaseToastSuccess: 'The cash filter lock has been released.',
+      confirmMessage: 'This will immediately log out every other user in this shop, on every device. Continue?',
+      toastSuccess: 'All other users have been disconnected.',
       toastFailed: 'Something went wrong. Please try again.',
     },
     toast: {
@@ -1700,7 +1696,6 @@ export default {
     noOutstandingBalance: 'This client has no outstanding balance.',
     paidVia: 'Paid via {method}',
     methodLabels: {
-      CASH: "Cash",
       cash: 'Cash',
       card: 'Card',
       'bank-transfer': 'Cash',

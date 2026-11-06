@@ -54,7 +54,6 @@
         </template>
       </Column>
 
-      <!-- Cash revenue-hiding macro disabled (was: v-if="!settingsStore.hideCashPaid") -->
       <Column
         :header="t('giftCards.table.remainingBalance')"
         sortable
@@ -197,21 +196,15 @@ import { ref, computed, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
-import { useSettingsStore } from "../stores/settings";
 import ClientSelector from "../components/ClientSelector.vue";
 
 const { t } = useI18n();
 const toast = useToast();
 const confirm = useConfirm();
-const settingsStore = useSettingsStore();
 
 const giftCards = ref<any[]>([]);
 
-const visibleGiftCards = computed(() =>
-  settingsStore.hideCashPaid
-    ? giftCards.value.filter((c) => c.purchase_payment_method !== "cash")
-    : giftCards.value,
-);
+const visibleGiftCards = computed(() => giftCards.value);
 const loading = ref(true);
 const saving = ref(false);
 const cardDialog = ref(false);
@@ -220,7 +213,6 @@ const editingId = ref<string | null>(null);
 
 const paymentMethodOptions = computed(() => [
   { label: t("common.paymentMethod.cash"), value: "cash" },
-  { label: "CASH", value: "CASH" },
   { label: t("common.paymentMethod.card"), value: "card" },
   { label: t("common.paymentMethod.bank-transfer"), value: "bank-transfer" },
 ]);

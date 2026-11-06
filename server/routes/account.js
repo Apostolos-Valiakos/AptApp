@@ -45,8 +45,7 @@ module.exports = function accountRouter({
     const { username, password } = req.body;
     // 1. Find user by username only (don't check password in SQL)
     const result = await pool.query(
-      `SELECT u.*, s.name as shop_name, s.status as shop_status, s.plan as shop_plan, s.force_hide_cash as shop_force_hide_cash,
-              s.force_hide_cash_locked_by as shop_force_hide_cash_locked_by
+      `SELECT u.*, s.name as shop_name, s.status as shop_status, s.plan as shop_plan
        FROM users u
        LEFT JOIN shops s ON u.shop_id = s.id
        WHERE u.username = $1`,

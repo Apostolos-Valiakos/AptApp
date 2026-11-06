@@ -4,7 +4,7 @@ const { isSessionToken, isUserRevoked } = require("./middleware/auth");
 const jwt = require("jsonwebtoken");
 const pool = require("./db");
 
-module.exports = function attachSockets(io, { cardFilterCache, cashFilterCache }) {
+module.exports = function attachSockets(io) {
   // Socket.IO Authentication Middleware
   io.use((socket, next) => {
     const token = socket.handshake.auth.token;
@@ -20,40 +20,6 @@ module.exports = function attachSockets(io, { cardFilterCache, cashFilterCache }
   // Socket.IO Connection Handler
   io.on("connection", async (socket) => {
     socket.join(`shop:${socket.user.shopId}`);
-
-    // Sync this (re)connecting socket to the shop's current cash/card-filter
-    // state. A live broadcast only reaches sockets connected at the exact
-    // moment it fires — anyone who was mid-reconnect otherwise stays stuck on
-    // stale state (visible cash appointments that should be hidden, or vice
-    // versa) until someone happens to toggle it again. Checked fresh on every
-    // connection rather than only at login, since a release can also be
-    // missed while disconnected.
-    try {
-      const shopId = socket.user.shopId;
-      if (shopId) {
-        const shopRes = await pool.query(
-          `SELECT force_hide_cash, force_hide_cash_locked_by FROM shops WHERE id = $1`,
-          [shopId],
-        );
-        const hardLocked = !!shopRes.rows[0]?.force_hide_cash;
-        if (hardLocked) {
-          socket.emit("cash:filter:set", {
-            hidden: true,
-            lockedBy: shopRes.rows[0]?.force_hide_cash_locked_by || null,
-          });
-        } else {
-          socket.emit("cash:lock:released");
-          if (cashFilterCache.has(shopId)) {
-            socket.emit("cash:filter:set", { hidden: cashFilterCache.get(shopId), lockedBy: null });
-          }
-        }
-        if (cardFilterCache.has(shopId)) {
-          socket.emit("card:filter:set", { hidden: cardFilterCache.get(shopId) });
-        }
-      }
-    } catch (err) {
-      console.error("Failed to sync filter state on connect:", err);
-    }
 
     socket.on("channel:join", ({ channelId }) => {
       socket.join(`channel:${channelId}`);
@@ -196,24 +162,6 @@ module.exports = function attachSockets(io, { cardFilterCache, cashFilterCache }
       } catch (err) {
         console.error("Error marking as read:", err);
       }
-    });
-
-    // Remote cash-filter broadcast — super_admin only
-    socket.on("cash:filter:broadcast", ({ hidden }) => {
-      if (socket.user.role !== "super_admin") return;
-      cashFilterCache.set(socket.user.shopId, !!hidden);
-      io.to(`shop:${socket.user.shopId}`).emit("cash:filter:set", {
-        hidden: !!hidden,
-      });
-    });
-
-    // Remote card-filter broadcast — super_admin only, independent of cash
-    socket.on("card:filter:broadcast", ({ hidden }) => {
-      if (socket.user.role !== "super_admin") return;
-      cardFilterCache.set(socket.user.shopId, !!hidden);
-      io.to(`shop:${socket.user.shopId}`).emit("card:filter:set", {
-        hidden: !!hidden,
-      });
     });
 
     socket.on("disconnect", () => {

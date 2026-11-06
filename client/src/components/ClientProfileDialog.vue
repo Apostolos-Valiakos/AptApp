@@ -319,15 +319,15 @@
               />
               <Dropdown
                 v-model="assignForm.payment_method"
-                :options="MONEY_METHODS"
+                :options="['cash', 'card', 'bank-transfer']"
                 :placeholder="t('clientProfile.membership.paymentMethod')"
                 class="w-full"
               >
                 <template #value="slotProps">
-                  {{ slotProps.value ? methodChoiceLabel(t, slotProps.value) : "" }}
+                  {{ slotProps.value ? t(`common.paymentMethod.${slotProps.value}`) : "" }}
                 </template>
                 <template #option="slotProps">
-                  {{ methodChoiceLabel(t, slotProps.option) }}
+                  {{ t(`common.paymentMethod.${slotProps.option}`) }}
                 </template>
               </Dropdown>
               <div class="flex gap-2">
@@ -422,14 +422,12 @@
 </template>
 
 <script setup lang="ts">
-import { MONEY_METHODS, methodChoiceLabel } from "../utils/paymentMethods";
 import { api, ApiError, ifRefused, saveBlob, withMessage } from "../api/http";
 import { formatMoney } from "../utils/format";
 import { ref, watch, computed } from "vue";
 import ClientPackagesPanel from "./ClientPackagesPanel.vue";
 import { useAuthStore } from "../stores/auth";
 import { useSettingsStore } from "../stores/settings";
-import { fullyHidden, hiddenAmount } from "../utils/paymentFilters";
 import { storeToRefs } from "pinia";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
@@ -469,26 +467,7 @@ const initials = computed(() => {
   return `${f}${l}`.toUpperCase();
 });
 
-// The cash and card filters hide the services paid that way, or part of one;
-// a visit left with none is hidden, and its money shown leaves that out.
-const visibleHistory = computed(() =>
-  history.value
-    .map((a) => {
-      const services = a.services_paid || [];
-      const hiddenCost = services.reduce((n: number, x: any) => n + hiddenAmount(x.hidden, settingsStore), 0);
-      if (!hiddenCost) return a;
-      const shown = services.filter((x: any) => !fullyHidden(x.charged, x.hidden, settingsStore));
-      if (!shown.length) return null;
-      return {
-        ...a,
-        service_names: shown.map((x: any) => x.name).join(", "),
-        staff_names: [...new Set(shown.map((x: any) => x.staff).filter(Boolean))].join(", "),
-        total_service_price: Number(a.total_service_price || 0) - hiddenCost,
-        deposit_amount: Math.max(0, Number(a.deposit_amount || 0) - hiddenCost),
-      };
-    })
-    .filter(Boolean),
-);
+const visibleHistory = computed(() => history.value);
 
 const attendanceRate = computed(() => {
   if (!history.value || history.value.length === 0) return 0;

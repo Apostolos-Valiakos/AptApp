@@ -25,52 +25,12 @@ export const useSettingsStore = defineStore("settings", () => {
     localStorage.setItem("scheduler_resource_filter", newVal);
   });
 
-  // Ctrl+1 "hide cash/gift-card revenue" macro — shared across every page
-  // (scheduler, financials, client profile, gift cards), not just the scheduler.
-  const hideCashPaid = ref(localStorage.getItem("hideCashPaid") === "true");
-
-  const setHideCashPaid = (value: boolean) => {
-    hideCashPaid.value = value;
-  };
-  const toggleHideCashPaid = () => {
-    hideCashPaid.value = !hideCashPaid.value;
-  };
-
-  watch(hideCashPaid, (newVal) => {
-    localStorage.setItem("hideCashPaid", String(newVal));
-  });
-
-  // Persisted, shop-wide Ctrl+1 lock (set by an admin or super_admin's
-  // Ctrl+1, or by "Disconnect all users") — unlike hideCashPaid/hideCardPaid
-  // above, this isn't something the user chose; it applies from the very
-  // first render on any device, seeded from the user object the login
-  // response already carries. cashLockedByRole records WHICH tier owns the
-  // lock ('admin' | 'super_admin' | null) — an admin's lock can be released
-  // by any admin or a super_admin, but a super_admin's lock is exclusive to
-  // super_admin (mirrors canUnlockCashFilter in server.js).
-  const cashLockedByShop = ref(!!user?.shop_force_hide_cash);
-  const cashLockedByRole = ref<string | null>(user?.shop_force_hide_cash_locked_by || null);
-  if (cashLockedByShop.value) hideCashPaid.value = true;
-
-  const setCashLockedByShop = (locked: boolean, lockedByRole: string | null = null) => {
-    cashLockedByShop.value = locked;
-    cashLockedByRole.value = locked ? lockedByRole : null;
-    if (locked) hideCashPaid.value = true;
-  };
-
-  // Ctrl+8 "hide card-paid revenue" macro — independent of the cash one, same mechanics.
-  const hideCardPaid = ref(localStorage.getItem("hideCardPaid") === "true");
-
-  const setHideCardPaid = (value: boolean) => {
-    hideCardPaid.value = value;
-  };
-  const toggleHideCardPaid = () => {
-    hideCardPaid.value = !hideCardPaid.value;
-  };
-
-  watch(hideCardPaid, (newVal) => {
-    localStorage.setItem("hideCardPaid", String(newVal));
-  });
+  // The old Ctrl+1 / Ctrl+8 cash and card filters are gone; drop what they
+  // left on devices that used them.
+  try {
+    localStorage.removeItem("hideCashPaid");
+    localStorage.removeItem("hideCardPaid");
+  } catch {}
 
   // 3. Shop settings (ergotherapia/physiotherapia/logotherapia flags etc.) —
   // shared/cached here so multiple components (ClientsView, ClientProfileDialog)
@@ -103,15 +63,6 @@ export const useSettingsStore = defineStore("settings", () => {
     isStaff,
     resourceFilter,
     setResourceFilter,
-    hideCashPaid,
-    setHideCashPaid,
-    toggleHideCashPaid,
-    cashLockedByShop,
-    cashLockedByRole,
-    setCashLockedByShop,
-    hideCardPaid,
-    setHideCardPaid,
-    toggleHideCardPaid,
     shopSettings,
     fetchShopSettings,
   };

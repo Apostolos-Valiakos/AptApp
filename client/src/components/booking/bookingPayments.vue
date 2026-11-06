@@ -63,7 +63,7 @@
             @click="onPaymentMethodChange(method)"
           >
             <i :class="['pi', paidMethodIcons[method]]"></i>
-            {{ methodChoiceLabel(t, method) }}
+            {{ t(`common.paymentMethod.${method}`) }}
           </button>
         </div>
       </div>
@@ -141,10 +141,10 @@
             class="w-full"
           >
             <template #value="slotProps">
-              {{ slotProps.value ? methodChoiceLabel(t, slotProps.value) : "" }}
+              {{ slotProps.value ? t(`common.paymentMethod.${slotProps.value}`) : "" }}
             </template>
             <template #option="slotProps">
-              {{ methodChoiceLabel(t, slotProps.option) }}
+              {{ t(`common.paymentMethod.${slotProps.option}`) }}
             </template>
           </Dropdown>
 
@@ -175,7 +175,7 @@
         <div class="bg-white border border-gray-200 rounded-xl p-4 space-y-4" data-testid="payment-review">
           <div>
             <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
-              {{ methodChoiceLabel(t, paymentMethod) }} ·
+              {{ t(`common.paymentMethod.${paymentMethod}`) }} ·
               {{ depositAmount >= currentApptTotal ? t("payment.amountTowardBalance") : t("payment.amountNow") }}
             </label>
             <InputNumber
@@ -192,7 +192,7 @@
           </div>
           <div v-if="splitEnabled">
             <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
-              {{ methodChoiceLabel(t, paymentMethod2) }} · {{ t("payment.split.secondAmount") }}
+              {{ t(`common.paymentMethod.${paymentMethod2}`) }} · {{ t("payment.split.secondAmount") }}
             </label>
             <InputNumber
               :modelValue="amountToPay2"
@@ -281,10 +281,9 @@ import { ref, computed, watch, type PropType } from "vue";
 import { useI18n } from "vue-i18n";
 import GiftCardPicker from "./GiftCardPicker.vue";
 import MembershipPicker from "./MembershipPicker.vue";
-import { MONEY_METHODS, methodChoiceLabel } from "../../utils/paymentMethods";
 const { t } = useI18n();
 
-const METHODS = [...MONEY_METHODS, "gift-card", "membership"];
+const METHODS = ["cash", "card", "bank-transfer", "gift-card", "membership"];
 
 const props = defineProps({
   step: { type: Number, default: 2 },
@@ -327,7 +326,6 @@ const selectedGiftCard = ref<any>(null);
 // stored/paid. Only bank-transfer is shown with cash's icon/label.
 const paidMethodIcons: Record<string, string> = {
   cash: "pi-money-bill",
-  CASH: "pi-money-bill",
   "bank-transfer": "pi-money-bill",
   card: "pi-credit-card",
   "gift-card": "pi-ticket",
@@ -382,7 +380,7 @@ const onMembershipAmount2Change = (amount: number) => {
 // Leg 2's method options exclude whichever method leg 1 is currently using —
 // splitting into the SAME method twice is meaningless.
 const method2Options = computed(() =>
-  METHODS.filter(
+  ["cash", "card", "bank-transfer", "gift-card", "membership"].filter(
     (m) => m !== props.paymentMethod,
   ),
 );
@@ -478,7 +476,7 @@ watch(
 
 // Packages and gift cards being sold must be paid in full, by the first way of
 // paying and then the second, and only with cash, card or bank transfer.
-const SALE_METHODS = MONEY_METHODS;
+const SALE_METHODS = ["cash", "card", "bank-transfer"];
 const methodProblem = computed(() =>
   props.salesTotal > 0 && !SALE_METHODS.includes(props.paymentMethod) ? "payment.stepper.saleMethod" : null,
 );

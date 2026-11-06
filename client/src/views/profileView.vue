@@ -265,11 +265,6 @@
           <h3 class="text-base font-bold text-gray-900 mb-1">{{ t('profile.forceLogout.title') }}</h3>
           <p class="text-sm text-gray-500 mb-4">{{ t('profile.forceLogout.description') }}</p>
 
-          <div v-if="settingsStore.cashLockedByShop" class="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2 text-sm text-amber-800">
-            <i class="pi pi-lock"></i>
-            {{ t('profile.forceLogout.currentlyLocked') }}
-          </div>
-
           <div class="flex flex-col gap-2">
             <Button
               :label="t('profile.forceLogout.button')"
@@ -278,15 +273,6 @@
               class="w-full"
               :loading="forcingLogout"
               @click="confirmForceLogout"
-            />
-            <Button
-              v-if="settingsStore.cashLockedByShop"
-              :label="t('profile.forceLogout.release')"
-              icon="pi pi-lock-open"
-              text
-              class="w-full"
-              :loading="releasingLock"
-              @click="releaseLock"
             />
           </div>
         </div>
@@ -988,7 +974,6 @@ import DiscountCodesAdmin from "../components/DiscountCodesAdmin.vue";
 import { useConfirm } from "primevue/useconfirm";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "../stores/auth";
-import { useSettingsStore } from "../stores/settings";
 import { useThemeStore } from "../stores/themes"; // Import Theme Store
 
 import Password from "primevue/password";
@@ -1007,7 +992,6 @@ const toast = useToast();
 const confirm = useConfirm();
 const router = useRouter();
 const authStore = useAuthStore();
-const settingsStore = useSettingsStore();
 const themeStore = useThemeStore(); // Init Theme Store
 
 const isLoadingProfile = ref(true);
@@ -1412,7 +1396,6 @@ const handleLogout = () => logoutAndClear("/login");
 
 // --- Force Logout Everyone (super_admin only) ---
 const forcingLogout = ref(false);
-const releasingLock = ref(false);
 
 const confirmForceLogout = () => {
   confirm.require({
@@ -1429,11 +1412,8 @@ const forceLogout = async () => {
   try {
     const data = await api.post("/api/v1/shop/force-logout");
 
-    // Keep the calling admin's own session alive with a fresh token, and
-    // reflect the lock immediately in this session too (the broadcast only
-    // reaches other already-connected clients).
+    // Keep the calling admin's own session alive with a fresh token.
     authStore.refreshToken(data.token);
-    settingsStore.setCashLockedByShop(true);
 
     toast.add({
       severity: "success",
@@ -1450,31 +1430,6 @@ const forceLogout = async () => {
     });
   } finally {
     forcingLogout.value = false;
-  }
-};
-
-const releaseLock = async () => {
-  releasingLock.value = true;
-  try {
-    await api.post("/api/v1/shop/release-cash-lock");
-
-    settingsStore.setCashLockedByShop(false);
-
-    toast.add({
-      severity: "success",
-      summary: t("common.success"),
-      detail: t("profile.forceLogout.releaseToastSuccess"),
-      life: 3000,
-    });
-  } catch (e) {
-    toast.add({
-      severity: "error",
-      summary: t("common.error"),
-      detail: t("profile.forceLogout.toastFailed"),
-      life: 4000,
-    });
-  } finally {
-    releasingLock.value = false;
   }
 };
 

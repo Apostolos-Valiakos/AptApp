@@ -170,7 +170,6 @@ import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 import { toLocalDateStr } from "../utils/staffAvailability";
-import { useSettingsStore } from "../stores/settings";
 import { useAuthStore } from "../stores/auth";
 import { reauthToken } from "../utils/reauth";
 import SensitiveGate from "../components/SensitiveGate.vue";
@@ -178,7 +177,6 @@ import ExpenseReport from "../components/expenses/ExpenseReport.vue";
 import ExpenseCategoriesDialog from "../components/expenses/ExpenseCategoriesDialog.vue";
 
 const { t, locale } = useI18n();
-const settingsStore = useSettingsStore();
 // Frontdesk has only the daily expenses; admins also the monthly ones and the report.
 const isAdmin = computed(() => useAuthStore().isAnalyticsAllowed);
 const section = ref<"daily" | "monthly" | "report">("daily");
@@ -249,14 +247,11 @@ const formCategories = computed(() =>
     : categories.value,
 );
 
-// Ctrl+1 / Ctrl+8 hide cash / card amounts app-wide, same as Analytics.
 const visible = computed(() =>
   expenses.value.filter(
     (e) =>
       (!filters.method || e.payment_method === filters.method) &&
-      (!filters.category || (filters.category === NO_CATEGORY ? !e.category_id : e.category_id === filters.category)) &&
-      !(settingsStore.hideCashPaid && e.payment_method === "cash") &&
-      !(settingsStore.hideCardPaid && e.payment_method === "card"),
+      (!filters.category || (filters.category === NO_CATEGORY ? !e.category_id : e.category_id === filters.category)),
   ),
 );
 const visibleTotal = computed(() => visible.value.reduce((sum, e) => sum + Number(e.amount), 0));

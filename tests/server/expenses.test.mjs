@@ -106,8 +106,6 @@ test("the report compares a month with the one before and a year earlier; admins
   assert.deepEqual([row.current, row.previous, row.last_year], [850, 800, 700]);
   assert.equal(r.data.categories.find((c) => c.category === null).current, 50);
 
-  const noCash = await admin("GET", "/api/v1/reports/expenses?month=2026-06&excludeCash=true");
-  assert.equal(noCash.data.months[11].monthly, 0, "the cash toggle hides them here too");
   assert.equal((await frontdesk("GET", "/api/v1/reports/expenses?month=2026-06")).status, 403);
   assert.equal((await admin("GET", "/api/v1/reports/expenses?month=June")).status, 400);
 });

@@ -1,6 +1,5 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
-import { useSettingsStore } from "./settings";
 import { onLoggedIn } from "../offline/queue";
 import { SAVED_LOGIN_KEYS, readSavedJson } from "../utils/savedLogin";
 
@@ -64,12 +63,6 @@ export const useAuthStore = defineStore("auth", () => {
 
         user.value = data.user;
         localStorage.setItem("user", JSON.stringify(data.user));
-
-        // Persisted, shop-wide Ctrl+1 lock — applies from first render, on any device.
-        useSettingsStore().setCashLockedByShop(
-          !!data.user?.shop_force_hide_cash,
-          data.user?.shop_force_hide_cash_locked_by || null,
-        );
 
         // Changes saved offline while the session was expired can sync now.
         onLoggedIn();

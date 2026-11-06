@@ -211,15 +211,6 @@ const dbFileUpload = multer({
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB Limit
 });
 
-// Last-known live Ctrl+1/Ctrl+8 broadcast state per shop (shopId -> boolean).
-// The live broadcast itself is fire-and-forget over the socket — anyone
-// disconnected at the exact moment a super_admin toggles it (flaky wifi, a
-// dev-server WS proxy hiccup, etc.) never receives that event and has no
-// other way to learn the current state. Caching it here lets a (re)connecting
-// socket be synced immediately instead of waiting for the next toggle.
-const cashFilterCache = new Map();
-const cardFilterCache = new Map();
-
 const TIME_HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 // Services whose name IS the sauna/hamam resource itself (the "...ΣΕ
@@ -238,7 +229,7 @@ const io = new Server(server, {
   },
 });
 
-require("./sockets")(io, { cardFilterCache, cashFilterCache });
+require("./sockets")(io);
 console.log("✅ Socket.IO initialized");
 
 const fileStorage = multer.memoryStorage();
@@ -427,8 +418,6 @@ app.use(
   "/api/v1",
   require("./routes/shop")({
     authenticateToken,
-    cardFilterCache,
-    cashFilterCache,
     forceLogoutCache,
     io,
     notForClients,

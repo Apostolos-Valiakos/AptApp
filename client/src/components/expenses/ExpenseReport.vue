@@ -79,11 +79,9 @@ import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
 import { api } from "../../api/http";
 import { formatMoney } from "../../utils/format";
-import { useSettingsStore } from "../../stores/settings";
 
 const { t, locale } = useI18n();
 const toast = useToast();
-const settingsStore = useSettingsStore();
 
 const month = ref<Date>(new Date());
 const report = ref<any>(null);
@@ -167,8 +165,6 @@ const load = async () => {
   if (!month.value) return;
   const request = ++latest;
   const params = new URLSearchParams({ month: monthKey(month.value) });
-  if (settingsStore.hideCashPaid) params.append("excludeCash", "true");
-  if (settingsStore.hideCardPaid) params.append("excludeCard", "true");
   try {
     const data = await api.get(`/api/v1/reports/expenses?${params}`);
     if (request === latest) report.value = data;
@@ -207,5 +203,4 @@ const exportExcel = async () => {
 };
 
 onMounted(load);
-watch(() => [settingsStore.hideCashPaid, settingsStore.hideCardPaid], load);
 </script>

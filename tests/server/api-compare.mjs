@@ -171,7 +171,6 @@ const scenario = (ids) => {
     ["report membership", "/api/v1/reports/membership"],
     ["expenses", `/api/v1/expenses?from=2026-01-01&to=2026-12-31`],
     ["shop", "/api/v1/shop"],
-    ["shop filter state", "/api/v1/shop/filter-state"],
     ["shop hours", "/api/v1/shop-hours"],
     ["contests", "/api/v1/contests"],
     ["active contest", "/api/v1/contests/active"],

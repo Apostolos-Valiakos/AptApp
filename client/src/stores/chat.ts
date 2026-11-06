@@ -3,7 +3,6 @@ import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { io, Socket } from "socket.io-client";
 import { useAuthStore } from "./auth"; // Import auth store to access user info
-import { useSettingsStore } from "./settings";
 import router from "../router";
 
 interface User {
@@ -54,10 +53,6 @@ export const useChatStore = defineStore("chat", () => {
   const isConnected = ref(false);
   const typingUsers = ref<Map<string, Set<string>>>(new Map());
   const isMinimized = ref(true);
-  const remoteHideCash = ref(false);
-  const cashLocked = ref(false);
-  const remoteHideCard = ref(false);
-  const cardLocked = ref(false);
 
   const totalUnreadCount = computed(() => {
     if (!channels.value || !Array.isArray(channels.value)) {
@@ -213,35 +208,10 @@ export const useChatStore = defineStore("chat", () => {
       router.push("/login");
     });
 
-    socket.value.on(
-      "cash:filter:set",
-      ({ hidden, lockedBy }: { hidden: boolean; lockedBy?: string | null }) => {
-        remoteHideCash.value = hidden;
-        cashLocked.value = hidden; // blocks plain staff from toggling locally while true
-        localStorage.setItem("hideCashPaid", String(hidden));
-        // Every hide from an admin/super_admin is now a real persisted lock
-        // (see server.js POST /api/v1/shop/cash-filter) — reflect who owns it.
-        useSettingsStore().setCashLockedByShop(hidden && !!lockedBy, lockedBy || null);
-      },
-    );
-
-    // The persisted shop-wide policy lock coming off (see release-cash-lock) —
-    // separate from cash:filter:set, this only unlocks, it doesn't also
-    // force-unhide cash figures for everyone.
-    socket.value.on("cash:lock:released", () => {
-      useSettingsStore().setCashLockedByShop(false);
-    });
-
     // Another screen changed bookings or payments: the scheduler reloads.
     socket.value.on("appointments:changed", () => {
       window.dispatchEvent(new CustomEvent("appointments-changed"));
     });
-
-    // socket.value.on("card:filter:set", ({ hidden }: { hidden: boolean }) => {
-    //   remoteHideCard.value = hidden;
-    //   cardLocked.value = hidden;
-    //   localStorage.setItem("hideCardPaid", String(hidden));
-    // });
   };
 
   const disconnect = () => {
@@ -437,10 +407,6 @@ export const useChatStore = defineStore("chat", () => {
 
   return {
     socket,
-    remoteHideCash,
-    cashLocked,
-    remoteHideCard,
-    cardLocked,
     channels,
     messages,
     activeChannelId,
