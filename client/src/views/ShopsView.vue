@@ -162,6 +162,25 @@
         </div>
       </div>
 
+      <!-- What this shop has: a switched-off module is hidden and refused. -->
+      <div class="border-t border-gray-100 pt-4" data-testid="shop-modules">
+        <h3 class="text-sm font-bold text-gray-800">{{ t('platform.modules.title') }}</h3>
+        <p class="text-xs text-gray-500 mb-3">{{ t('platform.modules.note') }}</p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
+          <label
+            v-for="key in MODULES"
+            :key="key"
+            class="flex items-start justify-between gap-3 cursor-pointer"
+          >
+            <span class="min-w-0">
+              <span class="block text-sm font-medium text-gray-800">{{ t(`platform.modules.${key}`) }}</span>
+              <span class="block text-xs text-gray-400">{{ t(`platform.modules.${key}Note`) }}</span>
+            </span>
+            <ToggleSwitch v-model="modulesOn[key]" :data-testid="`shop-module-${key}`" />
+          </label>
+        </div>
+      </div>
+
       <div v-if="!editingShop.id" class="border-t border-gray-100 pt-4">
         <div class="flex items-center gap-3 mb-3">
           <ToggleSwitch v-model="createAdminNow" />
@@ -278,6 +297,7 @@ import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "../stores/auth";
+import { MODULES } from "../utils/modules";
 
 const { t } = useI18n();
 const toast = useToast();
@@ -342,8 +362,15 @@ const filteredShops = computed(() => {
   return shops.value.filter((s: any) => s.name.toLowerCase().includes(term));
 });
 
+// The modules switches: on = the shop has it. Saved as the list of the ones off.
+const modulesOn = ref<Record<string, boolean>>({});
+const setModulesFrom = (disabled: string[] | null | undefined) => {
+  modulesOn.value = Object.fromEntries(MODULES.map((m) => [m, !(disabled || []).includes(m)]));
+};
+
 const openNew = () => {
   editingShop.value = { id: null, plan: "trial", status: "active" };
+  setModulesFrom([]);
   createAdminNow.value = false;
   showDialog.value = true;
 };
@@ -353,6 +380,7 @@ const editShop = (data: any) => {
     ...data,
     trial_ends_at: data.trial_ends_at ? new Date(data.trial_ends_at) : null,
   };
+  setModulesFrom(data.disabled_modules);
   showDialog.value = true;
 };
 
@@ -373,7 +401,7 @@ const saveShop = async () => {
     : "/api/v1/platform/shops";
   const method = editingShop.value.id ? "PUT" : "POST";
 
-  const body: any = { ...editingShop.value };
+  const body: any = { ...editingShop.value, disabled_modules: MODULES.filter((m) => !modulesOn.value[m]) };
   if (!createAdminNow.value) {
     delete body.admin_username;
     delete body.admin_password;

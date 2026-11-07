@@ -2,6 +2,7 @@
 // Moved out of server.js; helpers that still live there are handed over when
 // it mounts this router (see "Area routers" near the end of server.js).
 const express = require("express");
+const { requireModule } = require("../modules");
 const { upperName } = require("../domain/common");
 const { HttpError, asyncHandler, withTransaction } = require("../http");
 const pool = require("../db");
@@ -408,6 +409,7 @@ module.exports = function servicesRouter({
   router.put(
     "/services/:id/recipes",
     authenticateToken,
+    requireModule("products"),
     requireAnalyticsAccess,
     asyncHandler(async (req, res) => {
       const { id } = req.params;

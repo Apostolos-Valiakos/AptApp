@@ -61,7 +61,7 @@
 
       <div class="flex gap-6 border-b border-gray-200 mb-6 overflow-x-auto">
         <button
-          v-for="tab in ['Info', 'Files', 'History', 'Membership', 'Packages']"
+          v-for="tab in profileTabs"
           :key="tab"
           @click="activeTab = tab"
           class="pb-2 px-1 text-sm font-medium transition-colors border-b-2 whitespace-nowrap"
@@ -237,7 +237,7 @@
               >
                 {{ t(`common.status.${statusKey(appt.status)}`) }}
               </span>
-              <span class="font-bold">
+              <span v-if="authStore.canSeeMoney" class="font-bold">
                 {{ formatMoney(Number(appt.total_service_price || 0) + Number(appt.total_product_price || 0)) }}
               </span>
             </div>
@@ -319,7 +319,7 @@
               />
               <Dropdown
                 v-model="assignForm.payment_method"
-                :options="MONEY_METHODS"
+                :options="shopMoneyMethods()"
                 :placeholder="t('clientProfile.membership.paymentMethod')"
                 class="w-full"
               >
@@ -422,7 +422,7 @@
 </template>
 
 <script setup lang="ts">
-import { MONEY_METHODS, methodChoiceLabel } from "../utils/paymentMethods";
+import { shopMoneyMethods, methodChoiceLabel } from "../utils/paymentMethods";
 import { api, ApiError, ifRefused, saveBlob, withMessage } from "../api/http";
 import { formatMoney } from "../utils/format";
 import { ref, watch, computed } from "vue";
@@ -437,6 +437,14 @@ import { useConfirm } from "primevue/useconfirm";
 import { useI18n } from "vue-i18n";
 const { t } = useI18n();
 const authStore = useAuthStore();
+// Membership and Packages only where the shop has those modules.
+const profileTabs = computed(() => [
+  "Info",
+  "Files",
+  "History",
+  ...(authStore.moduleOn("memberships") ? ["Membership"] : []),
+  ...(authStore.moduleOn("packages") ? ["Packages"] : []),
+]);
 const toast = useToast();
 const confirm = useConfirm();
 const isShopAdmin = authStore.isShopAdmin;

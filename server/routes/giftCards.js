@@ -2,6 +2,7 @@
 // Moved out of server.js; helpers that still live there are handed over when
 // it mounts this router (see "Area routers" near the end of server.js).
 const express = require("express");
+const { requireModule } = require("../modules");
 const { asyncHandler, withTransaction } = require("../http");
 const pool = require("../db");
 
@@ -11,6 +12,8 @@ module.exports = function giftCardsRouter({
   notForClients,
 }) {
   const router = express.Router();
+  // Switched off for the shop in the platform console: these routes answer 403.
+  const moduleGate = requireModule("gift_cards");
 
   const giftCardStatus = (card) => {
     if (Number(card.remaining_balance) <= 0) return "depleted";
@@ -19,7 +22,7 @@ module.exports = function giftCardsRouter({
   };
 
   // List all gift cards for the shop (admin)
-  router.get("/gift-cards", authenticateToken, notForClients, asyncHandler(async (req, res) => {
+  router.get("/gift-cards", authenticateToken, moduleGate, notForClients, asyncHandler(async (req, res) => {
     if (!canSellExtras(req.user)) {
       return res.status(403).json({ error: "Not allowed" });
     }
@@ -40,7 +43,7 @@ module.exports = function giftCardsRouter({
   }));
 
   // Search redeemable gift cards (any authenticated staff — used at checkout)
-  router.get("/gift-cards/search", authenticateToken, notForClients, asyncHandler(async (req, res) => {
+  router.get("/gift-cards/search", authenticateToken, moduleGate, notForClients, asyncHandler(async (req, res) => {
     const q = (req.query.q || "").trim();
     if (!q) return res.json([]);
     const { rows } = await pool.query(
@@ -58,7 +61,7 @@ module.exports = function giftCardsRouter({
   }));
 
   // Create (sell) a gift card — admin only
-  router.post("/gift-cards", authenticateToken, notForClients, asyncHandler(async (req, res) => {
+  router.post("/gift-cards", authenticateToken, moduleGate, notForClients, asyncHandler(async (req, res) => {
     if (!canSellExtras(req.user)) {
       return res.status(403).json({ error: "Not allowed" });
     }
@@ -129,7 +132,7 @@ module.exports = function giftCardsRouter({
   }));
 
   // Edit gift card metadata (admin only) — balance/expiry are not editable here
-  router.put("/gift-cards/:id", authenticateToken, notForClients, asyncHandler(async (req, res) => {
+  router.put("/gift-cards/:id", authenticateToken, moduleGate, notForClients, asyncHandler(async (req, res) => {
     if (req.user.role !== "admin" && req.user.role !== "super_admin") {
       return res.status(403).json({ error: "Admins only" });
     }
@@ -154,7 +157,7 @@ module.exports = function giftCardsRouter({
   }));
 
   // Delete a gift card (admin only)
-  router.delete("/gift-cards/:id", authenticateToken, notForClients, asyncHandler(async (req, res) => {
+  router.delete("/gift-cards/:id", authenticateToken, moduleGate, notForClients, asyncHandler(async (req, res) => {
     if (req.user.role !== "admin" && req.user.role !== "super_admin") {
       return res.status(403).json({ error: "Admins only" });
     }

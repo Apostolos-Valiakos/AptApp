@@ -2,6 +2,7 @@
 // Moved out of server.js; helpers that still live there are handed over when
 // it mounts this router (see "Area routers" near the end of server.js).
 const express = require("express");
+const { requireModule } = require("../modules");
 const { HttpError, asyncHandler, withTransaction } = require("../http");
 const pool = require("../db");
 
@@ -15,8 +16,10 @@ module.exports = function packagesRouter({
   safeUUID,
 }) {
   const router = express.Router();
+  // Switched off for the shop in the platform console: these routes answer 403.
+  const moduleGate = requireModule("packages");
 
-  router.get("/package-types", authenticateToken, notForClients, asyncHandler(async (req, res) => {
+  router.get("/package-types", authenticateToken, moduleGate, notForClients, asyncHandler(async (req, res) => {
     if (req.user.role === "client") return res.status(403).json({ error: "Forbidden" });
     const { rows } = await pool.query(
       `SELECT pt.*, s.name AS service_name
@@ -41,7 +44,7 @@ module.exports = function packagesRouter({
     return { value: { name, service_id: safeUUID(b.service_id), visits, price, validity_days: validity } };
   };
 
-  router.post("/package-types", authenticateToken, requireShopAdminAccess, asyncHandler(async (req, res) => {
+  router.post("/package-types", authenticateToken, moduleGate, requireShopAdminAccess, asyncHandler(async (req, res) => {
     const parsed = parsePackageTypeBody(req.body);
     if (parsed.error) return res.status(400).json({ error: parsed.error });
     const v = parsed.value;
@@ -56,7 +59,7 @@ module.exports = function packagesRouter({
   }));
 
   // Editing a type never changes packages already sold (they snapshot name/visits/price).
-  router.put("/package-types/:id", authenticateToken, requireShopAdminAccess, asyncHandler(async (req, res) => {
+  router.put("/package-types/:id", authenticateToken, moduleGate, requireShopAdminAccess, asyncHandler(async (req, res) => {
     const parsed = parsePackageTypeBody(req.body);
     if (parsed.error) return res.status(400).json({ error: parsed.error });
     const v = parsed.value;
@@ -73,14 +76,14 @@ module.exports = function packagesRouter({
     res.json(rows[0]);
   }));
 
-  router.delete("/package-types/:id", authenticateToken, requireShopAdminAccess, asyncHandler(async (req, res) => {
+  router.delete("/package-types/:id", authenticateToken, moduleGate, requireShopAdminAccess, asyncHandler(async (req, res) => {
     const { rowCount } = await pool.query("DELETE FROM package_types WHERE id = $1 AND shop_id = $2", [req.params.id, req.shopId]);
     if (!rowCount) return res.status(404).json({ error: "Not found" });
     res.json({ success: true });
   }));
 
   // Admin adjustments: change total visits / expiry / note, or cancel the package.
-  router.put("/client-packages/:id", authenticateToken, requireAnalyticsAccess, asyncHandler(async (req, res) => {
+  router.put("/client-packages/:id", authenticateToken, moduleGate, requireAnalyticsAccess, asyncHandler(async (req, res) => {
     const { total_visits, expires_at, note, status } = req.body;
     const sets = [];
     const params = [req.params.id, req.shopId];
@@ -109,7 +112,7 @@ module.exports = function packagesRouter({
   }));
 
   // Undo a visit redemption (the visit returns to the package).
-  router.delete("/package-usage/:id", authenticateToken, notForClients, asyncHandler(async (req, res) => {
+  router.delete("/package-usage/:id", authenticateToken, moduleGate, notForClients, asyncHandler(async (req, res) => {
     if (req.user.role === "client") return res.status(403).json({ error: "Forbidden" });
     const answer = await withTransaction(async (client) => {
       const u = await client.query(

@@ -2,6 +2,7 @@
 // Moved out of server.js; helpers that still live there are handed over when
 // it mounts this router (see "Area routers" near the end of server.js).
 const express = require("express");
+const { requireModule } = require("../modules");
 const { asyncHandler, withTransaction } = require("../http");
 const pool = require("../db");
 
@@ -12,10 +13,12 @@ module.exports = function productsRouter({
   requireShopAdminAccess,
 }) {
   const router = express.Router();
+  // Switched off for the shop in the platform console: these routes answer 403.
+  const moduleGate = requireModule("products");
 
   router.get(
     "/product-usage/recipes",
-    authenticateToken,
+    authenticateToken, moduleGate,
     requireAnalyticsAccess,
     asyncHandler(async (req, res) => {
       const { rows } = await pool.query(
@@ -36,7 +39,7 @@ module.exports = function productsRouter({
 
   router.post(
     "/product-inventory/:id/stocktake",
-    authenticateToken,
+    authenticateToken, moduleGate,
     requireAnalyticsAccess,
     asyncHandler(async (req, res) => {
       const { remaining_amount_ml, restocked_amount_ml, notes } = req.body;
@@ -62,7 +65,7 @@ module.exports = function productsRouter({
 
   router.get(
     "/product-inventory/:id/stocktakes",
-    authenticateToken,
+    authenticateToken, moduleGate,
     requireAnalyticsAccess,
     asyncHandler(async (req, res) => {
       const { rows } = await pool.query(
@@ -77,7 +80,7 @@ module.exports = function productsRouter({
   );
 
   // Get all products with their inventory variations for a shop
-  router.get("/products", authenticateToken, notForClients, asyncHandler(async (req, res) => {
+  router.get("/products", authenticateToken, moduleGate, notForClients, asyncHandler(async (req, res) => {
     const { rows } = await pool.query(
       `SELECT p.id, p.name, p.description, 
         json_agg(
@@ -99,7 +102,7 @@ module.exports = function productsRouter({
   }));
 
   // Create a new product with variations
-  router.post("/products", authenticateToken, requireShopAdminAccess, asyncHandler(async (req, res) => {
+  router.post("/products", authenticateToken, moduleGate, requireShopAdminAccess, asyncHandler(async (req, res) => {
     const { name, description, variations } = req.body; // variations is an array
     const answer = await withTransaction(async (client) => {
       const productRes = await client.query(
@@ -124,7 +127,7 @@ module.exports = function productsRouter({
   // Update stock (Simple increment/decrement)
   router.patch(
     "/inventory/:id/stock",
-    authenticateToken, requireShopAdminAccess,
+    authenticateToken, moduleGate, requireShopAdminAccess,
     asyncHandler(async (req, res) => {
       const { quantity } = req.body; // can be negative to subtract
       const { rows } = await pool.query(
@@ -151,7 +154,7 @@ module.exports = function productsRouter({
     }, { message: "Insufficient stock or update failed" }),
   );
 
-  router.put("/products/:id", authenticateToken, requireShopAdminAccess, asyncHandler(async (req, res) => {
+  router.put("/products/:id", authenticateToken, moduleGate, requireShopAdminAccess, asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { name, description, variations } = req.body;
     const answer = await withTransaction(async (client) => {
@@ -186,7 +189,7 @@ module.exports = function productsRouter({
     res.json(answer);
   }));
 
-  router.delete("/products/:id", authenticateToken, requireShopAdminAccess, asyncHandler(async (req, res) => {
+  router.delete("/products/:id", authenticateToken, moduleGate, requireShopAdminAccess, asyncHandler(async (req, res) => {
     const { id } = req.params;
     // Ensure the product belongs to the user's shop for security
     const result = await pool.query(

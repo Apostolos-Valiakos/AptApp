@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from "vue-router";
+import type { ModuleKey } from "../utils/modules";
 import { defineAsyncComponent, defineComponent, h } from "vue";
 import { useAuthStore } from "../stores/auth";
 
@@ -67,13 +68,13 @@ const routes = [
           { path: "staff-schedule", component: StaffScheduleView },
           { path: "clients", component: ClientsView },
           { path: "services", component: ServicesView },
-          { path: "products", component: ProductsView },
+          { path: "products", component: ProductsView, meta: { module: "products" } },
           {
             path: "product-usage",
             component: ProductUsageView,
-            meta: { requiresAnalytics: true },
+            meta: { requiresAnalytics: true, module: "products" },
           },
-          { path: "gift-cards", component: GiftCardsView },
+          { path: "gift-cards", component: GiftCardsView, meta: { module: "gift_cards" } },
           {
             path: "financials",
             component: FinancialsView,
@@ -82,7 +83,7 @@ const routes = [
           {
             path: "membership-tiers",
             component: MembershipTiersView,
-            meta: { requiresShopAdmin: true },
+            meta: { requiresShopAdmin: true, module: "memberships" },
           },
           { path: "daily-report", component: DailyReportView },
           {
@@ -93,14 +94,14 @@ const routes = [
           {
             path: "packages",
             component: PackageTypesView,
-            meta: { requiresShopAdmin: true },
+            meta: { requiresShopAdmin: true, module: "packages" },
           },
           {
             path: "membership-report",
             component: MembershipReportView,
-            meta: { requiresAnalytics: true },
+            meta: { requiresAnalytics: true, module: "memberships" },
           },
-          { path: "qr-scanner", component: QrScannerView },
+          { path: "qr-scanner", component: QrScannerView, meta: { anyModule: ["memberships", "packages", "contests"] } },
           {
             path: "platform/shops",
             component: ShopsView,
@@ -178,6 +179,13 @@ router.beforeEach((to, from, next) => {
   }
 
   if (to.meta.requiresOwner && !authStore.isOwner) {
+    return next("/app/scheduler");
+  }
+  // Pages of modules the owner switched off for this shop.
+  if (to.meta.module && !authStore.moduleOn(to.meta.module as ModuleKey)) {
+    return next("/app/scheduler");
+  }
+  if (Array.isArray(to.meta.anyModule) && !(to.meta.anyModule as ModuleKey[]).some((m) => authStore.moduleOn(m))) {
     return next("/app/scheduler");
   }
 

@@ -1,5 +1,6 @@
 // Who may call a route: the login, and the role checks.
 const jwt = require("jsonwebtoken");
+const { moduleOn } = require("../modules");
 
 // The sensitive pages ask for the password again. Retyping it gives a separate,
 // short-lived proof (POST /reauth), signed with its own secret so it can never
@@ -70,6 +71,12 @@ const authenticateToken = (req, res, next) => {
 
     req.user = user;
     req.shopId = user.shopId;
+    // A client login only works while the shop has the client portal.
+    if (user.role === "client" && user.shopId) {
+      return moduleOn(user.shopId, "client_portal")
+        .then((on) => (on ? next() : res.status(403).json({ error: "portal_disabled", code: "module_disabled", module: "client_portal" })))
+        .catch(next);
+    }
     next();
   });
 };

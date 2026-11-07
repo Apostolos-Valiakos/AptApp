@@ -90,7 +90,7 @@
               @click="addVariationAfter(modelValue.indexOf(service), v)"
             >
               <i class="pi pi-plus text-[10px]"></i>
-              {{ v.name }} · {{ v.duration_minutes }}′ · {{ formatMoney(v.price, { compact: true }) }}
+              {{ v.name }} · {{ v.duration_minutes }}′<template v-if="authStore.canSeeMoney"> · {{ formatMoney(v.price, { compact: true }) }}</template>
             </button>
           </div>
         </div>

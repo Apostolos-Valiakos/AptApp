@@ -2,6 +2,7 @@
 // Moved out of server.js; helpers that still live there are handed over when
 // it mounts this router (see "Area routers" near the end of server.js).
 const express = require("express");
+const { requireModule, disabledModules } = require("../modules");
 const { HttpError, asyncHandler, withTransaction } = require("../http");
 const pool = require("../db");
 
@@ -11,10 +12,24 @@ module.exports = function membershipsRouter({
   notForClients,
 }) {
   const router = express.Router();
+  // Switched off for the shop in the platform console: these routes answer 403.
+  const moduleGate = requireModule("memberships");
+  // The QR scan finds memberships, packages and contests: open while any is on.
+  const qrGate = async (req, res, next) => {
+    try {
+      const off = await disabledModules(req.shopId);
+      if (req.shopId && ["memberships", "packages", "contests"].every((m) => off.includes(m))) {
+        return res.status(403).json({ error: "This feature is switched off for this shop", code: "module_disabled", module: "memberships" });
+      }
+      next();
+    } catch (err) {
+      next(err);
+    }
+  };
 
   // List all tiers for the shop, with their covered services + quotas (any
   // authenticated user — needed by the booking dialog's membership picker).
-  router.get("/membership-tiers", authenticateToken, notForClients, asyncHandler(async (req, res) => {
+  router.get("/membership-tiers", authenticateToken, moduleGate, notForClients, asyncHandler(async (req, res) => {
     const { rows: tiers } = await pool.query(
       `SELECT * FROM membership_tiers WHERE shop_id = $1 ORDER BY sort_order, created_at`,
       [req.shopId],
@@ -36,7 +51,7 @@ module.exports = function membershipsRouter({
 
   // Create a tier — admin only. Body: { name, monthly_price, yearly_price,
   // color, grace_period_days, services: [{ service_id, quota_per_month }] }
-  router.post("/membership-tiers", authenticateToken, notForClients, asyncHandler(async (req, res) => {
+  router.post("/membership-tiers", authenticateToken, moduleGate, notForClients, asyncHandler(async (req, res) => {
     if (!["admin", "super_admin", "frontdesk"].includes(req.user.role)) {
       return res.status(403).json({ error: "Admins only" });
     }
@@ -72,7 +87,7 @@ module.exports = function membershipsRouter({
 
   // Update a tier — admin only. Replaces the covered-services list wholesale
   // (delete-then-reinsert), same pattern as staff_services.
-  router.put("/membership-tiers/:id", authenticateToken, notForClients, asyncHandler(async (req, res) => {
+  router.put("/membership-tiers/:id", authenticateToken, moduleGate, notForClients, asyncHandler(async (req, res) => {
     if (!["admin", "super_admin", "frontdesk"].includes(req.user.role)) {
       return res.status(403).json({ error: "Admins only" });
     }
@@ -117,7 +132,7 @@ module.exports = function membershipsRouter({
   // no ON DELETE clause on purpose (deleting would either cascade away
   // historical membership/usage/revenue records or violate the FK outright),
   // so a tier that's ever been used can only be deactivated, never removed.
-  router.delete("/membership-tiers/:id", authenticateToken, notForClients, asyncHandler(async (req, res) => {
+  router.delete("/membership-tiers/:id", authenticateToken, moduleGate, notForClients, asyncHandler(async (req, res) => {
     if (!["admin", "super_admin", "frontdesk"].includes(req.user.role)) {
       return res.status(403).json({ error: "Admins only" });
     }
@@ -140,7 +155,7 @@ module.exports = function membershipsRouter({
   // Every client has a QR code, not just members — this is a general
   // identification/lookup tool. If a contest is currently active, scanning
   // also registers a contest entry (capped at one per client per day).
-  router.post("/qr/scan", authenticateToken, notForClients, asyncHandler(async (req, res) => {
+  router.post("/qr/scan", authenticateToken, qrGate, notForClients, asyncHandler(async (req, res) => {
     const { token } = req.body;
     if (!token) return res.status(400).json({ error: "token is required" });
     const clientRes = await pool.query(

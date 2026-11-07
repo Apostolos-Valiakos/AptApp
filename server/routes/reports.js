@@ -2,6 +2,7 @@
 // Moved out of server.js; helpers that still live there are handed over when
 // it mounts this router (see "Area routers" near the end of server.js).
 const express = require("express");
+const { requireModule } = require("../modules");
 const { asyncHandler } = require("../http");
 const pool = require("../db");
 
@@ -96,6 +97,7 @@ module.exports = function reportsRouter({
   router.get(
     "/reports/product-usage",
     authenticateToken,
+    requireModule("products"),
     requireAnalyticsAccess,
     asyncHandler(async (req, res) => {
       // Matches every other /api/v1/reports/* endpoint's from/to query-param

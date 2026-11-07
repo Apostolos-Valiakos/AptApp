@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { api } from "../api/http";
 import { readSavedJson } from "../utils/savedLogin";
+import { useAuthStore } from "./auth";
 import { ref, watch } from "vue";
 
 export const useSettingsStore = defineStore("settings", () => {
@@ -14,10 +15,12 @@ export const useSettingsStore = defineStore("settings", () => {
   // device silently carry over into e.g. a frontdesk session, whose own
   // staff profile is deliberately hidden from the calendar — leaving them
   // with an empty schedule. Non-staff always start on "all".
-  const resourceFilter = ref<"all" | "me">(isStaff ? "me" : "all");
+  // Staff choose between their own column and everyone's (the calendar uses
+  // it for staff only); this device remembers it, starting on their own.
+  const savedFilter = localStorage.getItem("scheduler_resource_filter");
+  const resourceFilter = ref<"all" | "me">(savedFilter === "all" ? "all" : "me");
 
   const setResourceFilter = (mode: "all" | "me") => {
-    if (isStaff) return;
     resourceFilter.value = mode;
   };
 
@@ -86,6 +89,8 @@ export const useSettingsStore = defineStore("settings", () => {
       .get("/api/v1/shop")
       .then((data) => {
         shopSettings.value = data;
+        // The owner may have switched modules on or off since this login.
+        if (data && "disabled_modules" in data) useAuthStore().setDisabledModules(data.disabled_modules);
         return data;
       })
       .catch((e) => {

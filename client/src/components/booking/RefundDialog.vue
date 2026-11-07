@@ -28,7 +28,7 @@
         }}</label>
         <Dropdown
           v-model="method"
-          :options="MONEY_METHODS"
+          :options="shopMoneyMethods()"
           class="w-full"
         >
           <template #value="slotProps">
@@ -66,7 +66,7 @@
 </template>
 
 <script setup lang="ts">
-import { MONEY_METHODS, methodChoiceLabel } from "../../utils/paymentMethods";
+import { shopMoneyMethods, methodChoiceLabel } from "../../utils/paymentMethods";
 import { api, ApiError } from "../../api/http";
 import { formatMoney } from "../../utils/format";
 import { ref, computed, watch } from "vue";

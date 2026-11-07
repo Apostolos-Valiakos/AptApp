@@ -252,11 +252,8 @@ describe("C9 the booking dialog is read-only for staff", () => {
 });
 
 describe("C10 how far back the calendar goes", () => {
-  test("staff start at today", async () => {
-    const { options } = await open("staff");
-    expect(options.validRange).toEqual({ start: MONDAY });
-  });
-  test.each(["admin", "frontdesk"])("%s can go back", async (role) => {
+  // Petalouda: staff browse past days too (read-only, no money).
+  test.each(["staff", "admin", "frontdesk"])("%s can go back", async (role) => {
     const { options } = await open(role);
     expect(options.validRange).toBeUndefined();
   });
@@ -753,7 +750,7 @@ describe("the hover card's services of the day", () => {
   });
 });
 
-describe("a completed appointment's card", () => {
+describe("petalouda's appointment cards (the July look)", () => {
   const serviceEvent = async (status: string) => {
     const { options } = await open("admin", {
       "GET /api/v1/appointments": {
@@ -763,52 +760,48 @@ describe("a completed appointment's card", () => {
     await showDay(options, `${MONDAY}T00:00:00`, "2026-11-03T00:00:00");
     await settle();
     const calls = calendarApi.setOption.mock.calls.filter((c: any[]) => c[0] === "events");
-    return calls[calls.length - 1][1].find((e: any) => e.extendedProps?.isServiceEvent);
+    return { options, event: calls[calls.length - 1][1].find((e: any) => e.extendedProps?.isServiceEvent) };
   };
-
-  test("keeps its colour and gets the line", async () => {
-    const event = await serviceEvent("completed");
-    expect(event.backgroundColor).toBe("#fde68a");
-    expect(event.classNames).toContain("fc-completed");
-  });
-
-  test("other statuses get no line", async () => {
-    expect((await serviceEvent("confirmed")).classNames).not.toContain("fc-completed");
-  });
-
-  test.each(["cancelled", "no-show"])("a %s booking gets the red line instead", async (status) => {
-    const event = await serviceEvent(status);
-    expect(event.classNames).toContain("fc-did-not-happen");
-    expect(event.classNames).not.toContain("fc-completed");
-  });
-
-  test("an ordinary booking gets neither line", async () => {
-    const { classNames } = await serviceEvent("confirmed");
-    expect(classNames).not.toContain("fc-did-not-happen");
-  });
-});
-
-describe("the time on a computer's cards", () => {
-  const cardHtml = (options: any, minutes: number) =>
+  const cardHtml = (options: any, event: any, minutes = 60) =>
     options.eventContent({
-      timeText: "10:00 - 10:15",
+      timeText: "10:00 - 11:00",
       isMirror: false,
       view: { type: "resourceTimeGridDay" },
       event: {
         start: new Date(`${MONDAY}T10:00:00`),
         end: new Date(new Date(`${MONDAY}T10:00:00`).getTime() + minutes * 60000),
-        extendedProps: { client_name: "P Eleni", client_surname: "P", service_name: "Massage", fullAppointment: appointment() },
+        extendedProps: event.extendedProps,
       },
     }).html;
 
-  test.each([15, 60])("is much smaller than the name on a %i-minute card", async (minutes) => {
-    const { options } = await open("admin");
-    expect(cardHtml(options, minutes)).toMatch(/text-\[8px\] md:text-\[9px\][^>]*>10:00/);
+  test("the colour is a pastel from the service's name, not the Services page colour", async () => {
+    const { event } = await serviceEvent("confirmed");
+    expect(event.backgroundColor).not.toBe("#fde68a");
+    expect(event.backgroundColor).toMatch(/^(hsl\(|#)/);
   });
 
-  test.each([15, 20, 25, 30, 60])("shows on a %i-minute card", async (minutes) => {
-    const { options } = await open("admin");
-    expect(cardHtml(options, minutes)).toContain("10:00");
+  test.each(["completed", "cancelled", "no-show"])("a %s booking gets no coloured line", async (status) => {
+    const { event } = await serviceEvent(status);
+    expect(event.classNames).not.toContain("fc-completed");
+    expect(event.classNames).not.toContain("fc-did-not-happen");
+  });
+
+  test("confirmed shows a violet tick, completed a green ticked circle", async () => {
+    const confirmed = await serviceEvent("confirmed");
+    expect(cardHtml(confirmed.options, confirmed.event)).toContain("pi-check text-[9px]");
+    const completed = await serviceEvent("completed");
+    expect(cardHtml(completed.options, completed.event)).toContain("pi-check-circle");
+  });
+
+  test.each(["cancelled", "no-show"])("a %s booking is crossed out", async (status) => {
+    const { options, event } = await serviceEvent(status);
+    expect(cardHtml(options, event)).toContain("line-through");
+  });
+
+  test("the time shows on cards of 45 minutes and more, not on shorter ones", async () => {
+    const { options, event } = await serviceEvent("confirmed");
+    expect(cardHtml(options, event, 60)).toContain("10:00");
+    expect(cardHtml(options, event, 30)).not.toContain("10:00");
   });
 });
 

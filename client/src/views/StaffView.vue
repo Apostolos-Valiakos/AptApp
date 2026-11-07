@@ -227,7 +227,8 @@
             class="w-full"
           />
         </div>
-        <div>
+        <!-- Places (sauna, hammam): only with the shared places module. -->
+        <div v-if="authStore.moduleOn('shared_places')">
           <label class="block text-sm font-medium text-gray-700 mb-1">{{
             t("staff.dialog.capacity")
           }}</label>
@@ -555,6 +556,7 @@ import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 import { useCalendarStore } from "../stores/calendar";
 import StaffServiceOrder from "../components/StaffServiceOrder.vue";
+import { useAuthStore } from "../stores/auth";
 import { useIsPhone, PHONE_PAGINATOR_TEMPLATE } from "../composables/useIsPhone";
 
 const { t } = useI18n();
@@ -565,6 +567,7 @@ const toast = useToast();
 const confirm = useConfirm();
 const calendarStore = useCalendarStore();
 const router = useRouter();
+const authStore = useAuthStore();
 const staff = ref([]);
 const services = ref([]);
 const loading = ref(false);

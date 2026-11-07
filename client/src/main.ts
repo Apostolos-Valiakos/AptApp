@@ -50,7 +50,7 @@ declare const __APP_SW__: boolean; // set by vite.config.mjs
 
 const MyPreset = definePreset(Aura, {
   semantic: {
-    primary: palette("#8B6F4E"),
+    primary: palette("#ff93d4"),
   },
 });
 

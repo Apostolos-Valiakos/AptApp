@@ -85,21 +85,10 @@ module.exports = function appointmentsRouter({
           ? ` AND fs.first_start >= NOW() - INTERVAL '3 months'`
           : "";
 
-      // 4. Plain "staff" (not frontdesk/admin/super_admin) can only ever see their
-      // own appointments, and never anything before today. Enforced here — not
-      // just hidden client-side — so it can't be bypassed by calling the API
-      // directly with a different date range or another staff member's id.
+      // 4. Plain "staff" see every therapist's appointments, past days too
+      // (within the 3 months above), read-only: writing stays refused to them
+      // (notForStaff), and the money is taken out below.
       let staffOwnClause = "";
-      if (req.user.role === "staff") {
-        if (req.user.staffId) {
-          params.push(req.user.staffId);
-          staffOwnClause = ` AND EXISTS (SELECT 1 FROM appointment_services aps_staff WHERE aps_staff.appointment_id = a.id AND aps_staff.staff_id = $${params.length})`;
-        } else {
-          // No linked staff profile — nothing to show.
-          staffOwnClause = " AND FALSE";
-        }
-        staffOwnClause += ` AND fs.first_start >= CURRENT_DATE`;
-      }
 
       // A logged-in client can only ever see their own appointments — past and
       // future both (unlike staff, who are future-only above), matching what
@@ -229,10 +218,25 @@ module.exports = function appointmentsRouter({
         // Staff-authored notes about a client should never reach the client's
         // own portal view of their own appointment.
         ...(req.user.role === "client" ? { internal_notes: null, booking_notes: null, products: [] } : {}),
-      }));
+      })).map((row) => (req.user.role === "staff" ? withoutMoney(row) : row));
 
       res.json(formatted);
   }));
+
+  // What staff get of an appointment: everything but money (prices, paid,
+  // owed, the client's balance).
+  const withoutMoney = (row) => ({
+    ...row,
+    current_appt_total: null,
+    total_cost: null,
+    deposit_amount: null,
+    client_outstanding_balance: null,
+    discount_amount: null,
+    payment_status: null,
+    payment_method: null,
+    products: (row.products || []).map((p) => ({ ...p, price: null, total_price: null })),
+    services: (row.services || []).map((svc) => ({ ...svc, price: null, price_override: null, list_price: null, charged: null, hidden: null, paid_with: null })),
+  });
 
   router.post("/", authenticateToken, notForStaff, asyncHandler(async (req, res) => {
     const idempotencyKey = req.headers["idempotency-key"] || null;

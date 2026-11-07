@@ -336,7 +336,7 @@
 <script setup lang="ts">
 import { fullyHidden } from "../../utils/paymentFilters";
 import { useSettingsStore } from "../../stores/settings";
-import { MONEY_METHODS, methodChoiceLabel } from "../../utils/paymentMethods";
+import { shopMoneyMethods, methodChoiceLabel } from "../../utils/paymentMethods";
 import { api, ApiError } from "../../api/http";
 import { ref, computed, watch, type PropType } from "vue";
 import { useI18n } from "vue-i18n";
@@ -379,7 +379,7 @@ const manualDebts = ref<any[]>([]);
 const openDebts = computed(() => manualDebts.value.filter((d) => Number(d.remaining) > 0));
 const debtSaving = ref(false);
 const methodOptions = computed(() =>
-  MONEY_METHODS.map((m) => ({ value: m, label: methodChoiceLabel(t, m) })),
+  shopMoneyMethods().map((m) => ({ value: m, label: methodChoiceLabel(t, m) })),
 );
 
 type ResolveTarget = { kind: "appointment" | "debt"; id: string; amount: number; label: string };
@@ -528,7 +528,7 @@ const STATUS_STYLE: Record<string, { key: string; cls: string }> = {
 const statusLabel = (appt: any) => {
   const style = STATUS_STYLE[appt.status] || { key: "", cls: "bg-gray-100 text-gray-600" };
   const base = style.key ? t(`common.status.${style.key}`) : appt.status;
-  if (appt.status !== "cancelled" && Number(appt.owed) > 0) {
+  if (authStore.canSeeMoney && appt.status !== "cancelled" && Number(appt.owed) > 0) {
     return {
       text: `${base} · ${t("bookingSidebar.owes", { amount: formatMoney(appt.owed) })}`,
       cls: "bg-amber-50 text-amber-800",

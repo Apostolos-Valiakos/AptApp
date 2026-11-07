@@ -2,6 +2,7 @@
 // Moved out of server.js; helpers that still live there are handed over when
 // it mounts this router (see "Area routers" near the end of server.js).
 const express = require("express");
+const { requireModule } = require("../modules");
 const { asyncHandler } = require("../http");
 const pool = require("../db");
 
@@ -11,11 +12,13 @@ module.exports = function discountsRouter({
   requireAnalyticsAccess,
 }) {
   const router = express.Router();
+  // Switched off for the shop in the platform console: these routes answer 403.
+  const moduleGate = requireModule("discounts");
 
   // --- Discount codes ---
   // Every non-client role can read active codes (to apply them in the booking
   // dialog); only admins manage them.
-  router.get("/discount-codes", authenticateToken, notForClients, asyncHandler(async (req, res) => {
+  router.get("/discount-codes", authenticateToken, moduleGate, notForClients, asyncHandler(async (req, res) => {
     if (req.user.role === "client") return res.status(403).json({ error: "Forbidden" });
     const isAdmin = req.user.role === "admin" || req.user.role === "super_admin";
     const { rows } = await pool.query(
@@ -46,7 +49,7 @@ module.exports = function discountsRouter({
     return { value: out };
   };
 
-  router.post("/discount-codes", authenticateToken, requireAnalyticsAccess, asyncHandler(async (req, res) => {
+  router.post("/discount-codes", authenticateToken, moduleGate, requireAnalyticsAccess, asyncHandler(async (req, res) => {
     const parsed = parseDiscountCodeBody(req.body, false);
     if (parsed.error) return res.status(400).json({ error: parsed.error });
     const { rows } = await pool.query(
@@ -57,7 +60,7 @@ module.exports = function discountsRouter({
     res.status(201).json(rows[0]);
   }, { mapError: (err) => (err.code === "23505" ? { status: 409, body: { error: "A code with this name already exists" } } : null) }));
 
-  router.put("/discount-codes/:id", authenticateToken, requireAnalyticsAccess, asyncHandler(async (req, res) => {
+  router.put("/discount-codes/:id", authenticateToken, moduleGate, requireAnalyticsAccess, asyncHandler(async (req, res) => {
     const parsed = parseDiscountCodeBody(req.body, true);
     if (parsed.error) return res.status(400).json({ error: parsed.error });
     const fields = Object.keys(parsed.value);
@@ -72,7 +75,7 @@ module.exports = function discountsRouter({
     res.json(rows[0]);
   }, { mapError: (err) => (err.code === "23505" ? { status: 409, body: { error: "A code with this name already exists" } } : null) }));
 
-  router.delete("/discount-codes/:id", authenticateToken, requireAnalyticsAccess, asyncHandler(async (req, res) => {
+  router.delete("/discount-codes/:id", authenticateToken, moduleGate, requireAnalyticsAccess, asyncHandler(async (req, res) => {
     const { rowCount } = await pool.query(
       "DELETE FROM discount_codes WHERE id = $1 AND shop_id = $2",
       [req.params.id, req.user.shopId],
@@ -82,7 +85,7 @@ module.exports = function discountsRouter({
   }));
 
   // Appointments that carry a discount (any type), newest first — admin tracking view.
-  router.get("/discounts/usage", authenticateToken, requireAnalyticsAccess, asyncHandler(async (req, res) => {
+  router.get("/discounts/usage", authenticateToken, moduleGate, requireAnalyticsAccess, asyncHandler(async (req, res) => {
     const limit = Math.min(Number(req.query.limit) || 100, 500);
     const { rows } = await pool.query(
       `SELECT a.id, a.status, a.discount_type, a.discount_value, a.discount_scope,

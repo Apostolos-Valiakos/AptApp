@@ -2,18 +2,6 @@ module.exports = {
   content: ["./client/**/*.{vue,js,ts,jsx,tsx}"],
   theme: {
     extend: {
-      fontFamily: {
-        sans: [
-          "Manrope",
-          "-apple-system",
-          "BlinkMacSystemFont",
-          "Segoe UI",
-          "Roboto",
-          "Helvetica Neue",
-          "Arial",
-          "sans-serif",
-        ],
-      },
       colors: {
         primary: {
           50: "var(--p-primary-50)",

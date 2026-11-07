@@ -584,9 +584,9 @@
           </div>
         </div>
 
-        <!-- Client Self-Booking (admin only) -->
+        <!-- Client Self-Booking (admin only; needs the client portal module) -->
         <div
-          v-if="authStore.isAnalyticsAllowed"
+          v-if="authStore.isAnalyticsAllowed && authStore.moduleOn('client_portal')"
           class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8"
         >
           <div class="flex justify-between items-center">
@@ -606,11 +606,11 @@
           </div>
         </div>
 
-        <DiscountCodesAdmin v-if="authStore.isAnalyticsAllowed" v-phone-section />
+        <DiscountCodesAdmin v-if="authStore.isAnalyticsAllowed && authStore.moduleOn('discounts')" v-phone-section />
 
-        <!-- Push Broadcast (admin only) -->
+        <!-- Push Broadcast (admin only; push goes to client portal users) -->
         <div v-phone-section
-          v-if="authStore.isAnalyticsAllowed"
+          v-if="authStore.isAnalyticsAllowed && authStore.moduleOn('client_portal')"
           class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8"
         >
           <div class="mb-6">
@@ -766,9 +766,9 @@
           </form>
         </div>
 
-        <!-- ── Contests (admin only) ── -->
+        <!-- ── Contests (admin only; needs the contests module) ── -->
         <div v-phone-section
-          v-if="authStore.isAnalyticsAllowed"
+          v-if="authStore.isAnalyticsAllowed && authStore.moduleOn('contests')"
           class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8"
         >
           <div class="flex items-center justify-between mb-6">

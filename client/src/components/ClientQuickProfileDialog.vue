@@ -261,8 +261,13 @@ const actionItems = computed(() => {
   const items: any[] = [
     { label: t("clientQuickProfile.editDetails"), icon: "pi pi-pencil", command: () => openFull("Info") },
     { label: t("clientQuickProfile.viewHistory"), icon: "pi pi-history", command: () => openFull("History") },
-    { label: t("clientQuickProfile.viewMembership"), icon: "pi pi-id-card", command: () => openFull("Membership") },
-    { label: t("clientQuickProfile.viewPackages"), icon: "pi pi-clone", command: () => openFull("Packages") },
+    // Membership and packages only where the shop has those modules.
+    ...(authStore.moduleOn("memberships")
+      ? [{ label: t("clientQuickProfile.viewMembership"), icon: "pi pi-id-card", command: () => openFull("Membership") }]
+      : []),
+    ...(authStore.moduleOn("packages")
+      ? [{ label: t("clientQuickProfile.viewPackages"), icon: "pi pi-clone", command: () => openFull("Packages") }]
+      : []),
   ];
   if (upcoming.value) {
     items.push({

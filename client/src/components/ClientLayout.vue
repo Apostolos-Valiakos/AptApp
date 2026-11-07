@@ -186,7 +186,7 @@ const router = useRouter();
 const { t, locale } = useI18n();
 const authStore = useAuthStore();
 
-const shopName = ref("Pure Spa & Massage Experience");
+const shopName = ref("Petalouda Booking");
 const unreadCount = ref(0);
 const notifications = ref<any[]>([]);
 const showNotifications = ref(false);

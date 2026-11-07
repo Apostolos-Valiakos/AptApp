@@ -2,6 +2,7 @@
 // Moved out of server.js; helpers that still live there are handed over when
 // it mounts this router (see "Area routers" near the end of server.js).
 const express = require("express");
+const { requireModule } = require("../modules");
 const { asyncHandler } = require("../http");
 const pool = require("../db");
 
@@ -11,9 +12,11 @@ module.exports = function contestsRouter({
   notForClients,
 }) {
   const router = express.Router();
+  // Switched off for the shop in the platform console: these routes answer 403.
+  const moduleGate = requireModule("contests");
 
   // List all contests for the shop (admin)
-  router.get("/contests", authenticateToken, notForClients, asyncHandler(async (req, res) => {
+  router.get("/contests", authenticateToken, moduleGate, notForClients, asyncHandler(async (req, res) => {
     if (req.user.role !== "admin" && req.user.role !== "super_admin") {
       return res.status(403).json({ error: "Admins only" });
     }
@@ -26,7 +29,7 @@ module.exports = function contestsRouter({
   }));
 
   // Get active contest + client entry count (authenticated)
-  router.get("/contests/active", authenticateToken, asyncHandler(async (req, res) => {
+  router.get("/contests/active", authenticateToken, moduleGate, asyncHandler(async (req, res) => {
     const { rows } = await pool.query(
       `SELECT id, name, description, start_date, end_date, image_url
        FROM contests
@@ -57,7 +60,7 @@ module.exports = function contestsRouter({
   // Create contest (admin) — image is optional
   router.post(
     "/contests",
-    authenticateToken, notForClients,
+    authenticateToken, moduleGate, notForClients,
     dbFileUpload.single("image"),
     asyncHandler(async (req, res) => {
       if (req.user.role !== "admin" && req.user.role !== "super_admin") {
@@ -84,7 +87,7 @@ module.exports = function contestsRouter({
   // Update contest (admin) — image is optional
   router.put(
     "/contests/:id",
-    authenticateToken, notForClients,
+    authenticateToken, moduleGate, notForClients,
     dbFileUpload.single("image"),
     asyncHandler(async (req, res) => {
       if (req.user.role !== "admin" && req.user.role !== "super_admin") {
@@ -126,7 +129,7 @@ module.exports = function contestsRouter({
   );
 
   // Delete contest (admin)
-  router.delete("/contests/:id", authenticateToken, notForClients, asyncHandler(async (req, res) => {
+  router.delete("/contests/:id", authenticateToken, moduleGate, notForClients, asyncHandler(async (req, res) => {
     if (req.user.role !== "admin" && req.user.role !== "super_admin") {
       return res.status(403).json({ error: "Admins only" });
     }

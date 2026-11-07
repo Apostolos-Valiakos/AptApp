@@ -15,13 +15,36 @@
               <div
                 class="w-7 h-7 bg-white rounded-lg flex items-center justify-center shadow-sm transition-transform group-hover:rotate-12"
               >
-                <img src="../../static/logo for photos-02.png" />
+                <!-- Petalouda's butterfly -->
+                <svg
+                  viewBox="0 0 24 24"
+                  class="w-5 h-5 stroke-[var(--p-primary-600)]"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path
+                    class="fill-[var(--p-primary-color)]"
+                    fill-opacity="0.4"
+                    d="M12 12.5C12 12.5 14.5 6 19 7C22 7.7 20.5 12.5 18 13.5C20.5 14.5 21 19 16.5 20.5C13.5 21.5 12 18 12 18"
+                  />
+                  <path
+                    class="fill-[var(--p-primary-color)]"
+                    fill-opacity="0.4"
+                    d="M12 12.5C12 12.5 9.5 6 5 7C2 7.7 3.5 12.5 6 13.5C3.5 14.5 3 19 7.5 20.5C10.5 21.5 12 18 12 18"
+                  />
+                  <path d="M12 8V19" stroke-width="2" />
+                  <path d="M12 8C12 8 10.5 3 8 4" />
+                  <path d="M12 8C12 8 13.5 3 16 4" />
+                </svg>
               </div>
               <span
                 v-if="!authStore.isAuthenticated"
                 class="ml-3 text-xl font-extrabold tracking-tight text-white whitespace-nowrap"
               >
-                Pure Spa &amp; Massage Experience
+                Petalouda Booking
               </span>
             </div>
 
@@ -372,18 +395,21 @@ const navItems = computed(() => [
   {
     label: t("nav.products"),
     path: "/app/products",
+    module: "products",
     ownerOnly: true,
     icon: "pi pi-box",
   },
   {
     label: t("nav.giftCards"),
     path: "/app/gift-cards",
+    module: "gift_cards",
     ownerOnly: true,
     icon: "pi pi-ticket",
   },
   {
     label: t("nav.membershipTiers"),
     path: "/app/membership-tiers",
+    module: "memberships",
     ownerOnly: true,
     icon: "pi pi-id-card",
   },
@@ -404,12 +430,14 @@ const navItems = computed(() => [
   {
     label: t("nav.packages"),
     path: "/app/packages",
+    module: "packages",
     ownerOnly: true,
     icon: "pi pi-clone",
   },
   {
     label: t("nav.qrScanner"),
     path: "/app/qr-scanner",
+    anyModule: ["memberships", "packages", "contests"],
     ownerOnly: false,
     hideFromStaff: true,
     hideFromAdmin: true,
@@ -471,6 +499,9 @@ const visibleNavItems = computed(() => {
     if (item.hideFromAdmin && isAnalyticsAllowed.value) return false;
     if (item.platformOnly && !authStore.isOwner) return false;
     if (item.hideFromStaff && authStore.user?.role === "staff") return false;
+    // Modules the owner switched off for this shop.
+    if ((item as any).module && !authStore.moduleOn((item as any).module)) return false;
+    if ((item as any).anyModule && !(item as any).anyModule.some((m: any) => authStore.moduleOn(m))) return false;
 
     return true;
   });
@@ -554,6 +585,8 @@ const toggleCashFilterAsAdmin = async () => {
 };
 
 const handleKeydown = (e: KeyboardEvent) => {
+  // Ctrl+1 / Ctrl+8 only where the shop has the cash filter.
+  if (e.ctrlKey && (e.key === "1" || e.key === "8") && !authStore.moduleOn("cash_filter")) return;
   if (e.ctrlKey && e.key === "1") {
     e.preventDefault();
     if (isAdminOrAbove.value) {
@@ -600,6 +633,7 @@ watch(
 // low-frequency timer as a last-resort safety net.
 const resyncFilterState = async () => {
   if (!authStore.isAuthenticated || authStore.isClient) return;
+  if (!authStore.moduleOn("cash_filter")) return;
   try {
     const data = await api.get("/api/v1/shop/filter-state");
     if (data.cashLocked) {
@@ -620,7 +654,21 @@ const handleVisibilityChange = () => {
 
 let filterResyncTimer: ReturnType<typeof setInterval> | null = null;
 
+// Without the cash filter module nothing may stay hidden by it.
+watch(
+  () => authStore.moduleOn("cash_filter"),
+  (on) => {
+    if (on) return;
+    settingsStore.setCashLockedByShop(false);
+    settingsStore.setHideCashPaid(false);
+    settingsStore.setHideCardPaid(false);
+  },
+  { immediate: true },
+);
+
 onMounted(() => {
+  // The owner may have switched modules on or off since this login.
+  if (authStore.isAuthenticated && !authStore.isClient && !authStore.isOwner) settingsStore.fetchShopSettings(true);
   // Respect system or previously stored dark theme
   const storedTheme = localStorage.getItem("theme");
   const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;

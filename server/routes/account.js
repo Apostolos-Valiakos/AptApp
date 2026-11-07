@@ -46,7 +46,8 @@ module.exports = function accountRouter({
     // 1. Find user by username only (don't check password in SQL)
     const result = await pool.query(
       `SELECT u.*, s.name as shop_name, s.status as shop_status, s.force_hide_cash as shop_force_hide_cash,
-              s.force_hide_cash_locked_by as shop_force_hide_cash_locked_by
+              s.force_hide_cash_locked_by as shop_force_hide_cash_locked_by,
+              COALESCE(s.disabled_modules, '{}') as shop_disabled_modules
        FROM users u
        LEFT JOIN shops s ON u.shop_id = s.id
        WHERE u.username = $1`,
@@ -77,6 +78,10 @@ module.exports = function accountRouter({
     if (user.is_active === false) {
       return res.status(403).json({ error: "This account has been deactivated.", code: "account_deactivated" });
     }
+    // Client logins only while the shop has the client portal.
+    if (user.role === "client" && (user.shop_disabled_modules || []).includes("client_portal")) {
+      return res.status(403).json({ error: "The client portal is not available.", code: "portal_disabled" });
+    }
 
     // 3. Generate Token
     const token = jwt.sign(
@@ -92,7 +97,9 @@ module.exports = function accountRouter({
       { expiresIn: "24h" },
     );
 
-    res.json({ token, user });
+    // Never send the password hash to the browser.
+    const { password: _hash, ...safeUser } = user;
+    res.json({ token, user: safeUser });
   }, { log: "Login Error:", message: "Login failed" }));
 
   // --- PROFILE ROUTE ---

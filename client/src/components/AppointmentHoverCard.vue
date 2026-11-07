@@ -47,7 +47,8 @@
             <span class="w-24 flex-shrink-0 text-gray-500">{{ t("scheduler.hoverCard.service") }}</span>
             <span class="text-gray-900 font-medium">{{ appointment.service_name }}</span>
           </div>
-          <div class="flex text-sm items-center">
+          <!-- Staff don't see money. -->
+          <div v-if="authStore.canSeeMoney" class="flex text-sm items-center">
             <span class="w-24 flex-shrink-0 text-gray-500">{{ t("scheduler.hoverCard.payment") }}</span>
             <span :class="paymentBadgeClass" class="px-2 py-0.5 rounded-md text-xs font-semibold">
               {{ paymentText }}
@@ -86,6 +87,9 @@
 
 <script setup lang="ts">
 import { formatMoney } from "../utils/format";
+import { useAuthStore } from "../stores/auth";
+// Staff don't see money.
+const authStore = useAuthStore();
 import { ref, computed, onMounted, nextTick, watch } from "vue";
 import { useI18n } from "vue-i18n";
 

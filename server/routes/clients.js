@@ -462,7 +462,12 @@ module.exports = function clientsRouter({
          LIMIT $3`,
         [id, req.shopId, limit],
       );
-      res.json(rows);
+      // Staff don't see money.
+      res.json(
+        req.user.role === "staff"
+          ? rows.map((r) => ({ ...r, owed: null, total_service_price: null, deposit_amount: null, services_paid: (r.services_paid || []).map((x) => ({ ...x, charged: null, hidden: null, paid_with: null })) }))
+          : rows,
+      );
     }, { log: "Past appointments fetch error:" }),
   );
 
@@ -582,13 +587,18 @@ module.exports = function clientsRouter({
     const walkInRes = await pool.query("SELECT walk_in_client_id FROM shops WHERE id = $1", [req.shopId]);
     // The notes on a client's card are the shop's, not for the client to read.
     if (req.user.role === "client") delete client.notes;
+    // Staff don't see money: no balance, no amounts in the history.
+    const staffView = req.user.role === "staff";
+    if (staffView) client.outstanding_balance = null;
     res.json({
       client: {
         ...client,
         full_name: `${client.first_name} ${client.last_name}`,
         is_walk_in: walkInRes.rows[0]?.walk_in_client_id === client.id,
       },
-      history: historyRes.rows,
+      history: staffView
+        ? historyRes.rows.map((h) => ({ ...h, total_service_price: null, total_product_price: null, deposit_amount: null, services_paid: (h.services_paid || []).map((x) => ({ ...x, charged: null, hidden: null, paid_with: null })) }))
+        : historyRes.rows,
       files: filesRes.rows,
     });
   }, { log: "Profile Fetch Error:" }));
@@ -650,6 +660,8 @@ module.exports = function clientsRouter({
           total_cost: Number(r.total_cost),
           owed: Math.max(0, Number(r.total_cost) - Number(r.deposit_amount)),
           services: r.services,
+          // Staff don't see money.
+          ...(req.user.role === "staff" ? { deposit_amount: null, total_cost: null, owed: null } : {}),
         })),
       );
     }),

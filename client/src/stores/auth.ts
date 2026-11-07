@@ -3,6 +3,7 @@ import { ref, computed } from "vue";
 import { useSettingsStore } from "./settings";
 import { onLoggedIn } from "../offline/queue";
 import { SAVED_LOGIN_KEYS, readSavedJson } from "../utils/savedLogin";
+import type { ModuleKey } from "../utils/modules";
 
 export const useAuthStore = defineStore("auth", () => {
   // Damaged saved data: start logged out rather than half logged in.
@@ -36,6 +37,20 @@ export const useAuthStore = defineStore("auth", () => {
   );
 
   const isClient = computed(() => user.value?.role === "client");
+  // Staff don't see prices or what clients owe.
+  const canSeeMoney = computed(() => user.value?.role !== "staff");
+
+  // Modules the owner switched off for this shop (utils/modules.ts): they
+  // come with the login and are refreshed with the shop's settings.
+  const disabledModules = computed<string[]>(() => user.value?.shop_disabled_modules || []);
+  const moduleOn = (key: ModuleKey) => !disabledModules.value.includes(key);
+  const setDisabledModules = (list: string[] | null | undefined) => {
+    if (!user.value) return;
+    const next = Array.isArray(list) ? list : [];
+    if (next.join() === disabledModules.value.join()) return;
+    user.value = { ...user.value, shop_disabled_modules: next };
+    localStorage.setItem("user", JSON.stringify(user.value));
+  };
 
   // While the owner is "viewing as" a shop, the real owner session is stashed here
   // so it can be restored exactly on exit, without ever losing it mid-impersonation.
@@ -141,7 +156,11 @@ export const useAuthStore = defineStore("auth", () => {
     isShopAdmin,
     isAnalyticsAllowed,
     isClient,
+    canSeeMoney,
     isImpersonating,
+    disabledModules,
+    moduleOn,
+    setDisabledModules,
     clientId,
     login,
     logout,

@@ -155,6 +155,7 @@
           <template #body="slotProps">
             <div class="flex gap-0.5 md:gap-1.5 items-center justify-end md:justify-start">
               <Button
+                v-if="authStore.moduleOn('client_portal')"
                 icon="pi pi-envelope"
                 class="p-button-rounded p-button-text p-button-sm p-button-info"
                 v-tooltip.top="t('clients.actions.inviteToPortal')"

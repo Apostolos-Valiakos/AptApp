@@ -281,10 +281,17 @@ import { ref, computed, watch, type PropType } from "vue";
 import { useI18n } from "vue-i18n";
 import GiftCardPicker from "./GiftCardPicker.vue";
 import MembershipPicker from "./MembershipPicker.vue";
-import { MONEY_METHODS, methodChoiceLabel } from "../../utils/paymentMethods";
+import { MONEY_METHODS, methodChoiceLabel, shopMoneyMethods } from "../../utils/paymentMethods";
+import { useAuthStore } from "../../stores/auth";
 const { t } = useI18n();
 
-const METHODS = [...MONEY_METHODS, "gift-card", "membership"];
+// Gift cards, memberships and CASH only where the shop has those modules.
+const authForModules = useAuthStore();
+const METHODS = computed(() => [
+  ...shopMoneyMethods(),
+  ...(authForModules.moduleOn("gift_cards") ? ["gift-card"] : []),
+  ...(authForModules.moduleOn("memberships") ? ["membership"] : []),
+]);
 
 const props = defineProps({
   step: { type: Number, default: 2 },
@@ -382,7 +389,7 @@ const onMembershipAmount2Change = (amount: number) => {
 // Leg 2's method options exclude whichever method leg 1 is currently using —
 // splitting into the SAME method twice is meaningless.
 const method2Options = computed(() =>
-  METHODS.filter(
+  METHODS.value.filter(
     (m) => m !== props.paymentMethod,
   ),
 );

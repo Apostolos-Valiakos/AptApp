@@ -41,7 +41,7 @@
               inline
               v-model="pickerDate"
               dateFormat="dd/mm/yy"
-              :minDate="isStaffRole ? todayDate : undefined"
+              :minDate="undefined"
               @date-select="onDatePicked"
             />
           </div>
@@ -129,7 +129,7 @@
               inline
               v-model="pickerDate"
               dateFormat="dd/mm/yy"
-              :minDate="isStaffRole ? todayDate : undefined"
+              :minDate="undefined"
               @date-select="onDatePicked"
             />
           </div>
@@ -219,7 +219,7 @@
           </button>
         </div>
 
-        <ColorModelToggle v-if="settings.isStaff" />
+        <ColorModelToggle v-if="isStaffRole" />
 
         <!-- Client search -->
         <button
@@ -326,7 +326,7 @@
           inline
           v-model="dockedDate"
           dateFormat="dd/mm/yy"
-          :minDate="isStaffRole ? todayDate : undefined"
+          :minDate="undefined"
           @date-select="onDatePicked"
         />
       </aside>
@@ -505,7 +505,6 @@ import {
   describeServiceChanges,
 } from "../utils/appointmentChanges";
 import ColorModelToggle from "../components/ColorModelToggle.vue";
-import { resolveServiceColor } from "../utils/serviceColors";
 import { fullyHidden, hiddenAmount, paidInCash } from "../utils/paymentFilters";
 import { useAuthStore } from "../stores/auth";
 import elLocale from "@fullcalendar/core/locales/el";
@@ -699,14 +698,8 @@ const hoverAnchorRect = ref<{
 } | null>(null);
 let hoverShowTimer: ReturnType<typeof setTimeout> | null = null;
 
-const canGoPrev = computed(() => {
-  if (!isStaffRole.value || !currentStart.value) return true;
-  const viewStart = new Date(currentStart.value);
-  viewStart.setHours(0, 0, 0, 0);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return viewStart > today;
-});
+// Petalouda's staff may browse past days too (read-only, no money).
+const canGoPrev = computed(() => true);
 
 // --- Fit staff toggle ---
 const fitStaff = ref(localStorage.getItem("fitStaff") === "true");
@@ -968,7 +961,7 @@ const weekStrip = computed(() => {
       selected:
         currentView.value !== "dayGridMonth" && sameDay(date, viewDate.value),
       today: sameDay(date, new Date()),
-      disabled: isStaffRole.value && date < todayDate.value,
+      disabled: false,
     };
   });
 });
@@ -976,8 +969,7 @@ const weekStrip = computed(() => {
 const goToDay = (date: Date) => {
   const api = calendarApi.value;
   if (!api) return;
-  const target =
-    isStaffRole.value && date < todayDate.value ? todayDate.value : date;
+  const target = date;
   api.changeView("resourceTimeGridDay", target);
   currentView.value = "resourceTimeGridDay";
 };
@@ -1149,7 +1141,8 @@ const calendarResources = computed(() => {
   if (!Array.isArray(res)) return [];
 
   let filtered = res.filter((r: any) => r.is_active);
-  if (settings.resourceFilter === "me" && authStore.user?.staff_id) {
+  // Staff: only their own column unless they chose everyone's.
+  if (isStaffRole.value && settings.resourceFilter === "me" && authStore.user?.staff_id) {
     filtered = filtered.filter((r: any) => r.id === authStore.user.staff_id);
   }
 
@@ -1199,6 +1192,28 @@ const placesById = computed(
 // card that says how many are there together (see placeGroupHtml), except
 // the opened group (expandedGroupKey), which stays as separate cards.
 // Cancelled and no-show bookings keep their own cards.
+// Petalouda's card colours: a soft pastel worked out from the service's name
+// (a few names have a fixed one), as before July. Colours set on the Services
+// page aren't used on the calendar.
+const stringToPastelColor = (str: string) => {
+  if (!str) return "#e5e7eb";
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  return `hsl(${Math.abs(hash) % 360}, 70%, 90%)`;
+};
+const getCategoryColor = (category: string) => {
+  const map: Record<string, string> = {
+    Hair: "#bae6fd",
+    Nails: "#fde047",
+    Massage: "#99f6e4",
+    Face: "#fbcfe8",
+    Body: "#fed7aa",
+    Barber: "#bfdbfe",
+    Spa: "#a5f3fc",
+  };
+  return map[category] || stringToPastelColor(category);
+};
+
 // Bookings that didn't happen: crossed out, with a red line on the left. The
 // database says "no-show"; "no_show" is older spelling.
 const DID_NOT_HAPPEN = ["cancelled", "no-show", "no_show"];
@@ -1315,8 +1330,7 @@ const calendarEvents = computed(() => {
 
     appt.services.forEach((svc: any, index: number) => {
       if (fullyHidden(svc.charged, svc.hidden, settings)) return;
-      const isCompleted = appt.status === "completed";
-      const bgColor = resolveServiceColor(svc.service_color, svc.category_color);
+      const bgColor = getCategoryColor(svc.service_name || "General");
       const duration = svc.duration_minutes || 60;
       const endTime = svc.start_time
         ? new Date(
@@ -1364,8 +1378,6 @@ const calendarEvents = computed(() => {
         // red when the server refused them (see the sync banner).
         classNames: [
           "fresha-event",
-          ...(isCompleted ? ["fc-completed"] : []),
-          ...(DID_NOT_HAPPEN.includes(appt.status) ? ["fc-did-not-happen"] : []),
           ...(appt._offline === "conflict"
             ? ["fc-offline-conflict"]
             : appt._offline
@@ -2358,7 +2370,7 @@ const calendarOptions = ref({
   } as const,
   resourceOrder: "sort_order",
   initialView: "resourceTimeGridDay",
-  validRange: isStaffRole.value ? { start: todayDateStr() } : undefined,
+  validRange: undefined,
   allDaySlot: false,
   // Compact 24h time on appointment boxes (e.g. "14:00 - 15:30" instead of
   // "10:00 π.μ. - 11:00 π.μ.") — roughly half the characters, same info
@@ -2541,60 +2553,31 @@ const calendarOptions = ref({
     const timeText = arg.timeText;
     const status = props.fullAppointment?.status;
 
+    // Petalouda's July card: time, client in bold, service; a violet tick when
+    // confirmed, a green ticked circle when completed, crossed out and faded
+    // when cancelled or a no-show.
     const isCancelled = DID_NOT_HAPPEN.includes(status);
-    const isCashPaid = !!props.paidInCash;
     const isConfirmed = status === "confirmed";
+    const isCompleted = status === "completed";
     const isMonthView = arg.view.type === "dayGridMonth";
     const start = arg.event.start;
     const end = arg.event.end;
-    const durationMins =
-      end && start ? (end.getTime() - start.getTime()) / 60000 : 60;
-    // Only genuinely tight (<20 min) boxes drop to the compact, single-line
-    // "name — service" layout — everything 20 min and up keeps the full
-    // two-line name/service layout.
-    const isShort = durationMins <= 20;
+    const durationMins = end && start ? (end.getTime() - start.getTime()) / 60000 : 60;
+    const isShort = durationMins < 45;
 
-    const paddingClass =
-      isShort && !isMonthView
-        ? "p-1 pl-1.5"
-        : isMonthView
-          ? "p-2"
-          : // Tighter than the old flat p-2 — with 3 lines now allowed to wrap
-            // (time/name/service), every px of padding is px the text doesn't
-            // get, and this tier (20+ min, day/week view) is exactly the one
-            // tightest on room relative to what it now needs to fit.
-            "px-2 py-1";
-    // The name reads first because it's bold + near-black against the muted
-    // service line, which stays close to it in size; the time is much smaller.
+    const paddingClass = isShort && !isMonthView ? "p-0.5 pl-1" : "p-2";
     const titleClass =
-      isShort && !isMonthView
-        ? "text-[10px] md:text-[11px] leading-tight"
-        : "text-[11px] md:text-[12px] leading-tight";
-
-    const timeSizeClass = "text-[8px] md:text-[9px]";
-
-    const textClass = isCancelled
-      ? "line-through opacity-60 text-gray-500"
-      : isCashPaid
-        ? "line-through text-orange-700"
-        : "text-gray-900";
-    const serviceClass = isCancelled
-      ? "opacity-40 text-gray-500"
-      : isCashPaid
-        ? "opacity-70 text-orange-600"
-        : "text-gray-600";
-    const timeClass = isCancelled
-      ? "text-red-400"
-      : isCashPaid
-        ? "text-orange-500"
-        : "text-gray-500";
+      isShort && !isMonthView ? "text-[9px] md:text-[10px] leading-tight" : "text-[10px] md:text-xs leading-tight";
+    const textClass = isCancelled ? "line-through opacity-60 text-gray-500" : "text-gray-900";
+    const serviceClass = isCancelled ? "opacity-40 text-gray-500" : "opacity-80";
 
     const statusBadge = isConfirmed
       ? `<span class="absolute top-1 right-1 text-violet-700"><i class="pi pi-check text-[9px]"></i></span>`
-      : "";
-
+      : isCompleted
+        ? `<span class="absolute top-1 right-1 text-green-600"><i class="pi pi-check-circle text-[9px]"></i></span>`
+        : "";
     const archivedBadge = props.serviceArchived
-      ? `<span class="absolute top-1 right-6 text-gray-500" title="${escapeHtml(t("services.archivedTooltip"))}"><i class="pi pi-box text-[9px]"></i></span>`
+      ? `<span class="absolute top-1 right-5 text-gray-500" title="${escapeHtml(t("services.archivedTooltip"))}"><i class="pi pi-box text-[9px]"></i></span>`
       : "";
 
     // While dragging or resizing, FullCalendar renders a "mirror" copy at the
@@ -2610,13 +2593,14 @@ const calendarOptions = ref({
 
     if (props.isPlaceGroup) return { html: placeGroupHtml(props) };
 
-    // A phone's card is as narrow as it gets: surname first over up to two
-    // lines, then the service. Its place on the grid already says the time.
+    // A phone's card is as narrow as it gets: the client over up to two lines,
+    // then the service. Its place on the grid already says the time.
     if (isPhone.value && !isMonthView) {
       return {
         html: `
-        <div lang="el" class="relative w-full h-full px-1 py-0.5 flex flex-col leading-tight overflow-hidden uppercase">
-          <div class="flex-shrink-0 text-[9px] font-bold break-words ${durationMins > 15 ? "line-clamp-2" : "line-clamp-1"} ${textClass}">${escapeHtml(props.client_name)}</div>
+        <div class="relative w-full h-full px-1 py-0.5 flex flex-col leading-tight overflow-hidden rounded-md">
+          ${statusBadge}
+          <div class="flex-shrink-0 text-[9px] font-bold break-words pr-3 ${durationMins > 15 ? "line-clamp-2" : "line-clamp-1"} ${textClass}">${escapeHtml(props.client_name)}</div>
           ${durationMins > 15 ? `<div class="min-h-0 text-[8px] break-words ${serviceClass}">${escapeHtml(props.service_name)}</div>` : ""}
         </div>
       `,
@@ -2625,23 +2609,12 @@ const calendarOptions = ref({
 
     return {
       html: `
-      <div lang="el" class="relative w-full ${paddingClass} flex flex-col leading-tight overflow-hidden uppercase hover:brightness-95 transition-all ${isMonthView ? "" : "h-full"}">
+      <div class="relative w-full ${paddingClass} flex flex-col leading-tight overflow-hidden rounded-md hover:brightness-95 transition-all ${isMonthView ? "" : "h-full"}">
         ${statusBadge}
         ${archivedBadge}
-        ${!isShort && !isMonthView ? `<div class="flex-shrink-0 ${timeSizeClass} font-semibold mb-0.5 truncate ${timeClass}">${timeText}</div>` : ""}
-        ${
-          isShort && !isMonthView
-            ? `<div class="font-bold ${titleClass} pr-2 truncate ${textClass}" title="${escapeHtml(props.client_name)} — ${escapeHtml(props.service_name)}"><span class="${timeSizeClass} font-semibold ${timeClass}">${timeText.split(" - ")[0]}</span> ${escapeHtml(props.client_surname)}<span class="font-normal ${serviceClass}"> — ${escapeHtml(props.service_name)}</span></div>`
-            : isMonthView
-              ? `<div class="font-bold ${titleClass} pr-4 truncate ${textClass}" title="${escapeHtml(props.client_name)}">${escapeHtml(props.client_name)}</div>
-        <div class="text-[10px] md:text-[12px] font-medium mt-0.5 truncate ${serviceClass}" title="${escapeHtml(props.service_name)}">${escapeHtml(props.service_name)}</div>`
-              : // Enough vertical room at 20+ min for the full name and service
-                // to just wrap onto another line rather than truncate — nothing
-                // gets cut off mid-word (whitespace-normal only, no break-words),
-                // matching the earlier "keep words intact" preference.
-                `<div class="font-bold ${titleClass} pr-4 whitespace-normal ${textClass}" title="${escapeHtml(props.client_name)}">${escapeHtml(props.client_name)}</div>
-        <div class="text-[10px] md:text-[12px] font-medium mt-0.5 whitespace-normal ${serviceClass}" title="${escapeHtml(props.service_name)}">${escapeHtml(props.service_name)}</div>`
-        }
+        ${!isShort && !isMonthView ? `<div class="text-[9px] md:text-[11px] font-bold opacity-60 mb-0.5 ${isCancelled ? "text-red-400" : ""}">${timeText}</div>` : ""}
+        <div class="font-bold ${titleClass} pr-4 break-words whitespace-normal ${textClass}">${escapeHtml(props.client_name)}</div>
+        ${!isShort || isMonthView ? `<div class="text-[9px] md:text-[11px] font-medium mt-0.5 break-words whitespace-normal ${serviceClass}">${escapeHtml(props.service_name)}</div>` : ""}
       </div>
     `,
     };
@@ -3005,14 +2978,6 @@ onMounted(async () => {
   outline-offset: 1px;
 }
 
-/* Completed appointments keep their colour and gain a blue line on the left. */
-.fc-event.fc-completed {
-  border-left: 3px solid #2563eb !important;
-}
-/* Cancelled and no-show ones get a red line, and stay crossed out. */
-.fc-event.fc-did-not-happen {
-  border-left: 3px solid #dc2626 !important;
-}
 
 /* Shared places (ΣΑΟΥΝΑ, ΧΑΜΜΑΜ): the grouped card, and an opened group's cards. */
 .fc-v-event.fc-place-group {
@@ -3308,11 +3273,12 @@ onMounted(async () => {
   border-top: 2px solid #cbd5e1 !important;
 }
 
+/* Petalouda's July cards: no border, rounded corners, a light shadow. */
 .fc-v-event {
-  border: 1px solid rgba(100, 116, 139, 0.3);
+  border: none;
   background-color: transparent;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
-  border-radius: 0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  border-radius: 6px;
 }
 .fc-v-event .fc-event-main {
   padding: 0;

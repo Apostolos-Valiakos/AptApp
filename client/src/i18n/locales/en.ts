@@ -381,6 +381,28 @@ export default {
     discard: 'Discard',
   },
   platform: {
+    modules: {
+      title: 'Modules',
+      note: "What's switched off doesn't appear anywhere in this shop and the server refuses it. Its data stays.",
+      gift_cards: 'Gift cards',
+      gift_cardsNote: 'Sale, redemption, paying with a gift card',
+      packages: 'Visit packages',
+      packagesNote: 'Prepaid packages and their use',
+      products: 'Products',
+      productsNote: 'Stock, sales, usage',
+      memberships: 'Memberships',
+      membershipsNote: 'Membership tiers, paying with a membership, report',
+      cash_filter: 'Cash filter',
+      cash_filterNote: 'Ctrl+1 / Ctrl+8, CASH',
+      client_portal: 'Client portal',
+      client_portalNote: 'Client logins, self-booking, notifications',
+      discounts: 'Discounts',
+      discountsNote: 'Discounts at checkout and discount codes',
+      shared_places: 'Shared places',
+      shared_placesNote: 'Places with several spots (sauna, hammam)',
+      contests: 'Contests',
+      contestsNote: 'Contests and their banner',
+    },
     banner: {
       viewingAs: 'Viewing as {shop}',
       exit: 'Exit',
@@ -1379,6 +1401,11 @@ export default {
     },
   },
   booking: {
+    sameDayRows: {
+      keptTitle: 'Appointment kept',
+      keptDetail: "You removed all services of another appointment that day; it was left as it was. To delete it, open it.",
+      failed: 'One of the other appointments that day was not saved. Open it and try again.',
+    },
     openPast: {
       header: "Leave this booking?",
       message: "You have changes that aren't saved. Opening the other booking will lose them.",
@@ -1862,6 +1889,7 @@ export default {
       save: "Save Order",
     },
     mySchedule: "My Schedule",
+    allStaff: "Everyone",
     nav: {
       zoomOut: "Zoom out",
       zoomIn: "Zoom in",

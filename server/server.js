@@ -155,7 +155,7 @@ app.get("/health", async (req, res) => {
 // only the name and theme color are shop-specific.
 app.get("/manifest.webmanifest", async (req, res) => {
   const shopId = safeUUID(req.query.shop_id);
-  let name = "Pure Spa & Massage Experience";
+  let name = "Petalouda Booking";
   let themeColor = "#8B6F4E";
 
   if (shopId) {

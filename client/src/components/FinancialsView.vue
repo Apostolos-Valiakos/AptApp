@@ -23,6 +23,7 @@
           @click="router.push('/app/daily-report')"
         />
         <Button
+          v-if="authStore.moduleOn('memberships')"
           :label="t('nav.membershipReport')"
           icon="pi pi-chart-pie"
           class="p-button-outlined flex-shrink-0"
@@ -451,7 +452,7 @@
       </TabPanel>
 
       <!-- Tab: Products -->
-      <TabPanel :value="3" :header="t('analytics.tabs.products')">
+      <TabPanel v-if="authStore.moduleOn('products')" :value="3" :header="t('analytics.tabs.products')">
         <!-- Summary cards -->
         <div class="grid grid-cols-2 gap-4 mb-6">
           <div class="bg-white rounded-xl border border-gray-100 p-5">
@@ -533,7 +534,7 @@
       </TabPanel>
 
       <!-- Tab: Product Usage -->
-      <TabPanel :value="4" :header="t('analytics.tabs.productUsage')">
+      <TabPanel v-if="authStore.moduleOn('products')" :value="4" :header="t('analytics.tabs.productUsage')">
         <div class="flex justify-end mb-4">
           <router-link to="/app/product-usage" class="text-sm text-[var(--p-primary-600)] hover:underline flex items-center gap-1">
             <i class="pi pi-cog text-xs"></i>
@@ -596,7 +597,7 @@
       </TabPanel>
 
       <!-- Tab: Gift Cards -->
-      <TabPanel :value="5" :header="t('analytics.tabs.giftCards')">
+      <TabPanel v-if="authStore.moduleOn('gift_cards')" :value="5" :header="t('analytics.tabs.giftCards')">
         <div class="grid grid-cols-3 gap-4 mb-6">
           <div class="bg-white rounded-xl border border-gray-100 p-5">
             <div class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">
@@ -974,6 +975,7 @@ import BookingInsights from "./BookingInsights.vue";
 import ClientProfileDialog from "./ClientProfileDialog.vue";
 import AnalyticsDetailsDialog, { type DetailKind } from "./AnalyticsDetailsDialog.vue";
 import { useSettingsStore } from "../stores/settings";
+import { useAuthStore } from "../stores/auth";
 
 // Sorts a column by a number field. DataTable compares whatever this returns;
 // its types only allow a string, hence the cast.
@@ -981,6 +983,8 @@ const numericSort = (key: string) => ((row: any) => Number(row[key] || 0)) as un
 
 const { t, te, locale } = useI18n();
 const router = useRouter();
+// Tabs of modules the owner switched off for this shop are hidden.
+const authStore = useAuthStore();
 const toast = useToast();
 const settingsStore = useSettingsStore();
 const loading = ref(true);

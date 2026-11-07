@@ -184,7 +184,7 @@
             <BookingServices
               :isHidden="isHiddenRow"
               :hiddenPart="hiddenPart"
-              v-model="servicesList"
+              v-model="allServiceRows"
               :services="services"
               :staff="staff"
               :baseStartTime="new Date(form.start_time)"
@@ -323,14 +323,16 @@
               </div>
 
               <BookingDiscount
-                v-if="!isPaymentSettled"
+                v-if="!isPaymentSettled && authStore.moduleOn('discounts')"
                 v-model="discount"
                 :codes="discountCodes"
                 :discountAmount="discountAmount"
               />
 
-              <div v-if="canSellExtras">
+              <!-- Selling packages and gift cards, where the shop has them. -->
+              <div v-if="canSellExtras && (authStore.moduleOn('packages') || authStore.moduleOn('gift_cards'))">
                 <BookingPackages
+                  v-if="authStore.moduleOn('packages')"
                   ref="packageSaleRef"
                   view="sell"
                   :clientId="form.client_id"
@@ -340,6 +342,7 @@
                   :ensureSaved="ensureSavedForPackage"
                 />
                 <BookingGiftCards
+                  v-if="authStore.moduleOn('gift_cards')"
                   ref="giftCardSaleRef"
                   :clientId="form.client_id"
                   :defaultCustomerName="selectedClient?.full_name"
@@ -357,6 +360,7 @@
                   </button>
                   <template v-if="saleChoicesOpen">
                     <Button
+                      v-if="authStore.moduleOn('packages')"
                       :label="t('payment.stepper.salePackage')"
                       icon="pi pi-box"
                       size="small"
@@ -366,6 +370,7 @@
                       @click="openSale(packageSaleRef)"
                     />
                     <Button
+                      v-if="authStore.moduleOn('gift_cards')"
                       :label="t('payment.stepper.saleGiftCard')"
                       icon="pi pi-ticket"
                       size="small"
@@ -383,6 +388,7 @@
                  visit stays possible once it has paid the whole booking. -->
             <div v-show="isPaymentSettled || paymentStep === 2">
               <BookingPackages
+                v-if="authStore.moduleOn('packages')"
                 ref="bookingPackagesRef"
                 view="use"
                 :clientId="form.client_id"
@@ -831,7 +837,14 @@ const tabs = [
   { key: "Notes", label: computed(() => t("booking.tabs.notes")) },
   { key: "Payment", label: computed(() => t("booking.tabs.payment")) },
 ] as const;
-const visibleTabs = computed(() => tabs.filter((tab) => tab.key !== "Payment" || !isReadOnly.value));
+const visibleTabs = computed(() =>
+  tabs.filter(
+    (tab) =>
+      (tab.key !== "Payment" || !isReadOnly.value) &&
+      // Products only where the shop has the products module.
+      (tab.key !== "Products" || authStore.moduleOn("products")),
+  ),
+);
 
 const loading = ref(false);
 const paymentLoading = ref(false);
@@ -882,7 +895,8 @@ const moreItems = computed(() => [
 
 onMounted(async () => {
   try {
-    discountCodes.value = (await api.get("/api/v1/discount-codes")).filter((c: any) => c.is_active);
+    if (authStore.moduleOn("discounts"))
+      discountCodes.value = (await api.get("/api/v1/discount-codes")).filter((c: any) => c.is_active);
   } catch {
     // codes are optional; fixed/percent discounts still work
   }
@@ -967,6 +981,7 @@ const loadSiblingAppointments = async (clientId: string, startTime: Date) => {
       siblingAppointments.value = all.filter(
         (a: any) => a.id !== form.value.id,
       );
+      loadSiblingRows(dateStr, siblingAppointments.value.map((a: any) => a.id));
       // Pre-select the day's other unpaid appointments, so checkout totals
       // the whole day by default; staff can untick to pay one only.
       if (canCombineDayPayment.value) {
@@ -1074,6 +1089,101 @@ const pendingGiftCardsTotal = computed(() =>
 // one combined payment (canCombineDayPayment); a plain staff member still
 // sees the list and the combined total read-only.
 const siblingAppointments = ref<any[]>([]);
+// The client's other appointments that day, as service rows under this
+// one's, like a single booking (petalouda's July bookings saved each therapy
+// as its own appointment). Each row keeps its appointment (_apptId); saving
+// writes the changed ones back to their own appointment, its details,
+// products and discount as they were. Nothing is merged.
+const siblingRows = ref<any[]>([]);
+const siblingFull = ref<Record<string, any>>({});
+const siblingSnapshot = ref<Record<string, string>>({});
+const allServiceRows = computed({
+  get: () => [...servicesList.value, ...siblingRows.value],
+  set: (rows: any[]) => {
+    servicesList.value = rows.filter((r: any) => !r._apptId);
+    siblingRows.value = rows.filter((r: any) => r._apptId);
+  },
+});
+const rowsSnapshot = (rows: any[]) =>
+  JSON.stringify(
+    rows.map((r: any) => [r.service_id, r.staff_id, new Date(r.start_time).getTime(), r.duration_override, Number(r.price_override), r.variation_name || null]),
+  );
+let siblingRowsRequest = 0;
+const loadSiblingRows = async (dateStr: string, ids: string[]) => {
+  const request = ++siblingRowsRequest;
+  siblingRows.value = [];
+  siblingFull.value = {};
+  siblingSnapshot.value = {};
+  if (!ids.length) return;
+  const day = await api.get(`/api/v1/appointments?date=${dateStr}`).catch(() => null);
+  if (!day || request !== siblingRowsRequest) return;
+  const wasClean = bookingSnapshot() === loadedBooking;
+  const full: Record<string, any> = {};
+  const rows: any[] = [];
+  for (const a of day) {
+    if (!ids.includes(a.id) || a.is_block) continue;
+    full[a.id] = a;
+    for (const svc of a.services || []) rows.push({ ...toServiceRow(svc, a), _apptId: a.id, _manualStart: true });
+  }
+  rows.sort((x, y) => new Date(x.start_time).getTime() - new Date(y.start_time).getTime());
+  siblingFull.value = full;
+  siblingRows.value = rows;
+  siblingSnapshot.value = Object.fromEntries(Object.keys(full).map((id) => [id, rowsSnapshot(rows.filter((r) => r._apptId === id))]));
+  if (wasClean) loadedBooking = bookingSnapshot();
+};
+
+// Saves the same-day appointments whose rows changed, each to itself. One
+// left with no rows is left as it was: deleting it is done from its own dialog.
+const saveSiblingRows = async () => {
+  const failed: string[] = [];
+  for (const [id, appt] of Object.entries(siblingFull.value)) {
+    const rows = siblingRows.value.filter((r: any) => r._apptId === id);
+    if (!rows.length) {
+      toast.add({ severity: "info", summary: t("booking.sameDayRows.keptTitle"), detail: t("booking.sameDayRows.keptDetail"), life: 5000 });
+      continue;
+    }
+    if (rowsSnapshot(rows) === siblingSnapshot.value[id]) continue;
+    const payload = {
+      client_id: appt.client_id,
+      status: appt.status,
+      internal_notes: appt.internal_notes || "",
+      booking_notes: appt.booking_notes || "",
+      deposit_amount: Number(appt.deposit_amount || 0),
+      payment_status: appt.payment_status || "unpaid",
+      payment_method: appt.payment_method || "card",
+      is_block: false,
+      save_receipt: appt.save_receipt !== undefined ? !!appt.save_receipt : true,
+      is_eoppy: !!appt.is_eoppy,
+      recurrence: null,
+      services: rows.map((r: any) => ({
+        ...r,
+        price_override: Number(r.price_override) || Number(r.price) || 0,
+        persons: placesOf((props.staff || []).find((m: any) => String(m.id) === String(r.staff_id))) > 1 ? personsOf(r) : 1,
+      })),
+      products: Array.isArray(appt.products)
+        ? appt.products.map((p: any) => ({ product_id: p.product_id, quantity: p.quantity || 1, price: Number(p.price || 0) }))
+        : [],
+      ...discountPayload(discountFromAppointment(appt)),
+      ...(appt.version != null ? { base_version: appt.version } : {}),
+    };
+    try {
+      const result = await fetchOrQueue(`/api/v1/appointments/${id}?scope=this`, "PUT", payload, {
+        kind: "appointment",
+        label: t("booking.editDialog.title"),
+      });
+      if (result.queued) continue;
+      const data = await result.response.json().catch(() => ({}));
+      if (!result.response.ok) throw new Error(data.error || "save failed");
+      if (data.version !== undefined) appt.version = data.version;
+      siblingSnapshot.value[id] = rowsSnapshot(rows);
+    } catch {
+      failed.push(id);
+    }
+  }
+  if (failed.length) {
+    toast.add({ severity: "error", summary: t("booking.toast.saveFailed"), detail: t("booking.sameDayRows.failed"), life: 6000 });
+  }
+};
 const selectedSiblingIds = ref<string[]>([]);
 const savedStatus = ref("");
 // Services the cash/card filters hide, whole or in part: still part of the
@@ -1218,6 +1328,48 @@ watch(combinedTotalDueNow, (newVal) => {
 const currentVersion = ref<number | null>(null);
 const calendarStoreForOverlaps = useCalendarStore();
 
+// An appointment's service as a row of the dialog (this appointment's, and
+// its client's other same-day ones').
+const toServiceRow = (s: any, val: any) => {
+    // Which variation this row was is now persisted server-side
+    // (appointment_services.variation_name — s.variation_name here),
+    // independent of price/duration, so it survives later edits to
+    // either (e.g. extending the duration). s.variation_name is only
+    // absent for appointments saved before that column existed; for
+    // those, fall back once here to reverse-matching the saved price/
+    // duration against the service's current variation list — same as
+    // before, still breaks if price/duration are edited afterward,
+    // but that's now limited to pre-migration data only.
+    const catalogService = props.services?.find(
+      (cs: any) => cs.id === s.service_id,
+    );
+    const resolvedVariationName =
+      s.variation_name ||
+      matchVariationName(
+        catalogService,
+        Number(s.price || 0),
+        s.duration_minutes || 60,
+      );
+    return {
+      service_id: s.service_id,
+      staff_id: s.staff_id,
+      start_time: s.start_time
+        ? new Date(s.start_time)
+        : new Date(val.start_time),
+      duration_override: s.duration_minutes || 60,
+      price_override: Number(s.price || 0),
+      variation_name: resolvedVariationName || null,
+      persons: personsOf(s),
+      service_archived: !!s.service_archived,
+      _paidWith: s.paid_with || null,
+      _hidden: s.hidden || null,
+      _charged: s.charged ?? null,
+      _label: resolvedVariationName
+        ? `${catalogService?.name || s.service_name || ""} — ${resolvedVariationName}`
+        : catalogService?.name || s.service_name || "",
+    };
+};
+
 const loadExistingAppointment = (val: any, resolvedStaffId: any) => {
   currentVersion.value = val.version ?? null;
   savedStatus.value = val.status || "";
@@ -1275,45 +1427,7 @@ const loadExistingAppointment = (val: any, resolvedStaffId: any) => {
   }
 
   if (val.services?.length > 0) {
-    servicesList.value = markManualStarts(val.services.map((s: any) => {
-      // Which variation this row was is now persisted server-side
-      // (appointment_services.variation_name — s.variation_name here),
-      // independent of price/duration, so it survives later edits to
-      // either (e.g. extending the duration). s.variation_name is only
-      // absent for appointments saved before that column existed; for
-      // those, fall back once here to reverse-matching the saved price/
-      // duration against the service's current variation list — same as
-      // before, still breaks if price/duration are edited afterward,
-      // but that's now limited to pre-migration data only.
-      const catalogService = props.services?.find(
-        (cs: any) => cs.id === s.service_id,
-      );
-      const resolvedVariationName =
-        s.variation_name ||
-        matchVariationName(
-          catalogService,
-          Number(s.price || 0),
-          s.duration_minutes || 60,
-        );
-      return {
-        service_id: s.service_id,
-        staff_id: s.staff_id,
-        start_time: s.start_time
-          ? new Date(s.start_time)
-          : new Date(val.start_time),
-        duration_override: s.duration_minutes || 60,
-        price_override: Number(s.price || 0),
-        variation_name: resolvedVariationName || null,
-        persons: personsOf(s),
-        service_archived: !!s.service_archived,
-        _paidWith: s.paid_with || null,
-        _hidden: s.hidden || null,
-        _charged: s.charged ?? null,
-        _label: resolvedVariationName
-          ? `${catalogService?.name || s.service_name || ""} — ${resolvedVariationName}`
-          : catalogService?.name || s.service_name || "",
-      };
-    }));
+    servicesList.value = markManualStarts(val.services.map((s: any) => toServiceRow(s, val)));
   } else {
     servicesList.value = [
       {
@@ -1361,6 +1475,8 @@ watch(
     // unsaved appointment) never has siblings to show.
     selectedSiblingIds.value = [];
     siblingAppointments.value = [];
+    siblingRows.value = [];
+    siblingFull.value = {};
     let resolvedStaffId = null;
     if (val?.staff_id && props.staff) {
       const found = props.staff.find((s: any) => s.id == val.staff_id);
@@ -1485,6 +1601,7 @@ const bookingSnapshot = () =>
     products: productsList.value,
     discount: discount.value,
     sales: [pendingPackages.value, pendingGiftCards.value],
+    sameDay: siblingRows.value.map((r: any) => [r._apptId, r.service_id, r.staff_id, r.start_time, r.duration_override, r.price_override]),
   });
 const discardUnsavedEdits = () =>
   new Promise<boolean>((resolve) => {
@@ -2064,6 +2181,9 @@ const executeSave = async (close = true, scope = "single", allowOverCapacity = f
       selectedClient.value.outstanding_balance = Number(data.new_balance);
     }
 
+    // The client's other same-day appointments, if their rows were changed here.
+    await saveSiblingRows();
+
     originalServices.value = snapshotServices(servicesList.value);
     originalDiscountAmount.value = discountAmount.value;
     originalSnapshot.value = {
@@ -2201,6 +2321,8 @@ const recordPayment = async (
       // while offline.
       selectedSiblingIds.value = [];
       siblingAppointments.value = [];
+      siblingRows.value = [];
+      siblingFull.value = {};
       toast.add({
         severity: "warn",
         summary: t("booking.toast.savedOffline"),
@@ -2236,6 +2358,8 @@ const recordPayment = async (
       // re-opening the dialog refetches fresh state.
       selectedSiblingIds.value = [];
       siblingAppointments.value = [];
+      siblingRows.value = [];
+      siblingFull.value = {};
 
       // Use the authoritative balance returned by the server instead of guessing by subtraction
       if (data.new_balance !== undefined && selectedClient.value) {

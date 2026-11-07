@@ -2,6 +2,7 @@
 // Moved out of server.js; helpers that still live there are handed over when
 // it mounts this router (see "Area routers" near the end of server.js).
 const express = require("express");
+const { cleanModuleList, forgetShopModules } = require("../modules");
 const { HttpError, asyncHandler, withTransaction } = require("../http");
 const pool = require("../db");
 const bcrypt = require("bcrypt");
@@ -57,7 +58,7 @@ module.exports = function platformRouter({
         `
         SELECT
           s.id, s.name, s.plan, s.status, s.owner_name, s.owner_email,
-          s.trial_ends_at, s.notes, s.primary_color, s.secondary_color, s.created_at,
+          s.trial_ends_at, s.notes, s.primary_color, s.secondary_color, s.created_at, s.disabled_modules,
           COALESCE(ac.admin_count, 0) AS admin_count
         FROM shops s
         LEFT JOIN (
@@ -92,6 +93,7 @@ module.exports = function platformRouter({
         secondary_color,
         admin_username,
         admin_password,
+        disabled_modules,
       } = req.body;
 
       if (!name) return res.status(400).json({ error: "Shop name is required" });
@@ -99,8 +101,8 @@ module.exports = function platformRouter({
       const answer = await withTransaction(async (client) => {
       const shopRes = await client.query(
           `INSERT INTO shops
-            (name, plan, status, owner_name, owner_email, trial_ends_at, notes, primary_color, secondary_color)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            (name, plan, status, owner_name, owner_email, trial_ends_at, notes, primary_color, secondary_color, disabled_modules)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
            RETURNING id`,
           [
             name,
@@ -112,6 +114,7 @@ module.exports = function platformRouter({
             notes || null,
             primary_color || null,
             secondary_color || null,
+            cleanModuleList(disabled_modules),
           ],
         );
         const shopId = shopRes.rows[0].id;
@@ -156,6 +159,7 @@ module.exports = function platformRouter({
         notes,
         primary_color,
         secondary_color,
+        disabled_modules,
       } = req.body;
 
       const fields = {
@@ -168,6 +172,8 @@ module.exports = function platformRouter({
         notes,
         primary_color,
         secondary_color,
+        // The modules switched off for this shop (server/modules.js).
+        disabled_modules: disabled_modules === undefined ? undefined : cleanModuleList(disabled_modules),
       };
 
       const setClauses = [];
@@ -182,7 +188,7 @@ module.exports = function platformRouter({
         return res.status(400).json({ error: "No fields to update" });
       }
       const before = await pool.query(
-        `SELECT plan, status FROM shops WHERE id = $1`,
+        `SELECT plan, status, disabled_modules FROM shops WHERE id = $1`,
         [id],
       );
       if (before.rows.length === 0) {
@@ -203,6 +209,15 @@ module.exports = function platformRouter({
       if (status !== undefined && status !== before.rows[0].status) {
         changes.push(`status: ${before.rows[0].status} -> ${status}`);
         await logPlatformActivity(pool, req.user.userId, "shop_status_changed", id, changes[changes.length - 1]);
+      }
+      if (fields.disabled_modules !== undefined) {
+        forgetShopModules(id);
+        const was = (before.rows[0].disabled_modules || []).slice().sort().join(", ");
+        const now = fields.disabled_modules.slice().sort().join(", ");
+        if (was !== now) {
+          changes.push(`modules off: ${was || "none"} -> ${now || "none"}`);
+          await logPlatformActivity(pool, req.user.userId, "shop_modules_changed", id, changes[changes.length - 1]);
+        }
       }
       if (changes.length === 0) {
         await logPlatformActivity(pool, req.user.userId, "shop_updated", id, `Updated shop "${rows[0].name}"`);
@@ -337,7 +352,7 @@ module.exports = function platformRouter({
     requireOwner,
     asyncHandler(async (req, res) => {
       const { rows } = await pool.query(
-        `SELECT id, name FROM shops WHERE id = $1`,
+        `SELECT id, name, disabled_modules FROM shops WHERE id = $1`,
         [req.params.shopId],
       );
       if (rows.length === 0) {
@@ -376,6 +391,7 @@ module.exports = function platformRouter({
           shopName: shop.name,
           username: req.user.username,
           impersonating: true,
+          shop_disabled_modules: shop.disabled_modules || [],
         },
         expiresIn: 7200,
       });
