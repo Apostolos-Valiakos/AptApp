@@ -500,6 +500,7 @@
 </template>
 
 <script setup lang="ts">
+import InputNumber from "primevue/inputnumber";
 import { ref, onMounted, computed, reactive, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";

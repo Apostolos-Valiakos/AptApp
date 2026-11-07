@@ -200,10 +200,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from "vue";
+import { ref, onMounted, computed, defineAsyncComponent } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { useAuthStore } from "../stores/auth";
-import FloatingChat from "../components/FloatingChat.vue";
+// Loaded on demand (after login, staff only) so the chat widget and
+// socket.io client don't sit in the initial bundle for every visitor.
+const FloatingChat = defineAsyncComponent(
+  () => import("../components/FloatingChat.vue"),
+);
 import { useI18n } from "vue-i18n";
 
 const router = useRouter();

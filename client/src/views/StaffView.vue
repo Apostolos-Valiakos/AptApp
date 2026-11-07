@@ -230,6 +230,10 @@
 </template>
 
 <script setup lang="ts">
+import DataTable from "primevue/datatable";
+import Column from "primevue/column";
+import MultiSelect from "primevue/multiselect";
+import InputNumber from "primevue/inputnumber";
 import { ref, onMounted, computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";

@@ -239,6 +239,9 @@
 </template>
 
 <script setup lang="ts">
+import DataTable from "primevue/datatable";
+import Column from "primevue/column";
+import InputNumber from "primevue/inputnumber";
 import { ref, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useProductStore } from "../stores/products";

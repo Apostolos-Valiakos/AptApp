@@ -9,7 +9,7 @@
           </div>
           <div>
             <h1 class="text-2xl font-bold text-gray-900">{{ t('clients.title') }}</h1>
-            <p class="text-sm text-gray-500">{{ t('clients.subtitle', { count: clients.length }) }}</p>
+            <p class="text-sm text-gray-500">{{ t('clients.subtitle', { count: allClientsCount }) }}</p>
           </div>
         </div>
         <Button :label="t('clients.addNew')" icon="pi pi-plus" @click="openNew" />
@@ -19,17 +19,19 @@
     <!-- Data Table Card -->
     <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
       <DataTable
-        :value="filteredClients"
+        :value="clients"
+        :lazy="true"
         :paginator="true"
-        :rows="15"
+        :rows="pageRows"
+        :first="pageOffset"
+        :totalRecords="totalClients"
         :rowsPerPageOptions="[15, 30, 50, 100]"
         responsiveLayout="scroll"
         class="p-datatable-sm cursor-pointer hover:bg-gray-50"
         :loading="loading"
-        sortField="last_name"
-        :sortOrder="1"
         selectionMode="single"
         @row-click="(e) => openProfile(e.data)"
+        @page="onPage"
       >
         <template #header>
           <div class="flex justify-between items-center">
@@ -42,7 +44,7 @@
               />
             </span>
             <div class="text-sm text-gray-500">
-              {{ t('clients.subtitle', { count: filteredClients.length }) }}
+              {{ t('clients.subtitle', { count: totalClients }) }}
             </div>
           </div>
         </template>
@@ -56,7 +58,7 @@
         </template>
 
         <!-- Merged Client column -->
-        <Column field="first_name" :header="t('clients.table.client')" sortable>
+        <Column field="first_name" :header="t('clients.table.client')">
           <template #body="slotProps">
             <div class="flex items-center gap-3">
               <div class="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm bg-[var(--p-primary-100)] text-[var(--p-primary-600)] flex-shrink-0">
@@ -80,7 +82,7 @@
           </template>
         </Column>
 
-        <Column field="phone" :header="t('clients.table.phone')" sortable>
+        <Column field="phone" :header="t('clients.table.phone')">
           <template #body="slotProps">
             <a
               :href="'tel:' + slotProps.data.phone"
@@ -289,7 +291,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from "vue";
+import DataTable from "primevue/datatable";
+import Column from "primevue/column";
+import { ref, onMounted, onBeforeUnmount, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
@@ -335,14 +339,34 @@ onMounted(() => {
   settingsStore.fetchShopSettings();
 });
 
+// Server-side pagination + search: only the visible page (and its ΕΟΠΠΥ
+// aggregates) is fetched, instead of the whole client table.
+const totalClients = ref(0); // matches for the current search
+const allClientsCount = ref(0); // shop total, shown in the page header
+const pageRows = ref(15);
+const pageOffset = ref(0);
+let fetchSeq = 0;
+
 const fetchClients = async () => {
+  const seq = ++fetchSeq;
   loading.value = true;
   try {
-    const res = await fetch("/api/v1/clients", {
+    const term = search.value.trim();
+    const params = new URLSearchParams({
+      limit: String(pageRows.value),
+      offset: String(pageOffset.value),
+    });
+    if (term) params.append("search", term);
+
+    const res = await fetch(`/api/v1/clients?${params}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw new Error("Request failed");
-    clients.value = await res.json();
+    const data = await res.json();
+    if (seq !== fetchSeq) return; // a newer request superseded this one
+    clients.value = data.clients || [];
+    totalClients.value = data.total || 0;
+    if (!term) allClientsCount.value = totalClients.value;
   } catch (err) {
     console.error(err);
     toast.add({
@@ -352,19 +376,27 @@ const fetchClients = async () => {
       life: 4000,
     });
   } finally {
-    loading.value = false;
+    if (seq === fetchSeq) loading.value = false;
   }
 };
 
-const filteredClients = computed(() => {
-  if (!search.value) return clients.value;
-  const term = search.value.toLowerCase();
-  return clients.value.filter(
-    (c) =>
-      `${c.first_name} ${c.last_name}`.toLowerCase().includes(term) ||
-      c.email?.toLowerCase().includes(term) ||
-      c.phone?.includes(term.replace(/\s/g, "")),
-  );
+const onPage = (event: any) => {
+  pageOffset.value = event.first;
+  pageRows.value = event.rows;
+  fetchClients();
+};
+
+// Debounced server-side search
+let searchTimeout: ReturnType<typeof setTimeout> | null = null;
+watch(search, () => {
+  if (searchTimeout) clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(() => {
+    pageOffset.value = 0;
+    fetchClients();
+  }, 300);
+});
+onBeforeUnmount(() => {
+  if (searchTimeout) clearTimeout(searchTimeout);
 });
 
 // NEW: Open the full profile dialog

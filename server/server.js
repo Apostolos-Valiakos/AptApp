@@ -19,6 +19,7 @@ const pool = require("./db");
 const path = require("path");
 const cors = require("cors");
 const helmet = require("helmet");
+const compression = require("compression");
 const rateLimit = require("express-rate-limit");
 const multer = require("multer");
 const fs = require("fs");
@@ -420,10 +421,32 @@ app.use(
     allowedHeaders: ["Content-Type", "Authorization"],
   }),
 );
+// gzip JSON / JS / CSS responses (big win for client lists and reports).
+// Only compressible content types are touched; file downloads stay as-is.
+app.use(compression());
 app.use(express.json());
 
 const distPath = path.join(__dirname, "../dist");
-app.use(express.static(distPath));
+// Vite emits content-hashed filenames under /assets, so they can be cached
+// forever. index.html (and other unhashed files) must always revalidate so a
+// new deploy is picked up immediately.
+app.use(
+  "/assets",
+  express.static(path.join(distPath, "assets"), {
+    maxAge: "1y",
+    immutable: true,
+    fallthrough: false, // a missing hashed asset is a 404, not index.html
+  }),
+);
+app.use(
+  express.static(distPath, {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith(".html")) {
+        res.setHeader("Cache-Control", "no-cache");
+      }
+    },
+  }),
+);
 const dbFileStorage = multer.memoryStorage();
 const dbFileUpload = multer({
   storage: dbFileStorage,
@@ -443,35 +466,55 @@ const safeUUID = (id) => {
 // --- HELPER: Recalculate Outstanding Balance for a Client ---
 const recalculateClientBalance = async (client, clientId) => {
   try {
-    // We use a subquery to find the appointment time from appointment_services
-    // since 'start_time' does not exist on the appointments table directly.
+    // Single pass: services, product sales and payments are each aggregated
+    // once for this client's appointments and joined, instead of running
+    // three correlated subqueries per appointment. Same formula as before:
+    // non-cancelled appointments whose first service started between
+    // 2026-03-01 and now; cost = services (override or list price) + products.
     const balanceRes = await client.query(
-      `SELECT
-         COALESCE(SUM(total_cost - total_paid), 0) as new_balance
-       FROM (
-         SELECT
-           a.id,
-           COALESCE(SUM(COALESCE(aps.price_override, s.price)), 0)
-             + COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = a.id), 0) as total_cost,
-           COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0) as total_paid,
-           (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) as appt_time
-         FROM appointments a
-         LEFT JOIN appointment_services aps ON a.id = aps.appointment_id
+      `WITH appts AS (
+         SELECT id FROM appointments
+         WHERE client_id = $1 AND status != 'cancelled'
+       ),
+       svc AS (
+         SELECT aps.appointment_id,
+                COALESCE(SUM(COALESCE(aps.price_override, s.price)), 0) AS cost,
+                MIN(aps.start_time) AS appt_time
+         FROM appointment_services aps
          LEFT JOIN services s ON aps.service_id = s.id
-         WHERE a.client_id = $1
-           AND a.status != 'cancelled'
-         GROUP BY a.id
-       ) subquery
-       WHERE appt_time <= CURRENT_TIMESTAMP
-         AND appt_time >= '2026-03-01 00:00:00'`,
+         WHERE aps.appointment_id IN (SELECT id FROM appts)
+         GROUP BY aps.appointment_id
+       ),
+       prod AS (
+         SELECT appointment_id, SUM(total_price) AS total
+         FROM product_sales
+         WHERE appointment_id IN (SELECT id FROM appts)
+         GROUP BY appointment_id
+       ),
+       paid AS (
+         SELECT appointment_id, SUM(amount) AS total
+         FROM transactions
+         WHERE appointment_id IN (SELECT id FROM appts)
+         GROUP BY appointment_id
+       )
+       SELECT COALESCE(SUM(
+                svc.cost + COALESCE(prod.total, 0) - COALESCE(paid.total, 0)
+              ), 0) AS new_balance
+       FROM svc
+       LEFT JOIN prod ON prod.appointment_id = svc.appointment_id
+       LEFT JOIN paid ON paid.appointment_id = svc.appointment_id
+       WHERE svc.appt_time <= CURRENT_TIMESTAMP
+         AND svc.appt_time >= '2026-03-01 00:00:00'`,
       [clientId],
     );
 
     const newBalance = balanceRes.rows[0].new_balance;
 
-    // This updates the 'Clients' list you see in your second image
+    // Only write when the value actually changed — this runs on every profile
+    // open, and an unconditional UPDATE turned each read into a row write.
     await client.query(
-      "UPDATE clients SET outstanding_balance = $1 WHERE id = $2",
+      `UPDATE clients SET outstanding_balance = $1
+       WHERE id = $2 AND outstanding_balance IS DISTINCT FROM $1::numeric`,
       [newBalance, clientId],
     );
 
@@ -892,13 +935,64 @@ app.post("/api/v1/staff/:id/login", authenticateToken, async (req, res) => {
 //     res.status(500).json({ error: "Internal server error" });
 //   }
 // });
+// Matches name / email / phone (phone ignoring spaces). `paramIdx` is the
+// position of the `%term%` parameter in the query's parameter list.
+const buildClientSearchClause = (paramIdx, alias = "c") => `
+  AND (COALESCE(${alias}.first_name, '') || ' ' || COALESCE(${alias}.last_name, '') ILIKE $${paramIdx}
+    OR ${alias}.email ILIKE $${paramIdx}
+    OR REPLACE(${alias}.phone, ' ', '') ILIKE REPLACE($${paramIdx}, ' ', ''))`;
+
+const CLIENT_ORDER_BY = (alias = "c") =>
+  `ORDER BY NULLIF(TRIM(${alias}.last_name), '') NULLS LAST, ${alias}.first_name`;
+
+// GET /api/v1/clients
+//   ?slim=true            -> lightweight rows for dropdowns (scheduler / booking dialog),
+//                            no per-client aggregates. Optional &search=&limit= for autocomplete.
+//   ?limit=&offset=       -> paged mode, returns { total, clients } with aggregates for that page only
+//   (no params)           -> legacy: full list with aggregates
+//   &search=              -> works with every mode
 app.get("/api/v1/clients", authenticateToken, async (req, res) => {
+  const { slim, search, limit, offset } = req.query;
+  const term = search ? String(search).trim() : "";
   try {
-    const query = `
-      SELECT 
+    if (slim === "true") {
+      const slimParams = [req.shopId];
+      let slimSearchClause = "";
+      if (term) {
+        slimParams.push(`%${term}%`);
+        slimSearchClause = buildClientSearchClause(slimParams.length);
+      }
+      let slimLimitClause = "";
+      if (limit !== undefined) {
+        slimParams.push(Math.min(parseInt(limit) || 10, 50));
+        slimLimitClause = ` LIMIT $${slimParams.length}`;
+      }
+
+      const { rows } = await pool.query(
+        `SELECT c.id, c.first_name, c.last_name,
+                c.first_name || ' ' || c.last_name as full_name,
+                c.email, c.phone, c.outstanding_balance, c.custom_fields,
+                c.date_of_birth, c.ergotherapia, c.physiotherapia, c.logotherapia
+         FROM active_clients c
+         WHERE c.shop_id = $1 ${slimSearchClause}
+         ${CLIENT_ORDER_BY("c")}
+         ${slimLimitClause}`,
+        slimParams,
+      );
+      return res.json(rows);
+    }
+
+    const params = [req.shopId];
+    let searchClause = "";
+    if (term) {
+      params.push(`%${term}%`);
+      searchClause = buildClientSearchClause(params.length);
+    }
+
+    const heavyColumns = `
         c.*,
         c.first_name || ' ' || c.last_name as full_name,
-        
+
         -- EOPPY Breakdown
         (SELECT jsonb_build_object(
             'total', COALESCE(SUM(s_inner.count_per_service), 0),
@@ -927,30 +1021,56 @@ app.get("/api/v1/clients", authenticateToken, async (req, res) => {
            WHERE a.client_id = c.id AND (a.is_eoppy = false OR a.is_eoppy IS NULL)
            GROUP BY s.name
          ) s_inner
-        ) as non_eoppy_breakdown
+        ) as non_eoppy_breakdown`;
 
-      FROM active_clients c
-      WHERE c.shop_id = $1
-      ORDER BY c.last_name;
-    `;
+    const normalize = (rows) =>
+      rows.map((row) => ({
+        ...row,
+        eoppy_breakdown: row.eoppy_breakdown || { total: 0, services: {} },
+        non_eoppy_breakdown: row.non_eoppy_breakdown || {
+          total: 0,
+          services: {},
+        },
+      }));
 
-    const { rows } = await pool.query(query, [req.shopId]);
+    // Paged mode: aggregates are computed only for the rows on this page
+    if (limit !== undefined) {
+      const pageSize = Math.min(parseInt(limit) || 50, 200);
+      const pageOffset = Math.max(parseInt(offset) || 0, 0);
 
-    // Format the data safely
-    const data = rows.map((row) => ({
-      ...row,
-      // The COALESCE in SQL helps, but we ensure the structure exists here too
-      eoppy_breakdown: row.eoppy_breakdown || { total: 0, services: {} },
-      non_eoppy_breakdown: row.non_eoppy_breakdown || {
-        total: 0,
-        services: {},
-      },
-    }));
+      const countRes = await pool.query(
+        `SELECT COUNT(*) as total FROM active_clients c WHERE c.shop_id = $1 ${searchClause}`,
+        params,
+      );
 
-    // Use 'return' to ensure the function stops here
-    return res.json(data);
+      const pagedParams = [...params, pageSize, pageOffset];
+      const { rows } = await pool.query(
+        `SELECT ${heavyColumns}
+         FROM active_clients c
+         WHERE c.shop_id = $1 ${searchClause}
+         ${CLIENT_ORDER_BY("c")}
+         LIMIT $${pagedParams.length - 1} OFFSET $${pagedParams.length}`,
+        pagedParams,
+      );
+
+      return res.json({
+        total: parseInt(countRes.rows[0].total),
+        clients: normalize(rows),
+      });
+    }
+
+    // Legacy mode: full list with aggregates (backward compatible)
+    const { rows } = await pool.query(
+      `SELECT ${heavyColumns}
+       FROM active_clients c
+       WHERE c.shop_id = $1 ${searchClause}
+       ${CLIENT_ORDER_BY("c")}`,
+      params,
+    );
+
+    return res.json(normalize(rows));
   } catch (err) {
-    // Check if headers were already sent to avoid the ERR_HTTP_HEADERS_SENT crash
+    console.error("Clients fetch error:", err);
     if (!res.headersSent) {
       return res.status(500).json({ error: "Internal Server Error" });
     }
@@ -1172,15 +1292,34 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
     let dateFilter = "";
     const params = [req.shopId];
 
-    // 2. Build the dynamic date filter
+    // 2. Build the dynamic date filter.
+    // An appointment belongs to the range when its FIRST service starts in it.
+    // The `a.id IN (... start_time range ...)` pre-filter is index-backed
+    // (idx on appointment_services.start_time) and is a necessary condition
+    // for that, so Postgres only computes first_start for candidate rows
+    // instead of for every appointment the shop has ever had. The exact
+    // first_start check then keeps the original semantics.
     if (date) {
       // Filter for a specific single day
       params.push(date);
-      dateFilter = ` AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id)::date = $${params.length}::date`;
+      const p = `$${params.length}`;
+      dateFilter = `
+        AND a.id IN (
+          SELECT appointment_id FROM appointment_services
+          WHERE start_time >= ${p}::date AND start_time < ${p}::date + 1
+        )
+        AND fs.first_start >= ${p}::date AND fs.first_start < ${p}::date + 1`;
     } else if (start && end) {
       // Filter for a range (e.g., a full week or month)
       params.push(start, end);
-      dateFilter = ` AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) BETWEEN $${params.length - 1} AND $${params.length}`;
+      const ps = `$${params.length - 1}`;
+      const pe = `$${params.length}`;
+      dateFilter = `
+        AND a.id IN (
+          SELECT appointment_id FROM appointment_services
+          WHERE start_time BETWEEN ${ps} AND ${pe}
+        )
+        AND fs.first_start BETWEEN ${ps} AND ${pe}`;
     }
     // NOTE: no date/start/end at all is a real, relied-upon contract (returns
     // every appointment for the shop — see server/tests/workflows.test.js).
@@ -1228,9 +1367,13 @@ app.get("/api/v1/appointments", authenticateToken, async (req, res) => {
         ), '[]') as services
       FROM appointments a
       LEFT JOIN clients c ON a.client_id = c.id
+      LEFT JOIN LATERAL (
+        SELECT MIN(start_time) AS first_start
+        FROM appointment_services
+        WHERE appointment_id = a.id
+      ) fs ON true
       WHERE a.shop_id = $1 ${visibilityClause} ${dateFilter}
-      GROUP BY a.id, c.first_name, c.last_name, c.phone, c.outstanding_balance
-      ORDER BY (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) ASC
+      ORDER BY fs.first_start ASC
     `,
       params,
     );
@@ -1678,9 +1821,9 @@ app.post("/api/v1/transactions", authenticateToken, async (req, res) => {
          AND a.id != $2
          AND a.shop_id = $3
          AND a.status != 'cancelled'
-         AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) >= '2026-03-01 00:00:00'
        GROUP BY a.id
-       ORDER BY (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) ASC`,
+       HAVING MIN(aps.start_time) >= '2026-03-01 00:00:00'
+       ORDER BY MIN(aps.start_time) ASC`,
       [client_id, appointment_id, req.shopId],
     );
 
@@ -1770,11 +1913,11 @@ app.get("/api/v1/reports/analytics", authenticateToken, async (req, res) => {
   const endDate = to || new Date().toISOString();
 
   try {
-    const client = await pool.connect();
-    try {
+    // The three metrics are independent — run them in parallel.
+    const [statusRes, retentionRes, utilRes] = await Promise.all([
       // A. Cancellation Rate
       // (Cancelled + No-Show) / Total Appointments
-      const statusRes = await client.query(
+      pool.query(
         `SELECT 
            COUNT(*) FILTER (WHERE status IN ('cancelled', 'no-show')) as negative,
            COUNT(*) as total
@@ -1783,52 +1926,42 @@ app.get("/api/v1/reports/analytics", authenticateToken, async (req, res) => {
          WHERE a.shop_id = $1 
          AND aps.start_time >= $2 AND aps.start_time <= $3`,
         [req.shopId, startDate, endDate],
-      );
-
-      const negCount = Number(statusRes.rows[0].negative);
-      const totalAppts = Number(statusRes.rows[0].total);
-      const cancelRate = totalAppts > 0 ? (negCount / totalAppts) * 100 : 0;
+      ),
 
       // B. Client Retention (New vs Returning in this period)
-      // "New" = Their first ever appointment is in this period
-      // "Returning" = They have appointments before this period
-      const retentionRes = await client.query(
-        `SELECT 
-           COUNT(DISTINCT a.client_id) FILTER (
-             WHERE NOT EXISTS (
-               SELECT 1 FROM appointments old 
-               JOIN appointment_services aps_old ON old.id = aps_old.appointment_id
-               WHERE old.client_id = a.client_id 
+      // "New" = no completed appointment before this period
+      // "Returning" = at least one completed appointment before this period
+      // The history check runs once per distinct client (it used to run twice
+      // per appointment row, once for each FILTER).
+      pool.query(
+        `WITH period_clients AS (
+           SELECT DISTINCT a.client_id
+           FROM appointments a
+           WHERE a.shop_id = $1
+             AND a.client_id IS NOT NULL
+             AND a.created_at >= $2 AND a.created_at <= $3
+         ),
+         flagged AS (
+           SELECT EXISTS (
+             SELECT 1 FROM appointments old
+             JOIN appointment_services aps_old ON old.id = aps_old.appointment_id
+             WHERE old.client_id = pc.client_id
                AND aps_old.start_time < $2
                AND old.status = 'completed'
-             )
-           ) as new_clients,
-           COUNT(DISTINCT a.client_id) FILTER (
-             WHERE EXISTS (
-               SELECT 1 FROM appointments old 
-               JOIN appointment_services aps_old ON old.id = aps_old.appointment_id
-               WHERE old.client_id = a.client_id 
-               AND aps_old.start_time < $2
-               AND old.status = 'completed'
-             )
-           ) as returning_clients
-         FROM appointments a
-         WHERE a.shop_id = $1 
-         AND a.created_at >= $2 AND a.created_at <= $3`,
+           ) AS has_history
+           FROM period_clients pc
+         )
+         SELECT
+           COUNT(*) FILTER (WHERE NOT has_history) AS new_clients,
+           COUNT(*) FILTER (WHERE has_history) AS returning_clients
+         FROM flagged`,
         [req.shopId, startDate, endDate],
-      );
-
-      const newClients = Number(retentionRes.rows[0].new_clients);
-      const retClients = Number(retentionRes.rows[0].returning_clients);
-      const retentionRate =
-        newClients + retClients > 0
-          ? (retClients / (newClients + retClients)) * 100
-          : 0;
+      ),
 
       // C. Staff Utilization
       // Returns hours booked per staff member
-      const utilRes = await client.query(
-        `SELECT st.name, 
+      pool.query(
+        `SELECT st.name,
            SUM(COALESCE(aps.duration_override, s.duration_minutes))/60.0 as hours_booked,
            COUNT(aps.id) as appt_count,
            SUM(COALESCE(aps.price_override, s.price)) as total_revenue
@@ -1839,18 +1972,27 @@ app.get("/api/v1/reports/analytics", authenticateToken, async (req, res) => {
          AND aps.start_time >= $2 AND aps.start_time <= $3
          GROUP BY st.name`,
         [req.shopId, startDate, endDate],
-      );
+      ),
+    ]);
 
-      res.json({
-        cancellation_rate: cancelRate.toFixed(1),
-        retention_rate: retentionRate.toFixed(1),
-        new_clients: newClients,
-        returning_clients: retClients,
-        staff_utilization: utilRes.rows,
-      });
-    } finally {
-      client.release();
-    }
+    const negCount = Number(statusRes.rows[0].negative);
+    const totalAppts = Number(statusRes.rows[0].total);
+    const cancelRate = totalAppts > 0 ? (negCount / totalAppts) * 100 : 0;
+
+    const newClients = Number(retentionRes.rows[0].new_clients);
+    const retClients = Number(retentionRes.rows[0].returning_clients);
+    const retentionRate =
+      newClients + retClients > 0
+        ? (retClients / (newClients + retClients)) * 100
+        : 0;
+
+    res.json({
+      cancellation_rate: cancelRate.toFixed(1),
+      retention_rate: retentionRate.toFixed(1),
+      new_clients: newClients,
+      returning_clients: retClients,
+      staff_utilization: utilRes.rows,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Internal server error" });
@@ -2074,59 +2216,56 @@ app.get("/api/v1/reports/finances", authenticateToken, async (req, res) => {
     ${apptDateFilter}
   `;
 
+  // --- C. TOTAL COLLECTED (Cash Flow for Period) params ---
+  const flowParams = [shopId];
+  let flowFilter = "";
+  if (from) {
+    flowParams.push(from);
+    flowFilter += ` AND created_at >= $${flowParams.length}`;
+  }
+  if (to) {
+    flowParams.push(to);
+    flowFilter += ` AND created_at <= $${flowParams.length}`;
+  }
+
   try {
-    const client = await pool.connect();
+    // The three queries are independent, so they run in parallel on separate
+    // pool connections. (Previously they ran one after another on a single
+    // checked-out client whose release in `finally` referenced an out-of-scope
+    // variable — so the connection was never returned to the pool.)
+    const [salesDebtRes, payRes, todayRes] = await Promise.all([
+      // --- A + B. TOTAL SALES (services only) and PERIOD DEBT ---
+      // The appointment set is computed once and reused for both sums.
+      pool.query(
+        `
+        WITH period_appts AS (${appointmentSubquery})
+        SELECT
+          (SELECT SUM(COALESCE(aps.price_override, s.price))
+             FROM appointment_services aps
+             LEFT JOIN services s ON aps.service_id = s.id
+             WHERE aps.appointment_id IN (SELECT id FROM period_appts)) AS total_sales,
+          (SELECT SUM(amount)
+             FROM transactions
+             WHERE appointment_id IN (SELECT id FROM period_appts)) AS period_paid
+      `,
+        apptParams,
+      ),
+      pool.query(
+        `SELECT SUM(amount) as total FROM transactions WHERE shop_id = $1 ${flowFilter}`,
+        flowParams,
+      ),
+      // --- D. COLLECTED TODAY ---
+      pool.query(
+        `SELECT SUM(amount) as total FROM transactions
+         WHERE shop_id = $1 AND created_at >= CURRENT_DATE`,
+        [shopId],
+      ),
+    ]);
 
-    // --- A. TOTAL SALES (Services Only) ---
-    const salesRes = await client.query(
-      `
-      SELECT SUM(COALESCE(aps.price_override, s.price)) as total
-      FROM appointment_services aps
-      LEFT JOIN services s ON aps.service_id = s.id
-      WHERE aps.appointment_id IN (${appointmentSubquery})
-    `,
-      apptParams,
-    );
-    const totalSales = Number(salesRes.rows[0].total) || 0;
-
-    // --- B. PERIOD DEBT ---
-    const periodPaymentsRes = await client.query(
-      `
-      SELECT SUM(amount) as total FROM transactions WHERE appointment_id IN (${appointmentSubquery})
-    `,
-      apptParams,
-    );
-    const periodPaymentsApplied = Number(periodPaymentsRes.rows[0].total) || 0;
+    const totalSales = Number(salesDebtRes.rows[0].total_sales) || 0;
+    const periodPaymentsApplied = Number(salesDebtRes.rows[0].period_paid) || 0;
     const totalDebt = totalSales - periodPaymentsApplied;
-
-    // --- C. TOTAL COLLECTED (Cash Flow for Period) ---
-    const flowParams = [shopId];
-    let flowFilter = "";
-    if (from) {
-      flowParams.push(from);
-      flowFilter += ` AND created_at >= $${flowParams.length}`;
-    }
-    if (to) {
-      flowParams.push(to);
-      flowFilter += ` AND created_at <= $${flowParams.length}`;
-    }
-
-    const payRes = await client.query(
-      `
-      SELECT SUM(amount) as total FROM transactions WHERE shop_id = $1 ${flowFilter}
-    `,
-      flowParams,
-    );
     const totalPayments = Number(payRes.rows[0].total) || 0;
-
-    // --- D. COLLECTED TODAY (The missing piece) ---
-    const todayRes = await client.query(
-      `
-      SELECT SUM(amount) as total FROM transactions 
-      WHERE shop_id = $1 AND created_at >= CURRENT_DATE
-    `,
-      [shopId],
-    );
     const collectedToday = Number(todayRes.rows[0].total) || 0;
 
     // --- Final Response (All keys required by FinancialsView.vue) ---
@@ -2139,8 +2278,6 @@ app.get("/api/v1/reports/finances", authenticateToken, async (req, res) => {
   } catch (err) {
     console.error("Finance Report Error:", err);
     res.status(500).json({ error: "Failed to generate report" });
-  } finally {
-    client.release();
   }
 });
 app.get(
@@ -2168,15 +2305,19 @@ app.get(
           s.name as service_name,
           COUNT(aps.id) as service_count,
           SUM(COALESCE(aps.price_override, s.price)) as total_value,
-          SUM(COALESCE((
-            SELECT SUM(t.amount) 
-            FROM transactions t 
-            WHERE t.appointment_id = a.id
-          ), 0)) as total_paid
+          SUM(COALESCE(paid.total, 0)) as total_paid
         FROM appointment_services aps
         JOIN services s ON aps.service_id = s.id
         JOIN appointments a ON aps.appointment_id = a.id
         JOIN active_clients c ON a.client_id = c.id
+        -- Payments aggregated once per appointment instead of a correlated
+        -- subquery per service row (same per-row value as before).
+        LEFT JOIN (
+          SELECT appointment_id, SUM(amount) AS total
+          FROM transactions
+          WHERE appointment_id IN (SELECT id FROM appointments WHERE shop_id = $1)
+          GROUP BY appointment_id
+        ) paid ON paid.appointment_id = a.id
         WHERE a.shop_id = $1 
           -- AND aps.start_time <= CURRENT_TIMESTAMP 
           -- Exclude cancelled and no-show statuses
@@ -3077,6 +3218,73 @@ app.delete("/api/v1/products/:id", authenticateToken, async (req, res) => {
     res.status(500).json({ error: "Failed to delete product" });
   }
 });
+// Lightweight per-client data for the booking sidebar: ΕΟΠΠΥ / non-ΕΟΠΠΥ
+// breakdown + the last N past appointments. Lets the scheduler load the slim
+// client list and fetch the heavy aggregates only for the selected client.
+app.get(
+  "/api/v1/clients/:id/booking-summary",
+  authenticateToken,
+  async (req, res) => {
+    const { id } = req.params;
+    if (req.user.role === "client" && String(req.user.clientId) !== String(id)) {
+      return res.status(403).json({ error: "Unauthorized to view this profile" });
+    }
+    const limit = Math.min(parseInt(req.query.limit) || 5, 20);
+    try {
+      const breakdownSql = (eoppyCondition) => `
+        SELECT jsonb_build_object(
+          'total', COALESCE(SUM(x.cnt), 0),
+          'services', COALESCE(jsonb_object_agg(x.name, x.cnt), '{}'::jsonb)
+        ) AS breakdown
+        FROM (
+          SELECT s.name, COUNT(aps.id) AS cnt
+          FROM appointments a
+          JOIN appointment_services aps ON a.id = aps.appointment_id
+          JOIN services s ON aps.service_id = s.id
+          WHERE a.client_id = $1 AND a.shop_id = $2 AND ${eoppyCondition}
+          GROUP BY s.name
+        ) x`;
+
+      const [eoppyRes, nonEoppyRes, pastRes] = await Promise.all([
+        pool.query(breakdownSql("a.is_eoppy = true"), [id, req.shopId]),
+        pool.query(
+          breakdownSql("(a.is_eoppy = false OR a.is_eoppy IS NULL)"),
+          [id, req.shopId],
+        ),
+        pool.query(
+          `SELECT a.id, a.status, t.start_time, t.service_names
+           FROM appointments a
+           JOIN LATERAL (
+             SELECT MIN(aps.start_time) AS start_time,
+                    string_agg(s.name, ', ') AS service_names
+             FROM appointment_services aps
+             JOIN services s ON aps.service_id = s.id
+             WHERE aps.appointment_id = a.id
+           ) t ON true
+           WHERE a.client_id = $1 AND a.shop_id = $2
+             AND a.is_block IS NOT TRUE
+             AND t.start_time < NOW()
+           ORDER BY t.start_time DESC
+           LIMIT $3`,
+          [id, req.shopId, limit],
+        ),
+      ]);
+
+      res.json({
+        eoppy_breakdown: eoppyRes.rows[0]?.breakdown || { total: 0, services: {} },
+        non_eoppy_breakdown: nonEoppyRes.rows[0]?.breakdown || {
+          total: 0,
+          services: {},
+        },
+        past_appointments: pastRes.rows,
+      });
+    } catch (err) {
+      console.error("Client booking summary error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
+
 // GET FULL CLIENT PROFILE (Info + History + File Metadata)
 app.get("/api/v1/clients/:id/full", authenticateToken, async (req, res) => {
   const { id } = req.params;
@@ -3673,6 +3881,7 @@ app.get(/(.*)/, (req, res) => {
   if (req.path.startsWith("/api")) {
     return res.status(404).json({ error: "API Route Not Found" });
   }
+  res.setHeader("Cache-Control", "no-cache");
   res.sendFile(path.join(distPath, "index.html"));
 });
 

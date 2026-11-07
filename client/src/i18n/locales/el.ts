@@ -484,6 +484,7 @@ export default {
   bookingSidebar: {
     noClient: 'Δεν επιλέχτηκε πελάτης',
     noClientSub: 'Επιλέξτε πελάτη για να δείτε το ιστορικό',
+    pastAppointments: 'Πρόσφατα Ραντεβού',
     balance: 'Υπόλοιπο',
     eoppyAppts: 'Ραντεβού ΕΟΠΠΥ ({n})',
     nonEoppyAppts: 'Ραντεβού Εκτός ΕΟΠΠΥ ({n})',

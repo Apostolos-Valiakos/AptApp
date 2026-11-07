@@ -348,6 +348,8 @@
 </template>
 
 <script setup lang="ts">
+import MultiSelect from "primevue/multiselect";
+import ScrollPanel from "primevue/scrollpanel";
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from "vue";
 import { useChatStore } from "../stores/chat";
 import { useAuthStore } from "../stores/auth";

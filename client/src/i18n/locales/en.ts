@@ -484,6 +484,7 @@ export default {
   bookingSidebar: {
     noClient: 'No client selected',
     noClientSub: 'Select a client to view their history',
+    pastAppointments: 'Recent Appointments',
     balance: 'Balance',
     eoppyAppts: 'EOPPY Appointments ({n})',
     nonEoppyAppts: 'Non-EOPPY Appointments ({n})',

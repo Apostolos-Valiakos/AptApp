@@ -450,6 +450,8 @@
 </template>
 
 <script setup lang="ts">
+import Calendar from "primevue/datepicker";
+import Dropdown from "primevue/select";
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from "vue";
 import { useI18n } from "vue-i18n";
 import BookingProducts from "./booking/bookingProducts.vue";

@@ -234,6 +234,11 @@
 </template>
 
 <script setup lang="ts">
+import DataTable from "primevue/datatable";
+import Column from "primevue/column";
+import Dropdown from "primevue/select";
+import InputNumber from "primevue/inputnumber";
+import ColorPicker from "primevue/colorpicker";
 import { ref, onMounted, computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";

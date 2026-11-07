@@ -434,6 +434,7 @@
 </template>
 
 <script setup lang="ts">
+import Calendar from "primevue/datepicker";
 import { ref, watch, computed } from "vue";
 import Exercises from "./Exercises.vue";
 import { useAuthStore } from "../stores/auth";

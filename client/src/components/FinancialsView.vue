@@ -379,6 +379,10 @@
 </template>
 
 <script setup lang="ts">
+import DataTable from "primevue/datatable";
+import Column from "primevue/column";
+import Calendar from "primevue/datepicker";
+import Chart from "primevue/chart";
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";

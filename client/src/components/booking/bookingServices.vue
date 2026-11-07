@@ -104,6 +104,9 @@
 </template>
 
 <script setup lang="ts">
+import Calendar from "primevue/datepicker";
+import Dropdown from "primevue/select";
+import InputNumber from "primevue/inputnumber";
 import { useI18n } from "vue-i18n";
 import { useAuthStore } from "../../stores/auth";
 const { t } = useI18n();

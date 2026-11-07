@@ -29,16 +29,16 @@
 
       <!-- ΕΟΠΠΥ breakdown card -->
       <div
-        v-if="client.eoppy_breakdown?.total > 0 || client.non_eoppy_breakdown?.total > 0"
+        v-if="eoppy.total > 0 || nonEoppy.total > 0"
         class="text-left bg-white p-4 rounded-xl shadow-sm border border-gray-100 mt-3"
       >
-        <div v-if="client.eoppy_breakdown?.total > 0" class="mb-4">
+        <div v-if="eoppy.total > 0" class="mb-4">
           <h4 class="text-xs font-bold text-gray-400 uppercase mb-2 border-l-2 border-[var(--p-primary-300)] pl-2">
-            {{ t('bookingSidebar.eoppyAppts', { n: client.eoppy_breakdown.total }) }}
+            {{ t('bookingSidebar.eoppyAppts', { n: eoppy.total }) }}
           </h4>
           <ul class="text-sm">
             <li
-              v-for="(count, name) in client.eoppy_breakdown?.services || {}"
+              v-for="(count, name) in eoppy.services || {}"
               :key="name"
               class="flex justify-between py-0.5"
             >
@@ -48,14 +48,13 @@
           </ul>
         </div>
 
-        <div v-if="client.non_eoppy_breakdown?.total > 0">
+        <div v-if="nonEoppy.total > 0">
           <h4 class="text-xs font-bold text-gray-400 uppercase mb-2 border-l-2 border-[var(--p-primary-300)] pl-2">
-            {{ t('bookingSidebar.nonEoppyAppts', { n: client.non_eoppy_breakdown.total }) }}
+            {{ t('bookingSidebar.nonEoppyAppts', { n: nonEoppy.total }) }}
           </h4>
           <ul class="text-sm">
             <li
-              v-for="(count, name) in client.non_eoppy_breakdown?.services ||
-              {}"
+              v-for="(count, name) in nonEoppy.services || {}"
               :key="name"
               class="flex justify-between py-0.5"
             >
@@ -99,6 +98,35 @@
           <span class="font-medium text-gray-900">{{ field.value }}</span>
         </div>
       </div>
+
+      <!-- Past appointments card -->
+      <div
+        v-if="pastAppointments.length"
+        class="text-left bg-white p-4 rounded-xl shadow-sm border border-gray-100 mt-3"
+      >
+        <h4 class="text-xs font-bold text-gray-400 uppercase mb-3 border-l-2 border-[var(--p-primary-300)] pl-2">
+          {{ t('bookingSidebar.pastAppointments') }}
+        </h4>
+        <div
+          v-for="appt in pastAppointments"
+          :key="appt.id"
+          class="flex justify-between items-start gap-2 text-sm mb-2 border-b border-gray-50 pb-1.5 last:border-0 last:mb-0"
+        >
+          <span
+            class="text-gray-500 whitespace-nowrap"
+            :class="{ 'line-through opacity-60': isVoided(appt.status) }"
+          >
+            {{ formatApptDate(appt.start_time) }}
+          </span>
+          <span
+            class="text-right truncate font-medium"
+            :class="isVoided(appt.status) ? 'line-through text-red-400' : 'text-gray-900'"
+            :title="appt.service_names || ''"
+          >
+            {{ appt.service_names || "—" }}
+          </span>
+        </div>
+      </div>
     </div>
 
     <!-- Empty state -->
@@ -116,7 +144,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useAuthStore } from "../../stores/auth";
 const { t } = useI18n();
@@ -160,4 +188,52 @@ const clientAgeDisplay = computed(() => {
     return `${years} year${years === 1 ? "" : "s"} old`;
   }
 });
+
+// --- Per-client summary (ΕΟΠΠΥ breakdown + past appointments) ---
+// The scheduler loads a slim client list, so the heavy aggregates are
+// fetched here only for the selected client.
+type Breakdown = { total: number; services: Record<string, number> };
+const emptyBreakdown = (): Breakdown => ({ total: 0, services: {} });
+
+const eoppy = ref<Breakdown>(emptyBreakdown());
+const nonEoppy = ref<Breakdown>(emptyBreakdown());
+const pastAppointments = ref<any[]>([]);
+
+const isVoided = (status: string) =>
+  status === "cancelled" || status === "no-show";
+
+const formatApptDate = (d: string) =>
+  new Date(d).toLocaleDateString("el-GR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+  });
+
+let requestSeq = 0;
+watch(
+  () => props.client?.id,
+  async (clientId) => {
+    const seq = ++requestSeq;
+    eoppy.value = emptyBreakdown();
+    nonEoppy.value = emptyBreakdown();
+    pastAppointments.value = [];
+    if (!clientId) return;
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(
+        `/api/v1/clients/${clientId}/booking-summary?limit=5`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (!res.ok || seq !== requestSeq) return;
+      const data = await res.json();
+      if (seq !== requestSeq) return; // client changed while loading
+      eoppy.value = data.eoppy_breakdown || emptyBreakdown();
+      nonEoppy.value = data.non_eoppy_breakdown || emptyBreakdown();
+      pastAppointments.value = data.past_appointments || [];
+    } catch {
+      // sidebar extra — fail silently
+    }
+  },
+  { immediate: true },
+);
 </script>
