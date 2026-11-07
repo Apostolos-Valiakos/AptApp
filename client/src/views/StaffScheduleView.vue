@@ -1,24 +1,25 @@
 <template>
   <div class="space-y-6">
     <!-- Page Header -->
-    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
       <div class="flex justify-between items-center flex-wrap gap-3">
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-3 min-w-0">
           <div
             class="w-10 h-10 rounded-xl bg-[var(--p-primary-50)] flex items-center justify-center"
           >
             <i class="pi pi-calendar-clock text-[var(--p-primary-600)]"></i>
           </div>
           <div>
-            <h1 class="text-2xl font-bold text-gray-900">
+            <h1 class="text-xl sm:text-2xl font-bold text-gray-900">
               {{ t("staffSchedule.title") }}
             </h1>
             <p class="text-sm text-gray-500">{{ weekRangeLabel }}</p>
           </div>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2 w-full sm:w-auto">
           <Button
             v-if="authStore.isAnalyticsAllowed"
+            class="mr-auto sm:mr-0"
             :label="t('staffSchedule.editShopHours')"
             icon="pi pi-cog"
             text
@@ -27,20 +28,70 @@
           />
           <Button
             icon="pi pi-chevron-left"
-            class="p-button-outlined p-button-sm"
+            class="p-button-outlined"
+            :aria-label="t('staffSchedule.prevWeek')"
             @click="prevWeek"
           />
           <Button
             icon="pi pi-chevron-right"
-            class="p-button-outlined p-button-sm"
+            class="p-button-outlined"
+            :aria-label="t('staffSchedule.nextWeek')"
             @click="nextWeek"
           />
         </div>
       </div>
     </div>
 
+    <!-- Phones: one day at a time. -->
+    <div v-if="isPhone" class="bg-white rounded-2xl shadow-sm border border-gray-100 p-3" data-testid="schedule-day-view">
+      <div class="grid grid-cols-7 gap-1 mb-3" role="tablist">
+        <button
+          v-for="(d, i) in weekDates"
+          :key="d.getTime()"
+          type="button"
+          role="tab"
+          :aria-selected="i === dayIndex"
+          class="flex flex-col items-center py-2 rounded-xl transition-colors"
+          :class="i === dayIndex ? 'bg-[var(--p-primary-color)] text-white' : 'text-gray-600 hover:bg-gray-50'"
+          data-testid="schedule-day"
+          @click="dayIndex = i"
+        >
+          <span class="text-xs font-semibold">{{ t(`staff.workingHours.days.${d.getDay()}`).slice(0, 3) }}</span>
+          <span class="text-base font-bold">{{ d.getDate() }}</span>
+        </button>
+      </div>
+      <div class="flex justify-between items-center px-3 py-2 rounded-lg bg-gray-50 text-sm mb-1">
+        <span class="font-semibold text-gray-500 text-xs uppercase">{{ t("staffSchedule.shopHours") }}</span>
+        <span class="text-gray-600">{{ shopHoursLabel(selectedDay.getDay()) }}</span>
+      </div>
+      <button
+        v-for="s in calendarStore.resources"
+        :key="s.id"
+        type="button"
+        class="w-full flex items-center justify-between gap-3 px-3 py-3 border-b border-gray-100 last:border-b-0 text-left hover:bg-[var(--p-primary-50)]"
+        @click="openCellPopup(s, selectedDay)"
+      >
+        <span class="min-w-0">
+          <span class="block font-semibold text-gray-800 text-sm truncate">{{ s.name }}</span>
+          <span class="block text-xs text-gray-400">{{ weeklyHoursLabel(s.id) }}</span>
+        </span>
+        <span class="flex items-center gap-2 flex-shrink-0 text-sm">
+          <span
+            :class="
+              cellRanges(s.id, selectedDay) === null || cellRanges(s.id, selectedDay)?.length === 0
+                ? 'text-gray-400'
+                : 'text-gray-800 font-medium'
+            "
+            >{{ cellLabel(s.id, selectedDay) }}</span
+          >
+          <i class="pi pi-chevron-right text-xs text-gray-300"></i>
+        </span>
+      </button>
+    </div>
+
     <!-- Grid Card -->
     <div
+      v-else
       class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 overflow-x-auto"
     >
       <table class="w-full border-collapse text-sm">
@@ -104,7 +155,7 @@
       v-model:visible="popupVisible"
       :header="popupStaff?.name"
       modal
-      :style="{ width: '360px' }"
+      :style="{ width: '360px', maxWidth: '95vw' }"
     >
       <div class="text-xs text-gray-400 mb-3">{{ popupDateLabel }}</div>
       <div class="text-sm text-gray-600 mb-1">
@@ -305,13 +356,14 @@
 
 <script setup lang="ts">
 import { api, ApiError, ifRefused } from "../api/http";
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, watch, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 import { useCalendarStore } from "../stores/calendar";
 import { useAuthStore } from "../stores/auth";
 import TimeDropdown from "../components/booking/TimeDropdown.vue";
+import { useIsPhone } from "../composables/useIsPhone";
 import {
   mondayOf,
   buildWeekSchedule,
@@ -365,6 +417,21 @@ const weekDates = computed(() =>
   }),
 );
 const isPastWeek = computed(() => weekMonday.value < mondayOf(new Date()));
+
+// Phones show one day of the week at a time: today when it's in the shown
+// week, otherwise its Monday.
+const isPhone = useIsPhone();
+const dayIndex = ref(0);
+watch(
+  weekDates,
+  (dates) => {
+    const today = new Date().toDateString();
+    const i = dates.findIndex((d) => d.toDateString() === today);
+    dayIndex.value = i >= 0 ? i : 0;
+  },
+  { immediate: true },
+);
+const selectedDay = computed(() => weekDates.value[dayIndex.value] || weekDates.value[0]);
 const prevWeek = () => {
   const d = new Date(weekMonday.value);
   d.setDate(d.getDate() - 7);

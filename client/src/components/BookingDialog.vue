@@ -95,8 +95,20 @@
           </div>
         </div>
 
+        <!-- Opening a past visit: a moving bar, and the form dimmed and locked
+             until its data is in. -->
+        <ProgressBar
+          v-if="loadingPastId"
+          mode="indeterminate"
+          class="flex-shrink-0 !h-[3px] !rounded-none"
+          data-testid="booking-loading-bar"
+        />
         <!-- Tab content -->
-        <div class="flex-grow overflow-y-auto p-4 md:p-6 space-y-6">
+        <div
+          class="flex-grow overflow-y-auto p-4 md:p-6 space-y-6 transition-opacity"
+          :class="{ 'opacity-40 pointer-events-none': loadingPastId }"
+          :aria-busy="!!loadingPastId"
+        >
           <!-- Inert for staff: they read the booking but can't use anything in it. -->
           <div class="space-y-6" :inert="isReadOnly">
           <!-- BOOKING TAB -->
@@ -628,6 +640,7 @@
             :calculated-balance="sidebarBalance"
             v-model:bookingNotes="form.booking_notes"
             @debt-changed="onDebtChanged"
+            :loading-id="loadingPastId"
             @open-appointment="openPastAppointment"
           />
         </div>
@@ -1489,10 +1502,12 @@ const discardUnsavedEdits = () =>
   });
 
 let pastRequest = 0;
+const loadingPastId = ref<string | null>(null);
 const openPastAppointment = async (past: any) => {
   if (past.id === form.value.id) return;
   const request = ++pastRequest;
   if (!(await discardUnsavedEdits()) || request !== pastRequest) return;
+  loadingPastId.value = past.id;
   try {
     const dayRows = await api.get(`/api/v1/appointments?date=${toLocalDateStr(new Date(past.start_time))}`);
     if (request !== pastRequest || !props.visible) return;
@@ -1502,6 +1517,8 @@ const openPastAppointment = async (past: any) => {
   } catch {
     if (request !== pastRequest) return;
     toast.add({ severity: "error", summary: t("common.error"), detail: t("booking.openPast.failed"), life: 3500 });
+  } finally {
+    if (request === pastRequest) loadingPastId.value = null;
   }
 };
 

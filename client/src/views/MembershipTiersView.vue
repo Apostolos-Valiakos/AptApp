@@ -1,16 +1,17 @@
 <template>
-  <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-    <div class="flex justify-between items-center mb-6">
-      <div class="flex items-center gap-3">
+  <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
+    <!-- Page Header: on phones the button goes under the title. -->
+    <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-4 sm:mb-6">
+      <div class="flex items-center gap-3 min-w-0">
         <div class="w-10 h-10 rounded-xl bg-[var(--p-primary-50)] flex items-center justify-center">
           <i class="pi pi-id-card text-[var(--p-primary-600)]"></i>
         </div>
         <div>
-          <h1 class="text-2xl font-bold text-gray-900">{{ t('membershipTiers.title') }}</h1>
+          <h1 class="text-xl sm:text-2xl font-bold text-gray-900">{{ t('membershipTiers.title') }}</h1>
           <p class="text-sm text-gray-500 mt-0.5">{{ t('membershipTiers.subtitle') }}</p>
         </div>
       </div>
-      <Button :label="t('membershipTiers.addNew')" icon="pi pi-plus" @click="openNewDialog" />
+      <Button :label="t('membershipTiers.addNew')" icon="pi pi-plus" class="w-full sm:w-auto whitespace-nowrap" @click="openNewDialog" />
     </div>
 
     <DataTable
@@ -92,21 +93,21 @@
       v-model:visible="tierDialog"
       :header="isEdit ? t('membershipTiers.dialog.editTier') : t('membershipTiers.dialog.newTier')"
       modal
-      :style="{ width: '38rem' }"
+      :style="{ width: '38rem', maxWidth: '95vw' }"
     >
       <div class="space-y-4">
-        <div class="grid grid-cols-2 gap-4">
-          <div class="col-span-2">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div class="sm:col-span-2">
             <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('membershipTiers.dialog.name') }}</label>
             <InputText v-model="form.name" class="w-full" />
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('membershipTiers.dialog.monthlyPrice') }}</label>
-            <InputNumber v-model="form.monthly_price" mode="decimal" :minFractionDigits="2" class="w-full" />
+            <InputNumber v-model="form.monthly_price" mode="decimal" :minFractionDigits="2" class="w-full" inputClass="w-full" />
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('membershipTiers.dialog.yearlyPrice') }}</label>
-            <InputNumber v-model="form.yearly_price" mode="decimal" :minFractionDigits="2" class="w-full" />
+            <InputNumber v-model="form.yearly_price" mode="decimal" :minFractionDigits="2" class="w-full" inputClass="w-full" />
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('membershipTiers.dialog.color') }}</label>
@@ -114,7 +115,7 @@
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('membershipTiers.dialog.gracePeriod') }}</label>
-            <InputNumber v-model="form.grace_period_days" class="w-full" suffix=" days" :min="0" />
+            <InputNumber v-model="form.grace_period_days" class="w-full" inputClass="w-full" suffix=" days" :min="0" />
             <small class="text-gray-400">{{ t('membershipTiers.dialog.gracePeriodNote') }}</small>
           </div>
         </div>

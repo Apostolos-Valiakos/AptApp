@@ -24,3 +24,60 @@
 .menu-danger .p-menu-item-icon {
   color: #dc2626 !important;
 }
+
+/* Settings cards folded on phones (v-phone-section): only the first row shows
+   until it's tapped; an arrow says it opens. */
+@media (max-width: 767px) {
+  .phone-section {
+    padding: 1rem 1.25rem !important;
+  }
+  .phone-section-head {
+    position: relative;
+    cursor: pointer;
+    padding-right: 1.75rem;
+    /* A taller tap area without moving anything. */
+    padding-top: 0.75rem;
+    margin-top: -0.75rem;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .phone-section-head::after {
+    content: "\e902";
+    font-family: "primeicons";
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #9ca3af;
+    font-size: 0.875rem;
+    transition: transform 0.2s;
+  }
+  .phone-section[data-open="true"] > .phone-section-head::after {
+    transform: translateY(-50%) rotate(180deg);
+  }
+  .phone-section[data-open="false"] > :not(.phone-section-head) {
+    display: none !important;
+  }
+  .phone-section[data-open="false"] > .phone-section-head {
+    margin-bottom: 0 !important;
+  }
+  /* Nothing to save while it's closed. */
+  .phone-section[data-open="false"] > .phone-section-head .p-button {
+    display: none !important;
+  }
+  /* Open: a header with a save button puts the button under the title. */
+  .phone-section-head:has(> .p-button) {
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+}
+
+/* Phones: iPhones zoom into a text box whose text is under 16px when it's
+   tapped; 16px keeps the page still. */
+@media (max-width: 767px) {
+  input.p-inputtext,
+  .p-inputtext,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}

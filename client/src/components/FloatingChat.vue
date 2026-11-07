@@ -4,6 +4,7 @@
     :class="{
       minimized: chatStore.isMinimized,
       expanded: !chatStore.isMinimized,
+      tucked: tucked && chatStore.isMinimized,
     }"
   >
     <div
@@ -380,6 +381,28 @@ const checkMobile = () => {
 };
 window.addEventListener("resize", checkMobile);
 
+// Phones: the round button slides away while the page scrolls down (it would
+// cover row buttons) and comes back on scrolling up or when scrolling stops.
+const tucked = ref(false);
+let lastScrollY = 0;
+let showAgain: ReturnType<typeof setTimeout> | undefined;
+const onAnyScroll = (e: Event) => {
+  if (!isMobile.value || !chatStore.isMinimized) return;
+  const el = e.target === document ? document.scrollingElement : (e.target as HTMLElement);
+  const y = el?.scrollTop ?? 0;
+  if (y > lastScrollY + 4) tucked.value = true;
+  else if (y < lastScrollY - 4) tucked.value = false;
+  lastScrollY = y;
+  clearTimeout(showAgain);
+  showAgain = setTimeout(() => (tucked.value = false), 900);
+};
+// Capture: scrolling inside a page's own scroll area counts too.
+window.addEventListener("scroll", onAnyScroll, { capture: true, passive: true });
+onUnmounted(() => {
+  window.removeEventListener("scroll", onAnyScroll, { capture: true });
+  clearTimeout(showAgain);
+});
+
 const currentUserId = computed(
   () => authStore.user?.id || localStorage.getItem("userId"),
 );
@@ -626,6 +649,11 @@ watch(
 .floating-chat.minimized {
   bottom: 20px;
   right: 20px;
+}
+.floating-chat.minimized.tucked {
+  transform: translateY(150%);
+  opacity: 0;
+  pointer-events: none;
 }
 
 .chat-minimized {

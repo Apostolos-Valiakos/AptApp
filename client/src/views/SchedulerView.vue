@@ -2481,14 +2481,13 @@ const calendarOptions = ref({
   resourceLabelContent: (arg: any) => {
     const title = escapeHtml(arg.resource.title);
     const notWorking = !!arg.resource.extendedProps.notWorking;
+    // Phones: the name in a pill (two lines at most), not just an initial,
+    // which two staff can share. Grey on a day off.
     if (isPhone.value) {
-      const initial = escapeHtml(
-        Array.from(String(arg.resource.title || "?").trim())[0] || "?",
-      );
       return {
         html: `
-        <div class="flex items-center justify-center py-1.5 w-full" title="${title}">
-          <span class="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white ${notWorking ? "bg-gray-300" : "bg-[var(--p-primary-color)]"}">${initial}</span>
+        <div class="flex items-center justify-center py-1 px-0.5 w-full" title="${title}">
+          <span class="block max-w-full px-1 py-1 rounded-lg text-[11px] font-bold leading-tight text-center break-words line-clamp-2 ${notWorking ? "bg-gray-100 text-gray-400" : "bg-[var(--p-primary-50)] text-[var(--p-primary-700)]"}">${title}</span>
         </div>
       `,
       };

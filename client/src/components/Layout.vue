@@ -92,7 +92,7 @@
 
             <button
               @click="mobileMenuOpen = !mobileMenuOpen"
-              class="md:hidden p-1.5 rounded-lg text-white hover:bg-white/10"
+              class="md:hidden w-10 h-10 flex items-center justify-center rounded-lg text-white hover:bg-white/10"
             >
               <i
                 :class="mobileMenuOpen ? 'pi pi-times' : 'pi pi-bars'"
@@ -265,7 +265,7 @@
       :class="[
         isFullWidthPage
           ? 'w-full'
-          : 'max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8',
+          : 'max-w-7xl mx-auto pt-8 pb-24 sm:pb-8 px-4 sm:px-6 lg:px-8',
       ]"
     >
       <router-view />

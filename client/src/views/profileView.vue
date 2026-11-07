@@ -1,5 +1,5 @@
 <template>
-  <div class="p-6 max-w-7xl mx-auto space-y-6">
+  <div class="p-1 sm:p-6 max-w-7xl mx-auto space-y-4 sm:space-y-6">
     <!-- Page Title -->
     <div class="flex items-center gap-3 mb-2">
       <div
@@ -8,16 +8,17 @@
         <i class="pi pi-user text-[var(--p-primary-600)]"></i>
       </div>
       <div>
-        <h1 class="text-2xl font-bold text-gray-900">
+        <h1 class="text-xl sm:text-2xl font-bold text-gray-900">
           {{ t("profile.title") }}
         </h1>
         <p class="text-sm text-gray-500">{{ t("profile.subtitle") }}</p>
       </div>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+    <!-- phone-sections: on phones one settings card is open at a time. -->
+    <div class="phone-sections grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-8">
       <!-- Left Column -->
-      <div class="lg:col-span-4 space-y-6">
+      <div class="lg:col-span-4 space-y-3 sm:space-y-6">
         <!-- Profile Card -->
         <div
           class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden relative"
@@ -126,7 +127,7 @@
         </div>
 
         <!-- Preferences Card -->
-        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <div v-phone-section class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
           <h3 class="font-bold text-gray-900 mb-4">
             {{ t("profile.preferences.title") }}
           </h3>
@@ -143,7 +144,7 @@
         </div>
 
         <!-- Clinic Contact Info Card (admin only) -->
-        <div
+        <div v-phone-section
           v-if="isShopAdmin"
           class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6"
         >
@@ -194,7 +195,7 @@
         </div>
 
         <!-- App Branding Card (owners only) -->
-        <div
+        <div v-phone-section
           v-if="isShopAdmin"
           class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6"
         >
@@ -258,7 +259,7 @@
         </div>
 
         <!-- Force Logout Everyone (super_admin only) -->
-        <div
+        <div v-phone-section
           v-if="isSuperAdmin"
           class="bg-white rounded-2xl shadow-sm border border-red-100 p-6"
         >
@@ -293,9 +294,9 @@
       </div>
 
       <!-- Right Column -->
-      <div class="lg:col-span-8 space-y-6">
+      <div class="lg:col-span-8 space-y-3 sm:space-y-6">
         <!-- Personal Information -->
-        <div
+        <div v-phone-section
           class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8"
         >
           <div class="flex justify-between items-center mb-6">
@@ -480,7 +481,7 @@
         </div> -->
 
         <!-- Clinic Settings (owner only) -->
-        <div
+        <div v-phone-section
           v-if="isShopAdmin"
           class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8"
         >
@@ -515,7 +516,7 @@
         </div>
 
         <!-- Calendar Settings (admin only) -->
-        <div
+        <div v-phone-section
           v-if="isShopAdmin"
           class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8"
         >
@@ -605,10 +606,10 @@
           </div>
         </div>
 
-        <DiscountCodesAdmin v-if="authStore.isAnalyticsAllowed" />
+        <DiscountCodesAdmin v-if="authStore.isAnalyticsAllowed" v-phone-section />
 
         <!-- Push Broadcast (admin only) -->
-        <div
+        <div v-phone-section
           v-if="authStore.isAnalyticsAllowed"
           class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8"
         >
@@ -677,7 +678,7 @@
         </div>
 
         <!-- Change Password -->
-        <div
+        <div v-phone-section
           class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8"
         >
           <h3
@@ -766,7 +767,7 @@
         </div>
 
         <!-- ── Contests (admin only) ── -->
-        <div
+        <div v-phone-section
           v-if="authStore.isAnalyticsAllowed"
           class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8"
         >
@@ -984,6 +985,7 @@ import { ref, onMounted, computed, reactive, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
 import DiscountCodesAdmin from "../components/DiscountCodesAdmin.vue";
+import { vPhoneSection } from "../directives/phoneSection";
 import { useConfirm } from "primevue/useconfirm";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "../stores/auth";

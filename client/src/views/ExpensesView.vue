@@ -1,27 +1,29 @@
 <template>
   <div class="space-y-6">
-    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-      <div class="flex justify-between items-center flex-wrap gap-3">
-        <div class="flex items-center gap-3">
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
+      <!-- On phones the buttons go under the title. -->
+      <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+        <div class="flex items-center gap-3 min-w-0">
           <div class="w-10 h-10 rounded-xl bg-[var(--p-primary-50)] flex items-center justify-center">
             <i class="pi pi-receipt text-[var(--p-primary-600)]"></i>
           </div>
           <div>
-            <h1 class="text-2xl font-bold text-gray-900">{{ t("expenses.title") }}</h1>
+            <h1 class="text-xl sm:text-2xl font-bold text-gray-900">{{ t("expenses.title") }}</h1>
             <p class="text-sm text-gray-500 mt-0.5">{{ t(isAdmin ? "expenses.subtitle" : "expenses.subtitleFrontdesk") }}</p>
           </div>
         </div>
-        <div v-if="section === 'daily' || (section === 'monthly' && reauthToken)" class="flex gap-2 flex-wrap">
+        <div v-if="section === 'daily' || (section === 'monthly' && reauthToken)" class="flex flex-col-reverse sm:flex-row gap-2 w-full sm:w-auto">
           <Button
             v-if="isAdmin"
             :label="t('expenses.categories.title')"
             icon="pi pi-tags"
             severity="secondary"
             outlined
+            class="w-full sm:w-auto whitespace-nowrap"
             data-testid="expense-categories"
             @click="showCategories = true"
           />
-          <Button :label="t('expenses.add')" icon="pi pi-plus" data-testid="expense-add" @click="openNew" />
+          <Button :label="t('expenses.add')" icon="pi pi-plus" class="w-full sm:w-auto whitespace-nowrap" data-testid="expense-add" @click="openNew" />
         </div>
       </div>
 
@@ -32,7 +34,7 @@
         optionLabel="label"
         optionValue="value"
         :allowEmpty="false"
-        class="mt-6"
+        class="mt-4 sm:mt-6 w-full sm:w-auto expense-sections"
         data-testid="expense-sections"
         @update:modelValue="onSectionChange"
       />
@@ -41,8 +43,8 @@
 
     <SensitiveGate :key="section" :required="section !== 'daily'" @unlocked="onUnlocked">
     <div class="space-y-6">
-    <div v-if="section !== 'report'" class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-      <div class="flex flex-col sm:flex-row gap-3 sm:items-end">
+    <div v-if="section !== 'report'" class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
+      <div class="grid grid-cols-2 sm:flex sm:flex-row gap-3 sm:items-end">
         <div class="flex-1 min-w-0">
           <label class="block text-xs font-medium text-gray-500 mb-1">{{ t("expenses.from") }}</label>
           <Calendar v-model="filters.from" dateFormat="dd/mm/yy" showIcon class="w-full" inputClass="w-full" @update:modelValue="load" />
@@ -59,14 +61,14 @@
           <label class="block text-xs font-medium text-gray-500 mb-1">{{ t("expenses.category") }}</label>
           <Dropdown v-model="filters.category" :options="categoryFilterOptions" optionLabel="label" optionValue="value" class="w-full" :placeholder="t('expenses.allCategories')" />
         </div>
-        <Button :label="t('expenses.clearFilters')" icon="pi pi-times" outlined severity="secondary" @click="clearFilters" />
+        <Button :label="t('expenses.clearFilters')" icon="pi pi-times" outlined severity="secondary" class="col-span-2 sm:col-span-1" @click="clearFilters" />
       </div>
     </div>
 
     <ExpenseReport v-if="section === 'report'" />
 
-    <div v-else class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-      <div class="flex justify-between items-baseline mb-4 flex-wrap gap-2">
+    <div v-else class="bg-white rounded-2xl shadow-sm border border-gray-100 p-3 sm:p-6">
+      <div class="flex justify-between items-baseline mb-4 flex-wrap gap-2 px-1 sm:px-0">
         <span class="text-sm text-gray-500">{{ t("expenses.count", { n: visible.length }) }}</span>
         <span class="text-lg font-bold text-gray-900 tabular-nums">
           {{ t("expenses.total") }}: {{ formatMoney(visibleTotal) }}
@@ -86,24 +88,31 @@
         <template #empty>
           <div class="text-center py-12 text-gray-400">{{ t("expenses.empty") }}</div>
         </template>
-        <Column field="expense_date" :header="section === 'monthly' ? t('expenses.month') : t('expenses.date')" sortable>
+        <Column field="expense_date" :header="section === 'monthly' ? t('expenses.month') : t('expenses.date')" sortable headerClass="hidden md:table-cell" bodyClass="hidden md:table-cell">
           <template #body="{ data }">{{ section === "monthly" ? formatMonth(data.expense_date) : formatDate(data.expense_date) }}</template>
         </Column>
-        <Column field="category_name" :header="t('expenses.category')" sortable>
+        <Column field="category_name" :header="t('expenses.category')" sortable headerClass="hidden md:table-cell" bodyClass="hidden md:table-cell">
           <template #body="{ data }">{{ data.category_name || "—" }}</template>
         </Column>
         <Column field="description" :header="t('expenses.description')" sortable>
-          <template #body="{ data }"><span class="whitespace-pre-line">{{ data.description }}</span></template>
+          <template #body="{ data }">
+            <span class="whitespace-pre-line">{{ data.description }}</span>
+            <!-- Phones: the other columns, under the description. -->
+            <div class="md:hidden text-xs text-gray-500 mt-0.5">
+              {{ section === "monthly" ? formatMonth(data.expense_date) : formatDate(data.expense_date) }}
+              · {{ data.category_name || t("expenses.noCategory") }} · {{ t(`common.paymentMethod.${data.payment_method}`) }}
+            </div>
+          </template>
         </Column>
-        <Column field="payment_method" :header="t('expenses.method')" sortable>
+        <Column field="payment_method" :header="t('expenses.method')" sortable headerClass="hidden md:table-cell" bodyClass="hidden md:table-cell">
           <template #body="{ data }">{{ t(`common.paymentMethod.${data.payment_method}`) }}</template>
         </Column>
-        <Column field="amount" :header="t('expenses.amount')" sortable headerClass="text-right" bodyClass="text-right tabular-nums">
+        <Column field="amount" :header="t('expenses.amount')" sortable headerClass="text-right" bodyClass="text-right tabular-nums whitespace-nowrap font-semibold md:font-normal">
           <template #body="{ data }">{{ formatMoney(data.amount) }}</template>
         </Column>
-        <Column>
+        <Column bodyClass="!px-1 md:!px-3">
           <template #body="{ data }">
-            <div v-if="data.editable" class="flex justify-end gap-1">
+            <div v-if="data.editable" class="flex justify-end gap-0 md:gap-1">
               <Button icon="pi pi-pencil" text rounded :aria-label="t('expenses.edit')" @click="openEdit(data)" />
               <Button icon="pi pi-trash" text rounded severity="danger" :aria-label="t('expenses.delete')" @click="remove(data)" />
             </div>
@@ -379,3 +388,11 @@ const remove = (e: any) =>
 
 onMounted(() => Promise.all([load(), loadCategories()]));
 </script>
+
+<style>
+/* Phones: the three sections share the width equally. */
+@media (max-width: 639px) {
+  .expense-sections.p-selectbutton { display: flex; }
+  .expense-sections.p-selectbutton .p-togglebutton { flex: 1 1 0; }
+}
+</style>

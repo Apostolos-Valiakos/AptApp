@@ -123,7 +123,7 @@
                 <a
                   v-if="slotProps.data.phone"
                   :href="'tel:' + slotProps.data.phone"
-                  class="md:hidden inline-block mt-0.5 text-sm text-green-600"
+                  class="md:hidden inline-flex items-center min-h-[32px] text-sm text-green-600"
                   @click.stop
                 >
                   {{ formatPhone(slotProps.data.phone) }}

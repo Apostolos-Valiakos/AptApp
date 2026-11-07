@@ -1,16 +1,17 @@
 <template>
-  <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-    <div class="flex justify-between items-center mb-6">
-      <div class="flex items-center gap-3">
+  <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
+    <!-- Page Header: on phones the button goes under the title. -->
+    <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-4 sm:mb-6">
+      <div class="flex items-center gap-3 min-w-0">
         <div class="w-10 h-10 rounded-xl bg-[var(--p-primary-50)] flex items-center justify-center">
           <i class="pi pi-clone text-[var(--p-primary-600)]"></i>
         </div>
         <div>
-          <h1 class="text-2xl font-bold text-gray-900">{{ t("packages.title") }}</h1>
+          <h1 class="text-xl sm:text-2xl font-bold text-gray-900">{{ t("packages.title") }}</h1>
           <p class="text-sm text-gray-500 mt-0.5">{{ t("packages.subtitle") }}</p>
         </div>
       </div>
-      <Button :label="t('packages.addNew')" icon="pi pi-plus" @click="openNew" />
+      <Button :label="t('packages.addNew')" icon="pi pi-plus" class="w-full sm:w-auto whitespace-nowrap" @click="openNew" />
     </div>
 
     <DataTable :value="types" :loading="loading" class="p-datatable-sm" :rowHover="true" responsiveLayout="scroll">
@@ -21,16 +22,20 @@
         <template #body="{ data }">
           <span class="font-semibold">{{ data.name }}</span>
           <Tag v-if="!data.is_active" :value="t('packages.inactive')" severity="secondary" class="ml-2" />
+          <!-- Phones: the other columns, under the name. -->
+          <div class="md:hidden text-sm text-gray-500 mt-0.5">
+            {{ data.service_name }} · {{ data.visits }} {{ t('packages.visits').toLowerCase() }} · {{ formatMoney(data.price) }}
+          </div>
         </template>
       </Column>
-      <Column field="service_name" :header="t('packages.service')" />
-      <Column :header="t('packages.visits')">
+      <Column headerClass="hidden md:table-cell" bodyClass="hidden md:table-cell" field="service_name" :header="t('packages.service')" />
+      <Column :header="t('packages.visits')" headerClass="hidden md:table-cell" bodyClass="hidden md:table-cell">
         <template #body="{ data }">{{ data.visits }}</template>
       </Column>
-      <Column :header="t('packages.price')">
+      <Column :header="t('packages.price')" headerClass="hidden md:table-cell" bodyClass="hidden md:table-cell">
         <template #body="{ data }">{{ formatMoney(data.price) }}</template>
       </Column>
-      <Column :header="t('packages.validity')">
+      <Column :header="t('packages.validity')" headerClass="hidden md:table-cell" bodyClass="hidden md:table-cell">
         <template #body="{ data }">
           {{ data.validity_days ? t("packages.validFor", { n: data.validity_days }) : t("packages.neverExpires") }}
         </template>
@@ -50,7 +55,7 @@
       </Column>
     </DataTable>
 
-    <Dialog v-model:visible="showDialog" modal :header="form.id ? t('packages.edit') : t('packages.addNew')" :style="{ width: '28rem' }">
+    <Dialog v-model:visible="showDialog" modal :header="form.id ? t('packages.edit') : t('packages.addNew')" :style="{ width: '28rem', maxWidth: '95vw' }">
       <div class="space-y-4">
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">{{ t("packages.name") }}</label>

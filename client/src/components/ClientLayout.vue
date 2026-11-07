@@ -31,7 +31,7 @@
           </button>
           <button
             @click="toggleLocale"
-            class="bg-white/15 hover:bg-white/25 text-white px-2.5 py-1 rounded-lg text-xs font-bold transition-all border border-white/20"
+            class="bg-white/15 hover:bg-white/25 text-white px-3 min-h-[40px] rounded-lg text-xs font-bold transition-all border border-white/20"
           >
             {{ locale === "el" ? "🇬🇧 EN" : "🇬🇷 EL" }}
           </button>

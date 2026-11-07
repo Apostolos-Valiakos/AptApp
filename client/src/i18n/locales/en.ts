@@ -333,6 +333,8 @@ export default {
     },
   },
   staffSchedule: {
+    prevWeek: 'Previous week',
+    nextWeek: 'Next week',
     title: 'Staff Schedule',
     shopHours: 'Shop Hours',
     editShopHours: 'Edit Shop Hours',
@@ -549,6 +551,7 @@ export default {
     subtitle: 'Manage product stock and variations',
     addNew: 'Add New Product',
     usageTracking: 'Usage Tracking',
+    search: 'Search products...',
     table: {
       productName: 'Product Name',
       description: 'Description',

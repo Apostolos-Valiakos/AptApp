@@ -1,35 +1,114 @@
 <template>
-  <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-    <!-- Page Header -->
-    <div class="flex justify-between items-center mb-6">
-      <div class="flex items-center gap-3">
+  <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
+    <!-- Page Header: on phones the buttons go under the title. -->
+    <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-4 sm:mb-6">
+      <div class="flex items-center gap-3 min-w-0">
         <div class="w-10 h-10 rounded-xl bg-[var(--p-primary-50)] flex items-center justify-center">
           <i class="pi pi-box text-[var(--p-primary-600)]"></i>
         </div>
         <div>
-          <h1 class="text-2xl font-bold text-gray-900">{{ t('products.title') }}</h1>
+          <h1 class="text-xl sm:text-2xl font-bold text-gray-900">{{ t('products.title') }}</h1>
           <p class="text-sm text-gray-500 mt-0.5">{{ t('products.subtitle') }}</p>
         </div>
       </div>
-      <div class="flex gap-2">
+      <div class="flex flex-col-reverse sm:flex-row gap-2 w-full sm:w-auto">
         <Button
           v-if="authStore.isAnalyticsAllowed"
           :label="t('products.usageTracking')"
           icon="pi pi-chart-line"
           severity="secondary"
           outlined
+          class="w-full sm:w-auto whitespace-nowrap"
           @click="router.push('/app/product-usage')"
         />
         <Button
           :label="t('products.addNew')"
           icon="pi pi-plus"
+          class="w-full sm:w-auto whitespace-nowrap"
           @click="openNewProductDialog"
         />
       </div>
     </div>
 
+    <div class="relative w-full sm:w-80 mb-4">
+      <i class="pi pi-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+      <InputText v-model="search" type="search" :placeholder="t('products.search')" class="w-full !pl-10" />
+    </div>
+
+    <!-- Phones: a card per product, its variations across the full width. -->
+    <div v-if="isPhone" class="space-y-3" data-testid="product-cards">
+      <div v-if="!shownProducts.length" class="flex flex-col items-center justify-center py-16 text-center">
+        <i class="pi pi-box text-4xl text-gray-300 mb-3"></i>
+        <h3 class="text-base font-medium text-gray-400">{{ t('products.empty.title') }}</h3>
+      </div>
+      <div
+        v-for="product in pagedProducts"
+        :key="product.id"
+        class="border border-gray-100 rounded-xl p-3"
+      >
+        <div class="flex items-start gap-2">
+          <div class="flex-1 min-w-0">
+            <div class="font-semibold text-gray-900">{{ product.name }}</div>
+            <p v-if="product.description" class="text-sm text-gray-500 line-clamp-2">{{ product.description }}</p>
+          </div>
+          <Button
+            icon="pi pi-pencil"
+            class="p-button-rounded p-button-text flex-shrink-0"
+            :aria-label="t('products.tooltips.edit')"
+            @click="editProduct(product)"
+          />
+          <Button
+            icon="pi pi-trash"
+            class="p-button-rounded p-button-text flex-shrink-0"
+            severity="danger"
+            :aria-label="t('products.tooltips.delete')"
+            @click="confirmDeleteProduct(product)"
+          />
+        </div>
+        <div class="mt-2 space-y-1.5">
+          <div
+            v-for="variation in product.variations"
+            :key="variation.id"
+            class="flex items-center justify-between gap-2 pl-3 pr-1 py-1 bg-[#fff5f9] rounded-lg border border-gray-100"
+          >
+            <div class="min-w-0">
+              <div class="text-sm font-medium truncate">{{ variation.variation_name || t('products.table.standard') }}</div>
+              <div class="text-sm text-gray-500">{{ formatMoney(variation.price) }}</div>
+            </div>
+            <div class="flex items-center gap-1 flex-shrink-0">
+              <Button
+                icon="pi pi-minus"
+                class="p-button-rounded p-button-text"
+                severity="danger"
+                :aria-label="t('products.table.stock') + ' −1'"
+                :disabled="variation.stock_quantity <= 0"
+                @click="adjustStock(variation.id, -1)"
+              />
+              <Tag :value="variation.stock_quantity" :severity="getStockSeverity(variation.stock_quantity)" class="min-w-[2.5rem] justify-center" />
+              <Button
+                icon="pi pi-plus"
+                class="p-button-rounded p-button-text"
+                severity="success"
+                :aria-label="t('products.table.stock') + ' +1'"
+                @click="adjustStock(variation.id, 1)"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+      <Paginator
+        v-if="shownProducts.length > PHONE_ROWS"
+        v-model:first="phoneFirst"
+        :rows="PHONE_ROWS"
+        :totalRecords="shownProducts.length"
+        :template="PHONE_PAGINATOR_TEMPLATE"
+        currentPageReportTemplate="{currentPage} / {totalPages}"
+      />
+    </div>
+
     <DataTable
-      :value="productStore.products"
+      v-else
+      :value="shownProducts"
       responsiveLayout="scroll"
       class="p-datatable-sm"
       :rowHover="true"
@@ -251,7 +330,8 @@
 <script setup lang="ts">
 import { api, ApiError } from "../api/http";
 import { formatMoney } from "../utils/format";
-import { ref, onMounted } from "vue";
+import { ref, computed, watch, onMounted } from "vue";
+import { useIsPhone, PHONE_PAGINATOR_TEMPLATE } from "../composables/useIsPhone";
 import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { useProductStore } from "../stores/products";
@@ -262,6 +342,19 @@ import { useConfirm } from "primevue/useconfirm";
 const { t } = useI18n();
 const router = useRouter();
 const authStore = useAuthStore();
+
+// Search by name; phones show cards a page at a time.
+const search = ref("");
+const shownProducts = computed<any[]>(() => {
+  const term = search.value.trim().toLowerCase();
+  const all = productStore.products || [];
+  return term ? all.filter((p: any) => String(p.name || "").toLowerCase().includes(term)) : all;
+});
+const isPhone = useIsPhone();
+const PHONE_ROWS = 15;
+const phoneFirst = ref(0);
+const pagedProducts = computed(() => shownProducts.value.slice(phoneFirst.value, phoneFirst.value + PHONE_ROWS));
+watch(search, () => (phoneFirst.value = 0));
 
 // --- Type Definitions to fix errors ---
 interface Variation {

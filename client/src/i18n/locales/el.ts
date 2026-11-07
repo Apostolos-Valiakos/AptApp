@@ -339,6 +339,8 @@ export default {
     },
   },
   staffSchedule: {
+    prevWeek: "Προηγούμενη εβδομάδα",
+    nextWeek: "Επόμενη εβδομάδα",
     title: "Πρόγραμμα Προσωπικού",
     shopHours: "Ωράριο Καταστήματος",
     editShopHours: "Επεξεργασία Ωραρίου Καταστήματος",
@@ -562,6 +564,7 @@ export default {
     subtitle: "Διαχείριση αποθέματος και παραλλαγών",
     addNew: "Νέο Προϊόν",
     usageTracking: "Παρακολούθηση Κατανάλωσης",
+    search: "Αναζήτηση προϊόντων...",
     table: {
       productName: "Όνομα Προϊόντος",
       description: "Περιγραφή",

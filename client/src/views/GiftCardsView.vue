@@ -1,19 +1,20 @@
 <template>
-  <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-    <!-- Page Header -->
-    <div class="flex justify-between items-center mb-6">
-      <div class="flex items-center gap-3">
+  <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
+    <!-- Page Header: on phones the button goes under the title. -->
+    <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-4 sm:mb-6">
+      <div class="flex items-center gap-3 min-w-0">
         <div class="w-10 h-10 rounded-xl bg-[var(--p-primary-50)] flex items-center justify-center">
           <i class="pi pi-ticket text-[var(--p-primary-600)]"></i>
         </div>
         <div>
-          <h1 class="text-2xl font-bold text-gray-900">{{ t('giftCards.title') }}</h1>
+          <h1 class="text-xl sm:text-2xl font-bold text-gray-900">{{ t('giftCards.title') }}</h1>
           <p class="text-sm text-gray-500 mt-0.5">{{ t('giftCards.subtitle') }}</p>
         </div>
       </div>
       <Button
         :label="t('giftCards.addNew')"
         icon="pi pi-plus"
+        class="w-full sm:w-auto whitespace-nowrap"
         @click="openNewDialog"
       />
     </div>
@@ -26,6 +27,8 @@
       :rowHover="true"
       :paginator="true"
       :rows="15"
+      :paginatorTemplate="isPhone ? PHONE_PAGINATOR_TEMPLATE : undefined"
+      currentPageReportTemplate="{currentPage} / {totalPages}"
     >
       <template #empty>
         <div class="flex flex-col items-center justify-center py-16 text-center">
@@ -35,17 +38,36 @@
         </div>
       </template>
 
-      <Column field="card_number" :header="t('giftCards.table.cardNumber')" sortable></Column>
+      <!-- Phones: one column with what matters, instead of nine. -->
+      <Column v-if="isPhone" field="card_number" :header="t('giftCards.table.cardNumber')" sortable>
+        <template #body="{ data }">
+          <div class="min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="font-semibold text-gray-900">{{ data.card_number }}</span>
+              <Tag :value="t(`giftCards.status.${data.status}`)" :severity="statusSeverity(data.status)" />
+            </div>
+            <div class="text-sm text-gray-700 truncate">{{ data.customer_name }}</div>
+            <div class="text-sm text-gray-500">
+              <template v-if="!settingsStore.hideCashPaid">
+                {{ formatMoney(data.remaining_balance) }} / {{ formatMoney(data.initial_amount) }} ·
+              </template>
+              {{ t('giftCards.table.expires') }} {{ formatDate(data.expires_at) }}
+            </div>
+          </div>
+        </template>
+      </Column>
+      <Column v-if="!isPhone" field="card_number" :header="t('giftCards.table.cardNumber')" sortable></Column>
+      <Column v-if="!isPhone" field="customer_name" :header="t('giftCards.table.customer')" sortable></Column>
       <Column field="customer_name" :header="t('giftCards.table.customer')" sortable></Column>
 
-      <Column :header="t('giftCards.table.soldBy')" sortable field="sold_by_name">
+      <Column v-if="!isPhone" :header="t('giftCards.table.soldBy')" sortable field="sold_by_name">
         <template #body="slotProps">
           {{ slotProps.data.sold_by_name || t('giftCards.dialog.frontdesk') }}
         </template>
       </Column>
 
       <Column
-        v-if="!settingsStore.hideCashPaid"
+        v-if="!isPhone && !settingsStore.hideCashPaid"
         :header="t('giftCards.table.initialAmount')"
         sortable
         field="initial_amount"
@@ -56,7 +78,7 @@
       </Column>
 
       <Column
-        v-if="!settingsStore.hideCashPaid"
+        v-if="!isPhone && !settingsStore.hideCashPaid"
         :header="t('giftCards.table.remainingBalance')"
         sortable
         field="remaining_balance"
@@ -66,7 +88,7 @@
         </template>
       </Column>
 
-      <Column :header="t('giftCards.table.status')">
+      <Column v-if="!isPhone" :header="t('giftCards.table.status')">
         <template #body="slotProps">
           <Tag
             :value="t(`giftCards.status.${slotProps.data.status}`)"
@@ -75,30 +97,31 @@
         </template>
       </Column>
 
-      <Column :header="t('giftCards.table.issued')" sortable field="issued_at">
+      <Column v-if="!isPhone" :header="t('giftCards.table.issued')" sortable field="issued_at">
         <template #body="slotProps">
           {{ formatDate(slotProps.data.issued_at) }}
         </template>
       </Column>
 
-      <Column :header="t('giftCards.table.expires')" sortable field="expires_at">
+      <Column v-if="!isPhone" :header="t('giftCards.table.expires')" sortable field="expires_at">
         <template #body="slotProps">
           {{ formatDate(slotProps.data.expires_at) }}
         </template>
       </Column>
 
-      <Column :header="t('giftCards.table.usedOn')" sortable field="last_used_at">
+      <Column v-if="!isPhone" :header="t('giftCards.table.usedOn')" sortable field="last_used_at">
         <template #body="slotProps">
           {{ slotProps.data.last_used_at ? formatDate(slotProps.data.last_used_at) : t('giftCards.table.neverUsed') }}
         </template>
       </Column>
 
-      <Column :header="t('common.actions')" headerClass="text-center">
+      <Column :header="isPhone ? '' : t('common.actions')" headerClass="text-center" bodyClass="!px-1 md:!px-3">
         <template #body="slotProps">
-          <div class="flex gap-2">
+          <div class="flex gap-1 md:gap-2 justify-end md:justify-start">
             <Button
               icon="pi pi-pencil"
               class="p-button-rounded p-button-text p-button-sm"
+              :aria-label="t('giftCards.tooltips.edit')"
               v-tooltip.top="t('giftCards.tooltips.edit')"
               @click="editCard(slotProps.data)"
             />
@@ -106,6 +129,7 @@
               icon="pi pi-trash"
               class="p-button-rounded p-button-text p-button-sm"
               severity="danger"
+              :aria-label="t('giftCards.tooltips.delete')"
               v-tooltip.top="t('giftCards.tooltips.delete')"
               @click="confirmDeleteCard(slotProps.data)"
             />
@@ -119,7 +143,7 @@
       v-model:visible="cardDialog"
       :header="isEdit ? t('giftCards.dialog.editCard') : t('giftCards.dialog.sellCard')"
       modal
-      :style="{ width: '30rem' }"
+      :style="{ width: '30rem', maxWidth: '95vw' }"
     >
       <div class="space-y-4">
         <div>
@@ -200,11 +224,13 @@ import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 import { useSettingsStore } from "../stores/settings";
 import ClientSelector from "../components/ClientSelector.vue";
+import { useIsPhone, PHONE_PAGINATOR_TEMPLATE } from "../composables/useIsPhone";
 
 const { t } = useI18n();
 const toast = useToast();
 const confirm = useConfirm();
 const settingsStore = useSettingsStore();
+const isPhone = useIsPhone();
 
 const giftCards = ref<any[]>([]);
 

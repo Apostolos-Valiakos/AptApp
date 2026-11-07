@@ -126,15 +126,29 @@
         <div
           v-for="appt in shownPast"
           :key="appt.id"
-          class="flex justify-between items-start gap-2 text-sm mb-2 border-b border-gray-50 pb-1.5 last:border-0 last:mb-0 -mx-1.5 px-1.5 pt-1 rounded cursor-pointer hover:bg-gray-50 transition-colors"
+          class="flex justify-between items-start gap-2 text-sm mb-2 border-b border-gray-50 pb-1.5 last:border-0 last:mb-0 -mx-1.5 px-1.5 pt-1 rounded transition-colors"
+          :class="
+            loadingId === appt.id
+              ? 'bg-[var(--p-primary-50)] cursor-wait'
+              : loadingId
+                ? 'opacity-50 cursor-wait'
+                : 'cursor-pointer hover:bg-gray-50'
+          "
           role="button"
           tabindex="0"
+          :aria-busy="loadingId === appt.id"
           data-testid="past-appointment"
-          @click="emit('open-appointment', appt)"
-          @keydown.enter.self="emit('open-appointment', appt)"
+          @click="openPast(appt)"
+          @keydown.enter.self="openPast(appt)"
         >
           <span class="flex flex-col items-start gap-0.5 whitespace-nowrap">
-            <span class="text-gray-500" :class="{ 'line-through opacity-60': isVoided(appt.status) }">
+            <span class="text-gray-500 inline-flex items-center gap-1.5" :class="{ 'line-through opacity-60': isVoided(appt.status) }">
+              <!-- This visit is being opened. -->
+              <i
+                v-if="loadingId === appt.id"
+                class="pi pi-spin pi-spinner text-[var(--p-primary-600)] text-xs"
+                data-testid="past-appointment-loading"
+              ></i>
               {{ formatApptDate(appt.start_time) }}
             </span>
             <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded" :class="statusLabel(appt).cls">
@@ -324,7 +338,7 @@ import { fullyHidden } from "../../utils/paymentFilters";
 import { useSettingsStore } from "../../stores/settings";
 import { MONEY_METHODS, methodChoiceLabel } from "../../utils/paymentMethods";
 import { api, ApiError } from "../../api/http";
-import { ref, computed, watch } from "vue";
+import { ref, computed, watch, type PropType } from "vue";
 import { useI18n } from "vue-i18n";
 import { useAuthStore } from "../../stores/auth";
 import { useToast } from "primevue/usetoast";
@@ -345,8 +359,18 @@ const props = defineProps({
     type: String,
     default: "",
   },
+  // The past visit being opened (its row shows a spinner).
+  loadingId: {
+    type: String as PropType<string | null>,
+    default: null,
+  },
 });
 const emit = defineEmits(["update:bookingNotes", "debt-changed", "open-appointment"]);
+// While one past visit is being opened, the others wait.
+const openPast = (appt: any) => {
+  if (props.loadingId) return;
+  emit("open-appointment", appt);
+};
 const toast = useToast();
 
 // --- Debt: resolve (payment / write-off) and manual debts ---

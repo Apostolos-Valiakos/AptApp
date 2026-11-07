@@ -1,6 +1,6 @@
 <template>
-  <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-    <div class="flex items-center gap-3 mb-6">
+  <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
+    <div class="flex items-start sm:items-center gap-2 sm:gap-3 mb-4 sm:mb-6">
       <Button
         icon="pi pi-arrow-left"
         text
@@ -8,16 +8,18 @@
         @click="router.push('/app/products')"
         :aria-label="t('common.back')"
       />
-      <div class="w-10 h-10 rounded-xl bg-[var(--p-primary-50)] flex items-center justify-center">
+      <!-- The icon steps aside on phones; the back arrow stays. -->
+      <div class="hidden sm:flex w-10 h-10 rounded-xl bg-[var(--p-primary-50)] items-center justify-center flex-shrink-0">
         <i class="pi pi-chart-line text-[var(--p-primary-600)]"></i>
       </div>
-      <div>
-        <h1 class="text-2xl font-bold text-gray-900">{{ t('productUsage.title') }}</h1>
+      <div class="min-w-0">
+        <h1 class="text-xl sm:text-2xl font-bold text-gray-900">{{ t('productUsage.title') }}</h1>
         <p class="text-sm text-gray-500 mt-0.5">{{ t('productUsage.subtitle') }}</p>
       </div>
     </div>
 
-    <TabView>
+    <!-- scrollable: on a narrow screen the tabs scroll instead of being cut. -->
+    <TabView scrollable>
       <!-- ===== Recipes tab ===== -->
       <TabPanel :value="0" :header="t('productUsage.tabs.recipes')">
         <div class="max-w-xl mb-6">
