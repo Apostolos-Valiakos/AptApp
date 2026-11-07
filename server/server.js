@@ -66,7 +66,7 @@ const publicActionLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-require("./reminderService");
+const { PUBLIC_URL } = require("./reminderService");
 
 // ==================== FILE UPLOAD SETUP ====================
 const storage = multer.diskStorage({
@@ -1458,7 +1458,7 @@ app.get("/api/v1/unsubscribe", publicActionLimiter, async (req, res) => {
                 <div style="background: white; padding: 40px; border-radius: 20px; display: inline-block; box-shadow: 0 10px 25px rgba(0,0,0,0.05);">
                     <h1 style="color: #111827; margin-bottom: 10px;">Επιτυχής Διαγραφή</h1>
                     <p style="color: #4b5563;">Έχετε διαγραφεί με επιτυχία από τη λίστα των υπενθυμίσεων.</p>
-                    <a href="https://interventio.gr" style="display: inline-block; margin-top: 20px; color: #ff93d4; text-decoration: none; font-weight: bold;">Επιστροφή στην Αρχική</a>
+                    <a href="${PUBLIC_URL}/" style="display: inline-block; margin-top: 20px; color: #ff93d4; text-decoration: none; font-weight: bold;">Επιστροφή στην Αρχική</a>
                 </div>
             </div>
         `);
@@ -1508,7 +1508,7 @@ app.get(
               <div style="font-size: 48px; margin-bottom: 20px;">✅</div>
               <h1 style="color: #111827; margin-bottom: 10px; font-size: 24px;">Το ραντεβού επιβεβαιώθηκε!</h1>
               <p style="color: #4b5563; line-height: 1.5;">Σας ευχαριστούμε. Η κράτησή σας έχει επισημανθεί ως επιβεβαιωμένη στο σύστημά μας. Ανυπομονούμε να σας δούμε!</p>
-              <a href="https://interventio.gr" style="display: inline-block; margin-top: 30px; background: #ff93d4; color: white; padding: 12px 24px; border-radius: 12px; text-decoration: none; font-weight: bold;">Επιστροφή στην Αρχική</a>
+              <a href="${PUBLIC_URL}/" style="display: inline-block; margin-top: 30px; background: #ff93d4; color: white; padding: 12px 24px; border-radius: 12px; text-decoration: none; font-weight: bold;">Επιστροφή στην Αρχική</a>
           </div>
       </div>
     `);
@@ -3631,7 +3631,7 @@ app.post("/api/v1/clients/:id/invite", authenticateToken, async (req, res) => {
       { expiresIn: "48h" },
     );
 
-    const signupUrl = `https://interventio.gr/signup?token=${inviteToken}`;
+    const signupUrl = `${PUBLIC_URL}/signup?token=${inviteToken}`;
     const nodemailer = require("nodemailer");
 
     const transporter = nodemailer.createTransport({

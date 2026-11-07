@@ -7,6 +7,13 @@ const nodemailer = require("nodemailer");
 const pool = require("./db");
 const crypto = require("crypto");
 
+// Public origin used in links inside emails and on the confirm/unsubscribe
+// pages. Set PUBLIC_URL per environment (e.g. http://192.168.68.63:5173 for
+// local testing); production falls back to the live domain.
+const PUBLIC_URL = (process.env.PUBLIC_URL || "https://interventio.gr")
+  .trim()
+  .replace(/\/+$/, "");
+
 // 1. Configure Nodemailer
 const transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST,
@@ -41,6 +48,45 @@ const formatTime = (date) => {
     hour12: false,
     timeZone: "Europe/Athens", // Adjust based on your VPS timezone
   }).format(new Date(date));
+};
+
+// Full weekday + date, e.g. "Παρασκευή, 10 Ιουλίου"
+const formatDay = (date) => {
+  return new Intl.DateTimeFormat("el-GR", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    timeZone: "Europe/Athens",
+  }).format(new Date(date));
+};
+
+// Calendar-day difference between now and the appointment, in Athens time.
+const athensDayKey = (date) =>
+  new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Athens" }).format(
+    new Date(date),
+  ); // YYYY-MM-DD
+const daysUntil = (date) =>
+  Math.round(
+    (Date.parse(athensDayKey(date)) - Date.parse(athensDayKey(new Date()))) /
+      86400000,
+  );
+
+// Reminder windows are configurable per shop (reminder_hours_before), so the
+// wording is derived from the real appointment date instead of assuming
+// "tomorrow". Returns the phrase for the body and for the subject line.
+const describeWhen = (startTime) => {
+  const diff = daysUntil(startTime);
+  const time = formatTime(startTime);
+  if (diff <= 0) return { body: "σήμερα", subject: `σήμερα ${time}` };
+  if (diff === 1) return { body: "αύριο", subject: `αύριο ${time}` };
+  const day = formatDay(startTime);
+  // Greek article: "το Σάββατο", "τη Δευτέρα", "την Τρίτη/Τετάρτη/Πέμπτη/..."
+  const article = day.startsWith("Σάββατο")
+    ? "το"
+    : day.startsWith("Δευτέρα")
+      ? "τη"
+      : "την";
+  return { body: `${article} ${day}`, subject: `${day}, ${time}` };
 };
 
 const processReminders = async () => {
@@ -85,6 +131,8 @@ const processReminders = async () => {
       }
       const startTimeStr = formatTime(appt.start_time);
       const endTimeStr = formatTime(appt.end_time);
+      const dayStr = formatDay(appt.start_time);
+      const when = describeWhen(appt.start_time);
       const therapistFullName =
         `${appt.staff_name}`.trim() || "Επαγγελματίας Υγείας";
       const formatCalendarDate = (date) => {
@@ -97,9 +145,9 @@ const processReminders = async () => {
       const details = encodeURIComponent(`Ραντεβού στο ${location}`);
 
       const token = generateUnsubToken(appt.client_id);
-      const unsubUrl = `https://interventio.gr/api/v1/unsubscribe?id=${appt.client_id}&token=${token}`;
+      const unsubUrl = `${PUBLIC_URL}/api/v1/unsubscribe?id=${appt.client_id}&token=${token}`;
       const confirmToken = generateConfirmToken(appt.appointment_id);
-      const confirmUrl = `https://interventio.gr/api/v1/confirm-appointment?id=${appt.appointment_id}&token=${confirmToken}`;
+      const confirmUrl = `${PUBLIC_URL}/api/v1/confirm-appointment?id=${appt.appointment_id}&token=${confirmToken}`;
       const confirmButtonHtml = `
         <div style="text-align: center; margin: 0 0 32px 0;">
             <a href="${confirmUrl}" 
@@ -223,7 +271,7 @@ const processReminders = async () => {
                       Γεια σας,
                     </p>
                     <p style="color: #4b5563; font-size: 16px; line-height: 1.6">
-                      Αυτή είναι μια φιλική υπενθύμιση για το αυριανό ραντεβού σας στο
+                      Αυτή είναι μια φιλική υπενθύμιση για το ραντεβού σας ${when.body} στο
                       <strong style="color: #111827">${appt.shop_name}</strong>.
                     </p>
 
@@ -256,7 +304,7 @@ const processReminders = async () => {
                           Πότε
                         </div>
                         <div style="color: #111827; font-size: 18px; font-weight: 700">
-                          Αύριο, ${startTimeStr} - ${endTimeStr}
+                          ${dayStr}, ${startTimeStr} - ${endTimeStr}
                         </div>
                       </div>
 
@@ -449,7 +497,7 @@ const processReminders = async () => {
           from: `"${appt.shop_name} Booking" <${process.env.EMAIL_USER}>`,
           ...(appt.shop_reply_email && { replyTo: appt.shop_reply_email }),
           to: appt.client_email,
-          subject: "Υπενθύμιση Ραντεβού - 1 μέρα απομένει",
+          subject: `Υπενθύμιση Ραντεβού - ${when.subject}`,
           html: htmlContent,
         });
 
@@ -467,5 +515,7 @@ const processReminders = async () => {
   }
 };
 
-// Run every 1 minute
+// Run every 5 minutes (the query matches a ±5 minute window)
 cron.schedule("*/5 * * * *", processReminders);
+
+module.exports = { processReminders, PUBLIC_URL };

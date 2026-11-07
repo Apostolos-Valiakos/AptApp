@@ -44,6 +44,8 @@ services:
       NODE_ENV: production
       MESSAGE_ENCRYPTION_KEY: ${MESSAGE_ENCRYPTION_KEY}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS} # Update to your domain in prod
+      # Public origin used in email links (confirm / unsubscribe / staff invite)
+      PUBLIC_URL: ${PUBLIC_URL:-https://interventio.gr}
       # Add any other env vars from your .env (e.g., API_URL if needed)
       EMAIL_HOST: ${EMAIL_HOST}
       EMAIL_PORT: ${EMAIL_PORT}
