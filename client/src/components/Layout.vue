@@ -74,6 +74,14 @@
 
           <div class="flex items-center gap-2 lg:gap-4 flex-shrink-0">
             <div class="hidden md:flex items-center gap-2 lg:gap-4">
+              <!-- Petalouda's guides, open to anyone. -->
+              <router-link
+                to="/tutorials"
+                class="flex items-center gap-1.5 text-sm font-bold text-white/90 hover:text-white transition-colors whitespace-nowrap"
+              >
+                <i class="pi pi-book text-xs"></i>
+                {{ t('nav.tutorials') }}
+              </router-link>
               <button
                 @click="toggleLocale"
                 class="bg-white/15 hover:bg-white/25 text-white px-2.5 py-1 rounded-lg text-xs font-bold transition-all border border-white/20 flex-shrink-0"
@@ -148,6 +156,15 @@
             >
               <i :class="item.icon + ' mr-2 text-sm'"></i>
               {{ item.label }}
+            </router-link>
+
+            <router-link
+              to="/tutorials"
+              class="block px-4 py-3 rounded-xl text-base font-bold text-white hover:bg-white/10"
+              @click="mobileMenuOpen = false"
+            >
+              <i class="pi pi-book mr-2 text-sm"></i>
+              {{ t('nav.tutorials') }}
             </router-link>
 
             <div class="pt-4 mt-4 border-t border-white/20 space-y-1">

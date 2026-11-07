@@ -59,6 +59,12 @@ const routes = [
         name: "Signup",
         component: SignupView,
       },
+      // Petalouda's guides, open to anyone.
+      {
+        path: "/tutorials",
+        name: "Tutorials",
+        component: () => import("../views/TutorialsView.vue"),
+      },
       {
         path: "app", // Εσωτερικές σελίδες
         meta: { requiresAuth: true },

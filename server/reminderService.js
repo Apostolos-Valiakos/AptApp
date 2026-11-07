@@ -9,7 +9,6 @@ const crypto = require("crypto");
 const path = require("path");
 const { sendPushToClient, recordNotification } = require("./pushService");
 
-const LOGO_PATH = path.join(__dirname, "../client/static/logo for photos-02.png");
 
 // Local/LAN dev derives this from API_URL:PORT (same convention as
 // vite.config.mjs), since there's no reverse proxy hiding the port there.
@@ -17,8 +16,9 @@ const LOGO_PATH = path.join(__dirname, "../client/static/logo for photos-02.png"
 // listens on 127.0.0.1:3000, so a link built as https://domain:3000/...
 // would be unreachable from outside the VPS. Same override pattern as
 // FRONTEND_URL below (an explicit full origin, used as-is, no port math).
+// Petalouda's July docker-compose.yml passes PUBLIC_URL (https://interventio.gr).
 const PUBLIC_BASE_URL =
-  process.env.PUBLIC_BASE_URL || `${process.env.API_URL}:${process.env.PORT}`;
+  process.env.PUBLIC_BASE_URL || process.env.PUBLIC_URL || "https://interventio.gr";
 
 // 1. Configure Nodemailer
 const transporter = nodemailer.createTransport({
@@ -140,7 +140,7 @@ const processReminders = async () => {
       const confirmButtonHtml = `
         <div style="text-align: center; margin: 0 0 32px 0;">
             <a href="${confirmUrl}"
-              style="display: block; background-color: #8B6F4E; color: white; padding: 16px 32px; border-radius: 16px; text-decoration: none; font-weight: 800; font-size: 16px; box-shadow: 0 4px 6px rgba(139, 111, 78, 0.25);">
+              style="display: block; background-color: #ff93d4; color: white; padding: 16px 32px; border-radius: 16px; text-decoration: none; font-weight: 800; font-size: 16px; box-shadow: 0 4px 6px rgba(255, 147, 212, 0.25);">
               ΕΠΙΒΕΒΑΙΩΣΗ ΡΑΝΤΕΒΟΥ
             </a>
             <p style="color: #7A6A5A; font-size: 12px; margin-top: 12px;">
@@ -201,22 +201,15 @@ const processReminders = async () => {
                     border-radius: 32px;
                     overflow: hidden;
                     box-shadow:
-                      0 20px 25px -5px rgba(139, 111, 78, 0.12),
+                      0 20px 25px -5px rgba(255, 147, 212, 0.12),
                       0 10px 10px -5px rgba(0, 0, 0, 0.04);
                   "
                 >
                   <div style="padding: 40px 40px 20px 40px; text-align: left">
-                    <img
-                      src="cid:brand-logo"
-                      alt="Pure Spa & Massage Experience"
-                      width="48"
-                      height="48"
-                      style="width: 48px; height: 48px; object-fit: contain; margin-bottom: 16px;"
-                    />
                     <div
                       style="
                         display: inline-block;
-                        background-color: #8B6F4E;
+                        background-color: #ff93d4;
                         color: white;
                         padding: 4px 12px;
                         border-radius: 9999px;
@@ -238,8 +231,8 @@ const processReminders = async () => {
                         letter-spacing: -0.025em;
                       "
                     >
-                      <span style="color: #8B6F4E">Pure</span
-                      ><span style="color: #2C2C2C"> Spa &amp; Massage Experience</span>
+                      <span style="color: #111827">Petalouda</span
+                      ><span style="color: #ff93d4"> Booking</span>
                     </h2>
                   </div>
 
@@ -291,7 +284,7 @@ const processReminders = async () => {
                       >
                         <div
                           style="
-                            color: #8B6F4E;
+                            color: #ff93d4;
                             font-size: 11px;
                             text-transform: uppercase;
                             font-weight: 800;
@@ -311,7 +304,7 @@ const processReminders = async () => {
                       >
                         <div
                           style="
-                            color: #8B6F4E;
+                            color: #ff93d4;
                             font-size: 11px;
                             text-transform: uppercase;
                             font-weight: 800;
@@ -348,7 +341,7 @@ const processReminders = async () => {
                         "
                       >
                         <li style="display: flex; align-items: center">
-                          <span style="color: #8B6F4E; margin-right: 8px">✓</span>
+                          <span style="color: #ff93d4; margin-right: 8px">✓</span>
                           Παρακαλούμε να προσέλθετε 5-10 λεπτά νωρίτερα.
                         </li>
                       </ul>
@@ -440,7 +433,7 @@ const processReminders = async () => {
                         Αν δεν επιθυμείτε να λαμβάνετε πλέον ειδοποιήσεις,
                         <a
                           href="${unsubUrl}"
-                          style="color: #8B6F4E; text-decoration: underline"
+                          style="color: #ff93d4; text-decoration: underline"
                           >πατήστε εδώ για διαγραφή</a
                         >.
                       </p>
@@ -470,7 +463,7 @@ const processReminders = async () => {
                     </div>
                     <p
                       style="
-                        color: #8B6F4E;
+                        color: #ff93d4;
                         margin-bottom: 12px;
                         font-size: 13px;
                         font-weight: 700;
@@ -478,11 +471,11 @@ const processReminders = async () => {
                         letter-spacing: 0.05em;
                       "
                     >
-                      Powered by Pure Spa &amp; Massage Experience
+                      Powered by Interventio
                     </p>
 
                     <p style="color: #A89A8A; font-size: 12px; margin: 0; line-height: 1.5">
-                      © ${new Date().getFullYear()} Pure Spa &amp; Massage Experience.<br />
+                      © ${new Date().getFullYear()} Interventio Booking System.<br />
                       All rights reserved.
                     </p>
                   </div>
@@ -506,7 +499,6 @@ const processReminders = async () => {
           to: appt.client_email,
           subject: `Υπενθύμιση Ραντεβού - ${windowText}`,
           html: htmlContent,
-          attachments: [{ filename: "logo.png", path: LOGO_PATH, cid: "brand-logo" }],
         });
       } catch (mailErr) {
         console.error("Mail send error:", mailErr);

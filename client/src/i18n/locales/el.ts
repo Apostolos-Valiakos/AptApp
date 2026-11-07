@@ -127,6 +127,7 @@ export default {
     invalidLinkDetail: "Αυτός ο σύνδεσμος πρόσκλησης δεν είναι έγκυρος ή έχει λήξει.",
   },
   nav: {
+    tutorials: "Οδηγοί",
     calendar: "Ημερολόγιο",
     staff: "Προσωπικό",
     services: "Υπηρεσίες",

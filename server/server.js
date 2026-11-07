@@ -49,7 +49,14 @@ const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(",")
   : ["http://localhost:5173"];
 
-const allowedOrigins = [...ALLOWED_ORIGINS];
+// Petalouda's Android/iOS app (Capacitor) calls the API from these origins.
+const CAPACITOR_ORIGINS = [
+  "capacitor://localhost", // iOS
+  "https://localhost", // Android (Capacitor 7 default scheme)
+  "http://localhost", // older/custom Android scheme
+  "ionic://localhost", // legacy iOS
+];
+const allowedOrigins = [...new Set([...ALLOWED_ORIGINS, ...CAPACITOR_ORIGINS])];
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -89,7 +96,7 @@ app.use(
         // fonts.googleapis.com and the font files from fonts.gstatic.com.
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         imgSrc: ["'self'", "data:", "https:"],
-        connectSrc: ["'self'", "ws:", "wss:"],
+        connectSrc: ["'self'", "https://interventio.gr", "ws:", "wss:"],
         fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"],
         objectSrc: ["'none'"],
         frameAncestors: ["'none'"],
@@ -156,7 +163,7 @@ app.get("/health", async (req, res) => {
 app.get("/manifest.webmanifest", async (req, res) => {
   const shopId = safeUUID(req.query.shop_id);
   let name = "Petalouda Booking";
-  let themeColor = "#8B6F4E";
+  let themeColor = "#ff93d4";
 
   if (shopId) {
     try {

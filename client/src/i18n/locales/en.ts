@@ -127,6 +127,7 @@ export default {
     invalidLinkDetail: 'This invitation link is invalid or has expired.',
   },
   nav: {
+    tutorials: 'Guides',
     calendar: 'Calendar',
     staff: 'Staff',
     services: 'Services',
