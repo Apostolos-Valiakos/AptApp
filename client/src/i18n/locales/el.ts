@@ -148,8 +148,10 @@ export default {
     language: "Γλώσσα",
   },
   login: {
+    backHome: "Αρχική",
+    welcome: "Καλώς ήρθατε",
     sessionExpired: "Η σύνδεση έληξε. Συνδεθείτε ξανά.",
-    subtitle: "Καλώς ήρθατε! Συνδεθείτε στο λογαριασμό σας.",
+    subtitle: "Συνδεθείτε στον λογαριασμό σας.",
     username: "Όνομα Χρήστη",
     password: "Κωδικός",
     signIn: "Είσοδος",

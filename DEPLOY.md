@@ -383,12 +383,93 @@ This app already ships with `scripts/backup_db.sh` and `scripts/restore_db.sh` â
 
 ## Ongoing operations
 
-**Deploying an update:**
+### Deploying an update
+
+The image is built on your laptop, not on the VPS. Building there took about
+15 minutes and most of the VPS's memory next to the live app; on the laptop
+it takes a minute or two. One command does everything:
+
+```bash
+# On the laptop, in the repo, on the branch you want to deploy:
+git status                       # what isn't committed will NOT be deployed
+./scripts/deploy_image.sh
+```
+
+What it does (`scripts/deploy_image.sh`, which runs `scripts/vps_run_image.sh`
+on the VPS):
+
+1. Builds the **last commit** of your local repo (`HEAD`) from a clean copy,
+   so uncommitted changes never go in. The image is named after the commit,
+   e.g. `pure-app:f485654`.
+2. Opens one SSH connection to the VPS (`root@185.246.164.81`, password asked
+   once) and uploads the image, about 150 MB compressed. If the VPS already
+   has that version, it skips the upload.
+3. On the VPS, in `/opt/pure`:
+   - backs up the database (`scripts/backup_db.sh`), since migrations run when
+     the app starts;
+   - keeps the image that's running as `pure-app:previous`;
+   - starts the new one as `pure-app:current` (only the app container is
+     recreated; the database keeps running);
+   - waits up to 3 minutes for it to become healthy;
+   - removes older versions, keeping the last 3, plus `current` and `previous`.
+4. If the new version doesn't become healthy, it prints the app's last log
+   lines, **goes back to the version that was running**, and exits with an
+   error. A migration that already ran is not undone; the backup taken in
+   step 3 has the data from before it.
+
+It ends with `== Done: commit <id> is live`. Brief downtime: the app container
+restarts, about 10â€“20 seconds, so prefer quiet hours.
+
+**Other uses:**
+
+```bash
+./scripts/deploy_image.sh --no-run     # build and upload now, start later
+./scripts/deploy_image.sh              # later: skips build and upload, just starts it
+./scripts/deploy_image.sh --rollback   # back to the version before the current one
+```
+
+Running `--rollback` twice switches back again. A deploy of a version that's
+already running does nothing. Another VPS address or folder:
+`VPS=deploy@1.2.3.4 APP_DIR=/srv/pure ./scripts/deploy_image.sh`.
+
+**What it needs:**
+- On the laptop: Docker, and the repo.
+- On the VPS, in `/opt/pure`: `docker-compose.yml`, `.env` and
+  `scripts/backup_db.sh`. The first run creates `docker-compose.override.yml`,
+  which tells Compose to run `pure-app:current` instead of building:
+  ```yaml
+  services:
+    app:
+      image: pure-app:current
+      pull_policy: never
+  ```
+  The VPS doesn't need the rest of the code, or `git`, for this.
+
+**By hand on the VPS** (when the script is there, after a `git pull`):
 ```bash
 cd /opt/pure
-git pull
-docker compose up -d --build
+docker image ls pure-app               # the versions on this server
+./scripts/vps_run_image.sh f485654     # run one of them
+./scripts/vps_run_image.sh previous    # or go back
+docker compose ps                      # app should be "healthy"
+docker compose logs --tail=50 app
 ```
+
+**Don't use the old way any more** (`git pull` + `docker compose up -d --build`
+on the VPS): with the override file in place it would build on the VPS again
+and replace `pure-app:current` with that build.
+
+**Removing the code from the VPS later** (optional, once a few deploys have
+gone well). Keep in `/opt/pure`: `.env`, `docker-compose.yml`,
+`docker-compose.override.yml` and `scripts/backup_db.sh` +
+`scripts/restore_db.sh` (the daily backup cron runs them from here). Two
+cautions:
+- Keep the folder name `/opt/pure`. Docker names the data volumes after it
+  (`pure_pgdata`, `pure_uploads`); from another folder name Compose would start
+  with new, empty volumes. The data wouldn't be lost, but the app wouldn't see
+  it.
+- Remove the `build:` block of the `app` service in that `docker-compose.yml`
+  first, so Compose doesn't look for the code to build from.
 
 **Database migrations** run by themselves when the app starts
 (`server/migrations/`, recorded in the `schema_migrations` table). Nothing to
@@ -437,8 +518,9 @@ docker compose logs -f app
 
 **Restarting just the app** (e.g. after an env change):
 ```bash
-docker compose restart app
+docker compose up -d --no-build app    # picks up .env changes; same image
 ```
+(`docker compose restart app` restarts it but does not reread `.env`.)
 
 **Manual backup / restore** (the daily cron in Section 8 does this automatically):
 ```bash

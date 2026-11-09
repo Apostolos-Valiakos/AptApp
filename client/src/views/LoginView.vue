@@ -1,48 +1,38 @@
 <template>
-  <div
-    class="min-h-screen flex items-center justify-center bg-gradient-to-br from-[var(--p-primary-50)] via-white to-[var(--p-primary-100)]"
-  >
-    <div class="max-w-md w-full bg-white rounded-2xl shadow-xl border border-gray-100 p-10">
-      <!-- Logo + Brand -->
-      <div class="text-center mb-8">
-        <div
-          class="w-14 h-14 bg-[var(--p-primary-100)] rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm overflow-hidden"
-        >
-          <img src="../../static/logo for photos-02.png" class="w-9 h-9 object-contain" alt="Pure Spa & Massage Experience" />
-        </div>
-        <h1 class="text-2xl font-bold text-gray-900">Pure Spa &amp; Massage Experience</h1>
-        <p class="text-gray-500 mt-1 text-sm">{{ t('login.subtitle') }}</p>
-      </div>
+  <!-- Styled like the public home page (landing/): its colours, the PURE
+       wordmark and the serif heading font, without the app's top bar. -->
+  <div class="pure-login">
+    <a :href="homeUrl" class="pure-login-back">
+      <i class="pi pi-arrow-left text-xs"></i>
+      {{ t("login.backHome") }}
+    </a>
 
-      <!-- Form -->
+    <div class="pure-login-card">
+      <a :href="homeUrl" class="pure-login-logo" aria-label="Pure Massage & Spa Experience"></a>
+      <h1 class="pure-login-title">{{ t("login.welcome") }}</h1>
+      <p class="pure-login-subtitle">{{ t("login.subtitle") }}</p>
+
       <form @submit.prevent="login" class="space-y-5">
-        <!-- Username -->
-        <div class="flex flex-col gap-1">
-          <label class="text-sm font-medium text-gray-700">{{ t('login.username') }}</label>
-          <InputText
-            v-model="username"
-            type="text"
-            required
-            placeholder="admin"
-            class="w-full"
-          />
+        <div class="flex flex-col gap-1.5">
+          <label class="pure-login-label">{{ t("login.username") }}</label>
+          <InputText v-model="username" type="text" required autocomplete="username" class="w-full pure-login-input" />
         </div>
 
-        <!-- Password -->
-        <div class="flex flex-col gap-1">
-          <label class="text-sm font-medium text-gray-700">{{ t('login.password') }}</label>
+        <div class="flex flex-col gap-1.5">
+          <label class="pure-login-label">{{ t("login.password") }}</label>
           <div class="relative">
             <InputText
               v-model="password"
               :type="showPassword ? 'text' : 'password'"
               required
+              autocomplete="current-password"
               placeholder="••••••••"
-              class="w-full pr-10"
+              class="w-full pr-10 pure-login-input"
             />
             <button
               type="button"
               tabindex="-1"
-              class="absolute inset-y-0 right-0 px-3 flex items-center text-gray-400 hover:text-gray-600 transition-colors"
+              class="absolute inset-y-0 right-0 px-3 flex items-center text-[#8f7462] hover:text-[#2a211b] transition-colors"
               @click="showPassword = !showPassword"
             >
               <i :class="showPassword ? 'pi pi-eye-slash' : 'pi pi-eye'" class="text-sm"></i>
@@ -50,14 +40,10 @@
           </div>
         </div>
 
-        <!-- Submit -->
-        <Button
-          type="submit"
-          :label="t('login.signIn')"
-          icon="pi pi-sign-in"
-          :loading="loading"
-          class="w-full mt-2"
-        />
+        <button type="submit" class="pure-login-submit" :disabled="loading">
+          <i v-if="loading" class="pi pi-spin pi-spinner text-sm"></i>
+          {{ t("login.signIn") }}
+        </button>
       </form>
     </div>
   </div>
@@ -65,13 +51,14 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
+import "@fontsource/noto-serif-display/300.css";
 import { useI18n } from "vue-i18n";
 import { useAuthStore } from "../stores/auth";
 import { useRoute, useRouter } from "vue-router";
 import { useThemeStore } from "../stores/themes";
 import { useToast } from "primevue/usetoast";
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 
 // Why a login was refused (the server's or the store's code), in the app's language.
 const LOGIN_ERRORS: Record<string, string> = {
@@ -94,11 +81,37 @@ const toast = useToast();
 
 // Sent here after the server refused an expired or revoked session
 // (see utils/sessionRecovery.ts).
+// Back to the public home page (its own server in development).
+const homeUrl = (import.meta.env.VITE_LANDING_URL as string | undefined) || "/";
+
+// Open in the language the visitor picked on the home page: passed as ?lang=
+// (different ports in development) or read from the page's own setting
+// (same address in production).
+const applyHomePageLanguage = () => {
+  let lang = typeof route.query.lang === "string" ? route.query.lang : null;
+  if (!lang) {
+    try {
+      lang = localStorage.getItem("pure-lang");
+    } catch {
+      lang = null;
+    }
+  }
+  if (lang === "el" || lang === "en") {
+    locale.value = lang;
+    try {
+      localStorage.setItem("locale", lang);
+    } catch {
+      // keep it for this visit only
+    }
+  }
+};
+
 onMounted(() => {
+  applyHomePageLanguage();
   if (route.query.expired) {
     toast.add({ severity: "warn", summary: t("login.sessionExpired"), life: 6000 });
-    router.replace({ path: "/login" });
   }
+  if (route.query.expired || route.query.lang) router.replace({ path: "/login" });
 });
 
 const login = async () => {
@@ -124,3 +137,116 @@ const login = async () => {
   }
 };
 </script>
+
+<style scoped>
+.pure-login {
+  --pure-bg: #f6f1ea;
+  --pure-card: #fffdf9;
+  --pure-line: #eadfd2;
+  --pure-ink: #2a211b;
+  --pure-muted: #8f7462;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4.5rem 16px 2rem;
+  background: var(--pure-bg);
+  color: var(--pure-ink);
+  position: relative;
+}
+.pure-login-back {
+  position: absolute;
+  top: 1.25rem;
+  left: 1.25rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1.1rem;
+  border-radius: 999px;
+  background: var(--pure-line);
+  color: var(--pure-ink);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-decoration: none;
+  transition: background-color 0.3s;
+}
+.pure-login-back:hover {
+  background: #e0d2c2;
+}
+.pure-login-card {
+  width: 100%;
+  max-width: 26rem;
+  background: var(--pure-card);
+  border: 1px solid var(--pure-line);
+  border-radius: 1.5rem;
+  padding: 2.5rem 2rem;
+  box-shadow: 0 20px 50px -30px rgba(42, 33, 27, 0.35);
+}
+.pure-login-logo {
+  display: block;
+  width: 7.5rem;
+  aspect-ratio: 600 / 209;
+  margin: 0 auto 1.75rem;
+  background-color: var(--pure-ink);
+  -webkit-mask: url("../assets/brand/pure-word.png") center / contain no-repeat;
+  mask: url("../assets/brand/pure-word.png") center / contain no-repeat;
+}
+.pure-login-title {
+  font-family: "Noto Serif Display", Georgia, serif;
+  font-weight: 300;
+  font-size: 2rem;
+  line-height: 1.15;
+  text-align: center;
+}
+.pure-login-subtitle {
+  margin: 0.5rem 0 2rem;
+  text-align: center;
+  font-size: 0.9rem;
+  color: var(--pure-muted);
+}
+.pure-login-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--pure-muted);
+}
+.pure-login :deep(.pure-login-input) {
+  background: var(--pure-bg);
+  border-color: var(--pure-line);
+  color: var(--pure-ink);
+  border-radius: 0.75rem;
+  padding-top: 0.7rem;
+  padding-bottom: 0.7rem;
+}
+.pure-login :deep(.pure-login-input:enabled:focus) {
+  border-color: var(--pure-muted);
+  box-shadow: 0 0 0 3px rgba(143, 116, 98, 0.18);
+}
+.pure-login-submit {
+  width: 100%;
+  margin-top: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  height: 3.1rem;
+  border-radius: 999px;
+  background: var(--pure-ink);
+  color: var(--pure-card);
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  transition: background-color 0.3s, opacity 0.3s;
+}
+.pure-login-submit:hover:not(:disabled) {
+  background: #3d3028;
+}
+.pure-login-submit:disabled {
+  opacity: 0.7;
+}
+</style>

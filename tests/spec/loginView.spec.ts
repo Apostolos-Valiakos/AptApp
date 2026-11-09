@@ -155,6 +155,21 @@ describe("C7 arriving with something in the address", () => {
     expect(pageText()).not.toContain(el.login.sessionExpired);
   });
 
+  test("?lang=en from the home page sets and remembers English, and the address is cleaned", async () => {
+    fakeServer();
+    const { wrapper, router } = await open("/login?lang=en");
+    expect(wrapper.text()).toContain(en.login.signIn);
+    expect(localStorage.getItem("locale")).toBe("en");
+    expect(router.currentRoute.value.fullPath).toBe("/login");
+  });
+
+  test("without ?lang=, the language chosen on the home page is used", async () => {
+    fakeServer();
+    localStorage.setItem("pure-lang", "en");
+    const { wrapper } = await open();
+    expect(wrapper.text()).toContain(en.login.signIn);
+  });
+
   test("an unknown language is ignored", async () => {
     fakeServer();
     const { wrapper } = await open("/login?lang=fr");

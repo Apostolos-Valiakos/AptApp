@@ -3,6 +3,7 @@
     class="min-h-screen bg-[var(--p-primary-100)] dark:bg-[var(--p-primary-100)] transition-colors duration-300"
   >
     <nav
+      v-if="!isBarePage"
       class="sticky top-0 z-50 bg-gradient-to-r from-[var(--p-primary-color)] to-[var(--p-primary-600)] shadow-md"
     >
       <div class="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
@@ -10,7 +11,7 @@
           <div class="flex items-center min-w-0 flex-1">
             <div
               class="flex-shrink-0 flex items-center mr-3 lg:mr-5 group cursor-pointer"
-              @click="router.push('/')"
+              @click="goHome"
             >
               <div
                 class="w-7 h-7 bg-white rounded-lg flex items-center justify-center shadow-sm transition-transform group-hover:rotate-12"
@@ -263,7 +264,7 @@
 
     <main
       :class="[
-        isFullWidthPage
+        isFullWidthPage || isBarePage
           ? 'w-full'
           : 'max-w-7xl mx-auto pt-8 pb-24 sm:pb-8 px-4 sm:px-6 lg:px-8',
       ]"
@@ -514,6 +515,16 @@ let navResizeObserver: ResizeObserver | null = null;
 watch(() => [visibleNavItems.value.length, locale.value], fitNavLinks);
 
 const isFullWidthPage = computed(() => route.path.includes("/app/scheduler"));
+// Pages with their own full-screen design (the login, styled like the public
+// home page) — no app top bar, no padding.
+const isBarePage = computed(() => !!route.meta.bare);
+
+// Logged-in users stay in the app; "/" is the public home page.
+const goHome = () =>
+  router.push(
+    !authStore.isAuthenticated ? "/" : authStore.isClient ? "/portal/home" : "/app/scheduler",
+  );
+
 const logoutAndClear = useLogout();
 const logout = async () => {
   mobileMenuOpen.value = false;

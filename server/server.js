@@ -146,6 +146,37 @@ app.get("/health", async (req, res) => {
   }
 });
 
+// ==================== PUBLIC PRICES ====================
+// Read-only price list for the public home page (landing/), so its prices
+// follow the app. No auth; only names, prices and durations of active
+// services (and their variations) of the site's shop — PUBLIC_SHOP_ID, by
+// default the Pure Spa shop. Cached briefly since every visitor asks.
+const PUBLIC_SHOP_ID = process.env.PUBLIC_SHOP_ID || "00000000-0000-0000-0000-000000000001";
+let publicPricesCache = { at: 0, body: null };
+app.get("/api/v1/public/prices", async (req, res) => {
+  try {
+    if (!publicPricesCache.body || Date.now() - publicPricesCache.at > 60000) {
+      const { rows } = await pool.query(
+        `SELECT s.name, s.price::float AS price, s.duration_minutes,
+                COALESCE((SELECT json_agg(json_build_object('name', v.name, 'price', v.price::float,
+                                                            'duration_minutes', v.duration_minutes)
+                                          ORDER BY v.sort_order)
+                          FROM service_variations v WHERE v.service_id = s.id), '[]') AS variations
+         FROM services s
+         WHERE s.shop_id = $1 AND s.is_active = true
+         ORDER BY s.name`,
+        [PUBLIC_SHOP_ID],
+      );
+      publicPricesCache = { at: Date.now(), body: rows };
+    }
+    res.setHeader("Cache-Control", "public, max-age=60");
+    res.json(publicPricesCache.body);
+  } catch (err) {
+    console.error("Public prices error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // Dynamic per-shop PWA manifest for the client portal's "Save as an app"
 // install flow — a static file at this path would be served instead by
 // express.static below, so this route is registered first. No auth: the
@@ -193,16 +224,30 @@ app.get("/manifest.webmanifest", async (req, res) => {
 
 // APP_DIST_PATH: another build folder (the browser tests use client/dist).
 const distPath = process.env.APP_DIST_PATH || path.join(__dirname, "../dist");
+// Public home page: a separately built static site (landing/, a Next.js static
+// export) served at "/", with its files under /_next and /sites. Everything
+// else stays the Vue app. If the page hasn't been built, "/" falls through to
+// the Vue app's own home page.
+const landingPath = path.join(__dirname, "../landing/out");
+const landingIndex = path.join(landingPath, "index.html");
+app.get("/", (req, res, next) => {
+  if (!fs.existsSync(landingIndex)) return next();
+  res.setHeader("Cache-Control", "no-cache");
+  res.sendFile(landingIndex);
+});
 // Caching: build files carry a hash in their name that changes with every
-// build, so browsers can keep them for a year without asking again;
-// index.html never (so a refresh after a rebuild always gets the new names).
+// build, so browsers can keep them for a year without asking again; the home
+// page's photos and videos for a week; index.html never (so a refresh after a
+// rebuild always gets the new file names).
 const noCacheIndex = (res) => res.setHeader("Cache-Control", "no-cache");
 const ONE_YEAR_IMMUTABLE = "public, max-age=31536000, immutable";
 const cacheHeaders = (res, filePath) => {
   const p = filePath.split(path.sep).join("/");
   if (p.endsWith(".html")) noCacheIndex(res);
-  else if (p.includes("/assets/")) res.setHeader("Cache-Control", ONE_YEAR_IMMUTABLE);
+  else if (p.includes("/_next/static/") || p.includes("/assets/")) res.setHeader("Cache-Control", ONE_YEAR_IMMUTABLE);
+  else if (p.includes("/sites/pure/")) res.setHeader("Cache-Control", "public, max-age=604800");
 };
+app.use(express.static(landingPath, { index: false, setHeaders: cacheHeaders }));
 app.use(express.static(distPath, { setHeaders: cacheHeaders }));
 const dbFileStorage = multer.memoryStorage();
 const dbFileUpload = multer({
@@ -547,7 +592,7 @@ app.get(/(.*)/, (req, res) => {
   }
   // A missing build file (e.g. from a tab opened before a rebuild) must fail
   // as a real 404, not come back as index.html, so the app can reload itself.
-  if (req.path.startsWith("/assets/")) {
+  if (req.path.startsWith("/assets/") || req.path.startsWith("/_next/") || req.path.startsWith("/sites/")) {
     return res.status(404).end();
   }
   noCacheIndex(res);

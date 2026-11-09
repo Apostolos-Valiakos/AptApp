@@ -52,6 +52,7 @@ const routes = [
         path: "login", // Αυτό είναι το "/login"
         name: "login",
         component: LoginView,
+        meta: { bare: true },
       },
       {
         path: "/signup",
@@ -151,6 +152,19 @@ const router = createRouter({
 
 router.beforeEach((to, from, next) => {
   const authStore = useAuthStore();
+
+  // The public home page at "/" is a separate static site (landing/, served
+  // by the server), so going there from inside the app (logo, logout) is a
+  // full page load. Only for in-app navigation: when the server itself hands
+  // "/" to the app (landing not built, or the Vite dev server), IndexView
+  // shows instead, with no reload loop.
+  // In development the page runs on its own server (VITE_LANDING_URL, see
+  // client/.env.development), so "/" always goes there.
+  const landingUrl = import.meta.env.VITE_LANDING_URL as string | undefined;
+  if (to.path === "/" && (landingUrl || from.matched.length > 0)) {
+    window.location.assign(landingUrl || "/");
+    return next(false);
+  }
 
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
     return next("/login");

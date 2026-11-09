@@ -148,8 +148,10 @@ export default {
     language: 'Language',
   },
   login: {
+    backHome: 'Home',
+    welcome: 'Welcome',
     sessionExpired: 'Your session has expired. Please log in again.',
-    subtitle: 'Welcome back! Sign in to your account.',
+    subtitle: 'Sign in to your account.',
     username: 'Username',
     password: 'Password',
     signIn: 'Sign In',
