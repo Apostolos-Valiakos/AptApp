@@ -9,7 +9,7 @@
     "build": "vite build",
     "start": "node server/server.js",
     "typecheck": "vue-tsc --noEmit -p client",
-    "test": "npm run typecheck && vitest run && npm run test:spec && node --test tests/offline/server.test.mjs tests/server/auth.test.mjs tests/server/payments.test.mjs tests/server/expenses.test.mjs tests/server/capacity.test.mjs tests/server/insights.test.mjs tests/server/quickwins.test.mjs tests/server/roles.test.mjs tests/server/dailyReport.test.mjs tests/server/clientExport.test.mjs tests/server/reviewFixes.test.mjs tests/server/staffReadOnly.test.mjs",
+    "test": "npm run typecheck && vitest run && npm run test:spec && node --test tests/offline/server.test.mjs tests/server/auth.test.mjs tests/server/payments.test.mjs tests/server/expenses.test.mjs tests/server/capacity.test.mjs tests/server/insights.test.mjs tests/server/quickwins.test.mjs tests/server/roles.test.mjs tests/server/dailyReport.test.mjs tests/server/clientExport.test.mjs tests/server/reviewFixes.test.mjs tests/server/staffReadOnly.test.mjs tests/server/comboPrices.test.mjs",
     "test:spec": "vitest run --config vitest.spec.config.mjs",
     "test:spec:server": "node --test tests/server/staffReadOnly.test.mjs",
     "test:mutation": "stryker run",

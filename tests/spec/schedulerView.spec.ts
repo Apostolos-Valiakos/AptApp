@@ -878,3 +878,27 @@ describe("the phone's day view", () => {
     expect(html).not.toContain("10:00");
   });
 });
+
+describe("CP8 a booked combination on the calendar", () => {
+  test("each card shows its part and the combination; other cards only their service", async () => {
+    const line = (start: string, name: string, combo: string | null) => ({
+      service_id: "svc", service_name: name, staff_id: "st1", start_time: `${MONDAY}T${start}:00`, duration_minutes: 60, price: 30,
+      combo_service_id: combo ? "offer" : null, combo_name: combo,
+    });
+    const rows = [
+      { ...appointment(), id: "a1", services: [line("10:00", "HOLISTIC", "HOLISTIC + SAUNA OFFER")] },
+      { ...appointment(), id: "a2", services: [line("12:00", "MASSAGE", null)] },
+    ];
+    const { options } = await open("admin", { "GET /api/v1/appointments": { body: rows } });
+    await showDay(options, `${MONDAY}T00:00:00`, "2026-11-03T00:00:00");
+    await settle();
+    const calls = calendarApi.setOption.mock.calls.filter((c: any[]) => c[0] === "events");
+    const names = Object.fromEntries(
+      calls[calls.length - 1][1]
+        .filter((e: any) => e.extendedProps?.appointmentId)
+        .map((e: any) => [e.extendedProps.appointmentId, e.extendedProps.service_name]),
+    );
+    // The part is named as in the service list ("svc" is Massage there).
+    expect(names).toEqual({ a1: "Massage (HOLISTIC + SAUNA OFFER)", a2: "Massage" });
+  });
+});

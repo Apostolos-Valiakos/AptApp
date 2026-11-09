@@ -722,6 +722,7 @@ import {
   overtimeConfirmMessage,
 } from "../utils/staffAvailability";
 import { matchVariationName } from "../utils/serviceVariations";
+import { comboLineLabel } from "../utils/comboSplit";
 import { markManualStarts } from "../utils/serviceSequence";
 import {
   snapshotServices,
@@ -1304,14 +1305,18 @@ const loadExistingAppointment = (val: any, resolvedStaffId: any) => {
         duration_override: s.duration_minutes || 60,
         price_override: Number(s.price || 0),
         variation_name: resolvedVariationName || null,
+        combo_service_id: s.combo_service_id || null,
         persons: personsOf(s),
         service_archived: !!s.service_archived,
         _paidWith: s.paid_with || null,
         _hidden: s.hidden || null,
         _charged: s.charged ?? null,
-        _label: resolvedVariationName
-          ? `${catalogService?.name || s.service_name || ""} — ${resolvedVariationName}`
-          : catalogService?.name || s.service_name || "",
+        _label: comboLineLabel(
+          resolvedVariationName
+            ? `${catalogService?.name || s.service_name || ""} — ${resolvedVariationName}`
+            : catalogService?.name || s.service_name || "",
+          s.combo_name,
+        ),
       };
     }));
   } else {

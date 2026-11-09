@@ -240,6 +240,8 @@ import draggable from "vuedraggable";
 import TimeDropdown from "./TimeDropdown.vue";
 import { pinStartTimes } from "../../utils/serviceSequence";
 import { personsOf, placesOf } from "../../utils/capacity";
+import { splitCombo } from "../../utils/comboSplit";
+import { placeStaffFor } from "../../utils/placeStaff";
 const { t } = useI18n();
 const authStore = useAuthStore();
 const isShopAdmin = authStore.isShopAdmin;
@@ -435,49 +437,14 @@ const applyServiceDetails = (
       ? pickedOverride.duration_minutes
       : found.duration_minutes || 60;
 
-    const components = found.combo_components || [];
-    if (components.length > 0) {
-      // The combo keeps its own listed price/duration; each component is
-      // carved out of it rather than added on top, so the original total
-      // stays what was priced/listed for the combo.
-      const componentMinutes = components.reduce(
-        (sum: number, c: any) => sum + (c.duration_minutes || 0),
-        0,
-      );
-      const componentPrice = components.reduce(
-        (sum: number, c: any) => sum + Number(c.price || 0),
-        0,
-      );
-      const remainingMinutes = svc.duration_override - componentMinutes;
-      const remainingPrice = svc.price_override - componentPrice;
-
-      const newBlocks = components.map((c: any) => {
-        return {
-          service_id: c.id,
-          staff_id: c.default_staff_id || null,
-          start_time: svc.start_time,
-          duration_override: c.duration_minutes || 30,
-          price_override: Number(c.price || 0),
-          _autoGenFor: svc.service_id,
-        };
-      });
-
-      if (remainingMinutes <= 0 && remainingPrice <= 0) {
-        // The configured components already account for the combo's entire
-        // own price/duration (e.g. Sport + Χαμαμ: both halves are explicit
-        // components) — there's no real leftover treatment to keep a block
-        // for, so replace the combo row itself with just its components
-        // instead of leaving a degenerate near-zero third block behind.
-        list.splice(index, 1, ...newBlocks);
-      } else {
-        // A genuine remainder is left (e.g. Sport + Sauna: only the sauna
-        // add-on is an explicit component, the base massage stays as this
-        // row's own carved-down price/duration) — keep the combo row for it.
-        svc.duration_override = Math.max(5, remainingMinutes);
-        svc.price_override = Math.max(0, remainingPrice);
-        list.splice(index + 1, 0, ...newBlocks);
-      }
+    if (!found.combo_components?.length) {
+      // A sauna or hammam booked on its own goes on that room's staff member
+      // (left unassigned when the shop has none).
+      const place = placeStaffFor(found.name, props.staff);
+      if (place.matched) svc.staff_id = found.default_staff_id || place.staffId;
     }
+    // A combination becomes one line per part (utils/comboSplit.ts).
+    list.splice(index, 1, ...splitCombo(found, svc, props.staff));
   }
   return list;
 };
@@ -538,6 +505,7 @@ const onServicePicked = (pickedList: PickedService[]) => {
     // overwritten here, including to null, since switching services/
     // variations must never leave a stale variation_name from a previous pick.
     svc.variation_name = picked.variation_name;
+    svc.combo_service_id = null; // a different service: no longer part of a combination
     svc.service_archived = false;
     svc._manualStart = false;
     applyServiceDetails(list, at, { duration_minutes: picked.duration_minutes, price: picked.price });

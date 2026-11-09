@@ -369,8 +369,8 @@ const createAppointmentSeries = async (client, data, shopId) => {
           await client.query(
             `INSERT INTO appointment_services (
               appointment_id, service_id, staff_id, start_time,
-              duration_override, price_override, shop_id, list_price, variation_name, persons
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+              duration_override, price_override, shop_id, list_price, variation_name, persons, combo_service_id
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
             [
               appointmentId,
               validServiceId,
@@ -382,6 +382,7 @@ const createAppointmentSeries = async (client, data, shopId) => {
               disc ? svc.list_price : null,
               svc.variation_name || null,
               personsOf(svc),
+              safeUUID(svc.combo_service_id),
             ],
           );
         }
@@ -528,8 +529,8 @@ const performSingleUpdate = async (client, id, shopId, body) => {
       if (safeUUID(svc.service_id)) {
         await client.query(
           `INSERT INTO appointment_services (
-            appointment_id, service_id, staff_id, start_time, duration_override, price_override, shop_id, list_price, variation_name, persons
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+            appointment_id, service_id, staff_id, start_time, duration_override, price_override, shop_id, list_price, variation_name, persons, combo_service_id
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
           [
             id,
             safeUUID(svc.service_id),
@@ -541,6 +542,7 @@ const performSingleUpdate = async (client, id, shopId, body) => {
             disc ? svc.list_price : null,
             svc.variation_name || null,
             personsOf(svc),
+            safeUUID(svc.combo_service_id),
           ],
         );
       }

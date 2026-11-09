@@ -221,8 +221,10 @@
               mode="decimal"
               :minFractionDigits="2"
               :maxFractionDigits="2"
+              :disabled="comboPriced"
               class="w-full"
             />
+            <p v-if="comboPriced" class="text-xs text-gray-400 mt-1">{{ t('services.dialog.comboPriceFromParts') }}</p>
           </div>
 
           <!-- Color picker — full width with light gray background -->
@@ -322,6 +324,25 @@
                 :placeholder="t('services.dialog.comboComponentsPlaceholder')"
                 class="w-full"
               />
+              <!-- The price of each part inside this combination (optional, all or none). -->
+              <div v-if="comboParts.length" class="mt-3 space-y-2" data-testid="combo-part-prices">
+                <p class="text-xs text-gray-500">{{ t('services.dialog.comboPartPricesNote') }}</p>
+                <div v-for="part in comboParts" :key="part.id" class="flex items-center gap-3">
+                  <span class="flex-1 min-w-0 text-sm text-gray-700 truncate">{{ part.name }}</span>
+                  <span class="text-xs text-gray-400 whitespace-nowrap">{{ formatMoney(part.price) }}</span>
+                  <InputNumber
+                    v-model="editingService.combo_part_prices[part.id]"
+                    mode="decimal"
+                    :min="0"
+                    :minFractionDigits="2"
+                    :maxFractionDigits="2"
+                    :placeholder="t('services.dialog.comboPartPrice')"
+                    :inputId="`combo-price-${part.id}`"
+                    inputClass="w-28"
+                  />
+                </div>
+                <p v-if="comboPricesPartial" class="text-xs text-amber-600">{{ t('services.dialog.comboPricesIncomplete') }}</p>
+              </div>
               <p class="text-xs text-gray-400 mt-2" v-if="comboSummary">{{ comboSummary }}</p>
             </div>
           </div>
@@ -569,8 +590,36 @@ const comboComponentOptions = computed(() =>
   services.value.filter((s: any) => s.id !== editingService.value.id),
 );
 
+// The parts in the order picked, each with its own price inside the combination.
+const comboParts = computed(() =>
+  isCombo.value
+    ? (editingService.value.combo_component_ids || [])
+        .map((id: string) => services.value.find((s: any) => s.id === id))
+        .filter(Boolean)
+    : [],
+);
+const partPrice = (id: string) => editingService.value.combo_part_prices?.[id];
+const isSet = (v: any) => v != null && v !== "";
+// Every part has a price: the combination costs their sum.
+const comboPriced = computed(
+  () => comboParts.value.length > 0 && comboParts.value.every((p: any) => isSet(partPrice(p.id))),
+);
+const comboPricesPartial = computed(
+  () => !comboPriced.value && comboParts.value.some((p: any) => isSet(partPrice(p.id))),
+);
+watch(
+  () => comboParts.value.map((p: any) => partPrice(p.id)),
+  () => {
+    if (comboPriced.value) {
+      const sum = comboParts.value.reduce((total: number, p: any) => total + Number(partPrice(p.id)), 0);
+      editingService.value.price = Math.round(sum * 100) / 100;
+    }
+  },
+);
+
 const comboSummary = computed(() => {
   if (!isCombo.value || !editingService.value.combo_component_ids?.length) return "";
+  if (comboPriced.value) return t("services.dialog.comboPricedSummary", { price: formatMoney(editingService.value.price) });
   const picked = comboComponentOptions.value.filter((s: any) =>
     editingService.value.combo_component_ids.includes(s.id),
   );
@@ -701,6 +750,7 @@ const openNew = () => {
     bookable_online: false,
     default_staff_id: null,
     combo_component_ids: [],
+    combo_part_prices: {},
     variations: [],
     staff_ids: staffList.value.map((s: any) => s.id),
   };
@@ -713,6 +763,9 @@ const editService = (service: any) => {
   editingService.value = {
     ...service,
     combo_component_ids: (service.combo_components || []).map((c: any) => c.id),
+    combo_part_prices: Object.fromEntries(
+      (service.combo_components || []).map((c: any) => [c.id, c.combo_price == null ? null : Number(c.combo_price)]),
+    ),
     variations: (service.variations || []).map((v: any) => ({ ...v, price: Number(v.price) })),
     staff_ids: [...(service.eligible_staff_ids || [])],
   };
@@ -732,10 +785,25 @@ const saveService = async () => {
     return;
   }
 
+  if (comboPricesPartial.value) {
+    toast.add({
+      severity: "warn",
+      summary: t('common.required'),
+      detail: t('services.dialog.comboPricesIncomplete'),
+      life: 4000,
+    });
+    return;
+  }
+
   const payload = { ...editingService.value };
+  // Each part with its price inside the combination (null: not set).
+  payload.combo_parts = isCombo.value
+    ? (payload.combo_component_ids || []).map((id: string) => ({ id, price: isSet(partPrice(id)) ? Number(partPrice(id)) : null }))
+    : [];
+  delete payload.combo_component_ids;
+  delete payload.combo_part_prices;
   delete payload.combo_components;
   delete payload.eligible_staff_ids;
-  if (!isCombo.value) payload.combo_component_ids = [];
   if (!hasVariations.value) payload.variations = [];
 
   if (payload.color_code && !payload.color_code.startsWith("#")) {

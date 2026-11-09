@@ -523,6 +523,7 @@ import {
   overtimeConfirmMessage,
 } from "../utils/staffAvailability";
 import { displayServiceName } from "../utils/serviceVariations";
+import { comboLineLabel } from "../utils/comboSplit";
 import { api as http, ApiError } from "../api/http"; // (`api` in this file is FullCalendar's)
 import { fetchOrQueue } from "../offline/queue";
 import { knownOverlapIds } from "../offline/overlaps";
@@ -1337,13 +1338,15 @@ const calendarEvents = computed(() => {
       const catalogService = calendarStore.services.find(
         (s: any) => s.id === svc.service_id,
       );
-      const displayedServiceName =
+      const displayedServiceName = comboLineLabel(
         (svc.variation_name && svc.service_name
           ? `${svc.service_name} — ${svc.variation_name}`
           : null) ||
         displayServiceName(catalogService, svc.price, svc.duration_minutes) ||
         svc.service_name ||
-        "Service";
+        "Service",
+        svc.combo_name,
+      );
 
       const persons = personsOf(svc);
       const serviceLabel =

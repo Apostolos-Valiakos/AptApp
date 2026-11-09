@@ -182,6 +182,8 @@ module.exports = function appointmentsRouter({
               'service_color', s.color_code,
               'category_color', sc.color_code,
               'variation_name', aps.variation_name,
+              'combo_service_id', aps.combo_service_id,
+              'combo_name', cs.name,
               'price', COALESCE(aps.list_price, aps.price_override, s.price),
               'duration_minutes', COALESCE(aps.duration_override, s.duration_minutes),
               'staff_id', aps.staff_id,
@@ -195,6 +197,7 @@ module.exports = function appointmentsRouter({
             ) ORDER BY aps.start_time ASC)
             FROM appointment_services aps
             LEFT JOIN services s ON aps.service_id = s.id
+            LEFT JOIN services cs ON aps.combo_service_id = cs.id
             LEFT JOIN service_categories sc ON sc.shop_id = s.shop_id AND sc.name = s.category
             LEFT JOIN staff st ON aps.staff_id = st.id
             WHERE aps.appointment_id = a.id
@@ -611,7 +614,7 @@ module.exports = function appointmentsRouter({
         // service_id doesn't change, only which appointment this row's
         // time/price/duration/variation is now attached to.
         await client.query(
-          `UPDATE appointment_services SET start_time=$1, staff_id=$2, duration_override=$3, price_override=$4, list_price=$6, variation_name=$7 WHERE id=$5`,
+          `UPDATE appointment_services SET start_time=$1, staff_id=$2, duration_override=$3, price_override=$4, list_price=$6, variation_name=$7, combo_service_id=$8 WHERE id=$5`,
           [
             s2[i].start_time,
             s2[i].staff_id,
@@ -620,10 +623,11 @@ module.exports = function appointmentsRouter({
             s1[i].id,
             s2[i].list_price,
             s2[i].variation_name,
+            s2[i].combo_service_id,
           ],
         );
         await client.query(
-          `UPDATE appointment_services SET start_time=$1, staff_id=$2, duration_override=$3, price_override=$4, list_price=$6, variation_name=$7 WHERE id=$5`,
+          `UPDATE appointment_services SET start_time=$1, staff_id=$2, duration_override=$3, price_override=$4, list_price=$6, variation_name=$7, combo_service_id=$8 WHERE id=$5`,
           [
             s1[i].start_time,
             s1[i].staff_id,
@@ -632,6 +636,7 @@ module.exports = function appointmentsRouter({
             s2[i].id,
             s1[i].list_price,
             s1[i].variation_name,
+            s1[i].combo_service_id,
           ],
         );
       }

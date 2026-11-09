@@ -65,19 +65,47 @@ module.exports = function servicesRouter({
 
   // Replace-all upsert of a combo's component list — keeps combo config a
   // single ordered list of real service ids rather than a diffing dance.
-  const setComboComponents = async (dbClient, serviceId, componentIds) => {
+  // A combination's parts from the request: `combo_parts` ([{ id, price }],
+  // price per part inside the combination, or null for none) or the older
+  // `combo_component_ids`. Prices are all set or all left out; when set, the
+  // combination costs their sum. Returns undefined when neither was sent.
+  const comboPartsFrom = (body) => {
+    if (Array.isArray(body.combo_parts)) {
+      const parts = body.combo_parts.map((p) => ({
+        id: p?.id,
+        price: p?.price == null || p.price === "" ? null : Number(p.price),
+      }));
+      const priced = parts.filter((p) => p.price != null);
+      if (priced.length > 0 && priced.length < parts.length) {
+        throw new HttpError(400, { error: "combo_prices_incomplete" });
+      }
+      if (priced.some((p) => !Number.isFinite(p.price) || p.price < 0)) {
+        throw new HttpError(400, { error: "combo_price_invalid" });
+      }
+      const total = priced.length
+        ? Math.round(priced.reduce((sum, p) => sum + p.price, 0) * 100) / 100
+        : null;
+      return { parts, total };
+    }
+    if (Array.isArray(body.combo_component_ids)) {
+      return { parts: body.combo_component_ids.map((id) => ({ id, price: null })), total: null };
+    }
+    return undefined;
+  };
+
+  const setComboComponents = async (dbClient, serviceId, parts) => {
     await dbClient.query(
       "DELETE FROM service_combo_components WHERE service_id = $1",
       [serviceId],
     );
-    const ids = (componentIds || [])
-      .map((cid) => safeUUID(cid))
-      .filter((cid) => cid && cid !== serviceId);
-    for (let i = 0; i < ids.length; i++) {
+    const list = (parts || [])
+      .map((p) => ({ id: safeUUID(p.id), price: p.price }))
+      .filter((p) => p.id && p.id !== serviceId);
+    for (let i = 0; i < list.length; i++) {
       await dbClient.query(
-        `INSERT INTO service_combo_components (service_id, component_service_id, sort_order)
-         VALUES ($1, $2, $3) ON CONFLICT (service_id, component_service_id) DO NOTHING`,
-        [serviceId, ids[i], i],
+        `INSERT INTO service_combo_components (service_id, component_service_id, sort_order, price)
+         VALUES ($1, $2, $3, $4) ON CONFLICT (service_id, component_service_id) DO NOTHING`,
+        [serviceId, list[i].id, i, list[i].price],
       );
     }
   };
@@ -126,7 +154,7 @@ module.exports = function servicesRouter({
       eligibleStaffByService[row.service_id].push(row.staff_id);
     }
     const { rows: comboRows } = await pool.query(
-      `SELECT scc.service_id, scc.sort_order, s.id, s.name, s.duration_minutes, s.price, s.default_staff_id
+      `SELECT scc.service_id, scc.sort_order, scc.price AS combo_price, s.id, s.name, s.duration_minutes, s.price, s.default_staff_id
        FROM service_combo_components scc
        JOIN services s ON s.id = scc.component_service_id
        WHERE scc.service_id = ANY($1::uuid[])
@@ -141,6 +169,7 @@ module.exports = function servicesRouter({
         name: row.name,
         duration_minutes: row.duration_minutes,
         price: row.price,
+        combo_price: row.combo_price,
         default_staff_id: row.default_staff_id,
       });
     }
@@ -284,15 +313,15 @@ module.exports = function servicesRouter({
     const {
       name,
       duration_minutes,
-      price,
       category,
       color_code,
       bookable_online,
       default_staff_id,
-      combo_component_ids,
       variations,
       staff_ids,
     } = req.body;
+    const combo = comboPartsFrom(req.body);
+    const price = combo?.total ?? req.body.price;
 
     if (!name?.trim()) {
       return res.status(400).json({ error: "Service name is required" });
@@ -327,9 +356,7 @@ module.exports = function servicesRouter({
         sortRows[0].next,
       ],
     );
-    if (Array.isArray(combo_component_ids)) {
-      await setComboComponents(pool, rows[0].id, combo_component_ids);
-    }
+    if (combo) await setComboComponents(pool, rows[0].id, combo.parts);
     if (Array.isArray(variations)) {
       await setServiceVariations(pool, rows[0].id, variations);
     }
@@ -344,15 +371,15 @@ module.exports = function servicesRouter({
     const {
       name,
       duration_minutes,
-      price,
       category,
       color_code,
       bookable_online,
       default_staff_id,
-      combo_component_ids,
       variations,
       staff_ids,
     } = req.body;
+    const combo = comboPartsFrom(req.body);
+    const price = combo?.total ?? req.body.price;
     await ensureCategoryExists(pool, req.shopId, category);
     await pool.query(
       `UPDATE services SET name=$1, duration_minutes=$2, price=$3, category=$4, color_code=$5, bookable_online=$6, default_staff_id=$7 WHERE id=$8 AND shop_id=$9`,
@@ -368,9 +395,7 @@ module.exports = function servicesRouter({
         req.shopId,
       ],
     );
-    if (Array.isArray(combo_component_ids)) {
-      await setComboComponents(pool, id, combo_component_ids);
-    }
+    if (combo) await setComboComponents(pool, id, combo.parts);
     if (Array.isArray(variations)) {
       await setServiceVariations(pool, id, variations);
     }
