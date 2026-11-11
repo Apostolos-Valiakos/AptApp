@@ -55,6 +55,15 @@
           </div>
         </div>
 
+        <!-- Booked outside the staff member's working hours (overtime). -->
+        <div
+          v-if="overtimeText"
+          class="mt-3 border-l-4 border-l-amber-400 bg-amber-50 rounded-r-md px-2 py-1 text-sm text-amber-900"
+          data-testid="hover-overtime"
+        >
+          <i class="pi pi-clock text-xs mr-1"></i>{{ overtimeText }}
+        </div>
+
         <template v-if="appointmentNotes || internalNotes">
           <div class="border-t border-gray-100 my-3"></div>
           <div class="space-y-2">
@@ -85,6 +94,7 @@
 </template>
 
 <script setup lang="ts">
+import type { OutsideHours } from "../utils/staffAvailability";
 import { formatMoney } from "../utils/format";
 import { ref, computed, onMounted, nextTick, watch } from "vue";
 import { useI18n } from "vue-i18n";
@@ -123,6 +133,27 @@ const STATUS_BAR_COLOR: Record<string, string> = {
 };
 
 const statusBarClass = computed(() => STATUS_BAR_COLOR[props.appointment.status] || "bg-gray-400");
+
+// "Outside working hours: 30 min before 10:00 · schedule 10:00–18:00" (see
+// outsideWorkingHours in utils/staffAvailability.ts).
+const overtimeText = computed(() => {
+  const o = props.appointment.overtime as OutsideHours | null | undefined;
+  if (!o) return "";
+  const k = (key: string, values?: Record<string, unknown>) => t(`scheduler.hoverCard.overtime.${key}`, values || {});
+  if (o.dayOff) return `${k("title")}: ${k("dayOff")}`;
+  const amount = (ms: number) => {
+    const minutes = Math.round(ms / 60000);
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return h && m ? k("hoursMinutes", { h, m }) : h ? k("hours", { h }) : k("minutes", { m });
+  };
+  const parts = o.parts.map((p) =>
+    p.kind === "between"
+      ? k("between", { amount: amount(p.to - p.from), from: p.at, to: p.until })
+      : k(p.kind, { amount: amount(p.to - p.from), time: p.at }),
+  );
+  return `${k("title")}: ${parts.join(", ")} · ${k("schedule", { hours: o.schedule })}`;
+});
 const statusHeaderText = computed(() => {
   const key = STATUS_I18N_KEY[props.appointment.status];
   const label = key ? t(`common.status.${key}`) : props.appointment.status;

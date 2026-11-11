@@ -1958,6 +1958,17 @@ export default {
       hourSingular: "{h} ώρα",
       hoursPlural: "{h} ώρες",
       minutesLabel: "{m} λεπτά",
+      overtime: {
+        title: "Εκτός ωραρίου",
+        dayOff: "ρεπό",
+        before: "{amount} πριν τις {time}",
+        after: "{amount} μετά τις {time}",
+        between: "{amount} μεταξύ {from} και {to}",
+        schedule: "ωράριο {hours}",
+        minutes: "{m} λεπτά",
+        hours: "{h} ώ.",
+        hoursMinutes: "{h} ώ. {m} λ.",
+      },
     },
     toasts: {
       swapComplete: "Η Ανταλλαγή Ολοκληρώθηκε",

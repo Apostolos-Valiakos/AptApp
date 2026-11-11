@@ -112,6 +112,83 @@ export const isWithinWorkingHours = (
   });
 };
 
+/** A stretch of a booking outside working hours. Times are ms; `at`/`until` are "HH:MM". */
+export type OutsidePart = {
+  from: number;
+  to: number;
+  /** Before the day's first start (`at`), after its last end (`at`), in the gap of a split shift (`at`–`until`), or on a day off. */
+  kind: "before" | "after" | "between" | "dayOff";
+  at: string;
+  until?: string;
+};
+export type OutsideHours = {
+  dayOff: boolean;
+  /** The day's schedule, "10:00–14:00, 16:00–20:00"; "" on a day off. */
+  schedule: string;
+  minutes: number;
+  parts: OutsidePart[];
+  /** The schedule's starts and ends that fall inside the booking (ms): where it crosses into or out of working hours. */
+  boundaries: number[];
+};
+
+/**
+ * What of a booking [start, end) lies outside the staff member's working
+ * hours that day (overtime), or null when all of it is inside, or they have
+ * no working hours set. Unlike isStaffAvailable this also answers for the
+ * past: it describes a booking that exists, it doesn't decide if one may be made.
+ */
+export const outsideWorkingHours = (
+  workingHours: WorkingHourRange[],
+  staffList: StaffLike[],
+  staffId: any,
+  start: Date,
+  end: Date,
+): OutsideHours | null => {
+  const staffMember = (staffList || []).find((s) => String(s.id) === String(staffId));
+  if (!staffMember?.working_hours_enabled) return null;
+  const ranges = getWorkingRangesForDate(workingHours, staffId, start);
+  if (ranges === null) return null;
+
+  const from = start.getTime();
+  const to = end.getTime();
+  const minutesOf = (parts: OutsidePart[]) => Math.round(parts.reduce((sum, p) => sum + (p.to - p.from), 0) / 60000);
+  if (ranges.length === 0) {
+    const parts: OutsidePart[] = [{ from, to, kind: "dayOff", at: "" }];
+    return { dayOff: true, schedule: "", minutes: minutesOf(parts), parts, boundaries: [] };
+  }
+
+  const dateStr = toLocalDateStr(start);
+  const shifts = ranges.map((r) => ({
+    start: new Date(`${dateStr}T${r.start}`).getTime(),
+    end: new Date(`${dateStr}T${r.end}`).getTime(),
+    startText: toHHMM(r.start),
+    endText: toHHMM(r.end),
+  }));
+  const parts: OutsidePart[] = [];
+  let cursor = from;
+  shifts.forEach((shift, i) => {
+    const gapEnd = Math.min(to, shift.start);
+    if (gapEnd > cursor) {
+      parts.push(
+        i === 0
+          ? { from: cursor, to: gapEnd, kind: "before", at: shift.startText }
+          : { from: cursor, to: gapEnd, kind: "between", at: shifts[i - 1].endText, until: shift.startText },
+      );
+    }
+    cursor = Math.max(cursor, shift.end);
+  });
+  if (to > cursor) parts.push({ from: cursor, to, kind: "after", at: shifts[shifts.length - 1].endText });
+  if (parts.length === 0) return null;
+
+  return {
+    dayOff: false,
+    schedule: shifts.map((s) => `${s.startText}–${s.endText}`).join(", "),
+    minutes: minutesOf(parts),
+    parts,
+    boundaries: shifts.flatMap((s) => [s.start, s.end]).filter((t) => t > from && t < to),
+  };
+};
+
 export const isStaffAvailable = (params: {
   staffList: StaffLike[];
   workingHours: WorkingHourRange[];

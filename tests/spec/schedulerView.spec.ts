@@ -902,3 +902,74 @@ describe("CP8 a booked combination on the calendar", () => {
     expect(names).toEqual({ a1: "Massage (HOLISTIC + SAUNA OFFER)", a2: "Massage" });
   });
 });
+
+describe("OT2 a booking outside working hours on the calendar", () => {
+  // Anna (st1) works 09:00–17:00 on Mondays (see baseRoutes).
+  const booked = (id: string, from: string, minutes: number, status = "confirmed") => ({
+    ...appointment(),
+    id,
+    status,
+    services: [{ service_id: "svc", service_name: "Massage", staff_id: "st1", start_time: `${MONDAY}T${from}:00`, duration_minutes: minutes, price: 30 }],
+  });
+  const drawn = async (rows: any[]) => {
+    const { wrapper, options } = await open("admin", { "GET /api/v1/appointments": { body: rows } });
+    await showDay(options, `${MONDAY}T00:00:00`, "2026-11-03T00:00:00");
+    await settle();
+    const calls = calendarApi.setOption.mock.calls.filter((c: any[]) => c[0] === "events");
+    const events = calls[calls.length - 1][1];
+    const card = (id: string) => events.find((e: any) => e.extendedProps?.appointmentId === id);
+    const html = (id: string) => {
+      const e = card(id);
+      return options.eventContent({
+        event: { ...e, start: new Date(e.start), end: new Date(e.end), extendedProps: e.extendedProps },
+        view: { type: "resourceTimeGridDay" },
+        isMirror: false,
+      }).html as string;
+    };
+    return { wrapper, options, card, html };
+  };
+
+  test("starting half an hour early: the first half is striped, with a line and the time where the schedule starts", async () => {
+    const { html } = await drawn([booked("early", "08:30", 60)]);
+    expect(html("early")).toContain('<div class="fc-overtime-part" style="top:0.00%;height:50.00%"></div>');
+    expect(html("early")).toContain('<div class="fc-hours-line" style="top:50.00%"><span>09:00</span></div>');
+  });
+
+  test("running past the end: the last part is striped, with the line where the schedule ends", async () => {
+    const { html } = await drawn([booked("late", "16:30", 60)]);
+    expect(html("late")).toContain('<div class="fc-overtime-part" style="top:50.00%;height:50.00%"></div>');
+    expect(html("late")).toContain('<div class="fc-hours-line" style="top:50.00%"><span>17:00</span></div>');
+  });
+
+  test("entirely outside the schedule: all striped, no line (the schedule doesn't cross it)", async () => {
+    const { html } = await drawn([booked("night", "19:00", 60)]);
+    expect(html("night")).toContain('<div class="fc-overtime-part" style="top:0.00%;height:100.00%"></div>');
+    expect(html("night")).not.toContain("fc-hours-line");
+  });
+
+  test("a booking inside the schedule has neither", async () => {
+    const { html, card } = await drawn([booked("normal", "10:00", 60)]);
+    expect(html("normal")).not.toContain("fc-overtime-part");
+    expect(html("normal")).not.toContain("fc-hours-line");
+    expect(card("normal").extendedProps.overtime).toBeNull();
+  });
+
+  test("a cancelled booking isn't marked", async () => {
+    const { html } = await drawn([booked("gone", "08:30", 60, "cancelled")]);
+    expect(html("gone")).not.toContain("fc-overtime-part");
+  });
+
+  test("the hover card is told, so it can say how much is outside", async () => {
+    const { wrapper, options, card } = await drawn([booked("early", "08:30", 60)]);
+    const e = card("early");
+    options.eventMouseEnter({
+      el: document.createElement("div"),
+      event: { display: "auto", start: new Date(e.start), end: new Date(e.end), extendedProps: e.extendedProps },
+    });
+    await new Promise((r) => setTimeout(r, 300));
+    await settle();
+    const overtime = wrapper.findComponent({ name: "AppointmentHoverCard" }).props("appointment").overtime;
+    expect(overtime).toMatchObject({ minutes: 30, schedule: "09:00–17:00", dayOff: false });
+    expect(overtime.parts[0]).toMatchObject({ kind: "before", at: "09:00" });
+  });
+});

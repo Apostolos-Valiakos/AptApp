@@ -1905,6 +1905,17 @@ export default {
       hourSingular: '{h} hour',
       hoursPlural: '{h} hours',
       minutesLabel: '{m} minutes',
+      overtime: {
+        title: 'Outside working hours',
+        dayOff: 'day off',
+        before: '{amount} before {time}',
+        after: '{amount} after {time}',
+        between: '{amount} between {from} and {to}',
+        schedule: 'schedule {hours}',
+        minutes: '{m} min',
+        hours: '{h} h',
+        hoursMinutes: '{h} h {m} min',
+      },
     },
     toasts: {
       swapComplete: 'Swap Complete',

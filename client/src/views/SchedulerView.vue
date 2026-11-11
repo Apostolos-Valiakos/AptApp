@@ -521,6 +521,8 @@ import {
   mondayOf,
   describeWorkingDay,
   overtimeConfirmMessage,
+  outsideWorkingHours,
+  type OutsideHours,
 } from "../utils/staffAvailability";
 import { displayServiceName } from "../utils/serviceVariations";
 import { comboLineLabel } from "../utils/comboSplit";
@@ -1394,6 +1396,11 @@ const calendarEvents = computed(() => {
           // short appointments — leaves more room for the service name
           // before truncating than the full "Surname Firstname" would.
           client_surname: appt.last_name || appt.first_name || "Unknown",
+          // What of it is outside the staff member's working hours (overtime).
+          overtime:
+            svc.start_time && endTime && !DID_NOT_HAPPEN.includes(appt.status)
+              ? outsideWorkingHours(calendarStore.workingHours, calendarStore.resources, svc.staff_id, new Date(svc.start_time), new Date(endTime))
+              : null,
           service_name: serviceLabel,
           persons,
           serviceArchived: !!svc.service_archived,
@@ -1899,6 +1906,24 @@ const openNewBooking = async (
     overtime_confirmed_staff_id: overtime ? staffId : null,
   };
   dialogVisible.value = true;
+};
+
+// A card booked outside working hours: the outside part is striped, and
+// where the schedule starts or ends inside it there's a line with the time
+// (the grey "not working" background is hidden under the card itself).
+const overtimeMarksHtml = (overtime: OutsideHours | null | undefined, start: Date | null, end: Date | null) => {
+  if (!overtime || !start || !end) return "";
+  const from = start.getTime();
+  const span = end.getTime() - from;
+  if (span <= 0) return "";
+  const percent = (ms: number) => ((ms / span) * 100).toFixed(2);
+  const stripes = overtime.parts
+    .map((p) => `<div class="fc-overtime-part" style="top:${percent(p.from - from)}%;height:${percent(p.to - p.from)}%"></div>`)
+    .join("");
+  const lines = overtime.boundaries
+    .map((t) => `<div class="fc-hours-line" style="top:${percent(t - from)}%"><span>${hhmm(t)}</span></div>`)
+    .join("");
+  return stripes + lines;
 };
 
 // Phones fit about 6-7 narrow staff columns (time gutter ~44px) and scroll
@@ -2552,6 +2577,7 @@ const calendarOptions = ref({
     const end = arg.event.end;
     const durationMins =
       end && start ? (end.getTime() - start.getTime()) / 60000 : 60;
+    const overtimeMarks = isMonthView ? "" : overtimeMarksHtml(props.overtime, start, end);
     // Only genuinely tight (<20 min) boxes drop to the compact, single-line
     // "name — service" layout — everything 20 min and up keeps the full
     // two-line name/service layout.
@@ -2619,6 +2645,7 @@ const calendarOptions = ref({
       return {
         html: `
         <div lang="el" class="relative w-full h-full px-1 py-0.5 flex flex-col leading-tight overflow-hidden uppercase">
+          ${overtimeMarks}
           <div class="flex-shrink-0 text-[9px] font-bold break-words ${durationMins > 15 ? "line-clamp-2" : "line-clamp-1"} ${textClass}">${escapeHtml(props.client_name)}</div>
           ${durationMins > 15 ? `<div class="min-h-0 text-[8px] break-words ${serviceClass}">${escapeHtml(props.service_name)}</div>` : ""}
         </div>
@@ -2629,6 +2656,7 @@ const calendarOptions = ref({
     return {
       html: `
       <div lang="el" class="relative w-full ${paddingClass} flex flex-col leading-tight overflow-hidden uppercase hover:brightness-95 transition-all ${isMonthView ? "" : "h-full"}">
+        ${overtimeMarks}
         ${statusBadge}
         ${archivedBadge}
         ${!isShort && !isMonthView ? `<div class="flex-shrink-0 ${timeSizeClass} font-semibold mb-0.5 truncate ${timeClass}">${timeText}</div>` : ""}
@@ -2733,6 +2761,7 @@ const calendarOptions = ref({
       start: info.event.start,
       end: info.event.end,
       day_services: dayServices(info.event.extendedProps),
+      overtime: info.event.extendedProps.overtime,
     });
   },
 
@@ -3225,6 +3254,37 @@ onMounted(async () => {
   --fc-border-color: #f3f4f6;
   --fc-now-indicator-color: #ef4444;
   --fc-today-bg-color: transparent;
+}
+
+/* A booking outside working hours: its outside part striped, and a line with
+   the time where the schedule starts or ends inside the card. */
+.fc-overtime-part {
+  position: absolute;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(135deg, rgba(15, 23, 42, 0.17) 0 4px, transparent 4px 9px);
+}
+.fc-hours-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 2px solid #0f172a;
+  pointer-events: none;
+  z-index: 2;
+}
+.fc-hours-line span {
+  position: absolute;
+  right: 2px;
+  top: 1px;
+  padding: 0 3px;
+  border-radius: 3px;
+  background: #0f172a;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 12px;
 }
 
 /* Staff working-hours off-hours shading (Day view) — a texture rather than a
