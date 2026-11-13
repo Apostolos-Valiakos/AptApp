@@ -37,6 +37,9 @@ export const useAuthStore = defineStore("auth", () => {
 
   const isClient = computed(() => user.value?.role === "client");
 
+  // A plain staff member: sees only the calendar and their profile, and changes nothing.
+  const isStaff = computed(() => user.value?.role === "staff");
+
   // While the owner is "viewing as" a shop, the real owner session is stashed here
   // so it can be restored exactly on exit, without ever losing it mid-impersonation.
   const originalToken = ref(localStorage.getItem("originalToken") || "");
@@ -141,6 +144,7 @@ export const useAuthStore = defineStore("auth", () => {
     isShopAdmin,
     isAnalyticsAllowed,
     isClient,
+    isStaff,
     isImpersonating,
     clientId,
     login,
