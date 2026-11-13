@@ -141,8 +141,13 @@
             })
           }}
         </div>
-        <div class="text-sm font-medium mt-1">
-          {{ nextAppointment.service_names }}
+        <div class="text-sm font-medium mt-1 flex justify-between gap-2">
+          <span>{{ nextAppointment.service_names }}</span>
+          <PaidAmount
+            :paid="nextAppointment.paid"
+            :total="Number(nextAppointment.total_service_price || 0) + Number(nextAppointment.total_product_price || 0)"
+            class="text-xs"
+          />
         </div>
         <div
           v-if="nextAppointment.staff_names"
@@ -158,6 +163,7 @@
 
 <script setup lang="ts">
 import { api } from "../../api/http";
+import PaidAmount from "../../components/PaidAmount.vue";
 import { ref, computed, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import Button from "primevue/button";

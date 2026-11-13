@@ -70,6 +70,12 @@
           <div class="text-sm text-gray-700 flex items-center gap-1">
             <i class="pi pi-user text-gray-500 text-xs"></i>
             {{ t('appointmentSwap.client') }}: {{ appt.first_name }} {{ appt.last_name }}
+{{ t('appointmentSwap.client') }}: {{ appt.first_name }} {{ appt.last_name }}
+            <AppointmentNotesTip :appointment="appt" />
+            <PaidAmount v-if="!authStore.isStaff" class="ml-auto text-xs" v-bind="moneyOf(appt)" />
+          </div>
+          <div v-if="appt.client_notes" class="text-xs text-amber-700 truncate mt-0.5" :title="appt.client_notes" data-testid="swap-client-notes">
+            <i class="pi pi-file-edit text-[10px] mr-1"></i>{{ appt.client_notes }}
           </div>
 
           <!-- Staff + Services -->
@@ -147,6 +153,12 @@
           <div class="text-sm text-gray-700 flex items-center gap-1">
             <i class="pi pi-user text-gray-500 text-xs"></i>
             {{ t('appointmentSwap.client') }}: {{ appt.first_name }} {{ appt.last_name }}
+{{ t('appointmentSwap.client') }}: {{ appt.first_name }} {{ appt.last_name }}
+            <AppointmentNotesTip :appointment="appt" />
+            <PaidAmount v-if="!authStore.isStaff" class="ml-auto text-xs" v-bind="moneyOf(appt)" />
+          </div>
+          <div v-if="appt.client_notes" class="text-xs text-amber-700 truncate mt-0.5" :title="appt.client_notes" data-testid="swap-client-notes">
+            <i class="pi pi-file-edit text-[10px] mr-1"></i>{{ appt.client_notes }}
           </div>
 
           <!-- Staff + Services -->
@@ -208,8 +220,18 @@ import { useI18n } from "vue-i18n";
 import Dialog from "primevue/dialog";
 import InputText from "primevue/inputtext";
 import Button from "primevue/button";
+import PaidAmount from "./PaidAmount.vue";
+import AppointmentNotesTip from "./AppointmentNotesTip.vue";
+import { useAuthStore } from "../stores/auth";
+import { useSettingsStore } from "../stores/settings";
+import { shownMoney } from "../utils/paymentFilters";
 
 const { t } = useI18n();
+const authStore = useAuthStore();
+// What was paid and the total, with what the cash/card filters hide left out.
+const filterSettings = useSettingsStore();
+const moneyOf = (appt: Appointment) =>
+  shownMoney(appt.current_appt_total, appt.deposit_amount, appt.services as any[], filterSettings);
 
 interface Appointment {
   id: string;
@@ -226,6 +248,10 @@ interface Appointment {
     staff_name?: string;
   }>;
   staff_id?: string;
+  internal_notes?: string | null;
+  client_notes?: string | null;
+  current_appt_total?: number;
+  deposit_amount?: number;
 }
 
 interface Staff {

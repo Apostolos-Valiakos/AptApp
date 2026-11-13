@@ -26,6 +26,9 @@
           <div class="min-w-0">
             <div lang="el" class="font-semibold text-gray-900 truncate uppercase">{{ option.full_name }}</div>
             <div class="text-xs text-gray-500 truncate">{{ option.phone || option.email || "" }}</div>
+            <div v-if="option.notes" class="text-xs text-amber-700 truncate" :title="option.notes" data-testid="client-option-notes">
+              <i class="pi pi-file-edit text-[10px] mr-1"></i>{{ option.notes }}
+            </div>
           </div>
         </div>
       </template>

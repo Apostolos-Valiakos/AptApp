@@ -73,7 +73,10 @@
                 >{{ t("portal.upcoming.cancelled") }}</span
               >
             </div>
-            <div class="text-sm font-medium mt-1">{{ appt.service_names }}</div>
+            <div class="text-sm font-medium mt-1 flex justify-between gap-2">
+              <span>{{ appt.service_names }}</span>
+              <PaidAmount v-if="appt.status !== 'cancelled'" :paid="appt.paid" :total="totalOf(appt)" class="text-xs" />
+            </div>
             <div
               v-if="appt.staff_names"
               class="text-xs text-gray-500 flex items-center gap-1 mt-1"
@@ -129,9 +132,12 @@
                 >{{ appt.status }}</span
               >
             </div>
-            <div class="text-xs text-gray-400 mt-1">
-              {{ new Date(appt.start_time).toLocaleDateString("en-GB") }}
-              <span v-if="appt.staff_names"> · {{ appt.staff_names }}</span>
+            <div class="text-xs text-gray-400 mt-1 flex justify-between gap-2">
+              <span>
+                {{ new Date(appt.start_time).toLocaleDateString("en-GB") }}
+                <span v-if="appt.staff_names"> · {{ appt.staff_names }}</span>
+              </span>
+              <PaidAmount v-if="appt.status !== 'cancelled' || Number(appt.paid) > 0" :paid="appt.paid" :total="totalOf(appt)" />
             </div>
           </div>
         </div>
@@ -373,8 +379,11 @@ import DatePicker from "primevue/datepicker";
 import Textarea from "primevue/textarea";
 import ConfirmDialog from "primevue/confirmdialog";
 import { useAuthStore } from "../../stores/auth";
+import PaidAmount from "../../components/PaidAmount.vue";
 
 const { t } = useI18n();
+// A visit's total: its services and products (what was paid is `paid`).
+const totalOf = (appt: any) => Number(appt.total_service_price || 0) + Number(appt.total_product_price || 0);
 const route = useRoute();
 const router = useRouter();
 const toast = useToast();

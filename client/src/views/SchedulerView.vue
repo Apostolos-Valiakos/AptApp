@@ -450,6 +450,8 @@
       @book="onBookForClient"
       @openFull="onOpenFullProfile"
       @changed="handleSave"
+      :reloadKey="quickProfileReloadKey"
+      @openAppointment="openFromQuickProfile"
     />
     <ClientProfileDialog
       v-model:visible="fullProfileVisible"
@@ -1539,6 +1541,17 @@ const onBookForClient = (client: any) => {
   };
   dialogVisible.value = true;
 };
+
+// A visit clicked in the client's quick profile opens in the booking dialog,
+// over the profile, which stays open underneath.
+const quickProfileReloadKey = ref(0);
+const openFromQuickProfile = (appt: any) => {
+  selectedAppointment.value = appt;
+  dialogVisible.value = true;
+};
+watch(dialogVisible, (open) => {
+  if (!open && quickProfileVisible.value) quickProfileReloadKey.value++;
+});
 
 const onOpenFullProfile = ({
   clientId,

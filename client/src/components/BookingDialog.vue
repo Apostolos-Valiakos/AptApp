@@ -639,6 +639,7 @@
             :client="selectedClient"
             :calculated-balance="sidebarBalance"
             v-model:bookingNotes="form.booking_notes"
+            v-model:clientNotes="clientNotesDraft"
             @debt-changed="onDebtChanged"
             :loading-id="loadingPastId"
             @open-appointment="openPastAppointment"
@@ -902,6 +903,28 @@ const isBlockEdit = computed(() => !!form.value.time_off_id);
 // --- Client selection (server-side search — with 5000+ clients we never load
 // the full list, see calendar.ts) ---
 const selectedClient = ref<any>(null);
+// The client's notes as edited in the sidebar; they are saved with the
+// booking's Save, and closing without saving drops the change.
+const clientNotesDraft = ref("");
+const savedClientNotes = () => String(selectedClient.value?.notes ?? selectedClient.value?.client_notes ?? "");
+watch(selectedClient, () => {
+  clientNotesDraft.value = savedClientNotes();
+});
+const saveClientNotes = async () => {
+  const client = selectedClient.value;
+  if (!client?.id || authStore.isStaff) return;
+  const notes = clientNotesDraft.value.trim();
+  if (notes === savedClientNotes().trim()) return;
+  const result = await fetchOrQueue(`/api/v1/clients/${client.id}/notes`, "PUT", { notes }, {
+    kind: "client",
+    label: `${t("common.clientNotes")} · ${client.full_name || `${client.first_name || ""} ${client.last_name || ""}`.trim()}`,
+  }).catch(() => null);
+  if (result && (result.queued || result.response.ok)) {
+    client.notes = notes;
+    return;
+  }
+  toast.add({ severity: "error", summary: t("booking.toast.clientNotesFailed"), life: 5000 });
+};
 const onClientPicked = (client: any) => {
   selectedClient.value = client;
   form.value.client_id = client.id;
@@ -1245,6 +1268,7 @@ const loadExistingAppointment = (val: any, resolvedStaffId: any) => {
       last_name: val.last_name,
       full_name: `${val.first_name || ""} ${val.last_name || ""}`.trim(),
       phone: val.client_phone,
+      notes: val.client_notes ?? undefined,
       outstanding_balance: Number(val.client_outstanding_balance || 0),
     });
   } else {
@@ -1478,6 +1502,7 @@ const bookingSnapshot = () =>
     start: form.value.start_time,
     internal: form.value.internal_notes || "",
     notes: form.value.booking_notes || "",
+    clientNotes: clientNotesDraft.value.trim() === savedClientNotes().trim(),
     services: servicesList.value.map((s: any) => [
       s.service_id,
       s.staff_id,
@@ -2028,6 +2053,7 @@ const executeSave = async (close = true, scope = "single", allowOverCapacity = f
         deposit: form.value.deposit_amount,
         isPast: originalSnapshot.value.isPast,
       };
+      await saveClientNotes();
       if (close) {
         emit("save");
         dialogVisible.value = false;
@@ -2079,6 +2105,7 @@ const executeSave = async (close = true, scope = "single", allowOverCapacity = f
       deposit: form.value.deposit_amount,
       isPast: originalSnapshot.value.isPast,
     };
+    await saveClientNotes();
 
     if (close) {
       emit("save");

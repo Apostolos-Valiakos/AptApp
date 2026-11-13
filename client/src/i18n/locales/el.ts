@@ -19,6 +19,13 @@ export default {
     email: "Email",
     phone: "Τηλέφωνο",
     notes: "Σημειώσεις",
+    clientNotes: "Σημειώσεις πελάτη",
+    noClientNotes: "Δεν υπάρχουν σημειώσεις για τον πελάτη",
+    clientNotesPlaceholder: "Σημειώσεις για τον πελάτη (αλλεργίες, προτιμήσεις…)",
+    internalNote: "Εσωτερική σημείωση",
+    appointmentNotes: "Σημειώσεις ραντεβού",
+    paid: "Πληρώθηκαν",
+    paidOf: "{paid} από {total}",
     noData: "Δεν υπάρχουν δεδομένα",
     details: "Λεπτομέρειες",
     confirmDelete: "Επιβεβαίωση Διαγραφής",
@@ -1544,6 +1551,7 @@ export default {
       deleteFailedDetail: "Αδυναμία ακύρωσης ραντεβού.",
       quickAddFailedDetail: "Αδυναμία αποθήκευσης πελάτη. Δοκιμάστε ξανά.",
       savedOffline: "Αποθηκεύτηκε Εκτός Σύνδεσης",
+      clientNotesFailed: "Το ραντεβού αποθηκεύτηκε, αλλά οι σημειώσεις του πελάτη όχι",
       savedOfflineDetail:
         "Χωρίς σύνδεση — το ραντεβού αποθηκεύτηκε σε αυτή τη συσκευή και θα συγχρονιστεί αυτόματα μόλις επανασυνδεθείτε.",
       paymentQueuedDetail:

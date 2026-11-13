@@ -144,7 +144,7 @@ module.exports = function membershipsRouter({
     const { token } = req.body;
     if (!token) return res.status(400).json({ error: "token is required" });
     const clientRes = await pool.query(
-      `SELECT id, first_name, last_name, phone, email
+      `SELECT id, first_name, last_name, phone, email, notes
        FROM clients WHERE qr_token = $1 AND shop_id = $2 AND is_deleted IS NOT TRUE`,
       [token, req.shopId],
     );
@@ -171,8 +171,16 @@ module.exports = function membershipsRouter({
 
     const packages = await loadClientPackages(pool, req.shopId, foundClient.id);
 
+    // What each visit costs and what was paid towards it; money is left out
+    // for plain "staff", like the balance below.
+    const moneyColumns = req.user.role === "staff" ? "" : `,
+              (COALESCE((SELECT SUM(COALESCE(aps.price_override, s.price))
+                         FROM appointment_services aps JOIN services s ON s.id = aps.service_id
+                         WHERE aps.appointment_id = a.id), 0)
+               + COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = a.id), 0))::float AS total,
+              COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0)::float AS paid`;
     const upcomingRes = await pool.query(
-      `SELECT a.id, a.status,
+      `SELECT a.id, a.status, a.internal_notes, a.booking_notes${moneyColumns},
               (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) AS start_time,
               COALESCE((
                 SELECT json_agg(json_build_object('name', s.name, 'staff', st.name) ORDER BY aps.start_time)
@@ -189,7 +197,7 @@ module.exports = function membershipsRouter({
     );
 
     const historyRes = await pool.query(
-      `SELECT a.id, a.status,
+      `SELECT a.id, a.status, a.internal_notes, a.booking_notes${moneyColumns},
               (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) AS start_time,
               COALESCE((
                 SELECT json_agg(json_build_object('name', s.name) ORDER BY aps.start_time)
@@ -237,6 +245,7 @@ module.exports = function membershipsRouter({
         last_name: foundClient.last_name,
         full_name: `${foundClient.first_name} ${foundClient.last_name}`,
         phone: foundClient.phone,
+        notes: foundClient.notes,
       },
       membership: membershipRes.rows[0] || null,
       contest: contestResult,

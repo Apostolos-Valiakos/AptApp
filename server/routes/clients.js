@@ -27,6 +27,9 @@ module.exports = function clientsRouter({
   const PAST_VISIT = "a.status NOT IN ('cancelled', 'no-show', 'no-response') AND f.first_start <= NOW()";
 
   router.get("/", authenticateToken, async (req, res) => {
+    // A portal login reads only its own card (/:id/full): this list carries
+    // every client's contact details and the shop's notes on them.
+    if (req.user.role === "client") return res.status(403).json({ error: "Forbidden" });
     const { slim, search, limit, offset, id } = req.query;
     try {
       // Slim mode: lightweight list for dropdowns (scheduler, booking dialog).
@@ -53,7 +56,7 @@ module.exports = function clientsRouter({
         const { rows } = await pool.query(
           `SELECT id, first_name, last_name,
                   first_name || ' ' || last_name as full_name,
-                  email, phone, outstanding_balance, custom_fields,
+                  email, phone, outstanding_balance, custom_fields, notes,
                   (id = (SELECT walk_in_client_id FROM shops WHERE id = $1)) AS is_walk_in
            FROM active_clients WHERE shop_id = $1 ${slimSearchClause}
            ORDER BY NULLIF(TRIM(last_name), '') NULLS LAST, first_name
@@ -295,6 +298,20 @@ module.exports = function clientsRouter({
     res.status(status).json(body);
   }));
 
+  // Only the client's notes, as the booking dialog edits them: the full
+  // update above needs every field, which that dialog doesn't load.
+  router.put("/:id/notes", authenticateToken, notForStaff, asyncHandler(async (req, res) => {
+    if (req.user.role === "client") return res.status(403).json({ error: "Forbidden" });
+    const notes = req.body?.notes;
+    if (notes != null && typeof notes !== "string") throw new HttpError(400, "notes must be text");
+    const { rowCount } = await pool.query(
+      "UPDATE clients SET notes = $1 WHERE id = $2 AND shop_id = $3",
+      [notes ? notes.trim() : null, req.params.id, req.shopId],
+    );
+    if (!rowCount) throw new HttpError(404, "Client not found");
+    res.json({ success: true, notes: notes ? notes.trim() : null });
+  }, { message: "Update failed" }));
+
   router.put("/:id", authenticateToken, notForStaff, asyncHandler(async (req, res) => {
     const { id } = req.params;
     const {
@@ -397,6 +414,7 @@ module.exports = function clientsRouter({
     authenticateToken,
     asyncHandler(async (req, res) => {
       const { id } = req.params;
+      if (req.user.role === "client") return res.status(403).json({ error: "Forbidden" });
       const limit = Math.min(parseInt(req.query.limit) || 10, 20);
       const threeMonthClause =
         req.user.role !== "super_admin"
@@ -418,7 +436,14 @@ module.exports = function clientsRouter({
            SELECT
               a.id,
               a.status,
+              a.internal_notes,
+              a.booking_notes,
               (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) as start_time,
+              (COALESCE((SELECT SUM(COALESCE(aps.price_override, s.price))
+                         FROM appointment_services aps JOIN services s ON s.id = aps.service_id
+                         WHERE aps.appointment_id = a.id), 0)
+               + COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = a.id), 0))::float AS total,
+              COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0)::float AS paid,
               (SELECT string_agg(s.name, ', ')
                FROM appointment_services aps
                JOIN services s ON aps.service_id = s.id
@@ -502,6 +527,9 @@ module.exports = function clientsRouter({
           a.id, 
           a.status, 
           a.deposit_amount,
+          a.internal_notes,
+          a.booking_notes,
+          COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0)::float AS paid,
           a.created_at,
           (
             SELECT MIN(start_time) 
@@ -567,7 +595,7 @@ module.exports = function clientsRouter({
         FROM appointments a
         WHERE a.client_id = $1 AND a.shop_id = $2
           ${req.user.role !== "super_admin" ? "AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) >= NOW() - INTERVAL '3 months'" : ""}
-        ORDER BY 5 DESC`, // 5 refers to start_time
+        ORDER BY start_time DESC`,
       [id, req.shopId],
     );
 
@@ -581,7 +609,10 @@ module.exports = function clientsRouter({
 
     const walkInRes = await pool.query("SELECT walk_in_client_id FROM shops WHERE id = $1", [req.shopId]);
     // The notes on a client's card are the shop's, not for the client to read.
-    if (req.user.role === "client") delete client.notes;
+    if (req.user.role === "client") {
+      delete client.notes;
+      for (const row of historyRes.rows) delete row.internal_notes;
+    }
     res.json({
       client: {
         ...client,

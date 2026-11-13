@@ -25,3 +25,14 @@ export const fullyHidden = (price: number | string | null | undefined, hidden: H
 };
 
 export const paidInCash = (paidWith: string | null | undefined) => !!paidWith && paidWith.split(",").includes("cash");
+
+/** An appointment's total and paid amount with what the filters hide taken off both. */
+export const shownMoney = (
+  total: number | string | null | undefined,
+  paid: number | string | null | undefined,
+  services: { hidden?: Hidden }[] = [],
+  filters: Filters,
+) => {
+  const hidden = services.reduce((sum, s) => sum + hiddenAmount(s?.hidden, filters), 0);
+  return { total: Math.max(0, Number(total || 0) - hidden), paid: Math.max(0, Number(paid || 0) - hidden) };
+};

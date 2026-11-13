@@ -120,6 +120,14 @@
                 <div class="text-xs text-gray-400 truncate">
                   {{ slotProps.data.email || "—" }}
                 </div>
+                <div
+                  v-if="slotProps.data.notes"
+                  class="text-xs text-amber-700 truncate max-w-[22rem]"
+                  :title="slotProps.data.notes"
+                  data-testid="client-row-notes"
+                >
+                  <i class="pi pi-file-edit text-[10px] mr-1"></i>{{ slotProps.data.notes }}
+                </div>
                 <a
                   v-if="slotProps.data.phone"
                   :href="'tel:' + slotProps.data.phone"

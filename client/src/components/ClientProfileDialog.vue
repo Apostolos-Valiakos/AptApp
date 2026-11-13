@@ -237,9 +237,8 @@
               >
                 {{ t(`common.status.${statusKey(appt.status)}`) }}
               </span>
-              <span class="font-bold">
-                {{ formatMoney(Number(appt.total_service_price || 0) + Number(appt.total_product_price || 0)) }}
-              </span>
+              <AppointmentNotesTip :appointment="appt" class="mr-1 align-middle" />
+              <PaidAmount v-if="!authStore.isStaff" :paid="appt.paid" :total="appt.total" />
             </div>
           </div>
         </div>
@@ -430,7 +429,9 @@ import Exercises from "./Exercises.vue";
 import ClientPackagesPanel from "./ClientPackagesPanel.vue";
 import { useAuthStore } from "../stores/auth";
 import { useSettingsStore } from "../stores/settings";
-import { fullyHidden, hiddenAmount } from "../utils/paymentFilters";
+import { fullyHidden, hiddenAmount, shownMoney } from "../utils/paymentFilters";
+import PaidAmount from "./PaidAmount.vue";
+import AppointmentNotesTip from "./AppointmentNotesTip.vue";
 import { storeToRefs } from "pinia";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
@@ -477,11 +478,13 @@ const visibleHistory = computed(() =>
     .map((a) => {
       const services = a.services_paid || [];
       const hiddenCost = services.reduce((n: number, x: any) => n + hiddenAmount(x.hidden, settingsStore), 0);
-      if (!hiddenCost) return a;
+      const money = shownMoney(Number(a.total_service_price || 0) + Number(a.total_product_price || 0), a.paid, services, settingsStore);
+      if (!hiddenCost) return { ...a, ...money };
       const shown = services.filter((x: any) => !fullyHidden(x.charged, x.hidden, settingsStore));
       if (!shown.length) return null;
       return {
         ...a,
+        ...money,
         service_names: shown.map((x: any) => x.name).join(", "),
         staff_names: [...new Set(shown.map((x: any) => x.staff).filter(Boolean))].join(", "),
         total_service_price: Number(a.total_service_price || 0) - hiddenCost,

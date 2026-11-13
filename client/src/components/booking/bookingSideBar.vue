@@ -13,6 +13,31 @@
       <p class="text-gray-500 text-sm">
         {{ client.phone }}
       </p>
+      <!-- The client's own notes (the shop's, never shown to the client).
+           Edited here, they are saved with the booking's Save; staff only
+           read them. -->
+      <div class="text-left mt-3 mb-3" data-testid="client-notes">
+        <div class="text-xs font-bold text-gray-400 uppercase mb-1 border-l-2 border-amber-400 pl-2">
+          {{ t("common.clientNotes") }}
+        </div>
+        <p
+          v-if="authStore.isStaff"
+          class="text-sm text-gray-800 whitespace-pre-line break-words"
+          :class="{ 'text-gray-400': !clientNotes }"
+          data-testid="client-notes-text"
+        >{{ clientNotes || t("common.noClientNotes") }}</p>
+        <Textarea
+          v-else
+          :modelValue="clientNotes"
+          @update:modelValue="emit('update:clientNotes', $event)"
+          autoResize
+          rows="2"
+          class="w-full text-sm bg-amber-50"
+          :placeholder="t('common.clientNotesPlaceholder')"
+          data-testid="client-notes-input"
+        />
+      </div>
+
 
       <!-- Balance badge -->
       <div
@@ -151,9 +176,13 @@
               ></i>
               {{ formatApptDate(appt.start_time) }}
             </span>
-            <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded" :class="statusLabel(appt).cls">
-              {{ statusLabel(appt).text }}
+            <span class="inline-flex items-center gap-1">
+              <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded" :class="statusLabel(appt).cls">
+                {{ statusLabel(appt).text }}
+              </span>
+              <AppointmentNotesTip :appointment="appt" />
             </span>
+            <PaidAmount v-if="!authStore.isStaff" :paid="appt.paid" :total="appt.total" class="text-xs" />
           </span>
           <span
             class="text-right truncate"
@@ -334,7 +363,7 @@
 </template>
 
 <script setup lang="ts">
-import { fullyHidden } from "../../utils/paymentFilters";
+import { fullyHidden, shownMoney } from "../../utils/paymentFilters";
 import { useSettingsStore } from "../../stores/settings";
 import { MONEY_METHODS, methodChoiceLabel } from "../../utils/paymentMethods";
 import { api, ApiError } from "../../api/http";
@@ -343,6 +372,8 @@ import { useI18n } from "vue-i18n";
 import { useAuthStore } from "../../stores/auth";
 import { useToast } from "primevue/usetoast";
 import { formatMoney } from "../../utils/format";
+import PaidAmount from "../PaidAmount.vue";
+import AppointmentNotesTip from "../AppointmentNotesTip.vue";
 const { t } = useI18n();
 const authStore = useAuthStore();
 
@@ -359,13 +390,18 @@ const props = defineProps({
     type: String,
     default: "",
   },
+  // The draft of the client's notes, held by the booking dialog.
+  clientNotes: {
+    type: String,
+    default: "",
+  },
   // The past visit being opened (its row shows a spinner).
   loadingId: {
     type: String as PropType<string | null>,
     default: null,
   },
 });
-const emit = defineEmits(["update:bookingNotes", "debt-changed", "open-appointment"]);
+const emit = defineEmits(["update:bookingNotes", "update:clientNotes", "debt-changed", "open-appointment"]);
 // While one past visit is being opened, the others wait.
 const openPast = (appt: any) => {
   if (props.loadingId) return;
@@ -555,10 +591,12 @@ const shownPast = computed(() =>
     .map((a: any) => {
       const services = a.services_paid || [];
       const shown = services.filter((x: any) => !fullyHidden(x.charged, x.hidden, filterSettings));
-      if (shown.length === services.length) return a;
-      if (!shown.length) return null;
+      if (!shown.length && services.length) return null;
+      const money = shownMoney(a.total, a.paid, services, filterSettings);
+      if (shown.length === services.length) return { ...a, ...money };
       return {
         ...a,
+        ...money,
         service_names: shown.map((x: any) => x.name).join(", "),
         staff_names: [...new Set(shown.map((x: any) => x.staff).filter(Boolean))].join(", "),
       };

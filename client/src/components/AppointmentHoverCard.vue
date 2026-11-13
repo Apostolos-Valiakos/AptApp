@@ -16,6 +16,10 @@
         </div>
         <div class="text-base font-bold text-gray-900 leading-snug">{{ clientName }}</div>
         <div v-if="appointment.client_phone" class="text-sm text-gray-500 mt-0.5">{{ appointment.client_phone }}</div>
+        <div v-if="clientNotes" class="mt-2 text-sm" data-testid="hover-client-notes">
+          <div class="text-[11px] font-bold text-gray-500 uppercase tracking-wide">{{ t("common.clientNotes") }}</div>
+          <p class="text-gray-800 whitespace-pre-line break-words line-clamp-3">{{ clientNotes }}</p>
+        </div>
 
         <div class="border-t border-gray-100 my-3"></div>
 
@@ -49,7 +53,7 @@
           </div>
           <div class="flex text-sm items-center">
             <span class="w-24 flex-shrink-0 text-gray-500">{{ t("scheduler.hoverCard.payment") }}</span>
-            <span :class="paymentBadgeClass" class="px-2 py-0.5 rounded-md text-xs font-semibold">
+            <span :class="paymentBadgeClass" class="px-2 py-0.5 rounded-md text-xs font-semibold" data-testid="hover-payment">
               {{ paymentText }}
             </span>
           </div>
@@ -96,6 +100,8 @@
 <script setup lang="ts">
 import type { OutsideHours } from "../utils/staffAvailability";
 import { formatMoney } from "../utils/format";
+import { paymentStatus } from "../utils/money";
+import { useAuthStore } from "../stores/auth";
 import { ref, computed, onMounted, nextTick, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
@@ -202,14 +208,36 @@ const durationText = computed(() => {
   return parts.join(" ");
 });
 
-const isPaid = computed(() => props.appointment.payment_status === "paid");
+const clientNotes = computed(() => (props.appointment.client_notes || "").trim());
+
+// What was paid, and the total when it isn't all paid; plain staff see no
+// money, only whether it is paid.
+const authStore = useAuthStore();
+const moneyState = computed(() => {
+  const total = Number(props.appointment.current_appt_total || 0);
+  // A booking marked paid stays paid (as it always read here), even when its
+  // payments don't add up to the total.
+  if (props.appointment.payment_status === "paid") return "paid";
+  if (total <= 0) return "unpaid";
+  return paymentStatus(total, Number(props.appointment.deposit_amount || 0));
+});
 const paymentBadgeClass = computed(() =>
-  isPaid.value ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700",
+  moneyState.value === "paid"
+    ? "bg-green-50 text-green-700"
+    : moneyState.value === "partial"
+      ? "bg-amber-50 text-amber-800"
+      : "bg-red-50 text-red-700",
 );
 const paymentText = computed(() => {
-  const amount = formatMoney(props.appointment.current_appt_total);
-  const label = t(isPaid.value ? "scheduler.hoverCard.paid" : "scheduler.hoverCard.unpaid");
-  return `${label} ${amount}`;
+  const total = formatMoney(props.appointment.current_appt_total);
+  const paid = formatMoney(props.appointment.deposit_amount);
+  if (moneyState.value === "unpaid") {
+    return authStore.isStaff ? t("scheduler.hoverCard.unpaid") : `${t("scheduler.hoverCard.unpaid")} ${total}`;
+  }
+  if (authStore.isStaff) return t("scheduler.hoverCard.paid");
+  return moneyState.value === "paid"
+    ? `${t("scheduler.hoverCard.paid")} ${formatMoney(Math.max(Number(props.appointment.deposit_amount || 0), Number(props.appointment.current_appt_total || 0)))}`
+    : `${t("scheduler.hoverCard.paid")} ${t("common.paidOf", { paid, total })}`;
 });
 
 // When it was booked: date and time when recorded (booked_at, since late

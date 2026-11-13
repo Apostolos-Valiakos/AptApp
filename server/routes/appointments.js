@@ -146,6 +146,7 @@ module.exports = function appointmentsRouter({
           c.first_name, 
           c.last_name, 
           c.phone as client_phone,
+          c.notes as client_notes,
           COALESCE(c.outstanding_balance, 0) as client_outstanding_balance,
           COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0) as deposit_amount,
           -- True only on a client's first visit: their earliest booking by its
@@ -219,7 +220,7 @@ module.exports = function appointmentsRouter({
           SELECT MIN(start_time) AS first_start FROM appointment_services WHERE appointment_id = a.id
         ) fs ON true
         WHERE a.shop_id = $1 ${visibilityClause} ${dateFilter} ${threeMonthClause} ${staffOwnClause}
-        GROUP BY a.id, c.first_name, c.last_name, c.phone, c.outstanding_balance, fs.first_start
+        GROUP BY a.id, c.first_name, c.last_name, c.phone, c.notes, c.outstanding_balance, fs.first_start
         ORDER BY fs.first_start ASC, a.id
       `,
         params,
@@ -233,7 +234,7 @@ module.exports = function appointmentsRouter({
         deposit_amount: parseFloat(row.deposit_amount),
         // Staff-authored notes about a client should never reach the client's
         // own portal view of their own appointment.
-        ...(req.user.role === "client" ? { internal_notes: null, booking_notes: null, products: [] } : {}),
+        ...(req.user.role === "client" ? { internal_notes: null, booking_notes: null, client_notes: null, products: [] } : {}),
       }));
 
       res.json(formatted);
