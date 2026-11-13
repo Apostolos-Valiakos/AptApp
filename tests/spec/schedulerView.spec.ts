@@ -53,7 +53,6 @@ const stubs = {
   ClientSearchDialog: true,
   ClientQuickProfileDialog: true,
   ClientProfileDialog: true,
-  PlaceGroupDialog: true,
   AppointmentHoverCard: true,
 };
 
@@ -900,6 +899,67 @@ describe("CP8 a booked combination on the calendar", () => {
     );
     // The part is named as in the service list ("svc" is Massage there).
     expect(names).toEqual({ a1: "Massage (HOLISTIC + SAUNA OFFER)", a2: "Massage" });
+  });
+});
+
+describe("SA the sauna column: separate cards", () => {
+  const sauna = { id: "sauna", name: "ΣΑΟΥΝΑ", sort_order: 2, is_active: true, capacity: 5 };
+  const booking = (id: string, surname: string, from: string, to: string, persons = 1, status = "confirmed") => ({
+    ...appointment(),
+    id,
+    status,
+    first_name: "Ε",
+    last_name: surname,
+    services: [{
+      service_id: "svc", service_name: "ΣΑΟΥΝΑ", staff_id: "sauna", persons,
+      start_time: `${MONDAY}T${from}:00`,
+      duration_minutes: (new Date(`${MONDAY}T${to}:00`).getTime() - new Date(`${MONDAY}T${from}:00`).getTime()) / 60000,
+      price: 15,
+    }],
+  });
+  const fed = async (rows: any[], { view = "resourceTimeGridDay", staffList = [...staff, sauna] as any[] } = {}) => {
+    const { wrapper, options } = await open("admin", {
+      "GET /api/v1/staff": { body: staffList },
+      "GET /api/v1/appointments": { body: rows },
+    });
+    await options.datesSet({
+      startStr: `${MONDAY}T00:00:00`,
+      endStr: "2026-11-03T00:00:00",
+      view: { title: "", type: view, calendar: { getDate: () => new Date(MONDAY) } },
+    });
+    await settle();
+    const calls = calendarApi.setOption.mock.calls.filter((c: any[]) => c[0] === "events");
+    const css = [...wrapper.element.ownerDocument.querySelectorAll("style")].map((s) => s.textContent).join("\n");
+    return { wrapper, options, events: calls[calls.length - 1][1], css };
+  };
+  const three = () => [booking("m", "ΜΑΡΙΑ", "10:00", "11:00"), booking("e", "ΕΛΕΝΗ", "10:30", "11:30"), booking("n", "ΝΙΚΟΣ", "10:55", "12:00")];
+
+  test("each booking is its own card at its own times; no grouped box, no strip", async () => {
+    const { events } = await fed(three());
+    const cards = events.filter((e: any) => e.resourceId === "sauna" && e.extendedProps?.appointmentId);
+    expect(cards.map((c: any) => [c.extendedProps.appointmentId, new Date(c.start).toTimeString().slice(0, 5), new Date(c.end).toTimeString().slice(0, 5)])).toEqual([
+      ["m", "10:00", "11:00"], ["e", "10:30", "11:30"], ["n", "10:55", "12:00"],
+    ]);
+    expect(cards.every((c: any) => c.classNames.includes("fc-place-card"))).toBe(true);
+    expect(events.some((e: any) => e.extendedProps?.isPlaceGroup || e.extendedProps?.isOccupancy)).toBe(false);
+  });
+
+  test("every column keeps the same width, and ordinary cards aren't sauna cards", async () => {
+    const ordinary = { ...appointment(), id: "o", services: [{ service_id: "svc", staff_id: "st1", start_time: `${MONDAY}T10:00:00`, duration_minutes: 60, price: 30 }] };
+    const { events, css } = await fed([ordinary, ...three()]);
+    expect(css).not.toContain("data-resource-id");
+    expect(events.find((e: any) => e.extendedProps?.appointmentId === "o").classNames).not.toContain("fc-place-card");
+  });
+
+  test("a sauna card has the surname ready for when it is narrow", async () => {
+    const { options, events } = await fed([booking("m", "ΠΑΠΑΔΟΠΟΥΛΟΥ", "10:00", "11:00")]);
+    const card = events.find((e: any) => e.extendedProps?.appointmentId === "m");
+    const html = options.eventContent({
+      event: { ...card, start: new Date(card.start), end: new Date(card.end), extendedProps: card.extendedProps },
+      view: { type: "resourceTimeGridDay" },
+      isMirror: false,
+    }).html;
+    expect(html).toContain('<span class="fc-name-short">ΠΑΠΑΔΟΠΟΥΛΟΥ</span>');
   });
 });
 

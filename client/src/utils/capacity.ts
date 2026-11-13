@@ -3,8 +3,6 @@
 // over that as over_capacity unless it's sent with allow_over_capacity; these
 // are the same rules for the screens.
 
-const INACTIVE = ["cancelled", "no-show", "no_show"];
-
 /** "10:05", in the device's time. */
 export const hhmm = (value: string | number | Date) => {
   const d = new Date(value);
@@ -16,67 +14,6 @@ export const placesOf = (staff: any) => Math.max(1, Number(staff?.capacity) || 1
 
 /** How many persons a service row is for. */
 export const personsOf = (svc: any) => Math.max(1, Math.floor(Number(svc?.persons)) || 1);
-
-export type Occupancy = { start: number; end: number; persons: number };
-
-/** The most persons present at one moment within [start, end). */
-export const peakPersons = (rows: Occupancy[], start: number, end: number) => {
-  const points: [number, number][] = [];
-  for (const r of rows) {
-    const from = Math.max(r.start, start);
-    const to = Math.min(r.end, end);
-    if (from < to) points.push([from, r.persons], [to, -r.persons]);
-  }
-  // At the same moment, someone leaving frees the place before the next one comes.
-  points.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-  let now = 0;
-  let peak = 0;
-  for (const [, change] of points) {
-    now += change;
-    peak = Math.max(peak, now);
-  }
-  return peak;
-};
-
-/**
- * Bookings in one column that overlap, chained (10:00–11:00 and 10:30–11:30
- * are one group, 10:00–11:30), in start order. Each item needs start/end (ms).
- */
-export const overlapGroups = <T extends { start: number; end: number }>(items: T[]): T[][] => {
-  const sorted = [...items].sort((a, b) => a.start - b.start || a.end - b.end);
-  const groups: T[][] = [];
-  let groupEnd = -Infinity;
-  for (const item of sorted) {
-    if (groups.length > 0 && item.start < groupEnd) {
-      groups[groups.length - 1].push(item);
-      groupEnd = Math.max(groupEnd, item.end);
-    } else {
-      groups.push([item]);
-      groupEnd = item.end;
-    }
-  }
-  return groups;
-};
-
-const minutesOf = (svc: any) => Number(svc?.duration_override || svc?.duration_minutes) || 60;
-
-/**
- * The persons in `staffId`'s place during [start, end) from the loaded
- * appointments, leaving out the rows in `skip` ("appointmentId|serviceIndex").
- */
-export const occupancyFrom = (appointments: any[], staffId: any, skip: Set<string> = new Set()): Occupancy[] => {
-  const rows: Occupancy[] = [];
-  for (const appt of appointments || []) {
-    if (!appt || INACTIVE.includes(appt.status)) continue;
-    (appt.services || []).forEach((svc: any, index: number) => {
-      if (String(svc.staff_id) !== String(staffId) || !svc.start_time) return;
-      if (skip.has(`${appt.id}|${index}`)) return;
-      const start = new Date(svc.start_time).getTime();
-      rows.push({ start, end: start + minutesOf(svc) * 60000, persons: personsOf(svc) });
-    });
-  }
-  return rows;
-};
 
 /** The question asked before booking over the places (from an over_capacity answer). */
 export const overCapacityMessage = (details: any, t: (key: string, params?: any) => string) => {

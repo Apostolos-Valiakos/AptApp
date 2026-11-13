@@ -434,15 +434,6 @@
       @swap="handleSwap"
     />
 
-    <PlaceGroupDialog
-      v-model:visible="placeDialogVisible"
-      v-model:index="placeDialogIndex"
-      :groups="placeDialogGroups"
-      :can-add="!isStaffRole"
-      @add="onPlaceGroupAdd"
-      @open="onPlaceGroupOpen"
-    />
-
     <AppointmentHoverCard
       v-if="hoveredAppointment && hoverAnchorRect"
       :appointment="hoveredAppointment"
@@ -511,9 +502,6 @@ import { useAuthStore } from "../stores/auth";
 import elLocale from "@fullcalendar/core/locales/el";
 import StaffReorderDialog from "../components/StaffReorderDialog.vue";
 import AppointmentHoverCard from "../components/AppointmentHoverCard.vue";
-import PlaceGroupDialog, {
-  type PlaceGroup,
-} from "../components/PlaceGroupDialog.vue";
 import {
   isStaffAvailable,
   toLocalDateStr,
@@ -530,16 +518,7 @@ import { api as http, ApiError } from "../api/http"; // (`api` in this file is F
 import { fetchOrQueue } from "../offline/queue";
 import { knownOverlapIds } from "../offline/overlaps";
 import { isTempId } from "../offline/tempIds";
-import {
-  askOverCapacity,
-  hhmm,
-  occupancyFrom,
-  overCapacityMessage,
-  overlapGroups,
-  peakPersons,
-  personsOf,
-  placesOf,
-} from "../utils/capacity";
+import { askOverCapacity, hhmm, personsOf, placesOf } from "../utils/capacity";
 
 const reorderDialogVisible = ref(false);
 const authStore = useAuthStore();
@@ -679,15 +658,6 @@ const todayDate = computed(() => {
 
 // --- Appointment hover card ---
 const hoveredAppointment = ref<any>(null);
-// Shared places (ΣΑΟΥΝΑ, ΧΑΜΜΑΜ: staff with more than one place) in the day
-// view show overlapping bookings as one card (see placeGroupEvents). One
-// group at a time can be opened into separate cards, to drag one person.
-const expandedGroupKey = ref<string | null>(null);
-// Clicking a grouped card (not a name or a button) opens its dialog; the
-// arrows there step through that place's groups of the day.
-const placeDialogVisible = ref(false);
-const placeDialogResourceId = ref<string | null>(null);
-const placeDialogIndex = ref(0);
 // The hover card must never show while dragging/resizing or while the
 // "confirm changes" dialog is open (it would sit on top of the dialog).
 let dragInProgress = false;
@@ -1198,92 +1168,22 @@ const placesById = computed(
     ),
 );
 
-// The day view's cards in a shared place: bookings that overlap become one
-// card that says how many are there together (see placeGroupHtml), except
-// the opened group (expandedGroupKey), which stays as separate cards.
-// Cancelled and no-show bookings keep their own cards.
 // Bookings that didn't happen: crossed out, with a red line on the left. The
 // database says "no-show"; "no_show" is older spelling.
 const DID_NOT_HAPPEN = ["cancelled", "no-show", "no_show"];
 
-const placeGroupEvents = (events: any[]) => {
-  const byPlace = new Map<string, any[]>();
-  const result: any[] = [];
-  for (const e of events) {
-    const status = e.extendedProps.fullAppointment?.status;
-    const inPlace = (placesById.value.get(String(e.resourceId)) || 1) > 1;
-    if (
-      inPlace &&
-      e.start &&
-      e.end &&
-      !["cancelled", "no-show", "no_show"].includes(status)
-    ) {
-      if (!byPlace.has(e.resourceId)) byPlace.set(e.resourceId, []);
-      byPlace.get(e.resourceId)!.push(e);
-    } else {
-      result.push(e);
-    }
-  }
-  for (const [resourceId, list] of byPlace) {
-    const capacity = placesById.value.get(String(resourceId)) || 1;
-    const items = list.map((e) => ({
-      e,
-      start: new Date(e.start).getTime(),
-      end: new Date(e.end).getTime(),
-    }));
-    for (const group of overlapGroups(items)) {
-      const key = `${resourceId}|${group
-        .map((g) => g.e.id)
-        .sort()
-        .join(",")}`;
-      if (key === expandedGroupKey.value) {
-        result.push(
-          ...group.map(({ e }) => ({
-            ...e,
-            classNames: [...e.classNames, "fc-group-open"],
-            extendedProps: { ...e.extendedProps, groupKey: key },
-          })),
-        );
-        continue;
-      }
-      const start = Math.min(...group.map((g) => g.start));
-      const end = Math.max(...group.map((g) => g.end));
-      const members = group.map(({ e, start, end }) => ({
-        ...e.extendedProps,
-        start,
-        end,
-      }));
-      const offline = members.some((m) => m.offlineState === "conflict")
-        ? "fc-offline-conflict"
-        : members.some((m) => m.offlineState)
-          ? "fc-offline-pending"
-          : null;
-      result.push({
-        id: `group_${key}`,
-        resourceId,
-        start: new Date(start).toISOString(),
-        end: new Date(end).toISOString(),
-        backgroundColor: "#ffffff",
-        borderColor: "transparent",
-        textColor: "#1f2937",
-        durationEditable: false,
-        classNames: [
-          "fresha-event",
-          "fc-place-group",
-          ...(offline ? [offline] : []),
-        ],
-        extendedProps: {
-          isPlaceGroup: true,
-          groupKey: key,
-          capacity,
-          peak: peakPersons(members, start, end),
-          members,
-        },
-      });
-    }
-  }
-  return result;
-};
+// A shared place's (ΣΑΟΥΝΑ, ΧΑΜΜΑΜ) bookings are ordinary cards at their own
+// times, like any staff member's. Marked so narrow ones show the surname.
+const markPlaceCards = (events: any[]) =>
+  events.map((e) =>
+    (placesById.value.get(String(e.resourceId)) || 1) > 1
+      ? {
+          ...e,
+          classNames: [...(e.classNames || []), "fc-place-card"],
+          extendedProps: { ...e.extendedProps, inPlace: true },
+        }
+      : e,
+  );
 
 const calendarEvents = computed(() => {
   const appointments = calendarStore.events;
@@ -1446,14 +1346,10 @@ const calendarEvents = computed(() => {
     "#bbf7d0", // green-200
     "#fecaca", // red-200
   ];
-  const shown =
-    currentView.value === "resourceTimeGridDay"
-      ? placeGroupEvents(events)
-      : events;
+  const shown = markPlaceCards(events);
   const eventsByResource: Record<string, any[]> = {};
   shown.forEach((e) => {
-    if (!e.resourceId || !e.start || !e.end || e.extendedProps.isPlaceGroup)
-      return;
+    if (!e.resourceId || !e.start || !e.end) return;
     (eventsByResource[e.resourceId] ||= []).push(e);
   });
   Object.values(eventsByResource).forEach((group) => {
@@ -1479,65 +1375,6 @@ const calendarEvents = computed(() => {
 
   return shown;
 });
-
-// The open dialog's place: its grouped cards on the shown day, in time order.
-const placeDialogGroups = computed<(PlaceGroup & { key: string })[]>(() => {
-  const resourceId = placeDialogResourceId.value;
-  if (!resourceId) return [];
-  const name =
-    calendarStore.resources.find(
-      (r: any) => String(r.id) === String(resourceId),
-    )?.name || "";
-  return calendarEvents.value
-    .filter(
-      (e: any) =>
-        e.extendedProps?.isPlaceGroup &&
-        String(e.resourceId) === String(resourceId),
-    )
-    .map((e: any) => ({
-      key: e.extendedProps.groupKey,
-      resourceName: name,
-      capacity: e.extendedProps.capacity,
-      peak: e.extendedProps.peak,
-      start: new Date(e.start).getTime(),
-      end: new Date(e.end).getTime(),
-      members: e.extendedProps.members,
-    }))
-    .sort((a: any, b: any) => a.start - b.start);
-});
-// After a reload the list may be shorter: stay on a group that exists.
-watch(placeDialogGroups, (list) => {
-  if (placeDialogIndex.value > list.length - 1)
-    placeDialogIndex.value = Math.max(0, list.length - 1);
-  if (placeDialogVisible.value && list.length === 0)
-    placeDialogVisible.value = false;
-});
-const openPlaceDialog = (resourceId: string, groupKey: string) => {
-  hideHoverCard();
-  placeDialogResourceId.value = String(resourceId);
-  placeDialogIndex.value = Math.max(
-    0,
-    placeDialogGroups.value.findIndex((g) => g.key === groupKey),
-  );
-  placeDialogVisible.value = true;
-};
-// A booking clicked in the dialog: its booking dialog instead.
-const onPlaceGroupOpen = (appointment: any) => {
-  placeDialogVisible.value = false;
-  selectedAppointment.value = appointment;
-  dialogVisible.value = true;
-};
-const onPlaceGroupAdd = (start: Date) => {
-  const resourceId = placeDialogResourceId.value;
-  const name = placeDialogGroups.value[0]?.resourceName || "";
-  placeDialogVisible.value = false;
-  openNewBooking(
-    start,
-    new Date(start.getTime() + 60 * 60000),
-    resourceId,
-    name,
-  );
-};
 
 // Multi-day leave only — still a non-interactive background tint, since a
 // leave period isn't a single clickable slot the way a break block is.
@@ -2004,196 +1841,12 @@ const dayServices = (hovered: Record<string, any>) => {
   });
   return calendarEvents.value
     .flatMap((e: any) =>
-      e.extendedProps?.isPlaceGroup
-        ? e.extendedProps.members.map((m: any) => row(m, m.start, e.resourceId))
-        : e.extendedProps?.isServiceEvent
-          ? [row(e.extendedProps, e.start, e.resourceId)]
-          : [],
+      e.extendedProps?.isServiceEvent ? [row(e.extendedProps, e.start, e.resourceId)] : [],
     )
     .filter((s: any) => s.key === hovered.dayClientKey)
     .sort((a: any, b: any) => a.start.getTime() - b.start.getTime());
 };
 
-// A shared place's grouped card: the span, the most persons there together
-// against the places (green, amber one before full, red when full), a "+"
-// for one more booking at its start and a button to open it into separate
-// cards; then one line per booking. Built from user-editable names, so
-// everything is escaped.
-const placeGroupHtml = (props: any) => {
-  const { peak, capacity, members } = props;
-  const level =
-    peak >= capacity ? "full" : peak === capacity - 1 ? "almost" : "free";
-  const start = Math.min(...members.map((m: any) => m.start));
-  const end = Math.max(...members.map((m: any) => m.end));
-  const rows = members
-    .map((m: any, i: number) => {
-      const appt = m.fullAppointment || {};
-      const cashPaid = !!m.paidInCash;
-      return `<div class="fc-place-group-row${cashPaid ? " is-cash-paid" : ""}${appt.status === "completed" ? " is-completed" : ""}" data-member="${i}"${m.dayClientKey ? ` data-day-client-key="${escapeHtml(m.dayClientKey)}"` : ""}>
-          <span class="fc-place-group-name">${escapeHtml(m.client_name)}</span>
-          ${m.persons > 1 ? `<span class="fc-place-group-persons">×${m.persons}</span>` : ""}
-        </div>`;
-    })
-    .join("");
-  return `<div lang="el" class="fc-place-group-card">
-      <div class="fc-place-group-head">
-        <span class="fc-place-group-badge is-${level}" title="${escapeHtml(t("capacity.places"))}">${peak}/${capacity}</span>
-        <span class="fc-place-group-span">${hhmm(start)}–${hhmm(end)}</span>
-        <span class="fc-place-group-actions">
-          ${peak < capacity && !isStaffRole.value ? `<button type="button" data-group-action="add" title="${escapeHtml(t("capacity.addPerson"))}"><i class="pi pi-plus"></i></button>` : ""}
-          ${members.length > 1 ? `<button type="button" data-group-action="expand" title="${escapeHtml(t("capacity.expand"))}"><i class="pi pi-clone"></i></button>` : ""}
-        </span>
-      </div>
-      ${rows}
-    </div>`;
-};
-
-// Dragging a grouped card moves its bookings' rows in this place by the
-// same time (Ctrl / ⌘: their other services too), in the same column. One
-// question first, with the places counted at the new time (the group itself
-// left out of what's already there) and any overtime.
-const movePlaceGroup = async (info: any) => {
-  const props = info.event.extendedProps;
-  const shift = info.event.start.getTime() - info.oldEvent.start.getTime();
-  if (shift === 0) return;
-  const resource = info.oldEvent.getResources?.()[0];
-  const all = isMoveTogether(info.jsEvent);
-  const byAppointment = new Map<string, { appt: any; indexes: number[] }>();
-  for (const m of props.members) {
-    const entry = byAppointment.get(m.appointmentId) || {
-      appt: m.fullAppointment,
-      indexes: [],
-    };
-    entry.indexes.push(m.serviceIndex);
-    byAppointment.set(m.appointmentId, entry);
-  }
-  const moves = [...byAppointment.values()].map(({ appt, indexes }) => {
-    const isMoved = (i: number) => all || indexes.includes(i);
-    const services = prepareServicesForUpdate(
-      JSON.parse(JSON.stringify(appt.services)),
-    ).map((s: any, i: number) =>
-      isMoved(i)
-        ? {
-            ...s,
-            start_time: new Date(
-              new Date(s.start_time).getTime() + shift,
-            ).toISOString(),
-          }
-        : s,
-    );
-    return {
-      appt,
-      services,
-      moved: services.filter((_: any, i: number) => isMoved(i)),
-    };
-  });
-
-  const skip = new Set<string>(
-    props.members.map((m: any) => `${m.appointmentId}|${m.serviceIndex}`),
-  );
-  const moved = props.members.map((m: any) => ({
-    start: m.start + shift,
-    end: m.end + shift,
-    persons: m.persons,
-  }));
-  const from = Math.min(...moved.map((m: any) => m.start));
-  const to = Math.max(...moved.map((m: any) => m.end));
-  const persons = peakPersons(
-    [...occupancyFrom(calendarStore.events, resource?.id, skip), ...moved],
-    from,
-    to,
-  );
-  const over = persons > props.capacity;
-  const overtime = moves
-    .flatMap(({ moved }) => moved)
-    .map((s: any) => {
-      const start = new Date(s.start_time);
-      return overtimeEntryFor(
-        s.staff_id,
-        start,
-        new Date(start.getTime() + (Number(s.duration_override) || 60) * 60000),
-      );
-    })
-    .filter(
-      (
-        o: OvertimeEntry | null,
-        i: number,
-        list: (OvertimeEntry | null)[],
-      ): o is OvertimeEntry =>
-        !!o && list.findIndex((x) => x?.name === o.name) === i,
-    );
-
-  const minutes = Math.round(Math.abs(shift) / 60000);
-  const message = [
-    t(all ? "capacity.moveGroupMessageAll" : "capacity.moveGroupMessage", {
-      n: byAppointment.size,
-      name: resource?.title || "",
-      shift: t(
-        shift > 0 ? "capacity.minutesLater" : "capacity.minutesEarlier",
-        { n: minutes },
-      ),
-    }),
-    over
-      ? overCapacityMessage(
-          {
-            staff_name: resource?.title,
-            persons,
-            capacity: props.capacity,
-            start_time: from,
-            end_time: to,
-          },
-          t,
-        )
-      : "",
-    overtime.length ? overtimeConfirmMessage(overtime, t) : "",
-  ]
-    .filter(Boolean)
-    .join("\n\n");
-  hideHoverCard();
-  moveConfirmOpen = true;
-  const accepted = await new Promise<boolean>((resolve) => {
-    confirm.require({
-      header: over
-        ? t("capacity.header")
-        : overtime.length
-          ? t("booking.overtime.header")
-          : t("capacity.moveGroupHeader"),
-      message,
-      icon: over
-        ? "pi pi-users"
-        : overtime.length
-          ? "pi pi-clock"
-          : "pi pi-question-circle",
-      acceptLabel: over
-        ? t("capacity.accept")
-        : overtime.length
-          ? t("booking.overtime.accept")
-          : t("capacity.moveGroupAccept"),
-      rejectLabel: t("common.cancel"),
-      accept: () => resolve(true),
-      reject: () => resolve(false),
-      onHide: () => resolve(false),
-    });
-  });
-  moveConfirmOpen = false;
-  if (!accepted) {
-    info.revert();
-    return;
-  }
-  for (const { appt, services } of moves) {
-    await updateAppointment(
-      appt.id,
-      {
-        ...appt,
-        services,
-        allow_overtime: overtime.length > 0,
-        allow_over_capacity: true,
-      },
-      { refresh: false },
-    );
-  }
-  await calendarStore.fetchAppointments(currentStart.value, currentEnd.value);
-};
 
 // Dropping a card at a new time or staff member (Ctrl: all of its
 // appointment's cards), after confirming the change.
@@ -2291,22 +1944,6 @@ const resizeCard = async (info: any) => {
   if (!ok) info.revert();
 };
 
-// A card of an opened group moved or resized: the group closes again once
-// that's dealt with (saved, refused or cancelled), so it shows grouped.
-let openGroupDropping = false;
-const closeGroupIfNoDrop = () =>
-  setTimeout(() => {
-    if (!openGroupDropping) expandedGroupKey.value = null;
-  }, 400);
-const closeGroupAfter = async (handle: () => Promise<void>) => {
-  openGroupDropping = true;
-  try {
-    await handle();
-  } finally {
-    openGroupDropping = false;
-    expandedGroupKey.value = null;
-  }
-};
 
 // Hover card for a booking, shown next to `anchor` after a short pause. Not on
 // phones and touch screens: a tap counts as a hover too, so the card would open
@@ -2446,16 +2083,6 @@ const calendarOptions = ref({
     isRangeAllowedForResource(info.start, info.end, info.resource),
   eventAllow: (dropInfo: any, draggedEvent: any) => {
     const own = draggedEvent?.getResources?.()[0];
-    // A shared place's grouped or opened cards move up or down only.
-    const p = draggedEvent?.extendedProps;
-    if (
-      (p?.isPlaceGroup || p?.groupKey) &&
-      dropInfo.resource &&
-      own &&
-      String(dropInfo.resource.id) !== String(own.id)
-    ) {
-      return false;
-    }
     return isRangeAllowedForResource(
       dropInfo.start,
       dropInfo.end,
@@ -2467,7 +2094,6 @@ const calendarOptions = ref({
 
   datesSet: async (arg: any) => {
     fitRowsToScreen();
-    expandedGroupKey.value = null;
     currentTitle.value = arg.view.title;
     dockedDate.value = arg.view.calendar.getDate();
     currentView.value = arg.view.type;
@@ -2630,14 +2256,10 @@ const calendarOptions = ref({
     // new position; label it with the exact new time, since a 5-minute step
     // is only a few pixels when zoomed out.
     if (arg.isMirror && !isMonthView && start && end) {
-      const hhmm = (d: Date) =>
-        `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
       return {
         html: `<div class="fc-drag-time-pill">${hhmm(start)} – ${hhmm(end)}</div>`,
       };
     }
-
-    if (props.isPlaceGroup) return { html: placeGroupHtml(props) };
 
     // A phone's card is as narrow as it gets: surname first over up to two
     // lines, then the service. Its place on the grid already says the time.
@@ -2646,7 +2268,7 @@ const calendarOptions = ref({
         html: `
         <div lang="el" class="relative w-full h-full px-1 py-0.5 flex flex-col leading-tight overflow-hidden uppercase">
           ${overtimeMarks}
-          <div class="flex-shrink-0 text-[9px] font-bold break-words ${durationMins > 15 ? "line-clamp-2" : "line-clamp-1"} ${textClass}">${escapeHtml(props.client_name)}</div>
+          <div class="flex-shrink-0 text-[9px] font-bold break-words ${durationMins > 15 ? "line-clamp-2" : "line-clamp-1"} ${textClass}">${escapeHtml(props.inPlace ? props.client_surname : props.client_name)}</div>
           ${durationMins > 15 ? `<div class="min-h-0 text-[8px] break-words ${serviceClass}">${escapeHtml(props.service_name)}</div>` : ""}
         </div>
       `,
@@ -2670,7 +2292,12 @@ const calendarOptions = ref({
                 // to just wrap onto another line rather than truncate — nothing
                 // gets cut off mid-word (whitespace-normal only, no break-words),
                 // matching the earlier "keep words intact" preference.
-                `<div class="font-bold ${titleClass} pr-4 whitespace-normal ${textClass}" title="${escapeHtml(props.client_name)}">${escapeHtml(props.client_name)}</div>
+                `<div class="font-bold ${titleClass} pr-4 whitespace-normal ${textClass}" title="${escapeHtml(props.client_name)}">${
+                  // A shared place's narrow cards: the surname (see .fc-place-card).
+                  props.inPlace
+                    ? `<span class="fc-name-full">${escapeHtml(props.client_name)}</span><span class="fc-name-short">${escapeHtml(props.client_surname)}</span>`
+                    : escapeHtml(props.client_name)
+                }</div>
         <div class="text-[10px] md:text-[12px] font-medium mt-0.5 whitespace-normal ${serviceClass}" title="${escapeHtml(props.service_name)}">${escapeHtml(props.service_name)}</div>`
         }
       </div>
@@ -2688,35 +2315,6 @@ const calendarOptions = ref({
     if (dayKey) info.el.dataset.dayClientKey = dayKey;
     const apptId = info.event.extendedProps?.appointmentId;
     if (apptId) info.el.dataset.appointmentId = apptId; // used by the browser tests
-    const groupKey = info.event.extendedProps?.groupKey;
-    if (groupKey) info.el.dataset.groupKey = groupKey;
-    // A grouped card: the hover card is for the line under the mouse.
-    if (info.event.extendedProps?.isPlaceGroup) {
-      let current: HTMLElement | null = null;
-      info.el.addEventListener("mouseover", (e: MouseEvent) => {
-        if (dragInProgress || moveConfirmOpen) return;
-        const row =
-          ((e.target as HTMLElement).closest?.(
-            "[data-member]",
-          ) as HTMLElement | null) || null;
-        if (row === current) return;
-        current = row;
-        clearLinkedHighlight();
-        if (!row) return hideHoverCard();
-        const m = info.event.extendedProps.members[Number(row.dataset.member)];
-        highlightLinkedEvents(m, row);
-        showHoverCard(row, {
-          ...m.fullAppointment,
-          client_name: m.client_name,
-          service_name: m.service_name,
-          ...m.shownMoney,
-          start: new Date(m.start),
-          end: new Date(m.end),
-          day_services: dayServices(m),
-        });
-      });
-      info.el.addEventListener("mouseleave", () => (current = null));
-    }
   },
 
   eventDragStart: (info: any) => {
@@ -2725,12 +2323,6 @@ const calendarOptions = ref({
     startMoveTogetherHint(info.event.extendedProps?.appointmentId);
   },
   eventDragStop: (info: any) => {
-    lastDragEnd = Date.now();
-    // A card of an opened group, dragged: the group closes again once the
-    // drop is dealt with (eventDrop, which comes a moment after this), or
-    // shortly if it wasn't dropped anywhere. Not right away: redrawing the
-    // calendar before the drop arrives would lose it.
-    if (info.event.extendedProps?.groupKey) closeGroupIfNoDrop();
     dragInProgress = false;
     hideHoverCard();
     stopMoveTogetherHint();
@@ -2740,9 +2332,7 @@ const calendarOptions = ref({
     dragInProgress = true;
     hideHoverCard();
   },
-  eventResizeStop: (info: any) => {
-    lastDragEnd = Date.now();
-    if (info.event.extendedProps?.groupKey) closeGroupIfNoDrop();
+  eventResizeStop: () => {
     dragInProgress = false;
     hideHoverCard();
     setTimeout(() => setSnapMinutes(SLOT_MINUTES));
@@ -2772,43 +2362,6 @@ const calendarOptions = ref({
   },
 
   eventClick: (info: any) => {
-    // A grouped card: its buttons, or the booking on the line clicked.
-    if (info.event.extendedProps.isPlaceGroup) {
-      const p = info.event.extendedProps;
-      const target = info.jsEvent?.target as HTMLElement | null;
-      const action = (
-        target?.closest?.("[data-group-action]") as HTMLElement | null
-      )?.dataset.groupAction;
-      if (action === "expand") {
-        hideHoverCard();
-        expandedGroupKey.value = p.groupKey;
-        return;
-      }
-      if (action === "add") {
-        const resource = info.event.getResources()[0];
-        const start = info.event.start as Date;
-        openNewBooking(
-          start,
-          new Date(start.getTime() + 60 * 60000),
-          resource?.id ?? null,
-          resource?.title ?? "",
-        );
-        return;
-      }
-      const row = target?.closest?.("[data-member]") as HTMLElement | null;
-      const member = row ? p.members[Number(row.dataset.member)] : null;
-      if (member) {
-        hideHoverCard();
-        selectedAppointment.value = member.fullAppointment;
-        dialogVisible.value = true;
-        return;
-      }
-      openPlaceDialog(
-        info.event.getResources()[0]?.id ?? info.event._def.resourceIds?.[0],
-        p.groupKey,
-      );
-      return;
-    }
     const fullAppt = info.event.extendedProps.fullAppointment;
     if (fullAppt) {
       selectedAppointment.value = fullAppt;
@@ -2830,16 +2383,11 @@ const calendarOptions = ref({
 
   eventDrop: async (info: any) => {
     if (isStaffRole.value) return info.revert();
-    if (info.event.extendedProps.isPlaceGroup) return movePlaceGroup(info);
-    if (info.event.extendedProps.groupKey)
-      return closeGroupAfter(() => dropCard(info));
     return dropCard(info);
   },
 
   eventResize: async (info: any) => {
     if (isStaffRole.value) return info.revert();
-    if (info.event.extendedProps.groupKey)
-      return closeGroupAfter(() => resizeCard(info));
     return resizeCard(info);
   },
 
@@ -2939,26 +2487,6 @@ const onCardMouseDown = (e: MouseEvent) => {
     }),
   );
 };
-// An opened group closes again on a click outside its cards (and dialogs).
-// Not on the click the browser sends when a drag ends: closing then would
-// redraw the calendar before the drop is handled, and the move would be lost.
-let lastDragEnd = 0;
-const closeOpenGroup = (e: MouseEvent) => {
-  if (
-    !expandedGroupKey.value ||
-    dragInProgress ||
-    Date.now() - lastDragEnd < 500
-  )
-    return;
-  const target = e.target as HTMLElement | null;
-  if (
-    target?.closest?.(
-      ".fc-group-open, .fc-place-group, .p-dialog, .p-dialog-mask",
-    )
-  )
-    return;
-  expandedGroupKey.value = null;
-};
 // A Ctrl + press that didn't become a drag (just a click) mustn't count later.
 const disarmMoveTogether = () => {
   if (!dragInProgress) setTimeout(() => (moveTogetherArmed = false), 0);
@@ -2966,12 +2494,10 @@ const disarmMoveTogether = () => {
 onMounted(() => {
   document.addEventListener("mousedown", onCardMouseDown, true);
   document.addEventListener("mouseup", disarmMoveTogether, true);
-  document.addEventListener("click", closeOpenGroup);
 });
 onUnmounted(() => {
   document.removeEventListener("mousedown", onCardMouseDown, true);
   document.removeEventListener("mouseup", disarmMoveTogether, true);
-  document.removeEventListener("click", closeOpenGroup);
 });
 onMounted(() => {
   window.addEventListener("appointments-changed", liveReload);
@@ -3046,117 +2572,25 @@ onMounted(async () => {
   border-left: 3px solid #dc2626 !important;
 }
 
-/* Shared places (ΣΑΟΥΝΑ, ΧΑΜΜΑΜ): the grouped card, and an opened group's cards. */
-.fc-v-event.fc-place-group {
-  border: 1px solid #e5e7eb !important;
-}
-.fc-place-group-card {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  overflow: hidden;
-  padding: 2px 4px;
-  font-size: 11px;
-  line-height: 1.25;
-  color: #111827;
-  text-transform: uppercase;
-}
-/* Too narrow for the time span: just the badge and buttons (the lines show
-   the times, the card's dialog everything). */
-.fc-place-group-card {
+/* A shared place's cards get narrow side by side: the surname alone then. */
+.fc-place-card .fc-event-main {
   container-type: inline-size;
 }
-@container (max-width: 150px) {
-  .fc-place-group-span {
+.fc-place-card .fc-name-short {
+  display: none;
+}
+/* A long surname wraps onto another line rather than being cut. */
+.fc-place-card .fc-name-full,
+.fc-place-card .fc-name-short {
+  overflow-wrap: anywhere;
+}
+@container (max-width: 120px) {
+  .fc-place-card .fc-name-full {
     display: none;
   }
-}
-.fc-place-group-head {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-bottom: 1px;
-  font-weight: 600;
-  color: #6b7280;
-}
-.fc-place-group-span {
-  font-size: 9px;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.fc-place-group-badge {
-  flex-shrink: 0;
-  padding: 0 5px;
-  border-radius: 9999px;
-  font-weight: 700;
-  color: #fff;
-  white-space: nowrap;
-}
-.fc-place-group-badge.is-free {
-  background: #16a34a;
-}
-.fc-place-group-badge.is-almost {
-  background: #d97706;
-}
-.fc-place-group-badge.is-full {
-  background: #dc2626;
-}
-.fc-place-group-actions {
-  margin-left: auto;
-  display: flex;
-  gap: 2px;
-}
-.fc-place-group-actions button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  border-radius: 4px;
-  background: #f3f4f6;
-  color: #4b5563;
-}
-.fc-place-group-actions button:hover {
-  background: #e5e7eb;
-}
-.fc-place-group-card .pi {
-  font-size: 9px;
-}
-.fc-place-group-row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0 2px;
-  border-radius: 3px;
-  white-space: nowrap;
-  cursor: pointer;
-}
-.fc-place-group-row:hover {
-  background: var(--p-primary-50);
-}
-.fc-place-group-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-weight: 700;
-}
-.fc-place-group-persons {
-  font-weight: 700;
-  color: var(--p-primary-700);
-}
-.fc-place-group-row.is-cash-paid .fc-place-group-name {
-  text-decoration: line-through;
-  color: #c2410c;
-}
-.fc-place-group-row.is-completed {
-  box-shadow: inset 3px 0 0 #2563eb;
-  padding-left: 5px;
-}
-.fc-v-event.fc-group-open {
-  outline: 2px dashed var(--p-primary-400);
-  outline-offset: 1px;
+  .fc-place-card .fc-name-short {
+    display: inline;
+  }
 }
 
 /* Docked date calendar: fills its column, no frame, no sideways scroll. */
@@ -3411,10 +2845,6 @@ onMounted(async () => {
    fc-linked-hover on the same box. */
 .fc-day-client-hover {
   box-shadow: 0 0 0 2px var(--p-primary-color) inset !important;
-}
-/* The same client's line inside a grouped card (ΣΑΟΥΝΑ, ΧΑΜΜΑΜ). */
-.fc-place-group-row.fc-day-client-hover {
-  background: var(--p-primary-100);
 }
 
 /* Minimum visual height floor: a 5-10 min appointment renders at only a
