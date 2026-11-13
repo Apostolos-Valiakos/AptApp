@@ -10,6 +10,7 @@ module.exports = function appointmentsRouter({
   notForStaff,
   DiscountError,
   MissingStaffError,
+  RepeatedServiceError,
   OfflineConflictError,
   SelfBookingNotAllowedError,
   StaffUnavailableError,
@@ -45,6 +46,7 @@ module.exports = function appointmentsRouter({
       return { status: 422, body: { error: "staff_unavailable", reason: err.reason, staff_id: err.staffId } };
     }
     if (err instanceof MissingStaffError) return { status: 422, body: { error: "staff_required" } };
+    if (err instanceof RepeatedServiceError) return { status: 422, body: { error: "repeated_service", staff_id: err.staffId } };
     if (err instanceof OfflineConflictError) return { status: 409, body: { error: err.code, ...err.details } };
     return null;
   };

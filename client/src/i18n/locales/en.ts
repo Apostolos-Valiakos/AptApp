@@ -1517,6 +1517,7 @@ export default {
       selectClient: 'Please select a client before saving.',
       addService: 'Please add at least one service before saving.',
       staffUnavailable: 'This staff member is unavailable at that time (time off or outside their working hours).',
+      repeatedService: 'The same service is in twice at the same time with the same therapist. Change the time or the therapist of one of them.',
       staffRequired: 'Please select a staff member for every service before saving.',
     },
   },

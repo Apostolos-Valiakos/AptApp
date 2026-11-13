@@ -2052,6 +2052,9 @@ const executeSave = async (close = true, scope = "single", allowOverCapacity = f
       if (data.error === "staff_unavailable") {
         throw new Error(t("booking.validation.staffUnavailable"));
       }
+      if (data.error === "repeated_service") {
+        throw new Error(t("booking.validation.repeatedService"));
+      }
       if (["stale_appointment", "appointment_missing", "slot_taken"].includes(data.error)) {
         throw new Error(t(`offline.conflict.${data.error}`));
       }

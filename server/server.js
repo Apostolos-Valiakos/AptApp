@@ -22,7 +22,7 @@ const { recalculateClientBalance, recalculateAllClientBalances } = require("./do
 const { checkIdempotency, saveIdempotency } = require("./domain/idempotency");
 const { releasePackageUsage, loadClientPackages } = require("./domain/packages");
 const { parseDebtResolution, settleAmount } = require("./domain/debts");
-const { StaffUnavailableError, MissingStaffError, getGroupDetails, DiscountError, createAppointmentSeries, performSingleUpdate, SelfBookingNotAllowedError, sanitizeClientBookingPayload, OfflineConflictError, assertCapacity, assertNoNewOverlaps, assertBaseVersion } = require("./domain/bookings");
+const { StaffUnavailableError, MissingStaffError, RepeatedServiceError, getGroupDetails, DiscountError, createAppointmentSeries, performSingleUpdate, SelfBookingNotAllowedError, sanitizeClientBookingPayload, OfflineConflictError, assertCapacity, assertNoNewOverlaps, assertBaseVersion } = require("./domain/bookings");
 const { forceLogoutCache, userRevokedCache, revokeUserSessions, isSessionToken, authenticateToken, requireAnalyticsAccess, notForClients, notForStaff, requireShopAdminAccess, isAdminRole, canSellExtras, isReauthed, requireReauth, requireSensitiveAccess, signReauth } = require("./middleware/auth");
 const path = require("path");
 const cors = require("cors");
@@ -352,6 +352,7 @@ app.use(
     notForStaff,
     DiscountError,
     MissingStaffError,
+    RepeatedServiceError,
     OfflineConflictError,
     SelfBookingNotAllowedError,
     StaffUnavailableError,

@@ -36,6 +36,33 @@ class MissingStaffError extends Error {
   }
 }
 
+// The same service twice at the same moment with the same therapist: one
+// person can't give it twice at once. In a shared place (the sauna) it's two
+// people there together, which is fine.
+class RepeatedServiceError extends Error {
+  constructor(staffId) {
+    super("repeated_service");
+    this.staffId = staffId;
+  }
+}
+const assertNoRepeatedRows = async (client, shopId, services, isBlock) => {
+  if (isBlock || !Array.isArray(services) || services.length < 2) return;
+  const seen = new Map();
+  for (const svc of services) {
+    const staffId = safeUUID(svc.staff_id);
+    const serviceId = safeUUID(svc.service_id);
+    const start = new Date(svc.start_time).getTime();
+    if (!staffId || !serviceId || Number.isNaN(start)) continue;
+    const key = `${serviceId}|${staffId}|${start}`;
+    seen.set(key, (seen.get(key) || 0) + 1);
+  }
+  const repeated = [...seen].filter(([, n]) => n > 1).map(([key]) => key.split("|")[1]);
+  if (repeated.length === 0) return;
+  const places = await sharedPlacesFor(client, shopId, repeated.map((staff_id) => ({ staff_id })));
+  const staffId = repeated.find((id) => !places.has(String(id)));
+  if (staffId) throw new RepeatedServiceError(staffId);
+};
+
 const assertServicesHaveStaff = (services, isBlock) => {
   if (isBlock) return;
   const missing = (services || []).some(
@@ -205,6 +232,7 @@ const createAppointmentSeries = async (client, data, shopId) => {
   } = data;
 
   assertServicesHaveStaff(services, is_block);
+  await assertNoRepeatedRows(client, shopId, services, is_block);
   // When it was booked: now, or when it was made offline (sent by the sync
   // queue) if that's a sensible past moment.
   const bookedAt = (() => {
@@ -446,6 +474,7 @@ const performSingleUpdate = async (client, id, shopId, body) => {
   } = body;
 
   assertServicesHaveStaff(services, is_block);
+  await assertNoRepeatedRows(client, shopId, services, is_block);
 
   const validClientId = safeUUID(client_id);
 
@@ -854,6 +883,7 @@ const assertBaseVersion = async (client, shopId, appointmentId, body) => {
 module.exports = {
   addRecurrenceInterval,
   StaffUnavailableError,
+  RepeatedServiceError,
   MissingStaffError,
   assertServicesHaveStaff,
   assertStaffAvailable,
