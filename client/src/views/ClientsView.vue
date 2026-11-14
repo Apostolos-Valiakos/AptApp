@@ -33,6 +33,7 @@
             class="flex-1 sm:flex-none whitespace-nowrap"
             :label="t('clients.addNew')"
             icon="pi pi-plus"
+            data-testid="clients-new"
             @click="openNew"
           />
         </div>
@@ -263,9 +264,10 @@
             <label class="block text-sm font-medium text-gray-700 mb-1">{{
               t("common.phone")
             }}</label>
-            <InputText v-model="editingClient.phone" class="w-full" />
+            <InputText v-model="editingClient.phone" class="w-full" data-testid="new-client-phone" />
           </div>
         </div>
+        <PhoneMatches :matches="phoneMatches" @use="openExistingClient" />
 
         <div v-if="shopSettings">
           <span class="block text-xs font-bold text-gray-500 uppercase mb-3">
@@ -412,10 +414,21 @@
           class="p-button-text"
           @click="dialogVisible = false"
         />
+        <!-- A client with this phone exists: a new one is a deliberate second choice. -->
         <Button
+          v-if="phoneMatches.length"
+          :label="t('clients.phoneMatch.createAnyway')"
+          severity="secondary"
+          outlined
+          data-testid="new-client-save"
+          @click="saveClient"
+        />
+        <Button
+          v-else
           :label="t('common.save')"
           icon="pi pi-check"
           class="p-button-success"
+          data-testid="new-client-save"
           @click="saveClient"
         />
       </template>
@@ -432,7 +445,9 @@
 </template>
 
 <script setup lang="ts">
-import { api, ifRefused, withMessage } from "../api/http";
+import { api, ApiError, ifRefused, withMessage } from "../api/http";
+import { usePhoneMatches } from "../composables/usePhoneMatches";
+import PhoneMatches from "../components/PhoneMatches.vue";
 import { ref, onMounted, computed, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
@@ -599,6 +614,19 @@ const openProfile = (client: any) => {
   selectedClientId.value = client.id;
   profileVisible.value = true;
 };
+
+// Clients who already have the phone typed for a new client (see usePhoneMatches).
+const { matches: phoneMatches, showMatches: showPhoneMatches, reset: resetPhoneMatches } = usePhoneMatches(
+  computed(() => editingClient.value?.phone),
+);
+watch(dialogVisible, (open) => {
+  if (!open) resetPhoneMatches();
+});
+// One of them instead of a new client: their card.
+const openExistingClient = (client: any) => {
+  dialogVisible.value = false;
+  openProfile(client);
+};
 const inviteClient = async (client: any) => {
   if (!client.email) {
     toast.add({
@@ -668,7 +696,18 @@ const saveClient = async () => {
 
   // Since we use ClientProfileDialog for edits, this is strictly for POST (Create)
   try {
-    await api.post("/api/v1/clients", editingClient.value).catch(withMessage("Failed to save"));
+    // Same phone as an existing client: only after "create anyway".
+    const answer = await api
+      .post("/api/v1/clients", { ...editingClient.value, allow_same_phone: phoneMatches.value.length > 0 })
+      .catch((e) => {
+        if (e instanceof ApiError && e.status === 409 && e.data?.error === "phone_exists") return e.data;
+        throw e;
+      });
+    // Someone has this phone (found by the server as it saved): offer them.
+    if (answer?.error === "phone_exists") {
+      showPhoneMatches(answer.matches);
+      return;
+    }
 
     toast.add({
       severity: "success",

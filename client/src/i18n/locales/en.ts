@@ -173,6 +173,11 @@ export default {
     },
   },
   clients: {
+    phoneMatch: {
+      title: 'A client with this phone already exists:',
+      use: 'Use this client',
+      createAnyway: 'Create a new client anyway',
+    },
     title: 'Clients',
     subtitle: '{count} clients registered',
     addNew: 'Add New Client',

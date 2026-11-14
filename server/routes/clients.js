@@ -6,6 +6,7 @@ const { HttpError, asyncHandler, withTransaction } = require("../http");
 const { MONEY_METHODS, upperName } = require("../domain/common");
 const jwt = require("jsonwebtoken");
 const path = require("path");
+const { clientsWithPhone } = require("../domain/phones");
 
 module.exports = function clientsRouter({
   notForStaff,
@@ -244,7 +245,15 @@ module.exports = function clientsRouter({
     res.status(status).json(body);
   }));
 
+  // Clients who already have this phone (any way of writing it), for the new
+  // client dialogs: they offer to use one of them instead of a duplicate.
+  router.get("/by-phone", authenticateToken, asyncHandler(async (req, res) => {
+    if (req.user.role === "client") return res.status(403).json({ error: "Forbidden" });
+    res.json(await clientsWithPhone(pool, req.shopId, req.query.phone));
+  }));
+
   router.post("/", authenticateToken, notForStaff, asyncHandler(async (req, res) => {
+    if (req.user.role === "client") return res.status(403).json({ error: "Forbidden" });
     const {
       first_name,
       last_name,
@@ -256,6 +265,7 @@ module.exports = function clientsRouter({
       physiotherapia,
       logotherapia,
       date_of_birth,
+      allow_same_phone,
     } = req.body;
 
     if (!first_name?.trim() || !last_name?.trim()) {
@@ -271,6 +281,12 @@ module.exports = function clientsRouter({
       const cached = await checkIdempotency(db, idempotencyKey, req.shopId);
       if (cached) {
         return { status: cached.response_status, body: cached.response_body };
+      }
+      // A client with this phone already: they're offered instead, unless the
+      // screen says a new one is meant (a family member on the same phone).
+      if (allow_same_phone !== true) {
+        const matches = await clientsWithPhone(db, req.shopId, phone);
+        if (matches.length > 0) return { status: 409, body: { error: "phone_exists", matches } };
       }
       const { rows } = await db.query(
         `INSERT INTO clients (first_name, last_name, email, phone, notes, custom_fields, shop_id, ergotherapia, physiotherapia, logotherapia, date_of_birth) 

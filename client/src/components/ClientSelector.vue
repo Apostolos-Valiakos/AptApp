@@ -74,10 +74,14 @@
           }}</label>
           <InputText v-model="newClient.phone" class="w-full" data-testid="client-new-phone" />
         </div>
+        <PhoneMatches :matches="phoneMatches" @use="useExistingClient" />
       </div>
       <template #footer>
+        <!-- A client with this phone exists: a new one is a deliberate second choice. -->
         <Button
-          :label="t('booking.quickAdd.saveClient')"
+          :label="phoneMatches.length ? t('clients.phoneMatch.createAnyway') : t('booking.quickAdd.saveClient')"
+          :severity="phoneMatches.length ? 'secondary' : undefined"
+          :outlined="phoneMatches.length > 0"
           data-testid="client-new-save"
           @click="saveNewClient"
           :loading="savingNewClient"
@@ -90,12 +94,14 @@
 
 <script setup lang="ts">
 import { api, ApiError } from "../api/http";
-import { ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
 import { avatarColor, initials } from "../utils/avatar";
 import { fetchOrQueue, isOnline } from "../offline/queue";
 import { addCachedClient, searchCachedClients } from "../offline/localData";
+import { usePhoneMatches } from "../composables/usePhoneMatches";
+import PhoneMatches from "./PhoneMatches.vue";
 
 const props = defineProps({
   allowWalkIn: { type: Boolean, default: false },
@@ -176,6 +182,24 @@ const pickWalkIn = async () => {
 const showQuickAdd = ref(false);
 const newClient = ref({ first_name: "", last_name: "", phone: "" });
 const savingNewClient = ref(false);
+// Clients who already have the phone being typed (see usePhoneMatches).
+const { matches: phoneMatches, checkedOnServer, showMatches, reset: resetPhoneMatches } = usePhoneMatches(
+  computed(() => newClient.value.phone),
+);
+const closeQuickAdd = () => {
+  showQuickAdd.value = false;
+  newClient.value = { first_name: "", last_name: "", phone: "" };
+  resetPhoneMatches();
+};
+// Closed any other way: the matches go with the dialog.
+watch(showQuickAdd, (open) => {
+  if (!open) resetPhoneMatches();
+});
+// One of them instead of a new client.
+const useExistingClient = (client: any) => {
+  emit("select", { ...client, full_name: client.full_name || `${client.first_name} ${client.last_name}` });
+  closeQuickAdd();
+};
 const saveNewClient = async () => {
   // Checked here too: offline, a missing name would only be refused when it
   // syncs (as a conflict), long after the client left.
@@ -187,7 +211,10 @@ const saveNewClient = async () => {
   try {
     // Offline the new client is queued with a temporary id: it can be booked
     // (and paid for) straight away, and everything links up when it syncs.
-    const result = await fetchOrQueue("/api/v1/clients", "POST", { ...newClient.value }, {
+    // Same phone as an existing client: only after "create anyway" (or when
+    // offline, where this device's list was all that could be checked).
+    const allowSamePhone = phoneMatches.value.length > 0 || !checkedOnServer.value;
+    const result = await fetchOrQueue("/api/v1/clients", "POST", { ...newClient.value, allow_same_phone: allowSamePhone }, {
       kind: "client",
       label: `${t("booking.newClientBtn")} · ${newClient.value.first_name} ${newClient.value.last_name}`.trim(),
       createsId: "client.id",
@@ -204,6 +231,11 @@ const saveNewClient = async () => {
     } else {
       const res = result.response;
       const data = await res.json();
+      // Someone has this phone (found by the server as it saved): offer them.
+      if (res.status === 409 && data.error === "phone_exists") {
+        showMatches(data.matches);
+        return;
+      }
       if (!res.ok || !(data.success || data.client)) {
         throw new Error("Request failed");
       }
@@ -216,8 +248,7 @@ const saveNewClient = async () => {
     client.outstanding_balance = 0;
 
     emit("select", client);
-    showQuickAdd.value = false;
-    newClient.value = { first_name: "", last_name: "", phone: "" };
+    closeQuickAdd();
   } catch (e) {
     console.error(e);
     toast.add({

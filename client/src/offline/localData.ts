@@ -1,6 +1,7 @@
 // Last known server data, kept in the browser so frontdesk can open the
 // calendar, look up services and search clients while offline.
 import { STORES, deleteRow, getAllRows, getRow, putRow, putRows } from "./db";
+import { MIN_PHONE_DIGITS, phoneKey } from "../utils/phone";
 
 // --- Appointments ------------------------------------------------------------
 
@@ -82,6 +83,16 @@ export const addCachedClient = (client: any) => putRow(STORES.clients, { ...clie
 export const removeCachedClient = (id: string) => deleteRow(STORES.clients, id);
 export const getCachedClient = (id: string) => getRow<any>(STORES.clients, id);
 export const getCachedClients = () => getAllRows<any>(STORES.clients);
+
+/** The clients kept on this device with this phone (written any way), for offline use. */
+export const cachedClientsWithPhone = async (phone: string) => {
+  const key = phoneKey(phone);
+  if (key.length < MIN_PHONE_DIGITS) return [];
+  const all = await getAllRows<any>(STORES.clients);
+  return all
+    .filter((c) => !c.is_walk_in && phoneKey(c.phone) === key)
+    .map((c) => ({ ...c, full_name: c.full_name || `${c.first_name || ""} ${c.last_name || ""}`.trim() }));
+};
 
 /**
  * Client search over the cached list: every word must match the name (in
