@@ -77,6 +77,14 @@
         </span>
         <span class="flex items-center gap-2 flex-shrink-0 text-sm">
           <span
+            v-if="leaveFor(s.id, selectedDay)"
+            class="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-semibold"
+            :title="leaveFor(s.id, selectedDay)?.reason || ''"
+            data-testid="schedule-leave"
+            >{{ t("staffSchedule.onLeave") }}</span
+          >
+          <span
+            v-else
             :class="
               cellRanges(s.id, selectedDay) === null || cellRanges(s.id, selectedDay)?.length === 0
                 ? 'text-gray-400'
@@ -84,6 +92,12 @@
             "
             >{{ cellLabel(s.id, selectedDay) }}</span
           >
+          <i
+            v-if="!leaveFor(s.id, selectedDay) && ownHoursFor(s.id, selectedDay)"
+            class="pi pi-circle-fill text-[6px] text-[var(--p-primary-color)]"
+            :title="t('staffSchedule.ownHours')"
+            data-testid="schedule-own-day"
+          ></i>
           <i class="pi pi-chevron-right text-xs text-gray-300"></i>
         </span>
       </button>
@@ -134,9 +148,19 @@
               v-for="d in weekDates"
               :key="d.getTime()"
               class="text-center p-2 cursor-pointer hover:bg-[var(--p-primary-50)] rounded-lg transition-colors whitespace-nowrap"
+              :class="{ 'bg-amber-50': leaveFor(s.id, d) }"
               @click="openCellPopup(s, d)"
             >
+              <!-- On leave: that instead of the hours (which stay as they were). -->
               <span
+                v-if="leaveFor(s.id, d)"
+                class="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-semibold"
+                v-tooltip.top="leaveFor(s.id, d)?.reason || null"
+                data-testid="schedule-leave"
+                >{{ t("staffSchedule.onLeave") }}</span
+              >
+              <span
+                v-else
                 :class="
                   cellRanges(s.id, d) === null || cellRanges(s.id, d)?.length === 0
                     ? 'text-gray-400'
@@ -144,6 +168,13 @@
                 "
                 >{{ cellLabel(s.id, d) }}</span
               >
+              <!-- This date has its own hours (not the weekly schedule's). -->
+              <i
+                v-if="!leaveFor(s.id, d) && ownHoursFor(s.id, d)"
+                class="pi pi-circle-fill text-[6px] text-[var(--p-primary-color)] align-middle ml-1"
+                v-tooltip.top="t('staffSchedule.ownHours')"
+                data-testid="schedule-own-day"
+              ></i>
             </td>
           </tr>
         </tbody>
@@ -161,18 +192,21 @@
       <div class="text-sm text-gray-600 mb-1">
         {{ t("staffSchedule.scheduleType") }}: {{ t("staffSchedule.weekly") }}
       </div>
-      <div class="text-sm text-gray-600 mb-4">
+      <div class="text-sm text-gray-600" :class="popupOwnDay ? 'mb-1' : 'mb-4'">
         {{ t("staffSchedule.from") }}:
         {{ popupInfo ? formatDateLong(popupInfo.effective_from) : "—" }}
         <span v-if="popupInfo" class="text-gray-400">
           · {{ popupInfo.hours }} {{ t("staffSchedule.hoursPerWeek") }}</span
         >
       </div>
+      <div v-if="popupOwnDay" class="text-sm text-[var(--p-primary-700)] mb-4" data-testid="schedule-popup-own-day">
+        {{ t("staffSchedule.ownHours") }}
+      </div>
       <div class="space-y-2">
         <Button
           :label="t('staffSchedule.editDay')"
           class="w-full p-button-outlined"
-          :disabled="isPastWeek"
+          :disabled="popupDayIsPast"
           @click="openEditDay"
         />
         <Button
@@ -185,47 +219,73 @@
       <p v-if="isPastWeek" class="text-xs text-gray-400 mt-3">
         {{ t("staffSchedule.pastWeekReadOnly") }}
       </p>
+      <p v-else-if="popupDayIsPast" class="text-xs text-gray-400 mt-3">
+        {{ t("staffSchedule.pastDayReadOnly") }}
+      </p>
     </Dialog>
 
-    <!-- Edit single day -->
+    <!-- One date's hours (that date only) -->
     <Dialog
       v-model:visible="editDayVisible"
       :header="t('staffSchedule.editShiftTitle')"
       modal
-      :style="{ width: '420px' }"
+      :style="{ width: '460px', maxWidth: '95vw' }"
     >
-      <div class="text-sm text-gray-500 mb-4">
+      <div class="text-sm text-gray-500">
         {{ popupStaff?.name }} · {{ popupDateLabel }}
       </div>
+      <p class="text-xs text-gray-400 mb-4">{{ t("staffSchedule.onlyThisDate") }}</p>
       <div class="flex gap-2 mb-4 flex-wrap">
         <Button
-          :label="t('staffSchedule.useDefault')"
+          :label="t('staffSchedule.normalHours')"
           size="small"
           :class="editDayMode === 'default' ? '' : 'p-button-outlined'"
+          data-testid="day-mode-default"
           @click="editDayMode = 'default'"
         />
         <Button
           :label="t('staff.workingHours.dayOff')"
           size="small"
           :class="editDayMode === 'off' ? '' : 'p-button-outlined'"
+          data-testid="day-mode-off"
           @click="editDayMode = 'off'"
         />
         <Button
           :label="t('staffSchedule.customHours')"
           size="small"
           :class="editDayMode === 'custom' ? '' : 'p-button-outlined'"
+          data-testid="day-mode-custom"
           @click="editDayMode = 'custom'"
         />
       </div>
-      <div v-if="editDayMode === 'custom'" class="flex items-center gap-2">
-        <TimeDropdown
-          :modelValue="toTimeStr(editDayStart)"
-          @update:modelValue="(t: string) => (editDayStart = parseTimeToDate(t))"
-        />
-        <span class="text-gray-400 flex-shrink-0">—</span>
-        <TimeDropdown
-          :modelValue="toTimeStr(editDayEnd)"
-          @update:modelValue="(t: string) => (editDayEnd = parseTimeToDate(t))"
+      <p v-if="editDayMode === 'default'" class="text-sm text-gray-600" data-testid="day-normal-hours">
+        {{ weeklyLabel }}
+      </p>
+      <div v-if="editDayMode === 'custom'" class="space-y-2">
+        <div v-for="(range, idx) in editDayRanges" :key="idx" class="flex items-center gap-2">
+          <TimeDropdown
+            :modelValue="range.start_time"
+            @update:modelValue="(v: string) => (range.start_time = v)"
+          />
+          <span class="text-gray-400 flex-shrink-0">—</span>
+          <TimeDropdown
+            :modelValue="range.end_time"
+            @update:modelValue="(v: string) => (range.end_time = v)"
+          />
+          <Button
+            v-if="editDayRanges.length > 1"
+            icon="pi pi-trash"
+            class="p-button-rounded p-button-text p-button-sm p-button-danger flex-shrink-0"
+            :aria-label="t('common.delete')"
+            @click="editDayRanges.splice(idx, 1)"
+          />
+        </div>
+        <Button
+          :label="t('staff.workingHours.addRange')"
+          icon="pi pi-plus"
+          text
+          size="small"
+          @click="editDayRanges.push({ start_time: '16:00', end_time: '20:00' })"
         />
       </div>
       <template #footer>
@@ -245,7 +305,10 @@
       modal
       :style="{ width: '560px' }"
     >
-      <div class="text-sm text-gray-500 mb-4">{{ popupStaff?.name }} · {{ weekRangeLabel }}</div>
+      <div class="text-sm text-gray-500">{{ popupStaff?.name }}</div>
+      <p class="text-xs text-gray-400 mb-4" data-testid="week-from-onwards">
+        {{ t("staffSchedule.fromOnwards", { date: formatDateLong(toDateStr(weekMonday)) }) }}
+      </p>
       <div class="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
         <div
           v-for="day in editWeekDays"
@@ -292,10 +355,12 @@
       </div>
       <template #footer>
         <Button
-          :label="t('staffSchedule.useDefaultWeek')"
+          v-if="weekHasOwnSchedule"
+          :label="t('staffSchedule.removeWeekChange', { date: dayNumLabel(weekMonday) })"
           text
           severity="secondary"
           class="mr-auto"
+          data-testid="week-undo"
           @click="clearWeekVersion"
         />
         <Button :label="t('common.cancel')" text @click="editWeekVisible = false" />
@@ -367,13 +432,21 @@ import { useIsPhone } from "../composables/useIsPhone";
 import {
   mondayOf,
   buildWeekSchedule,
-  dayScheduleExcludingWeek,
+  getWorkingRangesForDate,
+  leaveOnDay,
+  ownHoursOn,
+  weeklyRangesForDate,
+  weeklyScheduleStart,
   toLocalDateStr,
   type WeekDaySchedule,
 } from "../utils/staffAvailability";
 
 const { t, locale } = useI18n();
 const toast = useToast();
+const notify = {
+  success: (detail: string) => toast.add({ severity: "success", summary: t("common.success"), detail, life: 3000 }),
+  error: (detail: string) => toast.add({ severity: "error", summary: t("common.error"), detail, life: 4000 }),
+};
 const confirm = useConfirm();
 const calendarStore = useCalendarStore();
 const authStore = useAuthStore();
@@ -459,47 +532,32 @@ const formatDateLong = (dateStr: string) =>
   );
 
 // === Grid cell resolution ===
-// Lightweight local copy of the resolution rule (latest effective_from <=
-// date) — the shared getWorkingRangesForDate returns the ranges only; the
-// grid/popup also need the governing version's own effective_from + total
-// weekly hours, so this re-derives both from the same raw rows.
+// The shared rule (utils/staffAvailability.ts): a date's own hours, else the
+// weekly schedule in force then.
+const cellRanges = (staffId: any, date: Date) => getWorkingRangesForDate(calendarStore.workingHours, staffId, date);
+const ownHoursFor = (staffId: any, date: Date) => ownHoursOn(calendarStore.workingHours, staffId, date);
+
+// The weekly schedule in force on a date: the Monday it starts, and its hours a week.
 const governingVersion = (staffId: any, date: Date) => {
-  const dateStr = toLocalDateStr(date);
-  const rows = (calendarStore.workingHours || []).filter(
-    (w: any) => String(w.staff_id) === String(staffId) && w.effective_from <= dateStr,
-  );
-  if (rows.length === 0) return null;
-  const latest = rows.reduce(
-    (m: string, w: any) => (w.effective_from > m ? w.effective_from : m),
-    rows[0].effective_from,
-  );
-  const versionRows = rows.filter((w: any) => w.effective_from === latest);
-  const totalMinutes = versionRows.reduce((sum: number, w: any) => {
-    const [sh, sm] = w.start_time.split(":").map(Number);
-    const [eh, em] = w.end_time.split(":").map(Number);
-    return sum + (eh * 60 + em - (sh * 60 + sm));
-  }, 0);
-  return { effective_from: latest, hours: Math.round((totalMinutes / 60) * 10) / 10 };
+  const from = weeklyScheduleStart(calendarStore.workingHours, staffId, date);
+  if (!from) return null;
+  const totalMinutes = (calendarStore.workingHours || [])
+    .filter((w: any) => !w.kind && String(w.staff_id) === String(staffId) && w.effective_from === from)
+    .reduce((sum: number, w: any) => {
+      const [sh, sm] = w.start_time.split(":").map(Number);
+      const [eh, em] = w.end_time.split(":").map(Number);
+      return sum + (eh * 60 + em - (sh * 60 + sm));
+    }, 0);
+  return { effective_from: from, hours: Math.round((totalMinutes / 60) * 10) / 10 };
 };
 
-const cellRanges = (staffId: any, date: Date): { start: string; end: string }[] | null => {
-  const dateStr = toLocalDateStr(date);
-  const rows = (calendarStore.workingHours || []).filter(
-    (w: any) => String(w.staff_id) === String(staffId) && w.effective_from <= dateStr,
-  );
-  if (rows.length === 0) return null;
-  const latest = rows.reduce(
-    (m: string, w: any) => (w.effective_from > m ? w.effective_from : m),
-    rows[0].effective_from,
-  );
-  return rows
-    .filter((w: any) => w.effective_from === latest && w.day_of_week === date.getDay())
-    .map((w: any) => ({ start: w.start_time, end: w.end_time }))
-    .sort((a: any, b: any) => (a.start > b.start ? 1 : -1));
-};
+// A staff member's leave on a day (from the staff page's time off), if any.
+const leaveFor = (staffId: any, date: Date) => leaveOnDay(calendarStore.timeOff, staffId, date);
 
 // Server TIME columns serialize with seconds ("09:00:00") — trim for display.
 const hhmm = (s: string) => (s || "").slice(0, 5);
+const asShifts = (ranges: { start: string; end: string }[] | null) =>
+  (ranges || []).map((r) => ({ start_time: hhmm(r.start), end_time: hhmm(r.end) }));
 
 const cellLabel = (staffId: any, date: Date) => {
   const ranges = cellRanges(staffId, date);
@@ -542,95 +600,102 @@ const popupDateLabel = computed(() =>
       })
     : "",
 );
+const popupOwnDay = computed(() =>
+  popupStaff.value && popupDate.value ? !!ownHoursFor(popupStaff.value.id, popupDate.value) : false,
+);
+// Today can still be changed; earlier days can't (the server refuses them too).
+const popupDayIsPast = computed(() => !popupDate.value || toLocalDateStr(popupDate.value) < toLocalDateStr(new Date()));
 const openCellPopup = (staff: any, date: Date) => {
   popupStaff.value = staff;
   popupDate.value = date;
   popupVisible.value = true;
 };
 
-// === Shared save (both dialogs write through this) ===
-const saveWeek = async (
-  staffId: string,
-  monday: Date,
-  week: WeekDaySchedule[],
-  force = false,
-): Promise<boolean> => {
-  const schedule = week
-    .filter((d) => d.ranges.length > 0)
-    .map((d) => ({ day_of_week: d.day_of_week, ranges: d.ranges }));
+// === Saving (both dialogs) ===
+// What the server says when it refuses, in words.
+const SAVE_ERRORS: Record<string, string> = {
+  "end_time must be after start_time": "staffSchedule.errors.endBeforeStart",
+  overlapping_ranges: "staffSchedule.errors.overlapping",
+  "date cannot be in the past": "staffSchedule.errors.pastDate",
+  "effective_from cannot be before the current week": "staffSchedule.errors.pastWeek",
+};
+const saveFailed = (e: unknown) => {
+  const key = e instanceof ApiError ? SAVE_ERRORS[e.data?.error] : undefined;
+  notify.error(key ? t(key) : t("staff.workingHours.saveFailed"));
+};
+
+/**
+ * Sends a schedule change. Bookings it would leave outside come back first
+ * (409): listed, and asked about before sending it again with force.
+ */
+const sendScheduleChange = async (send: (force: boolean) => Promise<unknown>, force = false): Promise<boolean> => {
   try {
-    // Bookings outside the new hours: 409 with the list, asked about before forcing.
-    const conflict = await api
-      .post(`/api/v1/staff/${staffId}/working-hours`, {
-        enabled: true,
-        effective_from: toDateStr(monday),
-        schedule,
-        force,
-      })
+    const conflict = await send(force)
       .then(() => null)
       .catch((e) => {
         if (e instanceof ApiError && e.status === 409) return e.data || {};
         throw e;
       });
     if (conflict) {
-      const data = conflict;
-      const list = (data.conflicts || [])
-        .map(
-          (c: any) =>
-            `• ${c.client_name || "—"} — ${c.service_name || ""} (${new Date(c.start_time).toLocaleString()})`,
-        )
+      const list = (conflict.conflicts || [])
+        .map((c: any) => `• ${c.client_name || "—"} — ${c.service_name || ""} (${new Date(c.start_time).toLocaleString()})`)
         .join("\n");
       return new Promise((resolve) => {
         confirm.require({
-          message: t("staff.workingHours.conflictMessage", { count: (data.conflicts || []).length, list }),
+          message: t("staff.workingHours.conflictMessage", { count: (conflict.conflicts || []).length, list }),
           header: t("staff.workingHours.conflictHeader"),
           icon: "pi pi-exclamation-triangle",
           acceptClass: "p-button-warning",
-          accept: async () => resolve(await saveWeek(staffId, monday, week, true)),
+          accept: async () => resolve(await sendScheduleChange(send, true)),
           reject: () => resolve(false),
           onHide: () => resolve(false),
         });
       });
     }
-    toast.add({ severity: "success", summary: t("common.success"), detail: t("staff.workingHours.saved"), life: 3000 });
+    notify.success(t("staff.workingHours.saved"));
     await calendarStore.refreshWorkingHours();
     return true;
-  } catch {
-    toast.add({ severity: "error", summary: t("common.error"), detail: t("staff.workingHours.saveFailed"), life: 4000 });
+  } catch (e) {
+    saveFailed(e);
     return false;
   }
 };
 
-// === Edit single day ===
+// A weekly schedule from that Monday on.
+const saveWeek = (staffId: string, monday: Date, week: WeekDaySchedule[]) =>
+  sendScheduleChange((force) =>
+    api.post(`/api/v1/staff/${staffId}/working-hours`, {
+      enabled: true,
+      effective_from: toDateStr(monday),
+      schedule: week.filter((d) => d.ranges.length > 0).map((d) => ({ day_of_week: d.day_of_week, ranges: d.ranges })),
+      force,
+    }),
+  );
+
+// === One date's hours ===
 const editDayVisible = ref(false);
 const editDayMode = ref<"default" | "off" | "custom">("default");
-const editDayStart = ref<Date>(new Date());
-const editDayEnd = ref<Date>(new Date());
+const editDayRanges = ref<{ start_time: string; end_time: string }[]>([]);
 const editDaySaving = ref(false);
+
+// What the weekly schedule says for the open date, for the "weekly schedule" choice.
+const weeklyLabel = computed(() => {
+  if (!popupStaff.value || !popupDate.value) return "";
+  const ranges = weeklyRangesForDate(calendarStore.workingHours, popupStaff.value.id, popupDate.value);
+  if (ranges === null) return t("staffSchedule.normalHoursNone");
+  if (ranges.length === 0) return t("staff.workingHours.dayOff");
+  return ranges.map((r) => `${hhmm(r.start)} - ${hhmm(r.end)}`).join(", ");
+});
 
 const openEditDay = () => {
   const staff = popupStaff.value;
   const date = popupDate.value;
   if (!staff || !date) return;
-  const dow = date.getDay();
-  const mondayStr = toLocalDateStr(weekMonday.value);
-  const ownRows = (calendarStore.workingHours || []).filter(
-    (w: any) => String(w.staff_id) === String(staff.id) && w.effective_from === mondayStr,
-  );
-  if (ownRows.length === 0) {
-    editDayMode.value = "default";
-  } else {
-    const dayRanges = ownRows
-      .filter((w: any) => w.day_of_week === dow)
-      .map((w: any) => ({ start_time: w.start_time, end_time: w.end_time }));
-    if (dayRanges.length === 0) {
-      editDayMode.value = "off";
-    } else {
-      editDayMode.value = "custom";
-      editDayStart.value = parseTimeToDate(dayRanges[0].start_time);
-      editDayEnd.value = parseTimeToDate(dayRanges[0].end_time);
-    }
-  }
+  const own = ownHoursFor(staff.id, date);
+  editDayMode.value = own === null ? "default" : own.length === 0 ? "off" : "custom";
+  // Other hours start from what the day has now (its own, else the weekly schedule's).
+  const current = own?.length ? own : asShifts(weeklyRangesForDate(calendarStore.workingHours, staff.id, date));
+  editDayRanges.value = current.length ? current.map((r) => ({ ...r })) : [{ start_time: "09:00", end_time: "17:00" }];
   popupVisible.value = false;
   editDayVisible.value = true;
 };
@@ -639,18 +704,14 @@ const saveEditDay = async () => {
   const staff = popupStaff.value;
   const date = popupDate.value;
   if (!staff || !date) return;
-  const dow = date.getDay();
-  const week = buildWeekSchedule(calendarStore.workingHours, staff.id, weekMonday.value);
-  const target = week.find((d) => d.day_of_week === dow)!;
-  if (editDayMode.value === "default") {
-    target.ranges = dayScheduleExcludingWeek(calendarStore.workingHours, staff.id, weekMonday.value, dow);
-  } else if (editDayMode.value === "off") {
-    target.ranges = [];
-  } else {
-    target.ranges = [{ start_time: toTimeStr(editDayStart.value), end_time: toTimeStr(editDayEnd.value) }];
-  }
+  const url = `/api/v1/staff/${staff.id}/days/${toDateStr(date)}`;
   editDaySaving.value = true;
-  const ok = await saveWeek(staff.id, weekMonday.value, week);
+  const ok =
+    editDayMode.value === "default"
+      ? await sendScheduleChange(() => api.del(url))
+      : await sendScheduleChange((force) =>
+          api.put(url, { ranges: editDayMode.value === "off" ? [] : editDayRanges.value, force }),
+        );
   editDaySaving.value = false;
   if (ok) editDayVisible.value = false;
 };
@@ -710,19 +771,27 @@ const saveEditWeek = async () => {
   if (ok) editWeekVisible.value = false;
 };
 
-// Drops this week's own version entirely, falling through to whatever
-// version precedes it — different from saving an empty schedule (which
-// would mean "day off every day" rather than "no override this week").
+// A weekly schedule starts this Monday (its change can be undone).
+const weekHasOwnSchedule = computed(
+  () =>
+    !!popupStaff.value &&
+    (calendarStore.workingHours || []).some(
+      (w: any) => w.kind !== "day" && String(w.staff_id) === String(popupStaff.value.id) && w.effective_from === toDateStr(weekMonday.value),
+    ),
+);
+
+// Removes the weekly schedule starting this Monday: the one before it applies
+// again from then (not the same as saving no working days, a week off).
 const clearWeekVersion = async () => {
   const staff = popupStaff.value;
   if (!staff) return;
   try {
     await api.del(`/api/v1/staff/${staff.id}/working-hours/${toDateStr(weekMonday.value)}`);
-    toast.add({ severity: "success", summary: t("common.success"), detail: t("staff.workingHours.saved"), life: 3000 });
+    notify.success(t("staff.workingHours.saved"));
     await calendarStore.refreshWorkingHours();
     editWeekVisible.value = false;
-  } catch {
-    toast.add({ severity: "error", summary: t("common.error"), detail: t("staff.workingHours.saveFailed"), life: 4000 });
+  } catch (e) {
+    saveFailed(e);
   }
 };
 
@@ -750,11 +819,11 @@ const saveShopHours = async () => {
     .map((d) => ({ day_of_week: d.day_of_week, start_time: toTimeStr(d.start_time), end_time: toTimeStr(d.end_time) }));
   try {
     await api.put("/api/v1/shop-hours", { days });
-    toast.add({ severity: "success", summary: t("common.success"), detail: t("staff.workingHours.saved"), life: 3000 });
+    notify.success(t("staff.workingHours.saved"));
     await loadShopHours();
     shopHoursVisible.value = false;
-  } catch {
-    toast.add({ severity: "error", summary: t("common.error"), detail: t("staff.workingHours.saveFailed"), life: 4000 });
+  } catch (e) {
+    saveFailed(e);
   } finally {
     shopHoursSaving.value = false;
   }
@@ -763,6 +832,9 @@ const saveShopHours = async () => {
 onMounted(async () => {
   if (!calendarStore.resources?.length) {
     await calendarStore.fetchBaseResources();
+  } else {
+    // Leave added on the staff page since the calendar loaded it.
+    calendarStore.refreshTimeOff();
   }
   await loadShopHours();
 });

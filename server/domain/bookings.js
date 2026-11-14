@@ -6,6 +6,7 @@ const { HttpError } = require("../http");
 const { safeUUID } = require("./common");
 const { recalculateClientBalance } = require("./balances");
 const { releasePackageUsage } = require("./packages");
+const { workingRangesOn } = require("./staffSchedule");
 
 const addRecurrenceInterval = (date, freq) => {
   const result = new Date(date);
@@ -113,34 +114,20 @@ const assertStaffAvailable = async (client, { staffId, shopId, startTime, durati
   );
   if (!staffRow.rows[0]?.working_hours_enabled) return;
 
-  // Version-scoped: resolves whichever schedule was/will be active as of this
-  // appointment's own date, not necessarily "today's" pattern — a booking for
-  // a date on/after a staged future version's effective_from must be checked
-  // against THAT version, since by then it's the one actually governing.
-  //
-  // Two queries, not one: if no version can be resolved at all for this date
-  // (e.g. working_hours_enabled was just turned on with only a staged FUTURE
-  // version and no "current" one yet, leaving a gap before it), MAX(...)
-  // returns NULL, and "effective_from = NULL" would never match any row in a
-  // single combined query — silently blocking the booking instead of failing
-  // open. Resolving the version first makes "no data for this date" explicit.
-  const versionRow = await client.query(
-    `SELECT MAX(effective_from) AS latest FROM staff_working_hours
-     WHERE staff_id = $1 AND effective_from <= $2::timestamptz::date`,
-    [staffId, startTime],
-  );
-  const latestVersion = versionRow.rows[0]?.latest;
-  if (!latestVersion) return; // no schedule data as of this date — fail open
+  // The schedule as of the booking's own date (that date's own hours, else
+  // the weekly schedule then; see domain/staffSchedule.js). None yet: not
+  // restricted.
+  const dateRow = await client.query("SELECT ($1::timestamptz)::date::text AS date", [startTime]);
+  const shifts = await workingRangesOn(client, staffId, dateRow.rows[0].date);
+  if (shifts === null) return;
 
   const fits = await client.query(
-    `SELECT 1 FROM staff_working_hours
-     WHERE staff_id = $1 AND effective_from = $2
-       AND day_of_week = EXTRACT(DOW FROM $3::timestamptz)
-       AND $3::timestamptz::time >= start_time
-       AND ($3::timestamptz + ($4 || ' minutes')::interval)::time <= end_time
-       AND ($3::timestamptz + ($4 || ' minutes')::interval)::date = $3::timestamptz::date
+    `SELECT 1 FROM json_to_recordset($3::json) AS r(start_time time, end_time time)
+     WHERE $1::timestamptz::time >= r.start_time
+       AND ($1::timestamptz + ($2 || ' minutes')::interval)::time <= r.end_time
+       AND ($1::timestamptz + ($2 || ' minutes')::interval)::date = $1::timestamptz::date
      LIMIT 1`,
-    [staffId, latestVersion, startTime, duration],
+    [startTime, duration, JSON.stringify(shifts)],
   );
   if (fits.rows.length === 0) throw new StaffUnavailableError("outside_working_hours", staffId);
 };

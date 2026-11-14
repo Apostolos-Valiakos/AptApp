@@ -6,6 +6,7 @@ const { upperName } = require("../domain/common");
 const { asyncHandler } = require("../http");
 const pool = require("../db");
 const bcrypt = require("bcrypt");
+const { workingRangesOn } = require("../domain/staffSchedule");
 
 module.exports = function portalRouter({
   authenticateToken,
@@ -13,44 +14,26 @@ module.exports = function portalRouter({
 }) {
   const router = express.Router();
 
-  // Resolves a staff member's effective working-hours window for one date —
-  // same version-resolution rule as assertStaffAvailable above, extracted so
-  // the availability endpoint can reuse it without re-deriving it. Staff who
-  // never enabled a personal schedule fall back to the shop's general opening
-  // hours (slot_min_time/slot_max_time), same as how their calendar column
-  // behaves today when working_hours_enabled is false.
-  const getEffectiveWorkingHoursForDate = async (client, staffId, shopId, date) => {
+  // A staff member's working shifts on one date, as [{ start_time, end_time }]
+  // (the same rule as the booking check; see domain/staffSchedule.js). Staff
+  // who never enabled a personal schedule work the shop's general opening
+  // hours (slot_min_time/slot_max_time), as their calendar column does.
+  const getWorkingShiftsForDate = async (client, staffId, shopId, date) => {
     const staffRow = await client.query(
       `SELECT working_hours_enabled FROM staff WHERE id = $1 AND shop_id = $2`,
       [staffId, shopId],
     );
-    if (!staffRow.rows[0]) return null;
+    if (!staffRow.rows[0]) return [];
     if (!staffRow.rows[0].working_hours_enabled) {
       const shopRow = await client.query(
         `SELECT slot_min_time, slot_max_time FROM shops WHERE id = $1`,
         [shopId],
       );
       const shop = shopRow.rows[0];
-      if (!shop?.slot_min_time || !shop?.slot_max_time) return null;
-      return { start_time: shop.slot_min_time, end_time: shop.slot_max_time };
+      if (!shop?.slot_min_time || !shop?.slot_max_time) return [];
+      return [{ start_time: shop.slot_min_time, end_time: shop.slot_max_time }];
     }
-
-    const versionRow = await client.query(
-      `SELECT MAX(effective_from) AS latest FROM staff_working_hours
-       WHERE staff_id = $1 AND effective_from <= $2::date`,
-      [staffId, date],
-    );
-    const latestVersion = versionRow.rows[0]?.latest;
-    if (!latestVersion) return null;
-
-    const dayRow = await client.query(
-      `SELECT start_time, end_time FROM staff_working_hours
-       WHERE staff_id = $1 AND effective_from = $2
-         AND day_of_week = EXTRACT(DOW FROM $3::date)
-       LIMIT 1`,
-      [staffId, latestVersion, date],
-    );
-    return dayRow.rows[0] || null;
+    return (await workingRangesOn(client, staffId, date)) || [];
   };
 
   router.put("/portal/profile", authenticateToken, asyncHandler(async (req, res) => {
@@ -385,13 +368,8 @@ module.exports = function portalRouter({
     }
     const durationMinutes = service.duration_minutes || 60;
 
-    const window = await getEffectiveWorkingHoursForDate(
-      pool,
-      validStaffId,
-      req.shopId,
-      date,
-    );
-    if (!window) {
+    const shifts = await getWorkingShiftsForDate(pool, validStaffId, req.shopId, date);
+    if (shifts.length === 0) {
       return res.json({
         date,
         service_id: validServiceId,
@@ -440,28 +418,25 @@ module.exports = function portalRouter({
       }
     }
 
-    const [winStartH, winStartM] = window.start_time.split(":").map(Number);
-    const [winEndH, winEndM] = window.end_time.split(":").map(Number);
-    const windowStart = new Date(dayBase);
-    windowStart.setHours(winStartH, winStartM, 0, 0);
-    const windowEnd = new Date(dayBase);
-    windowEnd.setHours(winEndH, winEndM, 0, 0);
-
+    // Every 15 minutes inside each shift, where the whole service fits and
+    // nothing else is booked.
+    const at = (hhmm) => {
+      const [h, m] = String(hhmm).split(":").map(Number);
+      const d = new Date(dayBase);
+      d.setHours(h, m, 0, 0);
+      return d.getTime();
+    };
     const slots = [];
     const stepMs = 15 * 60 * 1000;
     const durationMs = durationMinutes * 60 * 1000;
     const now = Date.now();
-    for (
-      let t = windowStart.getTime();
-      t + durationMs <= windowEnd.getTime();
-      t += stepMs
-    ) {
-      if (req.user.role === "client" && t < now) continue;
-      const candidateEnd = t + durationMs;
-      const overlaps = busyIntervals.some(
-        (b) => t < b.end && candidateEnd > b.start,
-      );
-      if (!overlaps) slots.push(new Date(t).toISOString());
+    for (const shift of shifts) {
+      for (let t = at(shift.start_time); t + durationMs <= at(shift.end_time); t += stepMs) {
+        if (req.user.role === "client" && t < now) continue;
+        const candidateEnd = t + durationMs;
+        const overlaps = busyIntervals.some((b) => t < b.end && candidateEnd > b.start);
+        if (!overlaps) slots.push(new Date(t).toISOString());
+      }
     }
 
     res.json({

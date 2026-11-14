@@ -5,6 +5,7 @@ const express = require("express");
 const { HttpError, asyncHandler, withTransaction } = require("../http");
 const pool = require("../db");
 const bcrypt = require("bcrypt");
+const { DATE_YYYYMMDD, rangesProblem, bookingsOutsideWeek, bookingsOutsideDate } = require("../domain/staffSchedule");
 
 module.exports = function staffRouter({
   notForStaff,
@@ -283,26 +284,45 @@ module.exports = function staffRouter({
   // DATE into a local-midnight JS Date, which serializes to JSON in UTC and can
   // silently shift the date by a day depending on timezone.
   router.get("/working-hours", authenticateToken, notForClients, asyncHandler(async (req, res) => {
-    const { rows } = await pool.query(
-      `SELECT staff_id, day_of_week, start_time, end_time, effective_from::text AS effective_from
-       FROM staff_working_hours WHERE shop_id = $1`,
-      [req.shopId],
-    );
-    res.json(rows);
+    // Three kinds of entries in one list (the screens and their offline copy
+    // read one list): a weekly schedule's shifts (day_of_week, start_time,
+    // end_time, effective_from); { kind: "version", effective_from } for every
+    // weekly schedule, so one with no working days still counts; and
+    // { kind: "day", date, ranges } for a date with its own hours.
+    const [rows, versions, days] = await Promise.all([
+      pool.query(
+        `SELECT staff_id, day_of_week, start_time, end_time, effective_from::text AS effective_from
+         FROM staff_working_hours WHERE shop_id = $1`,
+        [req.shopId],
+      ),
+      pool.query(
+        `SELECT staff_id, 'version' AS kind, effective_from::text AS effective_from
+         FROM staff_schedule_versions WHERE shop_id = $1`,
+        [req.shopId],
+      ),
+      pool.query(
+        `SELECT staff_id, 'day' AS kind, date::text AS date, ranges
+         FROM staff_schedule_days WHERE shop_id = $1`,
+        [req.shopId],
+      ),
+    ]);
+    res.json([...rows.rows, ...versions.rows, ...days.rows]);
   }));
 
-  const DATE_YYYYMMDD = /^\d{4}-\d{2}-\d{2}$/;
+  const currentWeekMonday = async () =>
+    (await pool.query(
+      `SELECT (CURRENT_DATE - ((EXTRACT(DOW FROM CURRENT_DATE)::int + 6) % 7))::text AS monday`,
+    )).rows[0].monday;
+  const staffInShop = async (id, shopId) =>
+    (await pool.query(`SELECT 1 FROM staff WHERE id = $1 AND shop_id = $2`, [id, shopId])).rows.length > 0;
 
-  // Saves exactly ONE effective-dated version — either "current" (effective_from
-  // = today) or "upcoming" (effective_from in the future); which one is decided
-  // entirely by the submitted date, not a separate flag. Warns about
-  // appointments on/after this version's effective_from that it would no
-  // longer cover (same conflicts_found/force pattern as staff_time_off) unless
-  // force=true — appointments before effective_from are governed by whatever
-  // version applies there instead, untouched by this save. enabled=false always
-  // clears everything (current AND any staged upcoming version) with no
-  // conflict check, since disabling can only ever loosen restrictions.
-  router.post("/staff/:id/working-hours", authenticateToken, notForClients, asyncHandler(async (req, res) => {
+  // Saves a weekly schedule from its Monday on (until the next one): replaces
+  // one starting that Monday, leaves the others and the dates with their own
+  // hours alone. No days is a week off, every week from then on. Bookings it
+  // would leave outside are listed first (409 conflicts_found) unless
+  // force=true. enabled=false removes every schedule the staff member has,
+  // so they're no longer restricted.
+  router.post("/staff/:id/working-hours", authenticateToken, notForClients, notForStaff, asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { enabled, effective_from, schedule, force } = req.body;
 
@@ -310,10 +330,13 @@ module.exports = function staffRouter({
       return res.status(400).json({ error: "enabled must be a boolean" });
     }
 
-    let proposed = [];
+    const proposed = [];
     if (enabled) {
       if (!DATE_YYYYMMDD.test(effective_from || "")) {
         return res.status(400).json({ error: "effective_from must be YYYY-MM-DD" });
+      }
+      if (new Date(`${effective_from}T12:00:00Z`).getUTCDay() !== 1) {
+        return res.status(400).json({ error: "effective_from must be a Monday" });
       }
       if (!Array.isArray(schedule)) {
         return res.status(400).json({ error: "schedule must be an array" });
@@ -331,106 +354,35 @@ module.exports = function staffRouter({
         if (!Array.isArray(day.ranges) || day.ranges.length === 0) {
           return res.status(400).json({ error: "each day must have at least one range", day_of_week: dow });
         }
-        const sorted = [...day.ranges].sort((a, b) => (a.start_time > b.start_time ? 1 : -1));
-        for (let i = 0; i < sorted.length; i++) {
-          const r = sorted[i];
-          if (!TIME_HHMM.test(r.start_time) || !TIME_HHMM.test(r.end_time)) {
-            return res.status(400).json({ error: "start_time/end_time must be HH:MM", day_of_week: dow });
-          }
-          if (r.end_time <= r.start_time) {
-            return res.status(400).json({ error: "end_time must be after start_time", day_of_week: dow });
-          }
-          if (i > 0 && r.start_time < sorted[i - 1].end_time) {
-            return res.status(400).json({ error: "overlapping_ranges", day_of_week: dow });
-          }
-          proposed.push({ day_of_week: dow, start_time: r.start_time, end_time: r.end_time });
-        }
+        const problem = rangesProblem(day.ranges);
+        if (problem) return res.status(400).json({ error: problem, day_of_week: dow });
+        for (const r of day.ranges) proposed.push({ day_of_week: dow, start_time: r.start_time, end_time: r.end_time });
       }
     }
-    const staffCheck = await pool.query(
-      `SELECT id FROM staff WHERE id = $1 AND shop_id = $2`,
-      [id, req.shopId],
-    );
-    if (staffCheck.rows.length === 0) {
+    if (!(await staffInShop(id, req.shopId))) {
       return res.status(404).json({ error: "Staff member not found" });
     }
-
-    if (enabled) {
-      // Server's CURRENT_DATE (not Node's clock) is authoritative — matches
-      // the timezone convention every other date/time check in this guard uses.
-      // The floor is the Monday of the CURRENT week, not today — the week
-      // containing today straddles past and future days whenever today isn't
-      // itself a Monday, and that week must stay editable (see
-      // client/src/utils/staffAvailability.ts's mondayOf for the same
-      // computation on the client).
-      const mondayRow = await pool.query(
-        `SELECT (CURRENT_DATE - ((EXTRACT(DOW FROM CURRENT_DATE)::int + 6) % 7))::text AS monday`,
-      );
-      const currentWeekMonday = mondayRow.rows[0].monday;
-      if (effective_from < currentWeekMonday) {
-        return res.status(400).json({ error: "effective_from cannot be before the current week" });
-      }
+    if (enabled && effective_from < (await currentWeekMonday())) {
+      return res.status(400).json({ error: "effective_from cannot be before the current week" });
     }
-
     if (enabled && force !== true) {
-      // Each effective_from is its own independent version now (any number of
-      // past/future weeks can each have their own saved pattern) — the only
-      // relevant bound is whichever version comes immediately after the one
-      // being saved, regardless of whether that's today, this week, or any
-      // future week.
-      const upcomingRow = await pool.query(
-        `SELECT MIN(effective_from)::text AS ef FROM staff_working_hours
-         WHERE staff_id = $1 AND effective_from > $2::date`,
-        [id, effective_from],
-      );
-      const upperBound = upcomingRow.rows[0]?.ef || null;
-
-      const conflicts = await pool.query(
-        `
-        WITH proposed(day_of_week, start_time, end_time) AS (
-          SELECT * FROM json_to_recordset($4::json) AS x(day_of_week int, start_time time, end_time time)
-        )
-        SELECT a.id, aps.start_time, s.name AS service_name,
-               c.first_name || ' ' || c.last_name AS client_name
-        FROM appointment_services aps
-        JOIN appointments a ON a.id = aps.appointment_id
-        LEFT JOIN services s ON s.id = aps.service_id
-        LEFT JOIN clients c ON c.id = a.client_id
-        WHERE aps.staff_id = $1 AND a.shop_id = $2
-          AND a.status != 'cancelled' AND COALESCE(a.is_block, false) = false
-          AND aps.start_time >= GREATEST($3::date, CURRENT_DATE)
-          AND ($5::date IS NULL OR aps.start_time < $5::date)
-          AND NOT EXISTS (
-            SELECT 1 FROM proposed p
-            WHERE p.day_of_week = EXTRACT(DOW FROM aps.start_time)
-              AND aps.start_time::time >= p.start_time
-              AND (aps.start_time + (COALESCE(aps.duration_override, 60) || ' minutes')::interval)::time <= p.end_time
-              AND (aps.start_time + (COALESCE(aps.duration_override, 60) || ' minutes')::interval)::date = aps.start_time::date
-          )
-        ORDER BY aps.start_time`,
-        [id, req.shopId, effective_from, JSON.stringify(proposed), upperBound],
-      );
-      if (conflicts.rows.length > 0) {
-        return res.status(409).json({ error: "conflicts_found", conflicts: conflicts.rows });
-      }
+      const conflicts = await bookingsOutsideWeek(pool, id, req.shopId, effective_from, proposed);
+      if (conflicts.length > 0) return res.status(409).json({ error: "conflicts_found", conflicts });
     }
 
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
+    await withTransaction(async (client) => {
       if (!enabled) {
-        // Disabling wipes every version this staff member has, past and future.
+        // Every schedule this staff member has, past and future.
         await client.query(`DELETE FROM staff_working_hours WHERE staff_id = $1`, [id]);
+        await client.query(`DELETE FROM staff_schedule_versions WHERE staff_id = $1`, [id]);
+        await client.query(`DELETE FROM staff_schedule_days WHERE staff_id = $1`, [id]);
       } else {
-        // Upsert-by-exact-effective_from — only the one version being saved
-        // is touched. Every other past/future version (each its own
-        // independently-saved week) is left alone.
+        await client.query(`DELETE FROM staff_working_hours WHERE staff_id = $1 AND effective_from = $2::date`, [id, effective_from]);
         await client.query(
-          `DELETE FROM staff_working_hours WHERE staff_id = $1 AND effective_from = $2::date`,
-          [id, effective_from],
+          `INSERT INTO staff_schedule_versions (staff_id, shop_id, effective_from) VALUES ($1, $2, $3)
+           ON CONFLICT (staff_id, effective_from) DO NOTHING`,
+          [id, req.shopId, effective_from],
         );
-      }
-      if (enabled) {
         for (const r of proposed) {
           await client.query(
             `INSERT INTO staff_working_hours (staff_id, shop_id, day_of_week, start_time, end_time, effective_from)
@@ -439,41 +391,74 @@ module.exports = function staffRouter({
           );
         }
       }
-      await client.query(`UPDATE staff SET working_hours_enabled = $1 WHERE id = $2 AND shop_id = $3`, [
-        enabled,
-        id,
-        req.shopId,
-      ]);
-      await client.query("COMMIT");
-    } catch (err) {
-      await client.query("ROLLBACK");
-      throw err;
-    } finally {
-      client.release();
-    }
+      await client.query(`UPDATE staff SET working_hours_enabled = $1 WHERE id = $2 AND shop_id = $3`, [enabled, id, req.shopId]);
+    });
 
     res.json({ success: true, enabled, effective_from: enabled ? effective_from : null, schedule: proposed });
   }));
 
-  // Deletes one specific week's version outright, falling through to whichever
-  // version precedes it (not the same as saving an empty schedule for it, which
-  // would mean "day off every day starting then"). No conflict check needed:
-  // clearing a version only ever loosens a restriction, same reasoning as
-  // enabled=false above.
-  router.delete("/staff/:id/working-hours/:effective_from", authenticateToken, notForClients, asyncHandler(async (req, res) => {
+  // Removes the weekly schedule starting that Monday: the one before it
+  // applies again from then. No check: it only ever loosens a restriction.
+  router.delete("/staff/:id/working-hours/:effective_from", authenticateToken, notForClients, notForStaff, asyncHandler(async (req, res) => {
     const { effective_from } = req.params;
     if (!DATE_YYYYMMDD.test(effective_from)) {
       return res.status(400).json({ error: "effective_from must be YYYY-MM-DD" });
     }
-    const mondayRow = await pool.query(
-      `SELECT (CURRENT_DATE - ((EXTRACT(DOW FROM CURRENT_DATE)::int + 6) % 7))::text AS monday`,
-    );
-    if (effective_from < mondayRow.rows[0].monday) {
+    if (effective_from < (await currentWeekMonday())) {
       return res.status(400).json({ error: "effective_from cannot be before the current week" });
     }
+    const cleared = await withTransaction(async (client) => {
+      const { rowCount } = await client.query(
+        `DELETE FROM staff_working_hours WHERE staff_id = $1 AND shop_id = $2 AND effective_from = $3::date`,
+        [req.params.id, req.shopId, effective_from],
+      );
+      const version = await client.query(
+        `DELETE FROM staff_schedule_versions WHERE staff_id = $1 AND shop_id = $2 AND effective_from = $3::date`,
+        [req.params.id, req.shopId, effective_from],
+      );
+      return rowCount + version.rowCount;
+    });
+    res.json({ success: true, cleared });
+  }));
+
+  // One date's own hours, for that date only: ranges [{ start_time, end_time }],
+  // none for a day off. Bookings it would leave outside are listed first
+  // (409 conflicts_found) unless force=true. Turns the staff member's
+  // schedule on (dates without their own hours follow the weekly schedule,
+  // or aren't restricted if there's none).
+  router.put("/staff/:id/days/:date", authenticateToken, notForClients, notForStaff, asyncHandler(async (req, res) => {
+    const { id, date } = req.params;
+    const { ranges, force } = req.body;
+    if (!DATE_YYYYMMDD.test(date)) return res.status(400).json({ error: "date must be YYYY-MM-DD" });
+    const problem = rangesProblem(ranges);
+    if (problem) return res.status(400).json({ error: problem });
+    if ((await pool.query(`SELECT $1::date < CURRENT_DATE AS past`, [date])).rows[0].past) {
+      return res.status(400).json({ error: "date cannot be in the past" });
+    }
+    if (!(await staffInShop(id, req.shopId))) return res.status(404).json({ error: "Staff member not found" });
+    const shifts = ranges.map((r) => ({ start_time: r.start_time, end_time: r.end_time })).sort((a, b) => (a.start_time > b.start_time ? 1 : -1));
+    if (force !== true) {
+      const conflicts = await bookingsOutsideDate(pool, id, req.shopId, date, shifts);
+      if (conflicts.length > 0) return res.status(409).json({ error: "conflicts_found", conflicts });
+    }
+    await withTransaction(async (client) => {
+      await client.query(
+        `INSERT INTO staff_schedule_days (staff_id, shop_id, date, ranges) VALUES ($1, $2, $3, $4)
+         ON CONFLICT (staff_id, date) DO UPDATE SET ranges = EXCLUDED.ranges`,
+        [id, req.shopId, date, JSON.stringify(shifts)],
+      );
+      await client.query(`UPDATE staff SET working_hours_enabled = true WHERE id = $1 AND shop_id = $2`, [id, req.shopId]);
+    });
+    res.json({ success: true, date, ranges: shifts });
+  }));
+
+  // Back to the weekly schedule for that date.
+  router.delete("/staff/:id/days/:date", authenticateToken, notForClients, notForStaff, asyncHandler(async (req, res) => {
+    const { id, date } = req.params;
+    if (!DATE_YYYYMMDD.test(date)) return res.status(400).json({ error: "date must be YYYY-MM-DD" });
     const { rowCount } = await pool.query(
-      `DELETE FROM staff_working_hours WHERE staff_id = $1 AND shop_id = $2 AND effective_from = $3::date`,
-      [req.params.id, req.shopId, effective_from],
+      `DELETE FROM staff_schedule_days WHERE staff_id = $1 AND shop_id = $2 AND date = $3::date`,
+      [id, req.shopId, date],
     );
     res.json({ success: true, cleared: rowCount });
   }));
