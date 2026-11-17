@@ -227,6 +227,23 @@
             <p v-if="comboPriced" class="text-xs text-gray-400 mt-1">{{ t('services.dialog.comboPriceFromParts') }}</p>
           </div>
 
+          <!-- A redemption is booked at €0; for the staff bonus it counts as another service. -->
+          <div v-if="isRedemption" class="md:col-span-2" data-testid="service-bonus-link">
+            <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('services.dialog.bonusService') }}</label>
+            <Dropdown
+              v-model="editingService.bonus_service_id"
+              :options="bonusServiceOptions"
+              optionLabel="label"
+              optionValue="id"
+              showClear
+              filter
+              :placeholder="t('services.dialog.bonusServicePlaceholder')"
+              class="w-full"
+              data-testid="service-bonus-service"
+            />
+            <p class="text-xs text-gray-400 mt-1">{{ t('services.dialog.bonusServiceNote') }}</p>
+          </div>
+
           <!-- Color picker — full width with light gray background -->
           <div class="md:col-span-2 p-4 bg-gray-50 rounded-xl border border-gray-200">
             <label class="block text-sm font-medium text-gray-700 mb-3">{{ t('services.dialog.serviceColor') }}</label>
@@ -538,6 +555,8 @@ const notify = useNotify();
 const confirm = useConfirm();
 
 const services = ref<any[]>([]);
+// Services in this category are redemptions (see migration 0020).
+const REDEMPTION_CATEGORY = "Εξαργύρωση";
 const staffList = ref<any[]>([]);
 const loading = ref(true);
 const dialogVisible = ref(false);
@@ -728,6 +747,14 @@ const saveOrder = async (url: string, order: any[]) => {
 const onCategoryDragEnd = () => saveOrder("/api/v1/service-categories/reorder", groupedServices.value.map((g) => g.label));
 const onServiceDragEnd = (group: { items: any[] }) => saveOrder("/api/v1/services/reorder", group.items.map((s) => s.id));
 
+const isRedemption = computed(() => String(editingService.value.category || "").trim() === REDEMPTION_CATEGORY);
+// What a redemption can count as: the shop's other services, not redemptions themselves.
+const bonusServiceOptions = computed(() =>
+  services.value
+    .filter((s: any) => s.id !== editingService.value.id && String(s.category || "").trim() !== REDEMPTION_CATEGORY && (s.is_active !== false || s.id === editingService.value.bonus_service_id))
+    .map((s: any) => ({ id: s.id, label: `${s.name} · ${formatMoney(s.price)}` })),
+);
+
 const openNew = () => {
   editingService.value = {
     name: "",
@@ -737,6 +764,7 @@ const openNew = () => {
     color_code: "var(--p-primary-100)",
     bookable_online: false,
     default_staff_id: null,
+    bonus_service_id: null,
     combo_component_ids: [],
     combo_part_prices: {},
     variations: [],

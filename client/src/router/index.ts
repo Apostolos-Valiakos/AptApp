@@ -37,6 +37,7 @@ const MembershipReportView = sensitive(() => import("../views/MembershipReportVi
 const QrScannerView = () => import("../views/QrScannerView.vue");
 const DemoRequestsView = () => import("../views/DemoRequestsView.vue");
 const ProductUsageView = sensitive(() => import("../views/ProductUsageView.vue"));
+const BonusReportView = sensitive(() => import("../views/BonusReportView.vue"));
 
 const routes = [
   {
@@ -99,6 +100,11 @@ const routes = [
           {
             path: "membership-report",
             component: MembershipReportView,
+            meta: { requiresAnalytics: true },
+          },
+          {
+            path: "bonus-report",
+            component: BonusReportView,
             meta: { requiresAnalytics: true },
           },
           { path: "qr-scanner", component: QrScannerView },

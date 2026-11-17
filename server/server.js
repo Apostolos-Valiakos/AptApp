@@ -578,6 +578,16 @@ app.use(
 );
 app.use(
   "/api/v1",
+  require("./routes/bonus")({
+    authenticateToken,
+    requireAnalyticsAccess,
+    requireSensitiveAccess,
+    requireShopAdminAccess,
+    safeUUID,
+  }),
+);
+app.use(
+  "/api/v1",
   require("./routes/exercises")({
     authenticateToken,
     notForClients,

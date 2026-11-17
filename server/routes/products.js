@@ -2,7 +2,7 @@
 // Moved out of server.js; helpers that still live there are handed over when
 // it mounts this router (see "Area routers" near the end of server.js).
 const express = require("express");
-const { asyncHandler, withTransaction } = require("../http");
+const { asyncHandler, withTransaction, HttpError } = require("../http");
 const pool = require("../db");
 
 module.exports = function productsRouter({
@@ -76,8 +76,26 @@ module.exports = function productsRouter({
     }),
   );
 
-  // Get all products with their inventory variations for a shop
+  // A variation's bulk price (before VAT): a number of 0 or more, or null when
+  // left empty. undefined when the body doesn't say (an older screen).
+  const bulkPriceOf = (v) => {
+    if (!Object.prototype.hasOwnProperty.call(v, "bulk_price")) return undefined;
+    if (v.bulk_price === null || v.bulk_price === "") return null;
+    const n = Number(v.bulk_price);
+    if (!(n >= 0)) throw new HttpError(400, { error: "bulk_price must be 0 or more" });
+    return Math.round(n * 100) / 100;
+  };
+  // Sales of a variation made before it had a bulk price get it the first time
+  // it's filled in; sales that have one keep theirs.
+  const fillEarlierSales = (client, inventoryId, bulk) =>
+    bulk == null
+      ? null
+      : client.query("UPDATE product_sales SET unit_bulk_price = $1 WHERE inventory_id = $2 AND unit_bulk_price IS NULL", [bulk, inventoryId]);
+
+  // Get all products with their inventory variations for a shop. The bulk
+  // price only goes to those who edit products (not staff).
   router.get("/products", authenticateToken, notForClients, asyncHandler(async (req, res) => {
+    const seesBulk = ["admin", "super_admin", "frontdesk"].includes(req.user.role);
     const { rows } = await pool.query(
       `SELECT p.id, p.name, p.description, 
         json_agg(
@@ -85,6 +103,7 @@ module.exports = function productsRouter({
             'id', pi.id, 
             'variation_name', pi.variation_name, 
             'price', pi.price,
+            'bulk_price', CASE WHEN $2 THEN pi.bulk_price END,
             'stock_quantity', pi.stock_quantity
           ) ORDER BY pi.price ASC
         ) as variations
@@ -93,7 +112,7 @@ module.exports = function productsRouter({
        WHERE p.shop_id = $1
        GROUP BY p.id, p.name
        ORDER BY p.name ASC`,
-      [req.shopId],
+      [req.shopId, seesBulk],
     );
     res.json(rows);
   }));
@@ -110,9 +129,9 @@ module.exports = function productsRouter({
 
       for (const v of variations) {
         await client.query(
-          `INSERT INTO product_inventory (product_id, variation_name, price, stock_quantity)
-           VALUES ($1, $2, $3, $4)`,
-          [productId, v.variation_name, v.price, v.stock_quantity],
+          `INSERT INTO product_inventory (product_id, variation_name, price, stock_quantity, bulk_price)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [productId, v.variation_name, v.price, v.stock_quantity, bulkPriceOf(v) ?? null],
         );
       }
 
@@ -163,20 +182,24 @@ module.exports = function productsRouter({
 
       // 2. Handle variations
       for (const v of variations) {
+        const bulk = bulkPriceOf(v);
         if (v.id && !String(v.id).startsWith("temp-")) {
-          // Update existing variation
-          await client.query(
+          // Update existing variation; a body without bulk_price keeps it.
+          const { rowCount } = await client.query(
             `UPDATE product_inventory
-             SET variation_name = $1, price = $2, stock_quantity = $3, updated_at = NOW()
-             WHERE id = $4 AND product_id = $5`,
-            [v.variation_name, v.price, v.stock_quantity, v.id, id],
+             SET variation_name = $1, price = $2, stock_quantity = $3, updated_at = NOW(),
+                 bulk_price = CASE WHEN $6 THEN $7::numeric ELSE bulk_price END
+             WHERE id = $4 AND product_id = $5
+               AND product_id IN (SELECT id FROM products WHERE shop_id = $8)`,
+            [v.variation_name, v.price, v.stock_quantity, v.id, id, bulk !== undefined, bulk ?? null, req.shopId],
           );
+          if (rowCount) await fillEarlierSales(client, v.id, bulk);
         } else {
           // Insert new variation added during edit
           await client.query(
-            `INSERT INTO product_inventory (product_id, variation_name, price, stock_quantity)
-             VALUES ($1, $2, $3, $4)`,
-            [id, v.variation_name, v.price, v.stock_quantity],
+            `INSERT INTO product_inventory (product_id, variation_name, price, stock_quantity, bulk_price)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [id, v.variation_name, v.price, v.stock_quantity, bulk ?? null],
           );
         }
       }

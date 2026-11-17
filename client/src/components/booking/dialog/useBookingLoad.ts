@@ -183,6 +183,7 @@ export const useBookingLoad = (state: BookingState, later: Later) => {
     productsList.value = Array.isArray(val.products)
       ? val.products.map((p: any) => ({
           product_id: p.product_id,
+          staff_id: p.staff_id ?? null,
           quantity: p.quantity || 1,
           price: Number(p.price || 0),
         }))

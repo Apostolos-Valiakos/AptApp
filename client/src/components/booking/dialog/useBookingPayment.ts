@@ -131,6 +131,7 @@ export const useBookingPayment = (state: BookingState, later: Later) => {
       if (Array.isArray(data.products)) {
         productsList.value = data.products.map((p: any) => ({
           product_id: p.product_id,
+          staff_id: p.staff_id ?? null,
           quantity: p.quantity,
           price: Number(p.price || 0),
         }));

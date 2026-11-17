@@ -4,6 +4,11 @@
 
 export const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
+/** The VAT added to a product's bulk price (fixed; the server's domain/bonus.js uses the same). */
+export const BULK_VAT_PERCENT = 24;
+/** A bulk price (before VAT) with the VAT, to the cent. */
+export const bulkWithVat = (bulk: number) => round2((Number(bulk) * (100 + BULK_VAT_PERCENT)) / 100);
+
 /** Total of service lines (`price_override` ?? `price`) and product lines (`price` × `quantity`). */
 export const appointmentTotal = (services: any[] = [], products: any[] = []) =>
   round2(

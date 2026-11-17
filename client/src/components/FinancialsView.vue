@@ -28,6 +28,13 @@
           class="p-button-outlined flex-shrink-0"
           @click="router.push('/app/membership-report')"
         />
+        <Button
+          :label="t('nav.bonusReport')"
+          icon="pi pi-star"
+          class="p-button-outlined flex-shrink-0"
+          data-testid="analytics-bonus-report"
+          @click="router.push('/app/bonus-report')"
+        />
       </div>
     </div>
 

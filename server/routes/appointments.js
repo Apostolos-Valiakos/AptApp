@@ -211,6 +211,7 @@ module.exports = function appointmentsRouter({
           COALESCE((
             SELECT json_agg(json_build_object(
               'product_id', ps.inventory_id,
+              'staff_id', ps.staff_id,
               'quantity', ps.quantity,
               'price', ROUND(COALESCE(ps.list_total, ps.total_price) / NULLIF(ps.quantity, 0), 2)
             ))
@@ -877,7 +878,7 @@ module.exports = function appointmentsRouter({
           [id],
         );
         const updatedProducts = await client.query(
-          `SELECT inventory_id AS product_id, quantity, ROUND(total_price / NULLIF(quantity, 0), 2) AS price
+          `SELECT inventory_id AS product_id, staff_id, quantity, ROUND(total_price / NULLIF(quantity, 0), 2) AS price
            FROM product_sales WHERE appointment_id = $1`,
           [id],
         );

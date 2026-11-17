@@ -19,8 +19,11 @@
         <i class="pi pi-times text-xs"></i>
       </button>
 
+      <!-- The product column takes what's left and never grows with a long
+           name (min-w-0): the name is cut with "…" so quantity and price stay
+           inside the dialog. -->
       <div class="flex flex-col sm:flex-row gap-3">
-        <div class="w-full sm:flex-grow">
+        <div class="w-full min-w-0 sm:flex-1">
           <label class="text-xs text-gray-500 block mb-1">{{ t('bookingProducts.product') }}</label>
           <Dropdown
             v-model="product.product_id"
@@ -28,7 +31,11 @@
             optionLabel="name"
             optionValue="id"
             :placeholder="t('bookingProducts.selectProduct')"
-            class="w-full p-inputtext-sm"
+            class="w-full min-w-0 p-inputtext-sm"
+            labelClass="truncate"
+            overlayClass="max-w-[min(36rem,calc(100vw-2rem))]"
+            :title="productLabel(product.product_id)"
+            data-testid="product-pick"
             filter
             @change="() => updateProductDetails(index)"
           >
@@ -50,13 +57,13 @@
           </Dropdown>
         </div>
 
-        <div class="flex gap-3 w-full sm:w-auto">
+        <div class="flex gap-3 w-full sm:w-auto sm:shrink-0">
           <div class="w-1/2 sm:w-24">
             <label class="text-xs text-gray-500 block mb-1">{{ t('bookingProducts.qty') }}</label>
             <InputNumber
               v-model="product.quantity"
-              class="w-full p-inputtext-sm"
-              inputClass="w-full"
+              class="w-full"
+              inputClass="p-inputtext-sm w-full"
               :min="1"
             />
           </div>
@@ -67,11 +74,28 @@
               v-model="product.price"
               mode="currency"
               currency="EUR"
-              class="w-full p-inputtext-sm"
-              inputClass="w-full"
+              class="w-full"
+              inputClass="p-inputtext-sm w-full"
             />
           </div>
         </div>
+      </div>
+
+      <!-- Who sold it: only when someone can earn product commission (or one was already picked). -->
+      <div v-if="sellerOptions(product).length" class="mt-3">
+        <label class="text-xs text-gray-500 block mb-1">{{ t('bookingProducts.soldBy') }}</label>
+        <Dropdown
+          v-model="product.staff_id"
+          :options="sellerOptions(product)"
+          optionLabel="name"
+          optionValue="id"
+          showClear
+          :placeholder="t('bookingProducts.noSeller')"
+          class="w-full min-w-0 p-inputtext-sm"
+          labelClass="truncate"
+          data-testid="product-seller"
+          @change="emit('update:modelValue', [...props.modelValue])"
+        />
       </div>
     </div>
 
@@ -87,9 +111,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
+import { api } from "../../api/http";
+import { useCalendarStore } from "../../stores/calendar";
 const { t } = useI18n();
+const calendarStore = useCalendarStore();
 
 const props = defineProps({
   modelValue: {
@@ -100,7 +127,31 @@ const props = defineProps({
     type: Array as () => any[],
     default: () => [],
   },
+  // The booking's therapist: filled in as a new product's seller when they
+  // earn product commission.
+  defaultSellerId: {
+    type: String as () => string | null,
+    default: null,
+  },
 });
+
+// Staff with product commission on. Offline or refused: none to pick, and a
+// seller already picked stays.
+const sellers = ref<{ id: string; name: string }[]>([]);
+const sellersKnown = ref(false);
+onMounted(async () => {
+  try {
+    sellers.value = await api.get("/api/v1/product-sellers");
+    sellersKnown.value = true;
+  } catch {
+    sellers.value = [];
+  }
+});
+const staffName = (id: string) => calendarStore.resources.find((r: any) => r.id === id)?.name || "—";
+const sellerOptions = (product: any) =>
+  product.staff_id && !sellers.value.some((s) => s.id === product.staff_id)
+    ? [...sellers.value, { id: product.staff_id, name: staffName(product.staff_id) }]
+    : sellers.value;
 
 const emit = defineEmits(["update:modelValue"]);
 
@@ -123,12 +174,20 @@ const flatProducts = computed(() => {
 
   return list;
 });
+// The full name on hover, since a long one is cut in the field.
+const productLabel = (id: string | null) => flatProducts.value.find((p) => p.id === id)?.name;
 
 const addProduct = () => {
+  // Without the list (offline), no seller is sent and the server keeps the
+  // booking's therapist, as before sellers could be picked.
+  const seller = sellersKnown.value
+    ? { staff_id: sellers.value.some((s) => s.id === props.defaultSellerId) ? props.defaultSellerId : null }
+    : {};
   const newList = [
     ...props.modelValue,
     {
       product_id: null,
+      ...seller,
       quantity: 1,
       price: 0,
     },

@@ -63,6 +63,7 @@
             <BookingProducts
               v-model="productsList"
               :allProducts="props.allProducts"
+              :defaultSellerId="servicesList[0]?.staff_id || null"
             />
           </div>
 

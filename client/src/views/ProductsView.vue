@@ -243,32 +243,60 @@
           <div
             v-for="(v, index) in newProduct.variations"
             :key="index"
-            class="flex flex-col sm:flex-row gap-2 mb-2 items-start bg-gray-50 border border-gray-100 p-3 rounded-lg"
+            class="mb-2 bg-gray-50 border border-gray-100 p-3 rounded-lg"
           >
-            <div class="flex-1 w-full">
-              <label class="block text-xs font-medium text-gray-600 mb-1">{{ t('products.dialog.variationName') }}</label>
-              <InputText
-                v-model="v.variation_name"
-                class="w-full h-full p-inputtext-sm"
-                :placeholder="t('products.dialog.variationNamePlaceholder')"
-              />
-            </div>
-            <div class="flex-1 w-full">
-              <label class="block text-xs font-medium text-gray-600 mb-1">{{ t('products.dialog.price') }}</label>
-              <InputNumber
-                v-model="v.price"
-                mode="decimal"
-                :minFractionDigits="2"
-                class="w-full p-inputtext-sm"
-              />
-            </div>
-            <div class="flex-1 w-full">
-              <label class="block text-xs font-medium text-gray-600 mb-1">{{ t('products.dialog.initialStock') }}</label>
-              <InputNumber
-                v-model="v.stock_quantity"
-                class="w-full p-inputtext-sm"
-                :min="0"
-              />
+          <!-- Three equal columns (one on phones). Number inputs need inputClass
+               to fill theirs: PrimeVue sizes the inner input by itself. -->
+          <div class="flex items-start gap-2">
+            <div class="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div class="min-w-0">
+                <label class="block text-xs font-medium text-gray-600 mb-1 truncate">{{ t('products.dialog.variationName') }}</label>
+                <InputText
+                  v-model="v.variation_name"
+                  class="w-full p-inputtext-sm"
+                  :placeholder="t('products.dialog.variationNamePlaceholder')"
+                />
+              </div>
+              <div class="min-w-0">
+                <label class="block text-xs font-medium text-gray-600 mb-1 truncate">{{ t('products.dialog.price') }}</label>
+                <InputNumber
+                  v-model="v.price"
+                  mode="decimal"
+                  :minFractionDigits="2"
+                  class="w-full"
+                  inputClass="p-inputtext-sm w-full"
+                />
+              </div>
+              <div class="min-w-0">
+                <label class="block text-xs font-medium text-gray-600 mb-1 truncate">{{ t('products.dialog.initialStock') }}</label>
+                <InputNumber
+                  v-model="v.stock_quantity"
+                  :min="0"
+                  class="w-full"
+                  inputClass="p-inputtext-sm w-full"
+                />
+              </div>
+              <!-- The bulk price is entered before VAT; the seller's commission is on the profit over it with VAT. -->
+              <div class="min-w-0">
+                <label class="block text-xs font-medium text-gray-600 mb-1 truncate">{{ t('products.dialog.bulkPrice') }}</label>
+                <InputNumber
+                  v-model="v.bulk_price"
+                  mode="decimal"
+                  :minFractionDigits="2"
+                  :maxFractionDigits="2"
+                  :min="0"
+                  class="w-full"
+                  inputClass="p-inputtext-sm w-full"
+                  :data-testid="`variation-bulk-price-${index}`"
+                />
+              </div>
+              <div class="sm:col-span-2 flex flex-wrap items-center gap-x-4 gap-y-1 sm:self-end sm:min-h-[2.5rem] text-sm">
+                <span class="text-gray-500">{{ t('products.dialog.bulkVat', { percent: BULK_VAT_PERCENT }) }}</span>
+                <span :data-testid="`variation-bulk-total-${index}`">
+                  {{ t('products.dialog.bulkTotal') }}:
+                  <strong>{{ v.bulk_price == null ? '—' : formatMoney(bulkWithVat(v.bulk_price)) }}</strong>
+                </span>
+              </div>
             </div>
             <Button
               icon="pi pi-trash"
@@ -276,9 +304,10 @@
               text
               @click="removeVariationRow(index)"
               v-if="newProduct.variations.length > 1"
-              class="sm:mt-5"
+              class="mt-5 shrink-0"
               :aria-label="t('products.dialog.removeVariation')"
             />
+          </div>
           </div>
         </div>
       </div>
@@ -331,6 +360,7 @@
 import { useNotify } from "../composables/useNotify";
 import { api, ApiError } from "../api/http";
 import { formatMoney } from "../utils/format";
+import { BULK_VAT_PERCENT, bulkWithVat } from "../utils/money";
 import { ref, computed, watch, onMounted } from "vue";
 import { useIsPhone, PHONE_PAGINATOR_TEMPLATE } from "../composables/useIsPhone";
 import { useRouter } from "vue-router";
@@ -362,6 +392,8 @@ interface Variation {
   id?: number | string;
   variation_name: string;
   price: number;
+  // Before VAT; null when not filled in.
+  bulk_price?: number | null;
   stock_quantity: number;
 }
 
@@ -398,7 +430,7 @@ const openNewProductDialog = () => {
   newProduct.value = {
     name: "",
     description: "",
-    variations: [{ variation_name: "Standard", price: 0, stock_quantity: 0 }],
+    variations: [{ variation_name: "Standard", price: 0, bulk_price: null, stock_quantity: 0 }],
   };
   productDialog.value = true;
 };
@@ -435,6 +467,7 @@ const addVariationRow = () => {
   newProduct.value.variations.push({
     variation_name: "",
     price: 0,
+    bulk_price: null,
     stock_quantity: 0,
   });
 };

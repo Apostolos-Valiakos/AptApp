@@ -275,6 +275,10 @@
           </div>
         </div>
       </div>
+      <!-- Admins only. Rules added here are saved by the dialog's Save, after the staff member. -->
+      <template v-if="isAdmin">
+        <StaffBonusSettings ref="bonusSettings" :key="`bonus-${formKey}`" :staffId="editingStaff.id" />
+      </template>
     </div>
     <template #footer>
       <Button
@@ -559,9 +563,16 @@ import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 import { useCalendarStore } from "../stores/calendar";
 import StaffServiceOrder from "../components/StaffServiceOrder.vue";
+import StaffBonusSettings from "../components/staff/StaffBonusSettings.vue";
 import { useIsPhone, PHONE_PAGINATOR_TEMPLATE } from "../composables/useIsPhone";
+import { useAuthStore } from "../stores/auth";
 
 const { t, locale } = useI18n();
+const isAdmin = computed(() => useAuthStore().isAnalyticsAllowed);
+// A fresh rules form each time the dialog opens; a new staff member getting
+// their id on Save keeps it, with any rules still to send.
+const formKey = ref(0);
+const bonusSettings = ref<InstanceType<typeof StaffBonusSettings> | null>(null);
 
 // ... (imports remain same) ...
 
@@ -625,6 +636,7 @@ const openNew = () => {
     visible_in_calendar: true,
     capacity: 1,
   };
+  formKey.value++;
   showDialog.value = true;
 };
 
@@ -637,6 +649,7 @@ const editStaff = (data: any) => {
     service_ids: data.service_ids || [],
     capacity: data.capacity || 1,
   };
+  formKey.value++;
   showDialog.value = true;
 };
 
@@ -649,15 +662,28 @@ const saveStaff = async () => {
   const method = editingStaff.value.id ? "PUT" : "POST";
 
   try {
-    await api.request(method, url, editingStaff.value);
-    notify.success(t("staff.toast.saved"));
-    showDialog.value = false;
-    fetchData();
+    const answer = await api.request(method, url, editingStaff.value);
+    // A new staff member keeps their id, so pressing Save again after a
+    // failed rule doesn't create them twice.
+    if (!editingStaff.value.id && answer?.id) editingStaff.value.id = answer.id;
   } catch (err) {
     notify.error(t("staff.toast.saveFailed"));
-  } finally {
     loading.value = false;
+    return;
   }
+  try {
+    await bonusSettings.value?.commit(editingStaff.value.id);
+  } catch {
+    // The dialog stays open with the rules not yet sent still marked.
+    notify.error(t("bonus.rules.saveFailed"));
+    loading.value = false;
+    fetchData();
+    return;
+  }
+  notify.success(t("staff.toast.saved"));
+  showDialog.value = false;
+  loading.value = false;
+  fetchData();
 };
 
 // NEW: Login Handlers

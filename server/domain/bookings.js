@@ -8,6 +8,43 @@ const { recalculateClientBalance } = require("./balances");
 const { releasePackageUsage } = require("./packages");
 const { workingRangesOn } = require("./staffSchedule");
 
+// A product's seller (who earns its product commission): the one the screen
+// picked, none when it sent none, or `fallback` from a screen that doesn't send
+// it (older ones, queued offline writes).
+const sellerOf = (prod, fallback) =>
+  Object.prototype.hasOwnProperty.call(prod, "staff_id") ? safeUUID(prod.staff_id) : safeUUID(fallback);
+// In a product_sales INSERT whose $3 is the seller and $7 the shop: a seller
+// from another shop is stored as none.
+const SELLER_IN_SHOP = "(SELECT _st.id FROM staff _st WHERE _st.id = $3::uuid AND _st.shop_id = $7)";
+
+const REDEMPTION_CATEGORY = "Εξαργύρωση";
+/**
+ * A booking's redemptions (services in the category Εξαργύρωση) get the price of
+ * the service each stands for, as it is now, for the staff bonus. `earlier`:
+ * { service_id, bonus_value } from before an edit; a redemption still on the
+ * booking keeps the value it had.
+ */
+const stampRedemptionValues = async (client, appointmentId, earlier = []) => {
+  const kept = earlier.filter((r) => r.bonus_value != null);
+  if (kept.length) {
+    const { rows } = await client.query(
+      "SELECT id, service_id FROM appointment_services WHERE appointment_id = $1 AND bonus_value IS NULL ORDER BY start_time, id",
+      [appointmentId],
+    );
+    for (const row of rows) {
+      const i = kept.findIndex((k) => k.service_id === row.service_id);
+      if (i === -1) continue;
+      await client.query("UPDATE appointment_services SET bonus_value = $1 WHERE id = $2", [kept.splice(i, 1)[0].bonus_value, row.id]);
+    }
+  }
+  await client.query(
+    `UPDATE appointment_services aps SET bonus_value = b.price
+     FROM services r JOIN services b ON b.id = r.bonus_service_id
+     WHERE aps.appointment_id = $1 AND aps.service_id = r.id AND trim(r.category) = $2 AND aps.bonus_value IS NULL`,
+    [appointmentId, REDEMPTION_CATEGORY],
+  );
+};
+
 const addRecurrenceInterval = (date, freq) => {
   const result = new Date(date);
   if (freq === "Daily") result.setDate(result.getDate() + 1);
@@ -403,6 +440,8 @@ const createAppointmentSeries = async (client, data, shopId) => {
         }
       }
 
+      await stampRedemptionValues(client, appointmentId);
+
       // Products logic remains the same (usually only for first instance)
       if (isFirstInstance && products && products.length > 0) {
         // ... existing product logic ...
@@ -417,12 +456,13 @@ const createAppointmentSeries = async (client, data, shopId) => {
             await client.query(
               `INSERT INTO product_sales (
                     appointment_id, inventory_id, staff_id, client_id,
-                    quantity, total_price, shop_id, sale_date, list_total
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8)`,
+                    quantity, total_price, shop_id, sale_date, list_total, unit_bulk_price
+                ) VALUES ($1, $2, ${SELLER_IN_SHOP}, $4, $5, $6, $7, NOW(), $8,
+                  (SELECT bulk_price FROM product_inventory WHERE id = $2))`,
               [
                 appointmentId,
                 prod.product_id,
-                services[0]?.staff_id || null,
+                sellerOf(prod, services[0]?.staff_id),
                 validClientId,
                 qty,
                 lineTotal,
@@ -529,6 +569,12 @@ const performSingleUpdate = async (client, id, shopId, body) => {
     ],
   );
 
+  const earlierRedemptions = (
+    await client.query(
+      "SELECT service_id, bonus_value FROM appointment_services WHERE appointment_id = $1 AND bonus_value IS NOT NULL ORDER BY start_time, id",
+      [id],
+    )
+  ).rows;
   await client.query(
     "DELETE FROM appointment_services WHERE appointment_id = $1",
     [id],
@@ -565,6 +611,22 @@ const performSingleUpdate = async (client, id, shopId, body) => {
     }
   }
 
+  await stampRedemptionValues(client, id, earlierRedemptions);
+
+  // What was sold before: a product still on the booking keeps the day it was
+  // sold, its seller (a screen that doesn't send the seller keeps it too) and
+  // the bulk price it was sold at.
+  const previous = (
+    await client.query(
+      "SELECT inventory_id, staff_id, sale_date::text AS sale_date, unit_bulk_price FROM product_sales WHERE appointment_id = $1 ORDER BY sale_date",
+      [id],
+    )
+  ).rows;
+  const earlierSale = (inventoryId) => {
+    const i = previous.findIndex((r) => r.inventory_id === inventoryId);
+    return i === -1 ? null : previous.splice(i, 1)[0];
+  };
+
   // Restore stock for the sales being removed, then delete and re-insert
   await client.query(
     `UPDATE product_inventory pi
@@ -582,19 +644,23 @@ const performSingleUpdate = async (client, id, shopId, body) => {
       if (prod.product_id) {
         const unitPrice = Number(prod.price || 0);
         const qty = Number(prod.quantity || 1);
+        const before = earlierSale(prod.product_id);
         await client.query(
           `INSERT INTO product_sales (
-            appointment_id, inventory_id, staff_id, client_id, quantity, total_price, shop_id, sale_date, list_total
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8)`,
+            appointment_id, inventory_id, staff_id, client_id, quantity, total_price, shop_id, sale_date, list_total, unit_bulk_price
+          ) VALUES ($1, $2, ${SELLER_IN_SHOP}, $4, $5, $6, $7, COALESCE($9::timestamptz, NOW()), $8,
+            COALESCE($10::numeric, (SELECT bulk_price FROM product_inventory WHERE id = $2)))`,
           [
             id,
             prod.product_id,
-            services[0]?.staff_id || null,
+            sellerOf(prod, before ? before.staff_id : services[0]?.staff_id),
             validClientId,
             qty,
             disc ? disc.productLineTotals[prodIdx] : unitPrice * qty,
             shopId,
             disc ? unitPrice * qty : null,
+            before ? before.sale_date : null,
+            before ? before.unit_bulk_price : null,
           ],
         );
         await client.query(
