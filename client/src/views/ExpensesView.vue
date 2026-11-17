@@ -43,7 +43,7 @@
 
     <SensitiveGate :key="section" :required="section !== 'daily'" @unlocked="onUnlocked">
     <div class="space-y-6">
-    <div v-if="section !== 'report'" class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
+    <div v-if="!otherSection" class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
       <div class="grid grid-cols-2 sm:flex sm:flex-row gap-3 sm:items-end">
         <div class="flex-1 min-w-0">
           <label class="block text-xs font-medium text-gray-500 mb-1">{{ t("expenses.from") }}</label>
@@ -61,11 +61,16 @@
           <label class="block text-xs font-medium text-gray-500 mb-1">{{ t("expenses.category") }}</label>
           <Dropdown v-model="filters.category" :options="categoryFilterOptions" optionLabel="label" optionValue="value" class="w-full" :placeholder="t('expenses.allCategories')" />
         </div>
+        <div class="col-span-2 sm:col-span-1 flex-1 min-w-0">
+          <label class="block text-xs font-medium text-gray-500 mb-1">{{ t("expenses.supplier") }}</label>
+          <Dropdown v-model="filters.supplier" :options="supplierFilterOptions" optionLabel="label" optionValue="value" filter class="w-full" :placeholder="t('expenses.allSuppliers')" data-testid="expense-supplier-filter" />
+        </div>
         <Button :label="t('expenses.clearFilters')" icon="pi pi-times" outlined severity="secondary" class="col-span-2 sm:col-span-1" @click="clearFilters" />
       </div>
     </div>
 
     <ExpenseReport v-if="section === 'report'" />
+    <ExpenseSuppliers v-else-if="section === 'suppliers'" ref="suppliersPanel" @changed="loadSuppliers" @addExpense="openForSupplier" />
 
     <div v-else class="bg-white rounded-2xl shadow-sm border border-gray-100 p-3 sm:p-6">
       <div class="flex justify-between items-baseline mb-4 flex-wrap gap-2 px-1 sm:px-0">
@@ -94,6 +99,9 @@
         <Column field="category_name" :header="t('expenses.category')" sortable headerClass="hidden md:table-cell" bodyClass="hidden md:table-cell">
           <template #body="{ data }">{{ data.category_name || "—" }}</template>
         </Column>
+        <Column field="supplier_name" :header="t('expenses.supplier')" sortable headerClass="hidden md:table-cell" bodyClass="hidden md:table-cell">
+          <template #body="{ data }">{{ data.supplier_name || "—" }}</template>
+        </Column>
         <Column field="description" :header="t('expenses.description')" sortable>
           <template #body="{ data }">
             <span class="whitespace-pre-line">{{ data.description }}</span>
@@ -101,6 +109,7 @@
             <div class="md:hidden text-xs text-gray-500 mt-0.5">
               {{ section === "monthly" ? formatMonth(data.expense_date) : formatDate(data.expense_date) }}
               · {{ data.category_name || t("expenses.noCategory") }} · {{ t(`common.paymentMethod.${data.payment_method}`) }}
+              <template v-if="data.supplier_name"> · {{ data.supplier_name }}</template>
             </div>
           </template>
         </Column>
@@ -125,14 +134,25 @@
 
     <Dialog v-model:visible="showDialog" modal :header="dialogTitle" :style="{ width: '28rem', maxWidth: '95vw' }">
       <div class="space-y-4">
+        <!-- From the Suppliers tab, which is neither daily nor monthly, the expense's kind is picked here. -->
+        <SelectButton
+          v-if="form.pickKind"
+          v-model="form.kind"
+          :options="kindOptions"
+          optionLabel="label"
+          optionValue="value"
+          :allowEmpty="false"
+          class="w-full expense-kind"
+          data-testid="expense-kind"
+        />
         <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-4">
           <div class="min-w-0">
             <label class="block text-sm font-medium text-gray-700 mb-1">{{ t("expenses.amount") }}</label>
             <InputNumber v-model="form.amount" mode="currency" currency="EUR" locale="el-GR" :min="0" class="w-full" inputClass="w-full" />
           </div>
           <div class="min-w-0">
-            <label class="block text-sm font-medium text-gray-700 mb-1">{{ section === "monthly" ? t("expenses.month") : t("expenses.date") }}</label>
-            <Calendar v-if="section === 'monthly'" v-model="form.date" view="month" dateFormat="mm/yy" class="w-full" inputClass="w-full" data-testid="expense-month" />
+            <label class="block text-sm font-medium text-gray-700 mb-1">{{ form.kind === "monthly" ? t("expenses.month") : t("expenses.date") }}</label>
+            <Calendar v-if="form.kind === 'monthly'" v-model="form.date" view="month" dateFormat="mm/yy" class="w-full" inputClass="w-full" data-testid="expense-month" />
             <Calendar v-else v-model="form.date" dateFormat="dd/mm/yy" class="w-full" inputClass="w-full" :disabled="!isAdmin && !!form.id" />
           </div>
         </div>
@@ -152,6 +172,21 @@
             :placeholder="t('expenses.noCategory')"
             :emptyMessage="t('expenses.categories.none')"
             data-testid="expense-category"
+          />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t("expenses.supplier") }}</label>
+          <Dropdown
+            v-model="form.supplier"
+            :options="formSuppliers"
+            optionLabel="name"
+            optionValue="id"
+            filter
+            showClear
+            class="w-full"
+            :placeholder="t('expenses.noSupplier')"
+            :emptyMessage="t('expenses.suppliers.none')"
+            data-testid="expense-supplier"
           />
         </div>
         <div>
@@ -186,18 +221,24 @@ import { reauthToken } from "../utils/reauth";
 import SensitiveGate from "../components/SensitiveGate.vue";
 import ExpenseReport from "../components/expenses/ExpenseReport.vue";
 import ExpenseCategoriesDialog from "../components/expenses/ExpenseCategoriesDialog.vue";
+import ExpenseSuppliers from "../components/expenses/ExpenseSuppliers.vue";
 
 const { t, locale } = useI18n();
 const settingsStore = useSettingsStore();
-// Frontdesk has only the daily expenses; admins also the monthly ones and the report.
+// Frontdesk has only the daily expenses; admins also the monthly ones, the
+// suppliers and the report.
 const isAdmin = computed(() => useAuthStore().isAnalyticsAllowed);
-const section = ref<"daily" | "monthly" | "report">("daily");
+const section = ref<"daily" | "monthly" | "suppliers" | "report">("daily");
 const sectionOptions = computed(() => [
   { value: "daily", label: t("expenses.kinds.daily") },
   { value: "monthly", label: t("expenses.kinds.monthly") },
+  { value: "suppliers", label: t("expenses.suppliers.title") },
   { value: "report", label: t("expenses.report.title") },
 ]);
+// Suppliers and the report have their own filters and lists.
+const otherSection = computed(() => section.value === "suppliers" || section.value === "report");
 const categories = ref<any[]>([]);
+const suppliers = ref<any[]>([]);
 const showCategories = ref(false);
 const notify = useNotify();
 const confirm = useConfirm();
@@ -219,11 +260,12 @@ const expenses = ref<any[]>([]);
 const loading = ref(false);
 const saving = ref(false);
 const showDialog = ref(false);
-const filters = reactive<{ from: Date | null; to: Date | null; method: string | null; category: string | null }>({
+const filters = reactive<{ from: Date | null; to: Date | null; method: string | null; category: string | null; supplier: string | null }>({
   from: monthStart(),
   to: monthEnd(),
   method: null,
   category: null,
+  supplier: null,
 });
 const NO_CATEGORY = "none";
 const categoryFilterOptions = computed(() => [
@@ -231,6 +273,17 @@ const categoryFilterOptions = computed(() => [
   { value: NO_CATEGORY, label: t("expenses.noCategory") },
   ...categories.value.map((c) => ({ value: c.id, label: c.name })),
 ]);
+const NO_SUPPLIER = "none";
+// Removed suppliers still on the listed expenses can be filtered on too.
+const supplierFilterOptions = computed(() => {
+  const named = new Map<string, string>(suppliers.value.map((s) => [s.id, s.name]));
+  for (const e of expenses.value) if (e.supplier_id && !named.has(e.supplier_id)) named.set(e.supplier_id, e.supplier_name);
+  return [
+    { value: null, label: t("expenses.allSuppliers") },
+    { value: NO_SUPPLIER, label: t("expenses.noSupplier") },
+    ...[...named].map(([value, label]) => ({ value, label })),
+  ];
+});
 const form = reactive<{
   id: string | null;
   amount: number | null;
@@ -239,6 +292,10 @@ const form = reactive<{
   method: string;
   category: string | null;
   categoryName: string | null;
+  supplier: string | null;
+  supplierName: string | null;
+  kind: "daily" | "monthly";
+  pickKind: boolean;
 }>({
   id: null,
   amount: null,
@@ -247,16 +304,31 @@ const form = reactive<{
   method: "cash",
   category: null,
   categoryName: null,
+  supplier: null,
+  supplierName: null,
+  kind: "daily",
+  pickKind: false,
 });
+const kindOptions = computed(() => [
+  { value: "daily", label: t("expenses.kinds.daily") },
+  { value: "monthly", label: t("expenses.kinds.monthly") },
+]);
+const suppliersPanel = ref<InstanceType<typeof ExpenseSuppliers> | null>(null);
 const dialogTitle = computed(() => {
   if (form.id) return t("expenses.edit");
-  return section.value === "monthly" ? t("expenses.addMonthly") : t("expenses.add");
+  return form.kind === "monthly" ? t("expenses.addMonthly") : t("expenses.add");
 });
 // An expense keeps showing a category that has since been removed from the list.
 const formCategories = computed(() =>
   form.category && !categories.value.some((c) => c.id === form.category)
     ? [...categories.value, { id: form.category, name: form.categoryName }]
     : categories.value,
+);
+// Likewise a supplier that has since been removed.
+const formSuppliers = computed(() =>
+  form.supplier && !suppliers.value.some((s) => s.id === form.supplier)
+    ? [...suppliers.value, { id: form.supplier, name: form.supplierName }]
+    : suppliers.value,
 );
 
 // Ctrl+1 / Ctrl+8 hide cash / card amounts app-wide, same as Analytics.
@@ -265,6 +337,7 @@ const visible = computed(() =>
     (e) =>
       (!filters.method || e.payment_method === filters.method) &&
       (!filters.category || (filters.category === NO_CATEGORY ? !e.category_id : e.category_id === filters.category)) &&
+      (!filters.supplier || (filters.supplier === NO_SUPPLIER ? !e.supplier_id : e.supplier_id === filters.supplier)) &&
       !(settingsStore.hideCashPaid && e.payment_method === "cash") &&
       !(settingsStore.hideCardPaid && e.payment_method === "card"),
   ),
@@ -299,6 +372,7 @@ const clearFilters = () => {
   filters.to = null;
   filters.method = null;
   filters.category = null;
+  filters.supplier = null;
   load();
 };
 
@@ -310,10 +384,17 @@ const loadCategories = async () => {
   }
 };
 const onCategoriesChanged = () => Promise.all([loadCategories(), load()]);
+const loadSuppliers = async () => {
+  try {
+    suppliers.value = await api("/api/v1/suppliers");
+  } catch {
+    suppliers.value = [];
+  }
+};
 
 // Monthly expenses open on the whole year, daily ones on this month.
 const onSectionChange = () => {
-  if (section.value === "report") return;
+  if (otherSection.value) return;
   const year = new Date().getFullYear();
   filters.from = section.value === "monthly" ? new Date(year, 0, 1) : monthStart();
   filters.to = section.value === "monthly" ? new Date(year, 11, 31) : monthEnd();
@@ -325,12 +406,32 @@ const onUnlocked = () => {
   if (section.value === "monthly") load();
 };
 
+const blankForm = () => ({
+  id: null,
+  amount: null,
+  date: new Date(),
+  description: "",
+  method: "cash",
+  category: null,
+  categoryName: null,
+  supplier: null,
+  supplierName: null,
+  kind: section.value === "monthly" ? ("monthly" as const) : ("daily" as const),
+  pickKind: false,
+});
 const openNew = () => {
-  Object.assign(form, { id: null, amount: null, date: new Date(), description: "", method: "cash", category: null, categoryName: null });
+  Object.assign(form, blankForm());
+  showDialog.value = true;
+};
+// From a supplier's row: the supplier is filled in, and the kind is picked in the dialog.
+const openForSupplier = (s: { id: string; name: string }) => {
+  Object.assign(form, blankForm(), { supplier: s.id, supplierName: s.name, kind: "daily", pickKind: true });
   showDialog.value = true;
 };
 const openEdit = (e: any) => {
   Object.assign(form, {
+    kind: e.kind === "monthly" ? "monthly" : "daily",
+    pickKind: false,
     id: e.id,
     amount: Number(e.amount),
     date: new Date(`${e.expense_date}T00:00:00`),
@@ -338,6 +439,8 @@ const openEdit = (e: any) => {
     method: e.payment_method,
     category: e.category_id || null,
     categoryName: e.category_name || null,
+    supplier: e.supplier_id || null,
+    supplierName: e.supplier_name || null,
   });
   showDialog.value = true;
 };
@@ -351,13 +454,16 @@ const save = async () => {
       description: form.description.trim(),
       payment_method: form.method,
       category_id: form.category,
-      kind: section.value === "monthly" ? "monthly" : "daily",
+      supplier_id: form.supplier,
+      kind: form.kind,
     };
     if (form.id) await api(`/api/v1/expenses/${form.id}`, "PUT", body);
     else await api("/api/v1/expenses", "POST", body);
     showDialog.value = false;
     notify.success(t("expenses.saved"));
-    await load();
+    // On the Suppliers tab its totals and orders change, not the expense list.
+    if (section.value === "suppliers") await suppliersPanel.value?.load();
+    else await load();
   } catch (e: any) {
     notify.error(e.message);
   } finally {
@@ -381,13 +487,16 @@ const remove = (e: any) =>
     },
   });
 
-onMounted(() => Promise.all([load(), loadCategories()]));
+onMounted(() => Promise.all([load(), loadCategories(), loadSuppliers()]));
 </script>
 
 <style>
-/* Phones: the three sections share the width equally. */
+/* The dialog's Daily / Monthly choice fills its width. */
+.expense-kind.p-selectbutton { display: flex; }
+.expense-kind.p-selectbutton .p-togglebutton { flex: 1 1 0; }
+/* Phones: the sections share the width equally. */
 @media (max-width: 639px) {
   .expense-sections.p-selectbutton { display: flex; }
-  .expense-sections.p-selectbutton .p-togglebutton { flex: 1 1 0; }
+  .expense-sections.p-selectbutton .p-togglebutton { flex: 1 1 0; min-width: 0; padding-inline: 0.25rem; font-size: 0.8rem; }
 }
 </style>

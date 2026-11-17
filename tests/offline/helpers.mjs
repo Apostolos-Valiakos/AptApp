@@ -11,7 +11,7 @@ const require = createRequire(import.meta.url);
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const env = Object.fromEntries(
   readFileSync(path.join(ROOT, ".env"), "utf8")
-    .split("\n")
+    .split(/\r?\n/)
     .map((l) => l.match(/^([A-Z0-9_]+)=(.*)$/))
     .filter(Boolean)
     .map(([, k, v]) => [k, v.replace(/\s+#.*$/, "").trim()]),
@@ -20,15 +20,22 @@ export const SHOP = "00000000-0000-0000-0000-000000000001";
 const DEV_URI = env.POSTGRES_URI;
 const SERVER = DEV_URI.slice(0, DEV_URI.lastIndexOf("/"));
 
+// The tests' SQL is UTF-8 (Greek names); psql on Windows would otherwise read it
+// in the console's code page, and it ends lines with \r\n, which would stick to
+// ids taken from the first line.
+const PG_ENV = { ...process.env, PGCLIENTENCODING: "UTF8" };
 const psql = (db, sql) =>
-  execSync(`psql "${SERVER}/${db}" -X -At -v ON_ERROR_STOP=1`, { input: sql, encoding: "utf8" }).trim();
+  execSync(`psql -X -At -v ON_ERROR_STOP=1 "${SERVER}/${db}"`, { input: sql, encoding: "utf8", env: PG_ENV })
+    .replace(/\r\n/g, "\n")
+    .trim();
 
 export const sql = (db, query) => psql(db, query);
 
 /** Copies the dev database into `name` (dropping any old copy). */
 export const createTestDb = (name) => {
   psql("postgres", `DROP DATABASE IF EXISTS ${name}; CREATE DATABASE ${name};`);
-  execSync(`pg_dump "${DEV_URI}" | psql "${SERVER}/${name}" -X -q >/dev/null 2>&1`, { shell: "/bin/bash" });
+  // A plain pipe, so the default shell (sh, or cmd on Windows) runs it.
+  execSync(`pg_dump "${DEV_URI}" | psql -X -q "${SERVER}/${name}"`, { stdio: "ignore", env: PG_ENV });
   return `${SERVER}/${name}`;
 };
 /** An exact copy of an existing test database (nobody may be connected to it). */

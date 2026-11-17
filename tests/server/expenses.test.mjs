@@ -123,6 +123,56 @@ test("in Analytics a monthly expense counts only when the period covers its whol
   assert.equal(await total("2027-02-01T00:00:00+02:00", "2027-04-30T23:59:59+03:00"), 1030, "a longer period");
 });
 
+test("suppliers: admins manage the list, frontdesk only picks one, a removed one keeps its expenses", async () => {
+  assert.equal((await frontdesk("POST", "/api/v1/suppliers", { name: "Nope" })).status, 403);
+  const made = await admin("POST", "/api/v1/suppliers", { name: "Λάδια Α.Ε.", phone: " 2410 123456 ", vat_number: "123456789", notes: "" });
+  assert.equal(made.status, 201, JSON.stringify(made.data));
+  assert.deepEqual([made.data.phone, made.data.notes], ["2410 123456", null], "trimmed, empty is none");
+  assert.equal((await admin("POST", "/api/v1/suppliers", { name: "λάδια α.ε." })).status, 409, "same name, any case");
+  assert.equal((await admin("POST", "/api/v1/suppliers", { name: "" })).status, 400);
+  const other = await admin("POST", "/api/v1/suppliers", { name: "Πετσέτες" });
+  assert.equal((await admin("PUT", `/api/v1/suppliers/${other.data.id}`, { name: "ΛΆΔΙΑ Α.Ε." })).status, 409);
+  assert.equal((await admin("PUT", `/api/v1/suppliers/${other.data.id}`, { name: "Πετσέτες ΟΕ", phone: "699" })).status, 200);
+
+  const offered = (await frontdesk("GET", "/api/v1/suppliers")).data;
+  assert.ok(offered.some((s) => s.id === made.data.id));
+  const daily = await frontdesk("POST", "/api/v1/expenses", expense({ amount: 40, supplier_id: made.data.id, description: "oils" }));
+  assert.equal(daily.status, 201, JSON.stringify(daily.data));
+  await admin("POST", "/api/v1/expenses", expense({ amount: 60.5, supplier_id: made.data.id, kind: "monthly", expense_date: "2026-08-10", payment_method: "card" }));
+  await admin("POST", "/api/v1/expenses", expense({ amount: 15, supplier_id: other.data.id, expense_date: "2026-08-12" }));
+  assert.equal((await admin("POST", "/api/v1/expenses", expense({ supplier_id: "00000000-0000-4000-8000-000000000000" }))).status, 400);
+  assert.equal((await admin("POST", "/api/v1/expenses", expense({ supplier_id: "nope" }))).status, 400);
+  const listed = (await frontdesk("GET", `/api/v1/expenses?from=${today()}&to=${today()}`)).data.find((e) => e.id === daily.data.id);
+  assert.equal(listed.supplier_name, "Λάδια Α.Ε.");
+
+  // A change can also take the supplier off.
+  const cleared = await admin("POST", "/api/v1/expenses", expense({ supplier_id: other.data.id }));
+  assert.equal((await admin("PUT", `/api/v1/expenses/${cleared.data.id}`, expense({ supplier_id: null }))).status, 200);
+  assert.equal(sql(DB, `SELECT supplier_id IS NULL FROM expenses WHERE id = '${cleared.data.id}'`), "t");
+
+  const summary = async (query = "") => (await admin("GET", `/api/v1/suppliers/summary${query}`)).data;
+  const row = (rows, id) => rows.find((s) => s.id === id);
+  const all = await summary();
+  assert.deepEqual([row(all, made.data.id).orders, row(all, made.data.id).total], [2, 100.5], "daily and monthly both count");
+  assert.equal(row(all, other.data.id).total, 15);
+  assert.equal(row(await summary("?from=2026-08-01&to=2026-08-31"), made.data.id).total, 60.5, "only the dates asked");
+  assert.equal(row(await summary("?excludeCard=true"), made.data.id).total, 40, "the card toggle hides card amounts");
+  const orders = (await admin("GET", `/api/v1/suppliers/${made.data.id}/expenses`)).data;
+  assert.deepEqual(orders.map((o) => o.amount).sort(), [40, 60.5]);
+
+  assert.equal((await frontdesk("GET", "/api/v1/suppliers/summary")).status, 403, "totals are admins' only");
+  assert.equal((await frontdesk("DELETE", `/api/v1/suppliers/${made.data.id}`)).status, 403);
+  const bare = api(PORT, token(sql(DB, `${uuid}'admin' LIMIT 1`), "admin"), { reauth: false });
+  assert.equal((await bare("GET", "/api/v1/suppliers/summary")).data.error, "reauth_required");
+
+  assert.equal((await admin("DELETE", `/api/v1/suppliers/${made.data.id}`)).status, 200);
+  assert.ok(!(await frontdesk("GET", "/api/v1/suppliers")).data.some((s) => s.id === made.data.id), "no longer offered");
+  assert.equal(row(await summary(), made.data.id).total, 100.5, "still listed with what was paid");
+  assert.equal(row(await summary("?from=2030-01-01"), made.data.id), undefined, "a removed one unpaid in the dates drops off");
+  const back = await admin("POST", "/api/v1/suppliers", { name: "λάδια α.ε.", phone: "1" });
+  assert.equal(back.data.id, made.data.id, "the same name brings it back");
+});
+
 test("sensitive routes need the password retyped: the right one gives a short proof, the wrong one nothing", async () => {
   const adminId = sql(DB, `${uuid}'admin' LIMIT 1`);
   const bare = api(PORT, token(adminId, "admin"), { reauth: false });
