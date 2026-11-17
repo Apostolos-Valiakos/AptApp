@@ -6,11 +6,12 @@ const { upperName } = require("../domain/common");
 const { asyncHandler } = require("../http");
 const pool = require("../db");
 const bcrypt = require("bcrypt");
-const { workingRangesOn } = require("../domain/staffSchedule");
+const { workingRangesOn, bookableShifts } = require("../domain/staffSchedule");
 
 module.exports = function portalRouter({
   authenticateToken,
   safeUUID,
+  onlyClients,
 }) {
   const router = express.Router();
 
@@ -23,23 +24,16 @@ module.exports = function portalRouter({
       `SELECT working_hours_enabled FROM staff WHERE id = $1 AND shop_id = $2`,
       [staffId, shopId],
     );
-    if (!staffRow.rows[0]) return [];
-    if (!staffRow.rows[0].working_hours_enabled) {
-      const shopRow = await client.query(
-        `SELECT slot_min_time, slot_max_time FROM shops WHERE id = $1`,
-        [shopId],
-      );
-      const shop = shopRow.rows[0];
-      if (!shop?.slot_min_time || !shop?.slot_max_time) return [];
-      return [{ start_time: shop.slot_min_time, end_time: shop.slot_max_time }];
+    const staff = staffRow.rows[0];
+    if (!staff) return [];
+    if (!staff.working_hours_enabled) {
+      const shopRow = await client.query(`SELECT slot_min_time, slot_max_time FROM shops WHERE id = $1`, [shopId]);
+      return bookableShifts(staff, shopRow.rows[0], null);
     }
-    return (await workingRangesOn(client, staffId, date)) || [];
+    return bookableShifts(staff, null, await workingRangesOn(client, staffId, date));
   };
 
-  router.put("/portal/profile", authenticateToken, asyncHandler(async (req, res) => {
-    if (req.user.role !== "client") {
-      return res.status(403).json({ error: "Clients only" });
-    }
+  router.put("/portal/profile", authenticateToken, onlyClients, asyncHandler(async (req, res) => {
     const { first_name, last_name, email, phone } = req.body;
     if (!first_name?.trim() || !last_name?.trim()) {
       return res
@@ -60,10 +54,7 @@ module.exports = function portalRouter({
     res.json({ success: true });
   }, { log: "Portal profile update error:" }));
 
-  router.put("/portal/password", authenticateToken, asyncHandler(async (req, res) => {
-    if (req.user.role !== "client") {
-      return res.status(403).json({ error: "Clients only" });
-    }
+  router.put("/portal/password", authenticateToken, onlyClients, asyncHandler(async (req, res) => {
     const { currentPassword, newPassword } = req.body;
     if (!newPassword || newPassword.length < 6) {
       return res
@@ -90,10 +81,8 @@ module.exports = function portalRouter({
   router.post(
     "/portal/appointments/:id/cancel",
     authenticateToken,
+    onlyClients,
     asyncHandler(async (req, res) => {
-      if (req.user.role !== "client") {
-        return res.status(403).json({ error: "Clients only" });
-      }
       const { id } = req.params;
       const check = await pool.query(
         `SELECT id FROM appointments WHERE id = $1 AND client_id = $2 AND shop_id = $3 AND status NOT IN ('cancelled', 'completed')`,
@@ -126,10 +115,8 @@ module.exports = function portalRouter({
   router.post(
     "/portal/appointments/:id/confirm",
     authenticateToken,
+    onlyClients,
     asyncHandler(async (req, res) => {
-      if (req.user.role !== "client") {
-        return res.status(403).json({ error: "Clients only" });
-      }
       const { id } = req.params;
       const check = await pool.query(
         `SELECT id FROM appointments
@@ -151,10 +138,7 @@ module.exports = function portalRouter({
     }, { log: "Portal appointment confirm error:" }),
   );
 
-  router.put("/portal/notifications", authenticateToken, asyncHandler(async (req, res) => {
-    if (req.user.role !== "client") {
-      return res.status(403).json({ error: "Clients only" });
-    }
+  router.put("/portal/notifications", authenticateToken, onlyClients, asyncHandler(async (req, res) => {
     const { receive_emails } = req.body;
     await pool.query(
       `UPDATE clients SET receive_emails = $1 WHERE id = $2 AND shop_id = $3`,
@@ -166,10 +150,7 @@ module.exports = function portalRouter({
   // --- Client self-booking: read-only, field-allowlisted service/staff lists ---
   // Kept separate from the admin-facing services/staff endpoints so the
   // bookable_online / is_active filters never affect what staff/admin see.
-  router.get("/portal/services", authenticateToken, asyncHandler(async (req, res) => {
-    if (req.user.role !== "client") {
-      return res.status(403).json({ error: "Clients only" });
-    }
+  router.get("/portal/services", authenticateToken, onlyClients, asyncHandler(async (req, res) => {
     const shopRes = await pool.query(
       "SELECT self_booking_enabled FROM shops WHERE id = $1",
       [req.shopId],
@@ -188,10 +169,7 @@ module.exports = function portalRouter({
     res.json(rows);
   }, { log: "Portal services list error:" }));
 
-  router.get("/portal/staff", authenticateToken, asyncHandler(async (req, res) => {
-    if (req.user.role !== "client") {
-      return res.status(403).json({ error: "Clients only" });
-    }
+  router.get("/portal/staff", authenticateToken, onlyClients, asyncHandler(async (req, res) => {
     const { service_id } = req.query;
     const validServiceId = safeUUID(service_id);
     if (!validServiceId) {
@@ -236,10 +214,7 @@ module.exports = function portalRouter({
     res.json({ publicKey: process.env.VAPID_PUBLIC_KEY || null });
   });
 
-  router.get("/portal/notifications", authenticateToken, asyncHandler(async (req, res) => {
-    if (req.user.role !== "client") {
-      return res.status(403).json({ error: "Clients only" });
-    }
+  router.get("/portal/notifications", authenticateToken, onlyClients, asyncHandler(async (req, res) => {
     const { rows } = await pool.query(
       `SELECT id, type, title, body, url, read_at, created_at
        FROM notification_deliveries WHERE client_id = $1
@@ -253,10 +228,8 @@ module.exports = function portalRouter({
   router.put(
     "/portal/notifications/read-all",
     authenticateToken,
+    onlyClients,
     asyncHandler(async (req, res) => {
-      if (req.user.role !== "client") {
-        return res.status(403).json({ error: "Clients only" });
-      }
       await pool.query(
         `UPDATE notification_deliveries SET read_at = NOW()
          WHERE client_id = $1 AND read_at IS NULL`,
@@ -269,10 +242,8 @@ module.exports = function portalRouter({
   router.put(
     "/portal/notifications/:id/read",
     authenticateToken,
+    onlyClients,
     asyncHandler(async (req, res) => {
-      if (req.user.role !== "client") {
-        return res.status(403).json({ error: "Clients only" });
-      }
       await pool.query(
         `UPDATE notification_deliveries SET read_at = NOW()
          WHERE id = $1 AND client_id = $2 AND read_at IS NULL`,
@@ -285,10 +256,8 @@ module.exports = function portalRouter({
   router.post(
     "/portal/push-subscription",
     authenticateToken,
+    onlyClients,
     asyncHandler(async (req, res) => {
-      if (req.user.role !== "client") {
-        return res.status(403).json({ error: "Clients only" });
-      }
       const { endpoint, keys } = req.body;
       if (!endpoint || !keys?.p256dh || !keys?.auth) {
         return res.status(400).json({ error: "Invalid subscription" });
@@ -318,10 +287,8 @@ module.exports = function portalRouter({
   router.delete(
     "/portal/push-subscription",
     authenticateToken,
+    onlyClients,
     asyncHandler(async (req, res) => {
-      if (req.user.role !== "client") {
-        return res.status(403).json({ error: "Clients only" });
-      }
       const { endpoint } = req.body;
       if (!endpoint) return res.status(400).json({ error: "endpoint is required" });
       await pool.query(

@@ -163,6 +163,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatDuration as durationText } from "../../utils/format";
 import { formatMoney } from "../../utils/format";
 import { ref, computed, watch, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
@@ -171,7 +172,6 @@ import { groupServicesByCategory, servicesInStaffOrder } from "../../utils/servi
 const { t } = useI18n();
 
 const props = defineProps<{
-  visible: boolean;
   services: any[];
   staff: any[];
   currentStaffId?: string | null;
@@ -190,15 +190,11 @@ export type PickedService = {
 };
 
 const emit = defineEmits<{
-  "update:visible": [boolean];
   // In the order they were ticked.
   picked: [PickedService[]];
 }>();
 
-const visibleModel = computed({
-  get: () => props.visible,
-  set: (v) => emit("update:visible", v),
-});
+const visibleModel = defineModel<boolean>("visible", { default: false });
 
 const search = ref("");
 const staffFilterId = ref<string | null>(null);
@@ -220,7 +216,7 @@ const itemFor = (svc: any, variation: any | null): PickedService => ({
 const selected = ref<{ key: string; item: PickedService }[]>([]);
 
 watch(
-  () => props.visible,
+  () => visibleModel.value,
   (v) => {
     if (!v) return;
     search.value = "";
@@ -307,11 +303,7 @@ const toggleExpand = (id: string) => {
 
 const formatPrice = (price: number) => formatMoney(price, { compact: true });
 
-const formatDuration = (minutes: number) => {
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return h > 0 ? t("services.duration.hoursMinutes", { h, m }) : t("services.duration.minutes", { m });
-};
+const formatDuration = (minutes: number) => durationText(minutes, t);
 
 </script>
 

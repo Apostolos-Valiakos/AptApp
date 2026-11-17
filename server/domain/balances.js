@@ -1,5 +1,6 @@
 // A client's balance: what they owe, from bookings, manual debts and credit.
 const pool = require("../db");
+const { appointmentPaidSql, productsCostSql } = require("./moneySql");
 
 // --- HELPER: Recalculate Outstanding Balance for a Client ---
 // A client's balance: what past, non-cancelled appointments (since March 2026)
@@ -14,8 +15,8 @@ const clientBalanceSql = (clientRef) => `(
     SELECT SUM(x.total_cost - x.total_paid) FROM (
       SELECT
         COALESCE(SUM(COALESCE(aps.price_override, s.price)), 0)
-          + COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = a.id), 0) AS total_cost,
-        COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0) AS total_paid,
+          + ${productsCostSql("a.id")} AS total_cost,
+        ${appointmentPaidSql("a.id")} AS total_paid,
         (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) AS appt_time,
         a.status
       FROM appointments a

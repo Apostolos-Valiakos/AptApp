@@ -6,7 +6,7 @@
     :style="{ width: '56rem', maxWidth: '95vw' }"
     :closeOnEscape="closeOnEscape"
     data-testid="details-dialog"
-    @update:visible="(v: boolean) => emit('update:visible', v)"
+    @update:visible="(v: boolean) => (visible = v)"
   >
     <p class="text-xs text-gray-500 mb-3">{{ kind ? t(`analytics.details.${kind}.note`) : "" }}</p>
     <div class="flex items-center justify-between gap-3 mb-3 flex-wrap">
@@ -57,9 +57,12 @@
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../composables/useNotify";
+import { exportXlsx } from "../utils/exportXlsx";
+import { statusKey } from "../utils/appointmentStatus";
+import { foldText } from "../utils/text";
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { useToast } from "primevue/usetoast";
 import { api } from "../api/http";
 import { formatMoney } from "../utils/format";
 
@@ -68,10 +71,11 @@ import { formatMoney } from "../utils/format";
 export type DetailKind = "sales" | "payments" | "today" | "debts" | "expenses" | "net" | "cancellations" | "retention";
 type Col = { field: string; type?: "money" | "date" | "datetime" | "method" | "type" | "status" | "line" | "returning"; sortField?: string };
 
-const props = defineProps<{ visible: boolean; kind: DetailKind | null; query: string; closeOnEscape?: boolean }>();
-const emit = defineEmits<{ "update:visible": [boolean]; "open-client": [string] }>();
+const props = defineProps<{ kind: DetailKind | null; query: string; closeOnEscape?: boolean }>();
+const emit = defineEmits<{ "open-client": [string] }>();
+const visible = defineModel<boolean>("visible", { default: false });
 const { t, te, locale } = useI18n();
-const toast = useToast();
+const notify = useNotify();
 
 const money = (field: string): Col => ({ field, type: "money" });
 const COLUMNS: Record<DetailKind, Col[]> = {
@@ -93,7 +97,6 @@ const loading = ref(false);
 const search = ref("");
 
 const dateLocale = computed(() => (locale.value === "el" ? "el-GR" : "en-GB"));
-const STATUS_KEYS: Record<string, string> = { "no-show": "noShow", "no-response": "noResponse" };
 const display = (row: any, col: Col): string => {
   const v = row[col.field];
   switch (col.type) {
@@ -107,7 +110,7 @@ const display = (row: any, col: Col): string => {
       if (te(`dailyReport.types.${v}`)) return t(`dailyReport.types.${v}`);
       return t(Number(row.amount) < 0 ? "dailyReport.types.refund" : "dailyReport.types.payment");
     case "status":
-      return t(`common.status.${STATUS_KEYS[v] || v}`);
+      return t(`common.status.${statusKey(v)}`);
     case "line":
       return t(`analytics.details.line.${v}`);
     case "returning":
@@ -117,13 +120,11 @@ const display = (row: any, col: Col): string => {
   }
 };
 
-// Greek names are often typed without accents or in capitals.
-const plain = (v: string) => v.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/ς/g, "σ");
 const shown = computed(() => {
-  const words = plain(search.value).split(/\s+/).filter(Boolean);
+  const words = foldText(search.value).split(/\s+/).filter(Boolean);
   if (!words.length) return rows.value;
   return rows.value.filter((r) => {
-    const text = plain(columns.value.map((c) => display(r, c)).concat(r.client || "", r.phone || "").join(" "));
+    const text = foldText(columns.value.map((c) => display(r, c)).concat(r.client || "", r.phone || "").join(" "));
     return words.every((w) => text.includes(w));
   });
 });
@@ -157,15 +158,15 @@ const load = async () => {
     total.value = data.total ?? null;
     summary.value = data.summary ?? null;
   } catch (e: any) {
-    if (request === latest) toast.add({ severity: "error", summary: t("common.error"), detail: e.message, life: 3500 });
+    if (request === latest) notify.error(e.message);
   } finally {
     if (request === latest) loading.value = false;
   }
 };
 watch(
-  () => [props.visible, props.kind, props.query],
+  () => [visible.value, props.kind, props.query],
   () => {
-    if (!props.visible) return;
+    if (!visible.value) return;
     search.value = "";
     load();
   },
@@ -174,18 +175,17 @@ defineExpose({ reload: load });
 
 // The file holds every row the search leaves, not just the page shown.
 const exportExcel = async () => {
-  const XLSX = await import("xlsx");
-  const sheet = XLSX.utils.json_to_sheet(
-    shown.value.map((r) =>
-      Object.fromEntries(
-        columns.value.map((c) => [t(`analytics.details.col.${c.field}`), c.type === "money" ? Number(r[c.field] || 0) : display(r, c)]),
-      ),
-    ),
-  );
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, sheet, t(`analytics.details.${props.kind}.title`).slice(0, 31));
   const dates = new URLSearchParams(props.query.replace(/^\?/, ""));
   const day = (v: string | null) => (v ? new Date(v).toLocaleDateString("en-CA") : "");
-  XLSX.writeFile(wb, `${props.kind}_${day(dates.get("from")) || "all"}_${day(dates.get("to")) || "all"}.xlsx`);
+  await exportXlsx(`${props.kind}_${day(dates.get("from")) || "all"}_${day(dates.get("to")) || "all"}.xlsx`, [
+    {
+      name: t(`analytics.details.${props.kind}.title`),
+      rows: shown.value.map((r) =>
+        Object.fromEntries(
+          columns.value.map((c) => [t(`analytics.details.col.${c.field}`), c.type === "money" ? Number(r[c.field] || 0) : display(r, c)]),
+        ),
+      ),
+    },
+  ]);
 };
 </script>

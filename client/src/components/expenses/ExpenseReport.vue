@@ -74,15 +74,17 @@
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../../composables/useNotify";
+import { exportXlsx } from "../../utils/exportXlsx";
+import { round2 } from "../../utils/money";
 import { computed, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { useToast } from "primevue/usetoast";
 import { api } from "../../api/http";
 import { formatMoney } from "../../utils/format";
 import { useSettingsStore } from "../../stores/settings";
 
 const { t, locale } = useI18n();
-const toast = useToast();
+const notify = useNotify();
 const settingsStore = useSettingsStore();
 
 const month = ref<Date>(new Date());
@@ -117,7 +119,7 @@ const categoryRows = computed(() =>
 // More spent is what an owner watches for: an arrow and a sign say which way,
 // so the colour is never the only signal.
 const changeText = (now: number, before: number) => {
-  const diff = Math.round((now - before) * 100) / 100;
+  const diff = round2(now - before);
   if (diff === 0) return t("expenses.report.noChange");
   const money = formatMoney(Math.abs(diff));
   const percent = before > 0 ? ` (${Math.round((Math.abs(diff) / before) * 100)}%)` : "";
@@ -173,37 +175,30 @@ const load = async () => {
     const data = await api.get(`/api/v1/reports/expenses?${params}`);
     if (request === latest) report.value = data;
   } catch {
-    if (request === latest) toast.add({ severity: "error", summary: t("common.error"), detail: t("expenses.failed"), life: 3500 });
+    if (request === latest) notify.error(t("expenses.failed"));
   }
 };
 const exportExcel = async () => {
-  const XLSX = await import("xlsx");
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(
-    wb,
-    XLSX.utils.json_to_sheet(
-      categoryRows.value.map((c: any) => ({
+  await exportXlsx(`expenses_${report.value.month}.xlsx`, [
+    {
+      name: t("expenses.report.sheetCategories"),
+      rows: categoryRows.value.map((c: any) => ({
         [t("expenses.category")]: c.name,
         [monthName(report.value.month)]: c.current,
         [monthName(previousMonth.value)]: c.previous,
         [monthName(lastYearMonth.value)]: c.last_year,
       })),
-    ),
-    t("expenses.report.sheetCategories"),
-  );
-  XLSX.utils.book_append_sheet(
-    wb,
-    XLSX.utils.json_to_sheet(
-      monthRows.value.map((m: any) => ({
+    },
+    {
+      name: t("expenses.report.sheetMonths"),
+      rows: monthRows.value.map((m: any) => ({
         [t("expenses.report.month")]: monthName(m.month),
         [t("expenses.kinds.daily")]: m.daily,
         [t("expenses.kinds.monthly")]: m.monthly,
         [t("expenses.total")]: m.total,
       })),
-    ),
-    t("expenses.report.sheetMonths"),
-  );
-  XLSX.writeFile(wb, `expenses_${report.value.month}.xlsx`);
+    },
+  ]);
 };
 
 onMounted(load);

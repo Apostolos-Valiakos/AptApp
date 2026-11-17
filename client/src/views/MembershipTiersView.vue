@@ -178,20 +178,22 @@
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../composables/useNotify";
 import { api, ifRefused, withMessage } from "../api/http";
 import { formatMoney } from "../utils/format";
 import { ref, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
+import { useResource } from "../composables/useResource";
 
 const { t } = useI18n();
 const toast = useToast();
+const notify = useNotify();
 const confirm = useConfirm();
 
-const tiers = ref<any[]>([]);
+const { items: tiers, loading, reload: fetchTiers } = useResource<any[]>("/api/v1/membership-tiers");
 const allServices = ref<any[]>([]);
-const loading = ref(true);
 const saving = ref(false);
 const tierDialog = ref(false);
 const isEdit = ref(false);
@@ -210,14 +212,6 @@ const emptyForm = () => ({
 
 const form = ref<any>(emptyForm());
 
-const fetchTiers = async () => {
-  loading.value = true;
-  try {
-    tiers.value = await api.get("/api/v1/membership-tiers").catch(ifRefused(tiers.value));
-  } finally {
-    loading.value = false;
-  }
-};
 
 const fetchServices = async () => {
   allServices.value = await api.get("/api/v1/services").catch(ifRefused(allServices.value));
@@ -268,16 +262,11 @@ const saveTier = async () => {
       services: form.value.services.filter((s: any) => s.service_id),
     };
     await api.request(method, url, payload).catch(withMessage("Failed to save tier"));
-    toast.add({
-      severity: "success",
-      summary: t("common.success"),
-      detail: isEdit.value ? t("membershipTiers.toast.updated") : t("membershipTiers.toast.created"),
-      life: 3000,
-    });
+    notify.success(isEdit.value ? t("membershipTiers.toast.updated") : t("membershipTiers.toast.created"));
     tierDialog.value = false;
     await fetchTiers();
   } catch (e: any) {
-    toast.add({ severity: "error", summary: t("common.error"), detail: e.message, life: 4000 });
+    notify.error(e.message);
   } finally {
     saving.value = false;
   }
@@ -295,7 +284,7 @@ const confirmDeleteTier = (tier: any) => {
         tiers.value = tiers.value.filter((t) => t.id !== tier.id);
         toast.add({ severity: "success", summary: t("membershipTiers.toast.deleted"), life: 3000 });
       } catch (e: any) {
-        toast.add({ severity: "error", summary: t("common.error"), detail: e.message, life: 4000 });
+        notify.error(e.message);
       }
     },
   });

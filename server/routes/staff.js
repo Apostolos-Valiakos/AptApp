@@ -501,12 +501,9 @@ module.exports = function staffRouter({
 
   router.post(
     "/staff/:id/photo",
-    authenticateToken, notForClients,
+    authenticateToken, notForClients, requireShopAdminAccess,
     dbFileUpload.single("photo"),
     asyncHandler(async (req, res) => {
-      if (req.user.role !== "admin" && req.user.role !== "super_admin" && req.user.role !== "frontdesk") {
-        return res.status(403).json({ error: "Admins only" });
-      }
       if (!req.file) return res.status(400).json({ error: "No file uploaded" });
       if (!req.file.mimetype.startsWith("image/")) {
         return res.status(400).json({ error: "File must be an image" });
@@ -520,10 +517,7 @@ module.exports = function staffRouter({
     }, { log: "Error uploading staff photo:" }),
   );
 
-  router.delete("/staff/:id/photo", authenticateToken, notForClients, asyncHandler(async (req, res) => {
-    if (req.user.role !== "admin" && req.user.role !== "super_admin" && req.user.role !== "frontdesk") {
-      return res.status(403).json({ error: "Admins only" });
-    }
+  router.delete("/staff/:id/photo", authenticateToken, notForClients, requireShopAdminAccess, asyncHandler(async (req, res) => {
     await pool.query(
       `UPDATE staff SET photo_url = NULL WHERE id = $1 AND shop_id = $2`,
       [req.params.id, req.shopId],

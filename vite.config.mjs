@@ -44,7 +44,7 @@ const appServiceWorker = () => {
   };
 };
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, command }) => {
   // Load env file from the root directory
   // process.cwd() tells Vite to look in the project root for the .env file
   const env = loadEnv(mode, process.cwd(), "");
@@ -91,6 +91,11 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
+    // The production build leaves Vue Devtools out (see client/src/shims/devtools-api.ts).
+    resolve:
+      command === "build"
+        ? { alias: { "@vue/devtools-api": path.resolve("client/src/shims/devtools-api.ts") } }
+        : {},
     build: {
       outDir: "dist",
       emptyOutDir: true,

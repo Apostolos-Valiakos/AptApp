@@ -9,14 +9,12 @@ module.exports = function contestsRouter({
   authenticateToken,
   dbFileUpload,
   notForClients,
+  onlyAdmins,
 }) {
   const router = express.Router();
 
   // List all contests for the shop (admin)
-  router.get("/contests", authenticateToken, notForClients, asyncHandler(async (req, res) => {
-    if (req.user.role !== "admin" && req.user.role !== "super_admin") {
-      return res.status(403).json({ error: "Admins only" });
-    }
+  router.get("/contests", authenticateToken, notForClients, onlyAdmins, asyncHandler(async (req, res) => {
     const { rows } = await pool.query(
       `SELECT id, name, description, start_date, end_date, image_url, created_at
        FROM contests WHERE shop_id = $1 ORDER BY start_date DESC`,
@@ -57,12 +55,9 @@ module.exports = function contestsRouter({
   // Create contest (admin) — image is optional
   router.post(
     "/contests",
-    authenticateToken, notForClients,
+    authenticateToken, notForClients, onlyAdmins,
     dbFileUpload.single("image"),
     asyncHandler(async (req, res) => {
-      if (req.user.role !== "admin" && req.user.role !== "super_admin") {
-        return res.status(403).json({ error: "Admins only" });
-      }
       const { name, description, start_date, end_date } = req.body;
       if (!name || !start_date || !end_date) {
         return res
@@ -84,12 +79,9 @@ module.exports = function contestsRouter({
   // Update contest (admin) — image is optional
   router.put(
     "/contests/:id",
-    authenticateToken, notForClients,
+    authenticateToken, notForClients, onlyAdmins,
     dbFileUpload.single("image"),
     asyncHandler(async (req, res) => {
-      if (req.user.role !== "admin" && req.user.role !== "super_admin") {
-        return res.status(403).json({ error: "Admins only" });
-      }
       const { name, description, start_date, end_date } = req.body;
       const imageUrl = req.file
         ? `data:${req.file.mimetype};base64,${req.file.buffer.toString("base64")}`
@@ -126,10 +118,7 @@ module.exports = function contestsRouter({
   );
 
   // Delete contest (admin)
-  router.delete("/contests/:id", authenticateToken, notForClients, asyncHandler(async (req, res) => {
-    if (req.user.role !== "admin" && req.user.role !== "super_admin") {
-      return res.status(403).json({ error: "Admins only" });
-    }
+  router.delete("/contests/:id", authenticateToken, notForClients, onlyAdmins, asyncHandler(async (req, res) => {
     const { rowCount } = await pool.query(
       `DELETE FROM contests WHERE id = $1 AND shop_id = $2`,
       [req.params.id, req.shopId],

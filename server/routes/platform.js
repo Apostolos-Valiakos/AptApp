@@ -11,16 +11,12 @@ module.exports = function platformRouter({
   io,
   revokeUserSessions,
   authenticateToken,
+  onlyOwner,
 }) {
   const router = express.Router();
 
   // Platform console (cross-shop) is "owner"-only — a separate, shop-less role from super_admin.
-  const requireOwner = (req, res, next) => {
-    if (req.user.role !== "owner") {
-      return res.status(403).json({ error: "Owner only" });
-    }
-    next();
-  };
+  const requireOwner = onlyOwner;
 
   // Accepts either `pool` or an in-flight transaction `client` so callers can log
   // atomically inside BEGIN/COMMIT blocks.

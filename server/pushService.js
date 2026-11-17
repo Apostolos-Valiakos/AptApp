@@ -47,23 +47,18 @@ const sendToSubscriptions = async (subscriptions, payload) => {
   return sent;
 };
 
-const sendPushToClient = async (clientId, payload) => {
+// Every device subscribed for one client, or for one shop. `column` is
+// one of the two fixed names below, never user input.
+const sendPushWhere = (column) => async (id, payload) => {
   const { rows } = await pool.query(
-    "SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE client_id = $1",
-    [clientId],
+    `SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE ${column} = $1`,
+    [id],
   );
   if (rows.length === 0) return 0;
   return sendToSubscriptions(rows, payload);
 };
-
-const sendPushToShop = async (shopId, payload) => {
-  const { rows } = await pool.query(
-    "SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE shop_id = $1",
-    [shopId],
-  );
-  if (rows.length === 0) return 0;
-  return sendToSubscriptions(rows, payload);
-};
+const sendPushToClient = sendPushWhere("client_id");
+const sendPushToShop = sendPushWhere("shop_id");
 
 // Records one row in the client portal's in-app notification history —
 // deliberately independent of whether the OS push above actually reached the

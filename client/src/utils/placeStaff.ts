@@ -2,12 +2,7 @@
 // itself (ΣΑΟΥΝΑ, ΧΑΜΜΑΜ), found by name: in a combination's parts and when
 // booked on their own. A default staff member set on the service wins over this.
 
-const plain = (s: string | null | undefined) =>
-  (s || "")
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .trim();
+import { foldText as plain } from "./text";
 
 const ROOMS = [
   // Hammam first: "ΗΑΜΑΜ" is also written with a Greek Η.

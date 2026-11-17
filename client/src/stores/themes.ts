@@ -1,3 +1,4 @@
+import { useAuthStore } from "./auth";
 import { defineStore } from "pinia";
 import { api } from "../api/http";
 import { palette } from "@primeuix/themes";
@@ -30,8 +31,7 @@ export const useThemeStore = defineStore("theme", {
     // 2. Fetch from DB
     async fetchAndApplyTheme() {
       try {
-        const token = localStorage.getItem("token");
-        if (!token) return; // If no token, keep default
+        if (!useAuthStore().token) return; // Not logged in: keep the default
 
         const data = await api.get("/api/v1/shop");
         if (data && data.primary_color) {

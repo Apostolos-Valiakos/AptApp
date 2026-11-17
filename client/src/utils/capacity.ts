@@ -1,13 +1,12 @@
+import { askConfirm } from "./confirm";
+import { clockTime } from "./format";
 // Shared places: a staff member that is really a room (ΣΑΟΥΝΑ, ΧΑΜΜΑΜ) takes
 // several persons at once (staff.capacity). The server refuses a booking
 // over that as over_capacity unless it's sent with allow_over_capacity; these
 // are the same rules for the screens.
 
 /** "10:05", in the device's time. */
-export const hhmm = (value: string | number | Date) => {
-  const d = new Date(value);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-};
+export const hhmm = clockTime;
 
 /** Places at the same time; 1 for an ordinary staff member. */
 export const placesOf = (staff: any) => Math.max(1, Number(staff?.capacity) || 1);
@@ -33,15 +32,10 @@ export const askOverCapacity = (
   t: (key: string, params?: any) => string,
   details: any,
 ): Promise<boolean> =>
-  new Promise((resolve) => {
-    confirm.require({
-      header: t("capacity.header"),
-      message: overCapacityMessage(details, t),
-      icon: "pi pi-users",
-      acceptLabel: t("capacity.accept"),
-      rejectLabel: t("common.cancel"),
-      accept: () => resolve(true),
-      reject: () => resolve(false),
-      onHide: () => resolve(false),
-    });
+  askConfirm(confirm, {
+    header: t("capacity.header"),
+    message: overCapacityMessage(details, t),
+    icon: "pi pi-users",
+    acceptLabel: t("capacity.accept"),
+    rejectLabel: t("common.cancel"),
   });

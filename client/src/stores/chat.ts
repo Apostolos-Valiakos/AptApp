@@ -162,11 +162,6 @@ export const useChatStore = defineStore("chat", () => {
           // playNotificationSound();
         }
       }
-
-      // Auto-scroll to bottom if the user is looking at this channel
-      if (message.channel_id === activeChannelId.value) {
-        setTimeout(() => scrollToBottom(), 100);
-      }
     });
 
     socket.value.on("typing:update", ({ channelId, userId, isTyping }: any) => {
@@ -258,6 +253,11 @@ export const useChatStore = defineStore("chat", () => {
       window.dispatchEvent(new CustomEvent("appointments-changed"));
     });
 
+    // The waitlist changed on another screen: the calendar's waitlist reloads.
+    socket.value.on("waitlist:changed", () => {
+      window.dispatchEvent(new CustomEvent("waitlist-changed"));
+    });
+
     socket.value.on("card:filter:set", ({ hidden }: { hidden: boolean }) => {
       remoteHideCard.value = hidden;
       cardLocked.value = hidden;
@@ -274,15 +274,21 @@ export const useChatStore = defineStore("chat", () => {
     isConnected.value = false;
   };
 
-  const fetchChannels = async () => {
+  // The shop's users who can chat (names for "… is typing" and new channels).
+  const shopUsers = ref<any[]>([]);
+
+  // A list from the server; empty when it can't be loaded.
+  const loadList = async (url: string, target: { value: any[] }) => {
     try {
-      const data = await api.get("/api/v1/chat/channels");
-      channels.value = Array.isArray(data) ? data : [];
+      const data = await api.get(url);
+      target.value = Array.isArray(data) ? data : [];
     } catch (err) {
-      console.error("Error fetching channels:", err);
-      channels.value = [];
+      console.error(`Error fetching ${url}:`, err);
+      target.value = [];
     }
   };
+  const fetchChannels = () => loadList("/api/v1/chat/channels", channels);
+  const fetchShopUsers = () => loadList("/api/v1/chat/shop-users", shopUsers);
 
   // Fetch messages for a channel
   const fetchMessages = async (channelId: string) => {
@@ -362,9 +368,6 @@ export const useChatStore = defineStore("chat", () => {
 
       // Join channel room
       socket.value?.emit("channel:join", { channelId });
-
-      // Scroll to bottom
-      setTimeout(() => scrollToBottom(), 100);
     }
   };
 
@@ -407,6 +410,14 @@ export const useChatStore = defineStore("chat", () => {
     }
   };
 
+  // Called on every keystroke: "typing" now, "stopped" after a second without one.
+  let idleTimer: ReturnType<typeof setTimeout> | null = null;
+  const noteTyping = () => {
+    sendTyping(true);
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => sendTyping(false), 1000);
+  };
+
   const addMessageLocally = (channelId: string, message: Message) => {
     const existing = messages.value.get(channelId) || [];
     messages.value.set(channelId, [...existing, message]);
@@ -445,16 +456,6 @@ export const useChatStore = defineStore("chat", () => {
     }
   };
 
-  // Helper functions
-  const scrollToBottom = () => {
-    const messagesContainer = document.querySelector(
-      ".chat-messages-container"
-    );
-    if (messagesContainer) {
-      messagesContainer.scrollTop = messagesContainer.scrollHeight;
-    }
-  };
-
   // const playNotificationSound = () => {
   //   if (!isMinimized.value) return;
 
@@ -490,6 +491,9 @@ export const useChatStore = defineStore("chat", () => {
     connect,
     disconnect,
     fetchChannels,
+    shopUsers,
+    fetchShopUsers,
+    noteTyping,
     fetchMessages,
     setActiveChannel,
     sendMessage,

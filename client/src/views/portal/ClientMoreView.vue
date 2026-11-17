@@ -268,6 +268,7 @@
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../../composables/useNotify";
 import { api, withMessage } from "../../api/http";
 import { ref, computed, onMounted, reactive, nextTick } from "vue";
 import { useRouter } from "vue-router";
@@ -287,11 +288,12 @@ const { t } = useI18n();
 const router = useRouter();
 const authStore = useAuthStore();
 const toast = useToast();
+const notify = useNotify();
 const {
   isSupported: pushSupported,
   availableHere: pushAvailableHere,
   permission: pushPermission,
-  subscribe: subscribeToPush,
+  enable: handleEnableNotifications,
 } = usePushNotifications();
 
 const showNotificationsCard = computed(
@@ -301,18 +303,6 @@ const showNotificationsCard = computed(
     pushAvailableHere,
 );
 
-const handleEnableNotifications = async () => {
-  const result = await subscribeToPush();
-  if (result === "subscribed") {
-    toast.add({ severity: "success", detail: t("portal.notifications.enabledToast"), life: 3000 });
-  } else if (typeof result === "object" && result.error) {
-    toast.add({
-      severity: "error",
-      detail: t("portal.notifications.errorToast", { reason: result.error }),
-      life: 6000,
-    });
-  }
-};
 
 const clientData = ref<any>(null);
 const membership = ref<any>(null);
@@ -400,7 +390,7 @@ const saveProfile = async () => {
     });
     showEditProfile.value = false;
   } catch (e: any) {
-    toast.add({ severity: "error", summary: t("common.error"), detail: e.message, life: 3000 });
+    notify.error(e.message);
   } finally {
     isSavingProfile.value = false;
   }
@@ -419,7 +409,7 @@ const changePassword = async () => {
     passwordForm.confirm = "";
     showChangePassword.value = false;
   } catch (e: any) {
-    toast.add({ severity: "error", summary: t("common.error"), detail: e.message, life: 3000 });
+    notify.error(e.message);
   } finally {
     isSavingPassword.value = false;
   }

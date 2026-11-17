@@ -1,7 +1,6 @@
 // Last known server data, kept in the browser so frontdesk can open the
 // calendar, look up services and search clients while offline.
-import { STORES, deleteRow, getAllRows, getRow, putRow, putRows } from "./db";
-import { MIN_PHONE_DIGITS, phoneKey } from "../utils/phone";
+import { STORES, getAllRows, getRow, putRow, putRows } from "./db";
 
 // --- Appointments ------------------------------------------------------------
 
@@ -61,13 +60,10 @@ export const cachedValue = async <T = any>(key: string): Promise<T | undefined> 
 // --- Clients -----------------------------------------------------------------
 
 /** Lower-case, accents and final sigma folded: "Δέσποινα" matches "δεσποινα". */
-export const foldText = (s: string) =>
-  String(s || "")
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .replace(/ς/g, "σ")
-    .trim();
+import { foldText } from "../utils/text";
+import { MIN_PHONE_DIGITS, phoneKey } from "../utils/phone";
+
+export { foldText };
 const digitsOf = (s: string) => String(s || "").replace(/\D/g, "");
 
 export const cacheClients = async (clients: any[], replaceAll = true) => {
@@ -80,8 +76,6 @@ export const cacheClients = async (clients: any[], replaceAll = true) => {
   return putRows(STORES.clients, rows, gone);
 };
 export const addCachedClient = (client: any) => putRow(STORES.clients, { ...client, id: String(client.id) });
-export const removeCachedClient = (id: string) => deleteRow(STORES.clients, id);
-export const getCachedClient = (id: string) => getRow<any>(STORES.clients, id);
 export const getCachedClients = () => getAllRows<any>(STORES.clients);
 
 /** The clients kept on this device with this phone (written any way), for offline use. */

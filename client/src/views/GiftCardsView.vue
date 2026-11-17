@@ -216,7 +216,9 @@
 </template>
 
 <script setup lang="ts">
-import { api, ifRefused, withMessage } from "../api/http";
+import { useNotify } from "../composables/useNotify";
+import { formatDate as dateText } from "../utils/format";
+import { api, withMessage } from "../api/http";
 import { formatMoney } from "../utils/format";
 import { ref, computed, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
@@ -225,21 +227,22 @@ import { useConfirm } from "primevue/useconfirm";
 import { useSettingsStore } from "../stores/settings";
 import ClientSelector from "../components/ClientSelector.vue";
 import { useIsPhone, PHONE_PAGINATOR_TEMPLATE } from "../composables/useIsPhone";
+import { useResource } from "../composables/useResource";
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const toast = useToast();
+const notify = useNotify();
 const confirm = useConfirm();
 const settingsStore = useSettingsStore();
 const isPhone = useIsPhone();
 
-const giftCards = ref<any[]>([]);
+const { items: giftCards, loading, reload: fetchGiftCards } = useResource<any[]>("/api/v1/gift-cards");
 
 const visibleGiftCards = computed(() =>
   settingsStore.hideCashPaid
     ? giftCards.value.filter((c) => c.purchase_payment_method !== "cash")
     : giftCards.value,
 );
-const loading = ref(true);
 const saving = ref(false);
 const cardDialog = ref(false);
 const isEdit = ref(false);
@@ -262,14 +265,6 @@ const form = ref<any>({
 });
 
 
-const fetchGiftCards = async () => {
-  loading.value = true;
-  try {
-    giftCards.value = await api.get("/api/v1/gift-cards").catch(ifRefused(giftCards.value));
-  } finally {
-    loading.value = false;
-  }
-};
 
 // --- Staff list for the "Sold By" picker (small dataset — plain fetch is fine) ---
 const staffList = ref<any[]>([]);
@@ -345,8 +340,7 @@ const statusSeverity = (status: string) => {
   return "warn"; // depleted
 };
 
-const formatDate = (d: string) =>
-  new Date(d).toLocaleDateString("el-GR", { day: "2-digit", month: "2-digit", year: "numeric" });
+const formatDate = (d: string) => dateText(d, locale.value);
 
 const saveCard = async () => {
   saving.value = true;
@@ -354,16 +348,11 @@ const saveCard = async () => {
     const url = isEdit.value ? `/api/v1/gift-cards/${editingId.value}` : "/api/v1/gift-cards";
     const method = isEdit.value ? "PUT" : "POST";
     await api.request(method, url, form.value).catch(withMessage("Failed to save gift card"));
-    toast.add({
-      severity: "success",
-      summary: t("common.success"),
-      detail: isEdit.value ? t("giftCards.toast.updated") : t("giftCards.toast.created"),
-      life: 3000,
-    });
+    notify.success(isEdit.value ? t("giftCards.toast.updated") : t("giftCards.toast.created"));
     cardDialog.value = false;
     await fetchGiftCards();
   } catch (e: any) {
-    toast.add({ severity: "error", summary: t("common.error"), detail: e.message, life: 4000 });
+    notify.error(e.message);
   } finally {
     saving.value = false;
   }

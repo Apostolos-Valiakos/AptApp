@@ -43,18 +43,14 @@
 
 <script setup lang="ts">
 import { api } from "../api/http";
-import { ref, computed } from "vue";
+import { ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { avatarColor, initials } from "../utils/avatar";
 
 const { t } = useI18n();
-const props = defineProps<{ visible: boolean }>();
-const emit = defineEmits<{ "update:visible": [boolean]; select: [any] }>();
+const emit = defineEmits<{ select: [any] }>();
 
-const visibleModel = computed({
-  get: () => props.visible,
-  set: (v) => emit("update:visible", v),
-});
+const visibleModel = defineModel<boolean>("visible", { default: false });
 
 const selected = ref<any>(null);
 const suggestions = ref<any[]>([]);

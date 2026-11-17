@@ -1,4 +1,6 @@
 import { ref } from "vue";
+import { useI18n } from "vue-i18n";
+import { useToast } from "primevue/usetoast";
 import { useAuthStore } from "../stores/auth";
 
 const isSupported =
@@ -89,5 +91,17 @@ export function usePushNotifications() {
     }
   };
 
-  return { isSupported, availableHere, permission, subscribe };
+  // Subscribes and tells the client how it went.
+  const toast = useToast();
+  const { t } = useI18n();
+  const enable = async () => {
+    const result = await subscribe();
+    if (result === "subscribed") {
+      toast.add({ severity: "success", detail: t("portal.notifications.enabledToast"), life: 3000 });
+    } else if (typeof result === "object" && result.error) {
+      toast.add({ severity: "error", detail: t("portal.notifications.errorToast", { reason: result.error }), life: 6000 });
+    }
+  };
+
+  return { isSupported, availableHere, permission, subscribe, enable };
 }

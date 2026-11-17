@@ -328,6 +328,7 @@
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../composables/useNotify";
 import { api, ApiError } from "../api/http";
 import { formatMoney } from "../utils/format";
 import { ref, computed, watch, onMounted } from "vue";
@@ -373,6 +374,7 @@ interface Product {
 
 const productStore = useProductStore();
 const toast = useToast();
+const notify = useNotify();
 const confirm = useConfirm();
 
 const stockDialog = ref(false);
@@ -416,19 +418,9 @@ const getStockSeverity = (qty: number) => {
 const adjustStock = async (inventoryId: any, amount: number) => {
   try {
     await productStore.updateStock(inventoryId, amount);
-    toast.add({
-      severity: "success",
-      summary: t('common.success'),
-      detail: t('products.toast.stockUpdated'),
-      life: 3000,
-    });
+    notify.success(t('products.toast.stockUpdated'));
   } catch (err) {
-    toast.add({
-      severity: "error",
-      summary: t('common.error'),
-      detail: t('products.toast.stockFailed'),
-      life: 3000,
-    });
+    notify.error(t('products.toast.stockFailed'));
   }
 };
 
@@ -467,29 +459,14 @@ const saveProduct = async () => {
       });
 
     if (!refused) {
-      toast.add({
-        severity: "success",
-        summary: t('common.success'),
-        detail: isEdit.value ? t('products.toast.updated') : t('products.toast.created'),
-        life: 3000,
-      });
+      notify.success(isEdit.value ? t('products.toast.updated') : t('products.toast.created'));
       productDialog.value = false;
       await productStore.fetchProducts();
     } else {
-      toast.add({
-        severity: "error",
-        summary: t('common.error'),
-        detail: refused.data?.error || t('products.toast.saveFailed'),
-        life: 3000,
-      });
+      notify.error(refused.data?.error || t('products.toast.saveFailed'));
     }
   } catch (err) {
-    toast.add({
-      severity: "error",
-      summary: t('common.error'),
-      detail: t('products.toast.saveFailed'),
-      life: 3000,
-    });
+    notify.error(t('products.toast.saveFailed'));
   }
 };
 
@@ -503,20 +480,10 @@ const confirmDeleteProduct = (product: Product) => {
       if (!product.id) return;
       try {
         await api.del(`/api/v1/products/${product.id}`);
-        toast.add({
-          severity: "success",
-          summary: t('common.success'),
-          detail: t('products.toast.deleted'),
-          life: 3000,
-        });
+        notify.success(t('products.toast.deleted'));
         await productStore.fetchProducts();
       } catch (err) {
-        toast.add({
-          severity: "error",
-          summary: t('common.error'),
-          detail: t('products.toast.deleteFailed'),
-          life: 3000,
-        });
+        notify.error(t('products.toast.deleteFailed'));
       }
     },
   });

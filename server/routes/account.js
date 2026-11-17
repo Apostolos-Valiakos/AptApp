@@ -194,37 +194,37 @@ module.exports = function accountRouter({
   }));
 
   // Signup Endpoint
-  router.post("/signup", signupLimiter, async (req, res) => {
+  router.post("/signup", signupLimiter, asyncHandler(async (req, res) => {
     const { token, password } = req.body;
-    try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      // Only an invite link signs up (a login token has a role, not an email).
-      if (isSessionToken(decoded) || !decoded.email || !decoded.clientId) {
-        return res.status(400).json({ error: "Invalid or expired invitation link" });
-      }
-
-      const userCheck = await pool.query(
-        "SELECT id FROM users WHERE username = $1",
-        [decoded.email],
-      );
-      if (userCheck.rows.length > 0)
-        return res
-          .status(400)
-          .json({ error: "An account with this email already exists" });
-
-      const hashedPassword = await bcrypt.hash(password, 12);
-
-      await pool.query(
-        `INSERT INTO users (username, password, role, shop_id, client_id) VALUES ($1, $2, 'client', $3, $4)`,
-        [decoded.email, hashedPassword, decoded.shopId, decoded.clientId],
-      );
-
-      res.json({ success: true });
-    } catch (err) {
-      console.error(err);
-      res.status(400).json({ error: "Invalid or expired invitation link" });
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    // Only an invite link signs up (a login token has a role, not an email).
+    if (isSessionToken(decoded) || !decoded.email || !decoded.clientId) {
+      return res.status(400).json({ error: "Invalid or expired invitation link" });
     }
-  });
+
+    const userCheck = await pool.query(
+      "SELECT id FROM users WHERE username = $1",
+      [decoded.email],
+    );
+    if (userCheck.rows.length > 0)
+      return res
+        .status(400)
+        .json({ error: "An account with this email already exists" });
+
+    const hashedPassword = await bcrypt.hash(password, 12);
+
+    await pool.query(
+      `INSERT INTO users (username, password, role, shop_id, client_id) VALUES ($1, $2, 'client', $3, $4)`,
+      [decoded.email, hashedPassword, decoded.shopId, decoded.clientId],
+    );
+
+    res.json({ success: true });
+  }, {
+    mapError: (err) => {
+      console.error(err);
+      return { status: 400, body: { error: "Invalid or expired invitation link" } };
+    },
+  }));
 
   return router;
 };

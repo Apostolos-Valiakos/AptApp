@@ -13,6 +13,7 @@
       <p class="text-gray-500 text-sm">
         {{ client.phone }}
       </p>
+
       <!-- The client's own notes (the shop's, never shown to the client).
            Edited here, they are saved with the booking's Save; staff only
            read them. -->
@@ -37,7 +38,6 @@
           data-testid="client-notes-input"
         />
       </div>
-
 
       <!-- Balance badge -->
       <div
@@ -363,6 +363,7 @@
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../../composables/useNotify";
 import { fullyHidden, shownMoney } from "../../utils/paymentFilters";
 import { useSettingsStore } from "../../stores/settings";
 import { MONEY_METHODS, methodChoiceLabel } from "../../utils/paymentMethods";
@@ -408,6 +409,7 @@ const openPast = (appt: any) => {
   emit("open-appointment", appt);
 };
 const toast = useToast();
+const notify = useNotify();
 
 // --- Debt: resolve (payment / write-off) and manual debts ---
 const canManageDebt = computed(() => authStore.isShopAdmin);
@@ -470,7 +472,7 @@ const afterDebtChange = async (data: any, appointmentId?: string) => {
 };
 
 const failDebt = (e: any) =>
-  toast.add({ severity: "error", summary: t("common.error"), detail: e?.message || t("bookingSidebar.debt.failed"), life: 3500 });
+  notify.error(e?.message || t("bookingSidebar.debt.failed"));
 
 const confirmResolve = async () => {
   const target = resolveTarget.value;

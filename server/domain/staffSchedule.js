@@ -29,6 +29,57 @@ const workingRangesOn = async (db, staffId, date) => {
   return rows;
 };
 
+/**
+ * The same rule as workingRangesOn, for several staff over a run of dates in
+ * a few queries: a function (staffId, "YYYY-MM-DD") → shifts or null.
+ */
+const workingRangesBetween = async (db, staffIds, from, to) => {
+  const [own, versions, weekly] = await Promise.all([
+    db.query(
+      "SELECT staff_id, date::text AS date, ranges FROM staff_schedule_days WHERE staff_id = ANY($1::uuid[]) AND date BETWEEN $2::date AND $3::date",
+      [staffIds, from, to],
+    ),
+    db.query(
+      "SELECT staff_id, effective_from::text AS ef FROM staff_schedule_versions WHERE staff_id = ANY($1::uuid[]) AND effective_from <= $2::date ORDER BY effective_from DESC",
+      [staffIds, to],
+    ),
+    db.query(
+      `SELECT staff_id, effective_from::text AS ef, day_of_week,
+              to_char(start_time, 'HH24:MI') AS start_time, to_char(end_time, 'HH24:MI') AS end_time
+       FROM staff_working_hours WHERE staff_id = ANY($1::uuid[]) AND effective_from <= $2::date ORDER BY start_time`,
+      [staffIds, to],
+    ),
+  ]);
+  const ownOf = new Map(own.rows.map((r) => [`${r.staff_id}|${r.date}`, r.ranges]));
+  const versionsOf = new Map();
+  for (const r of versions.rows) versionsOf.set(String(r.staff_id), [...(versionsOf.get(String(r.staff_id)) || []), r.ef]);
+  const weekOf = new Map();
+  for (const r of weekly.rows) {
+    const key = `${r.staff_id}|${r.ef}|${r.day_of_week}`;
+    weekOf.set(key, [...(weekOf.get(key) || []), { start_time: r.start_time, end_time: r.end_time }]);
+  }
+  return (staffId, date) => {
+    const mine = ownOf.get(`${staffId}|${date}`);
+    if (mine) return [...mine].sort((a, b) => (a.start_time > b.start_time ? 1 : -1));
+    const latest = (versionsOf.get(String(staffId)) || []).find((ef) => ef <= date);
+    if (!latest) return null;
+    const dow = new Date(`${date}T12:00:00Z`).getUTCDay();
+    return weekOf.get(`${staffId}|${latest}|${dow}`) || [];
+  };
+};
+
+/**
+ * Where a staff member can be booked on a date, as the calendar column shows
+ * it: their own working hours if they keep them (none set yet: nowhere), else
+ * the shop's general opening hours. `ranges` is workingRangesOn's answer.
+ */
+const bookableShifts = (staff, shop, ranges) => {
+  if (!staff.working_hours_enabled) {
+    return shop?.slot_min_time && shop?.slot_max_time ? [{ start_time: shop.slot_min_time, end_time: shop.slot_max_time }] : [];
+  }
+  return ranges || [];
+};
+
 /** Shifts as sent by the screens: an error message, or null when they're fine. */
 const rangesProblem = (ranges) => {
   if (!Array.isArray(ranges)) return "ranges must be an array";
@@ -95,4 +146,13 @@ const bookingsOutsideDate = async (db, staffId, shopId, date, ranges) => {
   return rows;
 };
 
-module.exports = { TIME_HHMM, DATE_YYYYMMDD, workingRangesOn, rangesProblem, bookingsOutsideWeek, bookingsOutsideDate };
+module.exports = {
+  TIME_HHMM,
+  DATE_YYYYMMDD,
+  workingRangesOn,
+  workingRangesBetween,
+  bookableShifts,
+  rangesProblem,
+  bookingsOutsideWeek,
+  bookingsOutsideDate,
+};

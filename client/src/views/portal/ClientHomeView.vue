@@ -178,7 +178,7 @@ const {
   isSupported: pushSupported,
   availableHere: pushAvailableHere,
   permission: pushPermission,
-  subscribe: subscribeToPush,
+  enable: handleEnableNotifications,
 } = usePushNotifications();
 
 const showNotificationsCard = computed(
@@ -188,18 +188,6 @@ const showNotificationsCard = computed(
     pushAvailableHere,
 );
 
-const handleEnableNotifications = async () => {
-  const result = await subscribeToPush();
-  if (result === "subscribed") {
-    toast.add({ severity: "success", detail: t("portal.notifications.enabledToast"), life: 3000 });
-  } else if (typeof result === "object" && result.error) {
-    toast.add({
-      severity: "error",
-      detail: t("portal.notifications.errorToast", { reason: result.error }),
-      life: 6000,
-    });
-  }
-};
 
 const loading = ref(true);
 const activeContest = ref<any>(null);

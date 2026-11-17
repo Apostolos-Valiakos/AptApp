@@ -8,6 +8,7 @@ const pool = require("../db");
 module.exports = function exercisesRouter({
   authenticateToken,
   notForClients,
+  onlyRoles,
 }) {
   const router = express.Router();
 
@@ -30,13 +31,9 @@ module.exports = function exercisesRouter({
     res.json(rows[0]);
   }));
 
-  router.delete("/exercises/:id", authenticateToken, notForClients, asyncHandler(async (req, res) => {
+  router.delete("/exercises/:id", authenticateToken, notForClients, onlyRoles(["admin", "super_admin", "frontdesk"], "Unauthorized: Admins only"), asyncHandler(async (req, res) => {
     const { id } = req.params;
 
-    // Security Check: Only allow Admins/Super Admins
-    if (req.user.role !== "admin" && req.user.role !== "super_admin" && req.user.role !== "frontdesk") {
-      return res.status(403).json({ error: "Unauthorized: Admins only" });
-    }
     const result = await pool.query(
       "DELETE FROM exercises WHERE id = $1 AND shop_id = $2 RETURNING *",
       [id, req.shopId],

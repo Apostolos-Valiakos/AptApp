@@ -233,7 +233,7 @@
             >
               <span
                 class="text-xs px-2 py-0.5 rounded uppercase font-bold mr-2"
-                :class="getStatusColor(appt.status)"
+                :class="historyBadge(appt.status)"
               >
                 {{ t(`common.status.${statusKey(appt.status)}`) }}
               </span>
@@ -421,6 +421,8 @@
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../composables/useNotify";
+import { historyBadge, statusKey } from "../utils/appointmentStatus";
 import { MONEY_METHODS, methodChoiceLabel } from "../utils/paymentMethods";
 import { api, ApiError, ifRefused, saveBlob, withMessage } from "../api/http";
 import { formatMoney } from "../utils/format";
@@ -439,18 +441,16 @@ import { useI18n } from "vue-i18n";
 const { t } = useI18n();
 const authStore = useAuthStore();
 const toast = useToast();
+const notify = useNotify();
 const confirm = useConfirm();
 const isShopAdmin = authStore.isShopAdmin;
 const settingsStore = useSettingsStore();
 const { shopSettings } = storeToRefs(settingsStore);
 
-const props = defineProps(["visible", "clientId", "initialTab"]);
-const emit = defineEmits(["update:visible", "refresh"]);
+const props = defineProps(["clientId", "initialTab"]);
+const emit = defineEmits(["refresh"]);
 
-const isVisible = computed({
-  get: () => props.visible,
-  set: (val) => emit("update:visible", val),
-});
+const isVisible = defineModel<boolean>("visible", { default: false });
 
 const activeTab = ref("Info");
 const loading = ref(false);
@@ -594,7 +594,7 @@ const assignMembership = async () => {
     toast.add({ severity: "success", summary: t('clientProfile.membership.toasts.assigned'), life: 3000 });
     await fetchMembership();
   } catch (e: any) {
-    toast.add({ severity: "error", summary: t('common.error'), detail: e.message, life: 4000 });
+    notify.error(e.message);
   } finally {
     membershipActionLoading.value = false;
   }
@@ -609,7 +609,7 @@ const renewMembership = async () => {
     toast.add({ severity: "success", summary: t('clientProfile.membership.toasts.renewed'), life: 3000 });
     await fetchMembership();
   } catch (e: any) {
-    toast.add({ severity: "error", summary: t('common.error'), detail: e.message, life: 4000 });
+    notify.error(e.message);
   } finally {
     membershipActionLoading.value = false;
   }
@@ -629,14 +629,14 @@ const confirmCancelMembership = () => {
         toast.add({ severity: "success", summary: t('clientProfile.membership.toasts.cancelled'), life: 3000 });
         await fetchMembership();
       } catch (e: any) {
-        toast.add({ severity: "error", summary: t('common.error'), detail: e.message, life: 4000 });
+        notify.error(e.message);
       }
     },
   });
 };
 
 watch(
-  () => props.visible,
+  () => isVisible.value,
   (val) => {
     if (val && props.clientId) {
       activeTab.value = props.initialTab || "Info";
@@ -743,23 +743,7 @@ const getFileIcon = (type: string) => {
   return "pi-file";
 };
 
-const STATUS_KEYS: Record<string, string> = {
-  new: "new", confirmed: "confirmed", started: "started", arrived: "arrived",
-  completed: "completed", cancelled: "cancelled", "no-show": "noShow", "no-response": "noResponse",
-};
-const statusKey = (s: string) => STATUS_KEYS[s] || s;
 
-const getStatusColor = (s: string) => {
-  const map: any = {
-    new: "bg-blue-100 text-blue-800",
-    confirmed: "bg-purple-100 text-purple-800",
-    completed: "bg-green-100 text-green-800",
-    cancelled: "bg-red-100 text-red-800",
-    "no-show": "bg-red-200 text-red-900",
-    "no-response": "bg-amber-100 text-amber-800",
-  };
-  return map[s] || "bg-gray-100";
-};
 // Downloads a file under its own name, with the login in the request header
 // (not ?token= in a link).
 const downloadingFileId = ref<any>(null);

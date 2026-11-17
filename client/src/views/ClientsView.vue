@@ -445,6 +445,8 @@
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../composables/useNotify";
+import { exportXlsx } from "../utils/exportXlsx";
 import { api, ApiError, ifRefused, withMessage } from "../api/http";
 import { usePhoneMatches } from "../composables/usePhoneMatches";
 import PhoneMatches from "../components/PhoneMatches.vue";
@@ -470,6 +472,7 @@ const settingsStore = useSettingsStore();
 const { shopSettings } = storeToRefs(settingsStore);
 
 const toast = useToast();
+const notify = useNotify();
 const confirm = useConfirm();
 
 const clients = ref<any[]>([]);
@@ -528,12 +531,7 @@ const fetchClients = async () => {
     totalClients.value = data.total || 0;
   } catch (err) {
     console.error(err);
-    toast.add({
-      severity: "error",
-      summary: t("common.error"),
-      detail: t("clients.toast.loadFailed"),
-      life: 4000,
-    });
+    notify.error(t("clients.toast.loadFailed"));
   } finally {
     loading.value = false;
   }
@@ -593,17 +591,12 @@ const exportExcel = async () => {
     const all = await api.get("/api/v1/clients/export");
     const columns = exportColumns.value.filter((c) => chosenColumns.value.includes(c.key));
     const rows = all.map((client: any) => Object.fromEntries(columns.map((c) => [c.label, c.value(client)])));
-    const XLSX = await import("xlsx");
-    const ws = XLSX.utils.json_to_sheet(rows, { header: columns.map((c) => c.label) });
-    ws["!cols"] = columns.map((c) => ({
-      wch: Math.min(40, Math.max(c.label.length, ...rows.map((r: any) => String(r[c.label]).length)) + 2),
-    }));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, t("clients.export.sheetName"));
-    XLSX.writeFile(wb, `clients_${toLocalDateStr(new Date())}.xlsx`);
+    await exportXlsx(`clients_${toLocalDateStr(new Date())}.xlsx`, [
+      { name: t("clients.export.sheetName"), rows, header: columns.map((c) => c.label), fitColumns: true },
+    ]);
     exportVisible.value = false;
   } catch {
-    toast.add({ severity: "error", summary: t("common.error"), detail: t("clients.export.failed"), life: 4000 });
+    notify.error(t("clients.export.failed"));
   } finally {
     exporting.value = false;
   }
@@ -648,12 +641,7 @@ const inviteClient = async (client: any) => {
       life: 3000,
     });
   } catch (err: any) {
-    toast.add({
-      severity: "error",
-      summary: t("common.error"),
-      detail: err.message,
-      life: 3000,
-    });
+    notify.error(err.message);
   }
 };
 // Open the simple dialog for CREATION only
@@ -709,21 +697,11 @@ const saveClient = async () => {
       return;
     }
 
-    toast.add({
-      severity: "success",
-      summary: t("common.success"),
-      detail: t("clients.toast.created"),
-      life: 3000,
-    });
+    notify.success(t("clients.toast.created"));
     dialogVisible.value = false;
     fetchClients();
   } catch (err) {
-    toast.add({
-      severity: "error",
-      summary: t("common.error"),
-      detail: t("clients.toast.saveFailed"),
-      life: 4000,
-    });
+    notify.error(t("clients.toast.saveFailed"));
   }
 };
 
@@ -743,12 +721,7 @@ const deleteClient = async (client: any) => {
   try {
     await api.del(`/api/v1/clients/${client.id}`).catch(withMessage("Failed to delete client"));
 
-    toast.add({
-      severity: "success",
-      summary: t("common.success"),
-      detail: t("clients.toast.deleted"),
-      life: 3000,
-    });
+    notify.success(t("clients.toast.deleted"));
 
     fetchClients();
   } catch (err: any) {

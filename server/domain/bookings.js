@@ -722,10 +722,15 @@ const sharedPlacesFor = async (client, shopId, services) => {
     "SELECT id, name, capacity FROM staff WHERE shop_id = $1 AND id = ANY($2::uuid[]) AND capacity > 1",
     [shopId, ids],
   );
-  return new Map(rows.map((r) => [String(r.id), { name: r.name, capacity: Number(r.capacity) }]));
+  return new Map(rows.map((r) => [String(r.id), { name: r.name, capacity: placesOf(r) }]));
 };
 
-const personsOf = (svc) => Math.max(1, parseInt(svc?.persons, 10) || 1);
+// The same rules as the screens' (client/src/utils/capacity.ts); both are
+// tested against tests/shared/capacityCases.json.
+/** How many persons a service row is for: a whole number, at least one. */
+const personsOf = (svc) => Math.max(1, Math.floor(Number(svc?.persons)) || 1);
+/** Places at the same time; 1 for an ordinary staff member. */
+const placesOf = (staff) => Math.max(1, Number(staff?.capacity) || 1);
 
 const rowMinutes = (svc) => Number(svc.duration_override || svc.duration_minutes) || 60;
 
@@ -884,6 +889,7 @@ module.exports = {
   OfflineConflictError,
   sharedPlacesFor,
   personsOf,
+  placesOf,
   rowMinutes,
   peakPersons,
   assertCapacity,

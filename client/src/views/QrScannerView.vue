@@ -157,6 +157,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatDate as dateText } from "../utils/format";
 import { api, ApiError } from "../api/http";
 import { formatMoney } from "../utils/format";
 import { ref, onUnmounted } from "vue";
@@ -224,10 +225,8 @@ const openProfile = () => {
   router.push({ path: "/app/clients", query: { open: result.value.client.id } });
 };
 
-const formatDateTime = (d: string) =>
-  new Date(d).toLocaleString(locale.value, { weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
-const formatDate = (d: string) =>
-  new Date(d).toLocaleDateString(locale.value, { day: "2-digit", month: "short", year: "numeric" });
+const formatDateTime = (d: string) => dateText(d, locale.value, "weekdayTime");
+const formatDate = (d: string) => dateText(d, locale.value, "short");
 const formatServices = (services: any[]) =>
   (services || []).map((s) => s.name).filter(Boolean).join(", ") || "—";
 

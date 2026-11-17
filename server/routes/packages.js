@@ -17,7 +17,6 @@ module.exports = function packagesRouter({
   const router = express.Router();
 
   router.get("/package-types", authenticateToken, notForClients, asyncHandler(async (req, res) => {
-    if (req.user.role === "client") return res.status(403).json({ error: "Forbidden" });
     const { rows } = await pool.query(
       `SELECT pt.*, s.name AS service_name
        FROM package_types pt JOIN services s ON s.id = pt.service_id
@@ -110,7 +109,6 @@ module.exports = function packagesRouter({
 
   // Undo a visit redemption (the visit returns to the package).
   router.delete("/package-usage/:id", authenticateToken, notForClients, asyncHandler(async (req, res) => {
-    if (req.user.role === "client") return res.status(403).json({ error: "Forbidden" });
     const answer = await withTransaction(async (client) => {
       const u = await client.query(
         `DELETE FROM package_usage pu USING client_packages cp

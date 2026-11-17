@@ -50,6 +50,7 @@
 </template>
 
 <script setup lang="ts">
+import { setLocale } from "../i18n";
 import { ref, onMounted } from "vue";
 import "@fontsource/noto-serif-display/300.css";
 import { useI18n } from "vue-i18n";
@@ -58,7 +59,7 @@ import { useRoute, useRouter } from "vue-router";
 import { useThemeStore } from "../stores/themes";
 import { useToast } from "primevue/usetoast";
 
-const { t, locale } = useI18n();
+const { t } = useI18n();
 
 // Why a login was refused (the server's or the store's code), in the app's language.
 const LOGIN_ERRORS: Record<string, string> = {
@@ -97,7 +98,7 @@ const applyHomePageLanguage = () => {
     }
   }
   if (lang === "el" || lang === "en") {
-    locale.value = lang;
+    setLocale(lang);
     try {
       localStorage.setItem("locale", lang);
     } catch {

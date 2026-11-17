@@ -74,34 +74,45 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
+// Role gates, all after authenticateToken. A role turned away gets 403 with
+// the gate's message (the messages are the ones the routes always answered).
+
+/** Lets only `roles` through. */
+const onlyRoles = (roles, message) => (req, res, next) =>
+  roles.includes(req.user?.role) ? next() : res.status(403).json({ error: message });
+
+/** Turns `roles` away. */
+const notRoles = (roles, message = "Forbidden") => (req, res, next) =>
+  roles.includes(req.user?.role) ? res.status(403).json({ error: message }) : next();
+
 // Analytics/financials/reports are admin-only — frontdesk has admin access everywhere else.
-const requireAnalyticsAccess = (req, res, next) => {
-  if (req.user.role !== "admin" && req.user.role !== "super_admin") {
-    return res.status(403).json({ error: "Admins only" });
-  }
-  next();
-};
+const requireAnalyticsAccess = onlyRoles(["admin", "super_admin"], "Admins only");
+/** Admin and super admin; the routes that also let front desk in use requireShopAdminAccess. */
+const onlyAdmins = requireAnalyticsAccess;
+const requireShopAdminAccess = onlyRoles(["admin", "super_admin", "frontdesk"], "Admins only");
+const onlySuperAdmins = onlyRoles(["super_admin"], "Super admins only");
+// The platform console (cross-shop) is the shop-less "owner"'s, not a super admin's.
+const onlyOwner = onlyRoles(["owner"], "Owner only");
+// The client portal's own routes.
+const onlyClients = onlyRoles(["client"], "Clients only");
 
 // Admins, with the password just retyped (Analytics and the admin reports).
 const requireSensitiveAccess = [requireAnalyticsAccess, requireReauth];
 
 // Client portal logins only reach the portal's own routes and the few it
 // reads (the shop, the active contest, availability); every staff route
-// turns them away. After authenticateToken.
-const notForClients = (req, res, next) =>
-  req.user?.role === "client" ? res.status(403).json({ error: "Forbidden" }) : next();
+// turns them away.
+const notForClients = notRoles(["client"]);
 
 // Plain staff only look at the calendar: they can't change appointments,
-// payments, clients or time off. After authenticateToken.
-const notForStaff = (req, res, next) =>
-  req.user?.role === "staff" ? res.status(403).json({ error: "Forbidden" }) : next();
+// payments, clients or time off.
+const notForStaff = notRoles(["staff"]);
 
-const requireShopAdminAccess = (req, res, next) => {
-  if (!["admin", "super_admin", "frontdesk"].includes(req.user.role)) {
-    return res.status(403).json({ error: "Admins only" });
-  }
-  next();
-};
+/** A client login reaches only its own record (`:id`); other roles pass. */
+const ownClientOnly = (message) => (req, res, next) =>
+  req.user?.role === "client" && String(req.user.clientId) !== String(req.params.id)
+    ? res.status(403).json({ error: message })
+    : next();
 
 // ==================== PREPAID PACKAGES ====================
 const isAdminRole = (u) => u.role === "admin" || u.role === "super_admin";
@@ -123,6 +134,13 @@ module.exports = {
   notForClients,
   notForStaff,
   requireShopAdminAccess,
+  onlyRoles,
+  notRoles,
+  onlyAdmins,
+  onlySuperAdmins,
+  onlyOwner,
+  onlyClients,
+  ownClientOnly,
   isAdminRole,
   canSellExtras,
 };

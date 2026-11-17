@@ -122,7 +122,7 @@
             <span class="flex flex-col items-end gap-1 flex-shrink-0">
               <span class="inline-flex items-center gap-1">
                 <AppointmentNotesTip :appointment="a" />
-                <span class="text-[10px] px-2 py-0.5 rounded uppercase font-bold" :class="statusClass(a.status)">
+                <span class="text-[10px] px-2 py-0.5 rounded uppercase font-bold" :class="historyBadge(a.status)">
                   {{ t(`common.status.${statusKey(a.status)}`) }}
                 </span>
               </span>
@@ -156,6 +156,8 @@
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../composables/useNotify";
+import { historyBadge, statusKey } from "../utils/appointmentStatus";
 import { api } from "../api/http";
 import { formatMoney } from "../utils/format";
 import { ref, computed, watch } from "vue";
@@ -173,25 +175,22 @@ import { fullyHidden, shownMoney } from "../utils/paymentFilters";
 
 const { t, locale } = useI18n();
 const toast = useToast();
+const notify = useNotify();
 const confirm = useConfirm();
 const authStore = useAuthStore();
 const isShopAdmin = authStore.isShopAdmin;
 
 // reloadKey: bumped by the calendar after a booking opened from here closes,
 // so the visits and amounts shown are current.
-const props = defineProps<{ visible: boolean; clientId: string | null; reloadKey?: number }>();
+const props = defineProps<{ clientId: string | null; reloadKey?: number }>();
 const emit = defineEmits<{
-  "update:visible": [boolean];
   book: [any];
   openFull: [{ clientId: string; tab: string }];
   changed: [void];
   openAppointment: [any];
 }>();
 
-const visibleModel = computed({
-  get: () => props.visible,
-  set: (v) => emit("update:visible", v),
-});
+const visibleModel = defineModel<boolean>("visible", { default: false });
 
 const loading = ref(false);
 const client = ref<any>(null);
@@ -217,7 +216,7 @@ const load = async () => {
       (a: any, b: any) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime(),
     );
   } catch {
-    toast.add({ severity: "error", summary: t("common.error"), detail: t("clientQuickProfile.loadFailed"), life: 3500 });
+    notify.error(t("clientQuickProfile.loadFailed"));
     visibleModel.value = false;
   } finally {
     loading.value = false;
@@ -225,7 +224,7 @@ const load = async () => {
 };
 
 watch(
-  () => [props.visible, props.clientId],
+  () => [visibleModel.value, props.clientId],
   ([v]) => {
     if (v) load();
   },
@@ -252,28 +251,12 @@ const saveNotes = async () => {
     emit("changed");
     editingNotes.value = false;
   } catch {
-    toast.add({ severity: "error", summary: t("common.error"), detail: t("clientQuickProfile.saveFailed"), life: 3500 });
+    notify.error(t("clientQuickProfile.saveFailed"));
   } finally {
     savingNotes.value = false;
   }
 };
 
-const STATUS_KEYS: Record<string, string> = {
-  new: "new", confirmed: "confirmed", started: "started", arrived: "arrived",
-  completed: "completed", cancelled: "cancelled", "no-show": "noShow", "no-response": "noResponse",
-};
-const statusKey = (s: string) => STATUS_KEYS[s] || s;
-const statusClass = (s: string) => {
-  const map: Record<string, string> = {
-    new: "bg-blue-100 text-blue-800",
-    confirmed: "bg-purple-100 text-purple-800",
-    completed: "bg-green-100 text-green-800",
-    cancelled: "bg-red-100 text-red-800",
-    "no-show": "bg-red-200 text-red-900",
-    "no-response": "bg-amber-100 text-amber-800",
-  };
-  return map[s] || "bg-gray-100 text-gray-700";
-};
 
 // The cash and card filters hide the visits paid that way and that money,
 // as in the other lists of visits.
@@ -302,7 +285,7 @@ const openAppointment = async (appt: any) => {
     if (!found) throw new Error("not in the day's list");
     emit("openAppointment", found);
   } catch {
-    toast.add({ severity: "error", summary: t("common.error"), detail: t("booking.openPast.failed"), life: 3500 });
+    notify.error(t("booking.openPast.failed"));
   } finally {
     openingId.value = null;
   }
@@ -370,7 +353,7 @@ const cancelNextAppointment = () => {
         emit("changed");
         await load();
       } catch {
-        toast.add({ severity: "error", summary: t("common.error"), detail: t("clientQuickProfile.saveFailed"), life: 3500 });
+        notify.error(t("clientQuickProfile.saveFailed"));
       }
     },
   });

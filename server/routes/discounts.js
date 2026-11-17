@@ -11,12 +11,13 @@ module.exports = function discountsRouter({
   requireAnalyticsAccess,
 }) {
   const router = express.Router();
+  // A second code with the same name (the unique index refuses it).
+  const nameTaken = (err) => (err.code === "23505" ? { status: 409, body: { error: "A code with this name already exists" } } : null);
 
   // --- Discount codes ---
   // Every non-client role can read active codes (to apply them in the booking
   // dialog); only admins manage them.
   router.get("/discount-codes", authenticateToken, notForClients, asyncHandler(async (req, res) => {
-    if (req.user.role === "client") return res.status(403).json({ error: "Forbidden" });
     const isAdmin = req.user.role === "admin" || req.user.role === "super_admin";
     const { rows } = await pool.query(
       `SELECT dc.id, dc.name, dc.percentage, dc.is_active, dc.created_at,
@@ -55,7 +56,7 @@ module.exports = function discountsRouter({
       [req.user.shopId, parsed.value.name, parsed.value.percentage],
     );
     res.status(201).json(rows[0]);
-  }, { mapError: (err) => (err.code === "23505" ? { status: 409, body: { error: "A code with this name already exists" } } : null) }));
+  }, { mapError: nameTaken }));
 
   router.put("/discount-codes/:id", authenticateToken, requireAnalyticsAccess, asyncHandler(async (req, res) => {
     const parsed = parseDiscountCodeBody(req.body, true);
@@ -70,7 +71,7 @@ module.exports = function discountsRouter({
     );
     if (!rows[0]) return res.status(404).json({ error: "Not found" });
     res.json(rows[0]);
-  }, { mapError: (err) => (err.code === "23505" ? { status: 409, body: { error: "A code with this name already exists" } } : null) }));
+  }, { mapError: nameTaken }));
 
   router.delete("/discount-codes/:id", authenticateToken, requireAnalyticsAccess, asyncHandler(async (req, res) => {
     const { rowCount } = await pool.query(

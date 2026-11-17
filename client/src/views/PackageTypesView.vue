@@ -98,16 +98,16 @@
 </template>
 
 <script setup lang="ts">
-import { api as http, withMessage } from "../api/http";
+import { useNotify } from "../composables/useNotify";
+import { useAdminActions } from "../composables/useResource";
 import { formatMoney } from "../utils/format";
 import { ref, reactive, computed, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
-import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 import { groupServicesByCategory } from "../utils/serviceGroups";
 
 const { t } = useI18n();
-const toast = useToast();
+const notify = useNotify();
 const confirm = useConfirm();
 
 const types = ref<any[]>([]);
@@ -119,8 +119,7 @@ const form = reactive<any>({ id: null, name: "", service_id: null, visits: 5, pr
 
 const canSave = computed(() => form.name.trim() && form.service_id && form.visits > 0 && form.price >= 0);
 
-const api = (url: string, method = "GET", body?: any) =>
-  http.request(method, url, body || undefined).then((data) => data ?? {}).catch(withMessage(t("packages.failed")));
+const { call: api, run } = useAdminActions(() => t("packages.failed"), () => load());
 
 const load = async () => {
   loading.value = true;
@@ -129,7 +128,7 @@ const load = async () => {
     types.value = pt;
     services.value = groupServicesByCategory(sv.filter((s: any) => s.is_active !== false), t("services.table.uncategorized"));
   } catch (e: any) {
-    toast.add({ severity: "error", summary: t("common.error"), detail: e.message, life: 3500 });
+    notify.error(e.message);
   } finally {
     loading.value = false;
   }
@@ -144,14 +143,6 @@ const openEdit = (p: any) => {
   showDialog.value = true;
 };
 
-const run = async (fn: () => Promise<any>) => {
-  try {
-    await fn();
-    await load();
-  } catch (e: any) {
-    toast.add({ severity: "error", summary: t("common.error"), detail: e.message, life: 3500 });
-  }
-};
 
 const save = async () => {
   saving.value = true;

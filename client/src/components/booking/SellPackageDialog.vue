@@ -63,6 +63,7 @@
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../../composables/useNotify";
 import { MONEY_METHODS, methodChoiceLabel } from "../../utils/paymentMethods";
 import { api, ApiError } from "../../api/http";
 import { formatMoney } from "../../utils/format";
@@ -72,20 +73,17 @@ import { useToast } from "primevue/usetoast";
 
 const { t } = useI18n();
 const toast = useToast();
+const notify = useNotify();
 const props = withDefaults(
-  defineProps<{ visible: boolean; clientId: string | null; immediate?: boolean }>(),
+  defineProps<{ clientId: string | null; immediate?: boolean }>(),
   { immediate: true },
 );
 const emit = defineEmits<{
-  "update:visible": [boolean];
   sold: [];
   picked: [{ package_type_id: string; name: string; price: number }];
 }>();
 
-const visibleModel = computed({
-  get: () => props.visible,
-  set: (v) => emit("update:visible", v),
-});
+const visibleModel = defineModel<boolean>("visible", { default: false });
 
 const rawTypes = ref<any[]>([]);
 const typeId = ref<string | null>(null);
@@ -102,7 +100,7 @@ const selected = computed(() => types.value.find((p) => p.id === typeId.value));
 
 
 watch(
-  () => props.visible,
+  () => visibleModel.value,
   async (v) => {
     if (!v) return;
     typeId.value = null;
@@ -137,7 +135,7 @@ const confirm = async () => {
     visibleModel.value = false;
     emit("sold");
   } catch (e: any) {
-    toast.add({ severity: "error", summary: t("common.error"), detail: e.message, life: 3500 });
+    notify.error(e.message);
   } finally {
     saving.value = false;
   }

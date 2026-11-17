@@ -129,7 +129,7 @@
                 <Avatar
                   v-if="message.user_id !== currentUserId"
                   :label="
-                    getInitials(
+                    initials(
                       message.user.staff_name || message.user.username,
                     )
                   "
@@ -318,7 +318,7 @@
           >
           <MultiSelect
             v-model="newChannel.memberIds"
-            :options="shopUsers"
+            :options="chatStore.shopUsers"
             optionLabel="staff_name"
             optionValue="id"
             :placeholder="t('chat.selectMembers')"
@@ -349,6 +349,9 @@
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../composables/useNotify";
+import { useIsPhone } from "../composables/useIsPhone";
+import { initials } from "../utils/avatar";
 import { api, saveBlob } from "../api/http";
 import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from "vue";
 import { useChatStore } from "../stores/chat";
@@ -359,15 +362,15 @@ import { useI18n } from "vue-i18n";
 const chatStore = useChatStore();
 const authStore = useAuthStore();
 const toast = useToast();
+const notify = useNotify();
 const { t } = useI18n();
 
 // UI State
-const isMobile = ref(window.innerWidth < 768);
+const isMobile = useIsPhone();
 const messageText = ref("");
 const selectedFile = ref<File | null>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
 const showCreateChannel = ref(false);
-const shopUsers = ref<any[]>([]);
 
 const newChannel = ref({
   name: "",
@@ -375,11 +378,6 @@ const newChannel = ref({
   memberIds: [] as string[],
 });
 
-// Update mobile state on resize
-const checkMobile = () => {
-  isMobile.value = window.innerWidth < 768;
-};
-window.addEventListener("resize", checkMobile);
 
 // Phones: the round button slides away while the page scrolls down (it would
 // cover row buttons) and comes back on scrolling up or when scrolling stops.
@@ -411,35 +409,24 @@ const typingUsers = computed(() => {
   return chatStore.typingInActiveChannel
     .filter((userId: string) => userId !== currentUserId.value)
     .map((userId: string) => {
-      const user = shopUsers.value.find((u) => u.id === userId);
+      const user = chatStore.shopUsers.find((u: any) => u.id === userId);
       return user?.staff_name || user?.username || "Someone";
     });
 });
 
 // Initialize
 onMounted(async () => {
-  const token = localStorage.getItem("token");
+  const token = authStore.token;
   if (token) {
     chatStore.connect(token);
     await chatStore.fetchChannels();
-    await fetchShopUsers();
+    await chatStore.fetchShopUsers();
   }
 });
 
 onUnmounted(() => {
   chatStore.disconnect();
-  window.removeEventListener("resize", checkMobile);
 });
-
-const fetchShopUsers = async () => {
-  try {
-    const data = await api.get("/api/v1/chat/shop-users");
-    shopUsers.value = Array.isArray(data) ? data : [];
-  } catch (err) {
-    console.error("Error fetching shop users:", err);
-    shopUsers.value = [];
-  }
-};
 
 const sendMessage = async () => {
   if (!chatStore.activeChannelId) return;
@@ -519,14 +506,7 @@ const scrollToBottom = () => {
   });
 };
 
-let typingTimer: NodeJS.Timeout | null = null;
-const handleTyping = () => {
-  chatStore.sendTyping(true);
-  if (typingTimer) clearTimeout(typingTimer);
-  typingTimer = setTimeout(() => {
-    chatStore.sendTyping(false);
-  }, 1000);
-};
+const handleTyping = () => chatStore.noteTyping();
 
 const handleFileSelect = (event: Event) => {
   const target = event.target as HTMLInputElement;
@@ -545,19 +525,10 @@ const createChannel = async () => {
     showCreateChannel.value = false;
     newChannel.value = { name: "", description: "", memberIds: [] };
   } catch (err) {
-    toast.add({ severity: "error", summary: t('common.error'), detail: t('chat.createChannelFailed'), life: 3000 });
+    notify.error(t('chat.createChannelFailed'));
   }
 };
 
-const getInitials = (name: string) => {
-  if (!name) return "?";
-  return name
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
-};
 
 const formatTime = (timestamp: string) => {
   const date = new Date(timestamp);

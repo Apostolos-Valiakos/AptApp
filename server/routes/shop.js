@@ -17,6 +17,8 @@ module.exports = function shopRouter({
   requireAnalyticsAccess,
   requireShopAdminAccess,
   TIME_HHMM,
+  onlyAdmins,
+  onlySuperAdmins,
 }) {
   const router = express.Router();
 
@@ -74,10 +76,7 @@ module.exports = function shopRouter({
   // Force-logout every user in this shop (revokes all previously-issued tokens
   // on their next request) and locks Ctrl+1 (hide cash) shop-wide. The calling
   // admin is transparently re-issued a fresh token so their own session survives.
-  router.post("/shop/force-logout", authenticateToken, notForClients, asyncHandler(async (req, res) => {
-    if (req.user.role !== "super_admin") {
-      return res.status(403).json({ error: "Super admins only" });
-    }
+  router.post("/shop/force-logout", authenticateToken, notForClients, onlySuperAdmins, asyncHandler(async (req, res) => {
     // Truncated to whole seconds to match JWT `iat` granularity — otherwise the
     // admin's own token, re-issued a few milliseconds later in this same
     // request, could land in the same second but "before" a sub-second NOW()
@@ -118,10 +117,7 @@ module.exports = function shopRouter({
   }, { log: "Error forcing shop logout:" }));
 
   // Releases the shop-wide Ctrl+1 lock set by force-logout above.
-  router.post("/shop/release-cash-lock", authenticateToken, notForClients, asyncHandler(async (req, res) => {
-    if (req.user.role !== "super_admin") {
-      return res.status(403).json({ error: "Super admins only" });
-    }
+  router.post("/shop/release-cash-lock", authenticateToken, notForClients, onlySuperAdmins, asyncHandler(async (req, res) => {
     const { rowCount } = await pool.query(
       `UPDATE shops SET force_hide_cash = false, force_hide_cash_locked_by = NULL WHERE id = $1`,
       [req.shopId],
@@ -145,10 +141,7 @@ module.exports = function shopRouter({
   // entirely. Persisted in shops.force_hide_cash(_locked_by) — not just a live
   // socket push — so it's also correct for anyone who logs in fresh or
   // reconnects later (see the socket connection handler and /filter-state).
-  router.post("/shop/cash-filter", authenticateToken, notForClients, asyncHandler(async (req, res) => {
-    if (req.user.role !== "admin" && req.user.role !== "super_admin") {
-      return res.status(403).json({ error: "Admins only" });
-    }
+  router.post("/shop/cash-filter", authenticateToken, notForClients, onlyAdmins, asyncHandler(async (req, res) => {
     const hidden = !!req.body.hidden;
     const shopRes = await pool.query(
       `SELECT force_hide_cash_locked_by FROM shops WHERE id = $1`,

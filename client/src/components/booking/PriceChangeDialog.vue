@@ -51,6 +51,7 @@
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../../composables/useNotify";
 import { api, ApiError } from "../../api/http";
 import { formatMoney } from "../../utils/format";
 import { ref, computed, watch } from "vue";
@@ -59,9 +60,9 @@ import { useToast } from "primevue/usetoast";
 
 const { t } = useI18n();
 const toast = useToast();
+const notify = useNotify();
 
 const props = defineProps<{
-  visible: boolean;
   appointmentId: string | null;
   currentTotal: number;
   otherAppointmentIds?: string[];
@@ -69,21 +70,17 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  "update:visible": [boolean];
   changed: [any];
 }>();
 
-const visibleModel = computed({
-  get: () => props.visible,
-  set: (v) => emit("update:visible", v),
-});
+const visibleModel = defineModel<boolean>("visible", { default: false });
 
 const newTotal = ref<number | null>(0);
 const reason = ref("");
 const saving = ref(false);
 
 watch(
-  () => props.visible,
+  () => visibleModel.value,
   (v) => {
     if (!v) return;
     newTotal.value = Number(props.currentTotal) || 0;
@@ -126,12 +123,7 @@ const confirm = async () => {
     visibleModel.value = false;
     emit("changed", data);
   } catch (e: any) {
-    toast.add({
-      severity: "error",
-      summary: t("common.error"),
-      detail: e.message,
-      life: 3500,
-    });
+    notify.error(e.message);
   } finally {
     saving.value = false;
   }

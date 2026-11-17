@@ -46,11 +46,12 @@
 </template>
 
 <script setup lang="ts">
+import { formatDate as dateText } from "../../utils/format";
 import { api } from "../../api/http";
 import { formatMoney } from "../../utils/format";
 import { ref, watch, type PropType } from "vue";
 import { useI18n } from "vue-i18n";
-const { t } = useI18n();
+const { t, locale } = useI18n();
 
 const props = defineProps({
   modelValue: { type: String as PropType<string | null>, default: null }, // selected gift_card_id
@@ -64,8 +65,7 @@ const selectedCard = ref<any>(null);
 const searched = ref(false);
 let searchTimeout: ReturnType<typeof setTimeout> | null = null;
 
-const formatDate = (d: string) =>
-  new Date(d).toLocaleDateString("el-GR", { day: "2-digit", month: "2-digit", year: "numeric" });
+const formatDate = (d: string) => dateText(d, locale.value);
 
 const searchCards = () => {
   if (searchTimeout) clearTimeout(searchTimeout);

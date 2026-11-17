@@ -229,6 +229,7 @@
 </template>
 
 <script setup lang="ts">
+import { clockTime } from "../../utils/format";
 import { formatMoney } from "../../utils/format";
 import { ref, computed, type PropType } from "vue";
 import { useI18n } from "vue-i18n";
@@ -303,10 +304,7 @@ const isStaffMissing = (service: any) =>
 // the 5-min TimeDropdown) but both write back into the same underlying
 // start_time Date — everything else (recalcTimes, combo splitting, save)
 // keeps working off that single field unchanged.
-const formatTime = (d: Date) => {
-  const date = new Date(d);
-  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
-};
+const formatTime = clockTime;
 
 const onDateChange = (service: any, newDate: Date) => {
   const merged = new Date(service.start_time);

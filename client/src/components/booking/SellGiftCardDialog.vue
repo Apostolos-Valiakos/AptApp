@@ -53,27 +53,23 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from "vue";
+import { ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 const { t } = useI18n();
-const props = defineProps<{ visible: boolean; defaultCustomerName?: string | null }>();
+const props = defineProps<{ defaultCustomerName?: string | null }>();
 const emit = defineEmits<{
-  "update:visible": [boolean];
   picked: [{ card_number: string; customer_name: string; initial_amount: number }];
 }>();
 
-const visibleModel = computed({
-  get: () => props.visible,
-  set: (v) => emit("update:visible", v),
-});
+const visibleModel = defineModel<boolean>("visible", { default: false });
 
 const cardNumber = ref("");
 const customerName = ref("");
 const initialAmount = ref<number | null>(null);
 
 watch(
-  () => props.visible,
+  () => visibleModel.value,
   (v) => {
     if (!v) return;
     cardNumber.value = "";

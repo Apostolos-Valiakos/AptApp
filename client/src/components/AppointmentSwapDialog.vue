@@ -70,7 +70,6 @@
           <div class="text-sm text-gray-700 flex items-center gap-1">
             <i class="pi pi-user text-gray-500 text-xs"></i>
             {{ t('appointmentSwap.client') }}: {{ appt.first_name }} {{ appt.last_name }}
-{{ t('appointmentSwap.client') }}: {{ appt.first_name }} {{ appt.last_name }}
             <AppointmentNotesTip :appointment="appt" />
             <PaidAmount v-if="!authStore.isStaff" class="ml-auto text-xs" v-bind="moneyOf(appt)" />
           </div>
@@ -153,7 +152,6 @@
           <div class="text-sm text-gray-700 flex items-center gap-1">
             <i class="pi pi-user text-gray-500 text-xs"></i>
             {{ t('appointmentSwap.client') }}: {{ appt.first_name }} {{ appt.last_name }}
-{{ t('appointmentSwap.client') }}: {{ appt.first_name }} {{ appt.last_name }}
             <AppointmentNotesTip :appointment="appt" />
             <PaidAmount v-if="!authStore.isStaff" class="ml-auto text-xs" v-bind="moneyOf(appt)" />
           </div>
@@ -215,6 +213,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatDate as dateText } from "../utils/format";
 import { ref, computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import Dialog from "primevue/dialog";
@@ -226,7 +225,7 @@ import { useAuthStore } from "../stores/auth";
 import { useSettingsStore } from "../stores/settings";
 import { shownMoney } from "../utils/paymentFilters";
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const authStore = useAuthStore();
 // What was paid and the total, with what the cash/card filters hide left out.
 const filterSettings = useSettingsStore();
@@ -271,17 +270,13 @@ const reset = () => {
 };
 
 const props = defineProps({
-  visible: Boolean,
   appointments: { type: Array as () => Appointment[], default: () => [] },
   staff: { type: Array as () => Staff[], default: () => [] },
 });
 
-const emit = defineEmits(["update:visible", "swap"]);
+const emit = defineEmits(["swap"]);
 
-const visible = computed({
-  get: () => props.visible,
-  set: (v) => emit("update:visible", v),
-});
+const visible = defineModel<boolean>("visible", { default: false });
 
 // Normalize
 const normalizedAppointments = computed(() =>
@@ -347,18 +342,7 @@ const staffColor = (staffId: string | number | undefined) => {
   return s?.color || "#888";
 };
 
-const formatDate = (dt: string | null) => {
-  if (!dt) return t('appointmentSwap.noTime');
-
-  const d = new Date(dt);
-  const day = String(d.getDate()).padStart(2, "0");
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const year = d.getFullYear();
-  const hours = String(d.getHours()).padStart(2, "0");
-  const minutes = String(d.getMinutes()).padStart(2, "0");
-
-  return `${day}/${month}/${year} - ${hours}:${minutes}`;
-};
+const formatDate = (dt: string | null) => (dt ? dateText(dt, locale.value, "numericTime") : t("appointmentSwap.noTime"));
 watch(visible, (newVal) => {
   if (!newVal) {
     // Dialog was closed

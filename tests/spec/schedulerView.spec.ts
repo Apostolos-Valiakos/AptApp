@@ -9,6 +9,7 @@ import { createPinia, setActivePinia } from "pinia";
 import SchedulerView from "../../client/src/views/SchedulerView.vue";
 import BookingDialog from "../../client/src/components/BookingDialog.vue";
 import { useCalendarStore } from "../../client/src/stores/calendar";
+import { useWaitlist } from "../../client/src/composables/useWaitlist";
 import { clearOfflineData } from "../../client/src/offline/queue";
 import el from "../../client/src/i18n/locales/el";
 import {
@@ -43,7 +44,7 @@ const dialogStub = (name: string) =>
   defineComponent({
     name,
     props: ["visible", "appointment", "staffList"],
-    emits: ["save", "update:visible"],
+    emits: ["save", "update:visible", "freed"],
     render: () => h("div"),
   });
 const stubs = {
@@ -1031,5 +1032,103 @@ describe("OT2 a booking outside working hours on the calendar", () => {
     const overtime = wrapper.findComponent({ name: "AppointmentHoverCard" }).props("appointment").overtime;
     expect(overtime).toMatchObject({ minutes: 30, schedule: "09:00–17:00", dayOff: false });
     expect(overtime.parts[0]).toMatchObject({ kind: "before", at: "09:00" });
+  });
+});
+
+describe("WS6 the waitlist on the calendar", () => {
+  const waiting = {
+    id: "w1", client_id: "c1", client_name: "MARIA PAPA", first_name: "MARIA", last_name: "PAPA", client_phone: "6900001234",
+    service_id: "svc", service_name: "Massage", duration_minutes: 60, staff_id: null, staff_name: null,
+    date_from: MONDAY, date_to: "2026-11-30", days: [], time_from: null, time_to: null, note: null,
+  };
+  const freedAt10 = {
+    id: "f1", staff_id: "st1", staff_name: "Anna",
+    start: new Date(`${MONDAY}T10:00:00`).toISOString(), end: new Date(`${MONDAY}T11:00:00`).toISOString(), matches: [waiting],
+  };
+  const count = () => document.querySelector('[data-testid="waitlist-count"]')?.textContent?.trim();
+  // The calendar waits a moment after a change, so a burst is one reload.
+  const afterReload = async () => {
+    await new Promise((r) => setTimeout(r, 350));
+    await settle();
+  };
+  afterEach(() => {
+    const w = useWaitlist();
+    w.panelVisible.value = false;
+    w.freedSlot.value = null;
+    w.freed.value = [];
+    w.bookable.value = [];
+    w.entries.value = [];
+  });
+
+  test("the number: how many waiting can be booked now; none, no number", async () => {
+    await open("frontdesk", {
+      "GET /api/v1/waitlist": { body: [waiting, { ...waiting, id: "w2" }] },
+      "GET /api/v1/waitlist/freed": { body: [] },
+      "GET /api/v1/waitlist/bookable": { body: ["w1", "w2"] },
+    });
+    expect(count()).toBe("2");
+    useWaitlist().bookable.value = [];
+    await settle();
+    expect(count()).toBeUndefined();
+    expect(document.querySelector('[data-testid="waitlist-button"]')).not.toBeNull();
+  });
+
+  test("staff neither see it nor load it", async () => {
+    const { server } = await open("staff", {
+      "GET /api/v1/waitlist": { body: [waiting] },
+      "GET /api/v1/waitlist/freed": { body: [freedAt10] },
+      "GET /api/v1/waitlist/bookable": { body: ["w1"] },
+    });
+    expect(document.querySelector('[data-testid="waitlist-button"]')).toBeNull();
+    expect(server.called("GET", "/api/v1/waitlist")).toHaveLength(0);
+    expect(server.called("GET", "/api/v1/waitlist/freed")).toHaveLength(0);
+    expect(server.called("GET", "/api/v1/waitlist/bookable")).toHaveLength(0);
+  });
+
+  test("a cancellation here: the number appears, and the panel stays shut until opened", async () => {
+    let freed: any[] = [];
+    let bookable: string[] = [];
+    const { wrapper } = await open("admin", {
+      "GET /api/v1/waitlist": { body: [waiting] },
+      "GET /api/v1/waitlist/freed": () => ({ body: freed }),
+      "GET /api/v1/waitlist/bookable": () => ({ body: bookable }),
+    });
+    expect(count()).toBeUndefined();
+    freed = [freedAt10];
+    bookable = ["w1"];
+    bookingDialog(wrapper).vm.$emit("freed", []);
+    await afterReload();
+    expect(count()).toBe("1");
+    expect(useWaitlist().panelVisible.value).toBe(false);
+
+    // Opened: the freed time, then straight to the booking at it.
+    document.querySelector<HTMLElement>('[data-testid="waitlist-button"]')!.click();
+    await settle();
+    document.querySelector<HTMLElement>('[data-testid="waitlist-freed-open"]')!.click();
+    await settle();
+    document.querySelector<HTMLElement>('[data-testid="waitlist-book"]')!.click();
+    await settle();
+    expect(bookingDialog(wrapper).props("visible")).toBe(true);
+    expect(bookingDialog(wrapper).props("appointment")).toMatchObject({
+      client_id: "c1", staff_id: "st1", service_id: "svc", waitlist_entry_id: "w1", start_time: new Date(`${MONDAY}T10:00:00`),
+    });
+  });
+
+  test("a booking, cancellation or waitlist change on another screen: the number follows", async () => {
+    let bookable = ["w1"];
+    await open("frontdesk", {
+      "GET /api/v1/waitlist": { body: [waiting, { ...waiting, id: "w2" }] },
+      "GET /api/v1/waitlist/freed": { body: [] },
+      "GET /api/v1/waitlist/bookable": () => ({ body: bookable }),
+    });
+    expect(count()).toBe("1");
+    bookable = [];
+    window.dispatchEvent(new CustomEvent("waitlist-changed"));
+    await afterReload();
+    expect(count()).toBeUndefined();
+    bookable = ["w1", "w2"];
+    window.dispatchEvent(new CustomEvent("appointments-changed"));
+    await afterReload();
+    expect(count()).toBe("2");
   });
 });

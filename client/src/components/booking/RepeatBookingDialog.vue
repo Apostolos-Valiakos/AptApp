@@ -59,18 +59,18 @@
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../../composables/useNotify";
+import { clockTime } from "../../utils/format";
 import { api } from "../../api/http";
 import { ref, computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { useToast } from "primevue/usetoast";
 import TimeDropdown from "./TimeDropdown.vue";
 import { isStaffAvailable } from "../../utils/staffAvailability";
 
 const { t } = useI18n();
-const toast = useToast();
+const notify = useNotify();
 
 const props = defineProps<{
-  visible: boolean;
   services: any[];
   clientId: string | null;
   staff: any[];
@@ -81,21 +81,16 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  "update:visible": [boolean];
   created: [];
 }>();
 
-const visibleModel = computed({
-  get: () => props.visible,
-  set: (v) => emit("update:visible", v),
-});
+const visibleModel = defineModel<boolean>("visible", { default: false });
 
 type Row = { date: Date; time: string };
 const rows = ref<Row[]>([]);
 const saving = ref(false);
 
-const formatTime = (d: Date) =>
-  `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+const formatTime = clockTime;
 
 const firstStart = computed(() => new Date(props.services[0]?.start_time));
 
@@ -106,7 +101,7 @@ const defaultRow = (): Row => {
 };
 
 watch(
-  () => props.visible,
+  () => visibleModel.value,
   (v) => {
     if (v) rows.value = [defaultRow()];
   },
@@ -182,21 +177,11 @@ const save = async () => {
       },
       { headers: { "Idempotency-Key": `${Date.now()}-${Math.random().toString(36).slice(2)}` } },
     );
-    toast.add({
-      severity: "success",
-      summary: t("common.success"),
-      detail: t("booking.repeat.created", { count: rows.value.length }),
-      life: 3000,
-    });
+    notify.success(t("booking.repeat.created", { count: rows.value.length }));
     emit("created");
     visibleModel.value = false;
   } catch {
-    toast.add({
-      severity: "error",
-      summary: t("common.error"),
-      detail: t("booking.repeat.failed"),
-      life: 4000,
-    });
+    notify.error(t("booking.repeat.failed"));
   } finally {
     saving.value = false;
   }

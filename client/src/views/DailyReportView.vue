@@ -146,16 +146,19 @@
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../composables/useNotify";
+import { exportXlsx } from "../utils/exportXlsx";
+import { statusKey } from "../utils/appointmentStatus";
+import { foldText } from "../utils/text";
 import { api, withMessage } from "../api/http";
 import { formatMoney } from "../utils/format";
 import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { useToast } from "primevue/usetoast";
 import { useSettingsStore } from "../stores/settings";
 import { toLocalDateStr } from "../utils/staffAvailability";
 
 const { t, te, locale } = useI18n();
-const toast = useToast();
+const notify = useNotify();
 const settingsStore = useSettingsStore();
 const data = ref<any>(null);
 const loading = ref(false);
@@ -181,8 +184,7 @@ const closePicker = () => (showPicker.value = false);
 const fmtTime = (d: string) =>
   new Date(d).toLocaleTimeString(locale.value, { hour: "2-digit", minute: "2-digit" });
 
-const STATUS_KEYS: Record<string, string> = { "no-show": "noShow", "no-response": "noResponse" };
-const statusLabel = (s: string) => t(`common.status.${STATUS_KEYS[s] || s}`);
+const statusLabel = (s: string) => t(`common.status.${statusKey(s)}`);
 
 const methodLabel = (m: string | null) => {
   if (!m) return "—";
@@ -209,14 +211,11 @@ const payments = computed(() =>
     amount: Number(p.amount),
   })),
 );
-// Greek names are often typed without accents or in capitals.
-const plain = (s: string) =>
-  s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/ς/g, "σ");
 const shownPayments = computed(() => {
-  const words = plain(search.value).split(/\s+/).filter(Boolean);
+  const words = foldText(search.value).split(/\s+/).filter(Boolean);
   if (!words.length) return payments.value;
   return payments.value.filter((p: any) => {
-    const text = plain([p.time, p.client, p.method, p.type, p.amount, formatMoney(p.amount)].join(" "));
+    const text = foldText([p.time, p.client, p.method, p.type, p.amount, formatMoney(p.amount)].join(" "));
     return words.every((w) => text.includes(w));
   });
 });
@@ -230,9 +229,9 @@ const exportExcel = async () => {
     return order * sortOrder.value;
   });
   const day = toLocalDateStr(selectedDay.value);
-  const XLSX = await import("xlsx");
-  const ws = XLSX.utils.json_to_sheet(
-    rows.map((p: any) => ({
+  await exportXlsx(`daily_payments_${day}.xlsx`, [{
+    name: t("dailyReport.sheetName"),
+    rows: rows.map((p: any) => ({
       [t("dailyReport.date")]: day.split("-").reverse().join("/"),
       [t("dailyReport.time")]: p.time,
       [t("dailyReport.client")]: p.client,
@@ -240,10 +239,7 @@ const exportExcel = async () => {
       [t("dailyReport.type")]: p.type,
       [t("dailyReport.amount")]: p.amount,
     })),
-  );
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, t("dailyReport.sheetName"));
-  XLSX.writeFile(wb, `daily_payments_${day}.xlsx`);
+  }]);
 };
 
 // Quick clicks through the days: only the latest day's answer is shown.
@@ -258,7 +254,7 @@ const load = async () => {
     const answer = await api.get(`/api/v1/reports/daily?${params}`).catch(withMessage("Failed"));
     if (thisLoad === latestLoad) data.value = answer;
   } catch (e: any) {
-    if (thisLoad === latestLoad) toast.add({ severity: "error", summary: t("common.error"), detail: e.message, life: 3500 });
+    if (thisLoad === latestLoad) notify.error(e.message);
   } finally {
     if (thisLoad === latestLoad) loading.value = false;
   }

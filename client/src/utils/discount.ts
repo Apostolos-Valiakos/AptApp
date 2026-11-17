@@ -17,7 +17,7 @@ export const emptyDiscount = (): DiscountState => ({
   code_name: null,
 });
 
-const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+import { round2 } from "./money";
 
 // Mirrors server/discounts.js discountTotal — the server is the authority.
 export const computeDiscountAmount = (

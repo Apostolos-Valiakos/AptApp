@@ -179,7 +179,7 @@ router.beforeEach((to, from, next) => {
     return next("/portal/home");
   }
 
-  if (authStore.user?.role === "staff" && to.path.startsWith("/app") && !STAFF_PAGES.includes(to.path)) {
+  if (authStore.isStaff && to.path.startsWith("/app") && !STAFF_PAGES.includes(to.path)) {
     return next("/app/scheduler");
   }
 

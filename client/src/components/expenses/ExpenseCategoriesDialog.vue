@@ -29,17 +29,17 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { useNotify } from "../../composables/useNotify";
+import { ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { useToast } from "primevue/usetoast";
 import { api, ApiError } from "../../api/http";
 
-const props = defineProps<{ visible: boolean; categories: any[] }>();
-const emit = defineEmits<{ "update:visible": [boolean]; changed: [] }>();
+const props = defineProps<{ categories: any[] }>();
+const emit = defineEmits<{ changed: [] }>();
 const { t } = useI18n();
-const toast = useToast();
+const notify = useNotify();
 
-const visibleModel = computed({ get: () => props.visible, set: (v) => emit("update:visible", v) });
+const visibleModel = defineModel<boolean>("visible", { default: false });
 const newName = ref("");
 const editingId = ref<string | null>(null);
 const editName = ref("");
@@ -51,7 +51,7 @@ const run = async (request: Promise<any>) => {
     return true;
   } catch (e) {
     const taken = e instanceof ApiError && e.data?.error === "name_taken";
-    toast.add({ severity: "error", summary: t("common.error"), detail: t(taken ? "expenses.categories.taken" : "expenses.failed"), life: 3500 });
+    notify.error(t(taken ? "expenses.categories.taken" : "expenses.failed"));
     return false;
   }
 };

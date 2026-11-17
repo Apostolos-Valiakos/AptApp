@@ -4,11 +4,13 @@
 const express = require("express");
 const { HttpError, asyncHandler, withTransaction } = require("../http");
 const pool = require("../db");
+const { appointmentCostSql, appointmentPaidSql } = require("../domain/moneySql");
 
 module.exports = function membershipsRouter({
   authenticateToken,
   loadClientPackages,
   notForClients,
+  requireShopAdminAccess,
 }) {
   const router = express.Router();
 
@@ -36,10 +38,7 @@ module.exports = function membershipsRouter({
 
   // Create a tier — admin only. Body: { name, monthly_price, yearly_price,
   // color, grace_period_days, services: [{ service_id, quota_per_month }] }
-  router.post("/membership-tiers", authenticateToken, notForClients, asyncHandler(async (req, res) => {
-    if (!["admin", "super_admin", "frontdesk"].includes(req.user.role)) {
-      return res.status(403).json({ error: "Admins only" });
-    }
+  router.post("/membership-tiers", authenticateToken, notForClients, requireShopAdminAccess, asyncHandler(async (req, res) => {
     const { name, monthly_price, yearly_price, color, grace_period_days, services } = req.body;
     if (!name) return res.status(400).json({ error: "name is required" });
 
@@ -72,10 +71,7 @@ module.exports = function membershipsRouter({
 
   // Update a tier — admin only. Replaces the covered-services list wholesale
   // (delete-then-reinsert), same pattern as staff_services.
-  router.put("/membership-tiers/:id", authenticateToken, notForClients, asyncHandler(async (req, res) => {
-    if (!["admin", "super_admin", "frontdesk"].includes(req.user.role)) {
-      return res.status(403).json({ error: "Admins only" });
-    }
+  router.put("/membership-tiers/:id", authenticateToken, notForClients, requireShopAdminAccess, asyncHandler(async (req, res) => {
     const { name, monthly_price, yearly_price, color, grace_period_days, is_active, services } = req.body;
 
     const answer = await withTransaction(async (client) => {
@@ -117,10 +113,7 @@ module.exports = function membershipsRouter({
   // no ON DELETE clause on purpose (deleting would either cascade away
   // historical membership/usage/revenue records or violate the FK outright),
   // so a tier that's ever been used can only be deactivated, never removed.
-  router.delete("/membership-tiers/:id", authenticateToken, notForClients, asyncHandler(async (req, res) => {
-    if (!["admin", "super_admin", "frontdesk"].includes(req.user.role)) {
-      return res.status(403).json({ error: "Admins only" });
-    }
+  router.delete("/membership-tiers/:id", authenticateToken, notForClients, requireShopAdminAccess, asyncHandler(async (req, res) => {
     const everUsedCount = await pool.query(
       `SELECT COUNT(*) FROM client_memberships WHERE tier_id = $1`,
       [req.params.id],
@@ -174,11 +167,8 @@ module.exports = function membershipsRouter({
     // What each visit costs and what was paid towards it; money is left out
     // for plain "staff", like the balance below.
     const moneyColumns = req.user.role === "staff" ? "" : `,
-              (COALESCE((SELECT SUM(COALESCE(aps.price_override, s.price))
-                         FROM appointment_services aps JOIN services s ON s.id = aps.service_id
-                         WHERE aps.appointment_id = a.id), 0)
-               + COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = a.id), 0))::float AS total,
-              COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0)::float AS paid`;
+              (${appointmentCostSql("a.id")})::float AS total,
+              ${appointmentPaidSql("a.id")}::float AS paid`;
     const upcomingRes = await pool.query(
       `SELECT a.id, a.status, a.internal_notes, a.booking_notes${moneyColumns},
               (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) AS start_time,

@@ -66,6 +66,7 @@
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../../composables/useNotify";
 import { MONEY_METHODS, methodChoiceLabel } from "../../utils/paymentMethods";
 import { api, ApiError } from "../../api/http";
 import { formatMoney } from "../../utils/format";
@@ -75,23 +76,19 @@ import { useToast } from "primevue/usetoast";
 
 const { t } = useI18n();
 const toast = useToast();
+const notify = useNotify();
 
 const props = defineProps<{
-  visible: boolean;
   appointmentId: string | null;
   maxRefundable: number;
   ensureSaved?: () => Promise<string | null>;
 }>();
 
 const emit = defineEmits<{
-  "update:visible": [boolean];
   refunded: [any];
 }>();
 
-const visibleModel = computed({
-  get: () => props.visible,
-  set: (v) => emit("update:visible", v),
-});
+const visibleModel = defineModel<boolean>("visible", { default: false });
 
 const amount = ref<number | null>(0);
 const method = ref("cash");
@@ -99,7 +96,7 @@ const reason = ref("");
 const saving = ref(false);
 
 watch(
-  () => props.visible,
+  () => visibleModel.value,
   (v) => {
     if (!v) return;
     amount.value = Number(props.maxRefundable) || 0;
@@ -146,12 +143,7 @@ const confirm = async () => {
       reason: reason.value,
     });
   } catch (e: any) {
-    toast.add({
-      severity: "error",
-      summary: t("common.error"),
-      detail: e.message,
-      life: 3500,
-    });
+    notify.error(e.message);
   } finally {
     saving.value = false;
   }

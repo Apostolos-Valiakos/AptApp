@@ -547,6 +547,10 @@
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../composables/useNotify";
+import { toLocalDateStr } from "../utils/staffAvailability";
+import { clockTime } from "../utils/format";
+import { formatDate as dateText } from "../utils/format";
 import { api, ApiError, ifRefused, withMessage } from "../api/http";
 import { ref, onMounted, computed } from "vue";
 import { useRouter } from "vue-router";
@@ -557,11 +561,12 @@ import { useCalendarStore } from "../stores/calendar";
 import StaffServiceOrder from "../components/StaffServiceOrder.vue";
 import { useIsPhone, PHONE_PAGINATOR_TEMPLATE } from "../composables/useIsPhone";
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 
 // ... (imports remain same) ...
 
 const toast = useToast();
+const notify = useNotify();
 const confirm = useConfirm();
 const calendarStore = useCalendarStore();
 const router = useRouter();
@@ -605,12 +610,7 @@ const fetchData = async () => {
     [staff.value, services.value] = await Promise.all([api.get("/api/v1/staff"), api.get("/api/v1/services")]);
   } catch (err) {
     console.error(err);
-    toast.add({
-      severity: "error",
-      summary: t("common.error"),
-      detail: t("staff.toast.loadFailed"),
-      life: 4000,
-    });
+    notify.error(t("staff.toast.loadFailed"));
   } finally {
     tableLoading.value = false;
   }
@@ -650,21 +650,11 @@ const saveStaff = async () => {
 
   try {
     await api.request(method, url, editingStaff.value);
-    toast.add({
-      severity: "success",
-      summary: t("common.success"),
-      detail: t("staff.toast.saved"),
-      life: 3000,
-    });
+    notify.success(t("staff.toast.saved"));
     showDialog.value = false;
     fetchData();
   } catch (err) {
-    toast.add({
-      severity: "error",
-      summary: t("common.error"),
-      detail: t("staff.toast.saveFailed"),
-      life: 3000,
-    });
+    notify.error(t("staff.toast.saveFailed"));
   } finally {
     loading.value = false;
   }
@@ -697,12 +687,7 @@ const createLogin = async () => {
     });
     showLoginDialog.value = false;
   } catch (e: any) {
-    toast.add({
-      severity: "error",
-      summary: t("common.error"),
-      detail: e.message,
-      life: 4000,
-    });
+    notify.error(e.message);
   } finally {
     loading.value = false;
   }
@@ -710,25 +695,11 @@ const createLogin = async () => {
 
 // Add confirmDelete and deleteStaff functions
 // --- Time Off (Leave / Break) Handlers ---
-const formatDate = (d: string) =>
-  new Date(d).toLocaleDateString("el-GR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
+const formatDate = (d: string) => dateText(d, locale.value);
 
-const toDateStr = (d: Date) => {
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
-};
+const toDateStr = toLocalDateStr;
 
-const toTimeStr = (d: Date) => {
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mm = String(d.getMinutes()).padStart(2, "0");
-  return `${hh}:${mm}`;
-};
+const toTimeStr = clockTime;
 
 const openTimeOffDialog = async (staffMember: any) => {
   timeOffTarget.value = staffMember;
@@ -825,22 +796,12 @@ const saveTimeOff = async (force = false) => {
       return;
     }
 
-    toast.add({
-      severity: "success",
-      summary: t("common.success"),
-      detail: t("staff.timeOff.saved"),
-      life: 3000,
-    });
+    notify.success(t("staff.timeOff.saved"));
     addMode.value = null;
     await fetchTimeOffEntries();
     await calendarStore.refreshTimeOff();
   } catch (err) {
-    toast.add({
-      severity: "error",
-      summary: t("common.error"),
-      detail: t("staff.timeOff.saveFailed"),
-      life: 4000,
-    });
+    notify.error(t("staff.timeOff.saveFailed"));
   } finally {
     timeOffSaving.value = false;
   }
@@ -857,12 +818,7 @@ const deleteTimeOffEntry = async (entryId: string) => {
     });
     await calendarStore.refreshTimeOff();
   } catch {
-    toast.add({
-      severity: "error",
-      summary: t("common.error"),
-      detail: t("staff.timeOff.deleteFailed"),
-      life: 4000,
-    });
+    notify.error(t("staff.timeOff.deleteFailed"));
   }
 };
 
@@ -881,20 +837,10 @@ const deleteStaff = async (staff: any) => {
   try {
     await api.del(`/api/v1/staff/${staff.id}`);
 
-    toast.add({
-      severity: "success",
-      summary: t("common.success"),
-      detail: t("staff.toast.deleted"),
-      life: 3000,
-    });
+    notify.success(t("staff.toast.deleted"));
     fetchData();
   } catch (err) {
-    toast.add({
-      severity: "error",
-      summary: t("common.error"),
-      detail: t("staff.toast.deleteFailed"),
-      life: 4000,
-    });
+    notify.error(t("staff.toast.deleteFailed"));
   }
 };
 

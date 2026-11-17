@@ -2,11 +2,11 @@
 // fresh Pinia, the Greek interface and the network up.
 import "fake-indexeddb/auto";
 import { IDBFactory } from "fake-indexeddb";
-import { afterEach, beforeEach, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import { enableAutoUnmount } from "@vue/test-utils";
 import { resetDbConnection } from "../../client/src/offline/db";
-import { i18n } from "../../client/src/i18n";
+import { i18n, loadLocale } from "../../client/src/i18n";
 
 // Layout features the browser-like page doesn't have; PrimeVue asks for them.
 window.matchMedia ??= ((query: string) => ({
@@ -24,6 +24,9 @@ window.ResizeObserver ??= class {
   unobserve() {}
   disconnect() {}
 };
+
+// English loads on demand in the app (see i18n/index.ts); tests switch to it directly.
+beforeAll(() => loadLocale("en"));
 
 beforeEach(() => {
   (globalThis as any).indexedDB = new IDBFactory();

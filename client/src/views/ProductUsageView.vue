@@ -186,6 +186,8 @@
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../composables/useNotify";
+import { formatDate as dateText } from "../utils/format";
 import { api, ifRefused } from "../api/http";
 import { ref, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
@@ -194,9 +196,10 @@ import { useToast } from "primevue/usetoast";
 import TabView from "primevue/tabview";
 import TabPanel from "primevue/tabpanel";
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const router = useRouter();
 const toast = useToast();
+const notify = useNotify();
 
 
 interface RecipeRow {
@@ -237,7 +240,7 @@ const productVariationOptions = computed(() =>
   ),
 );
 
-const formatDate = (v: string) => new Date(v).toLocaleString();
+const formatDate = (v: string) => dateText(v, locale.value, "numericTime");
 
 const fetchServices = async () => {
   services.value = await api.get("/api/v1/services").catch(ifRefused([]));
@@ -275,20 +278,20 @@ const saveRecipes = async () => {
   if (!selectedServiceId.value) return;
   for (const r of recipeRows.value) {
     if (!r.product_inventory_id) {
-      toast.add({ severity: "error", summary: t("common.error"), detail: t("productUsage.toast.missingProduct"), life: 3000 });
+      notify.error(t("productUsage.toast.missingProduct"));
       return;
     }
     if (r.amount_type === "range" && !(Number(r.amount_min) < Number(r.amount_max))) {
-      toast.add({ severity: "error", summary: t("common.error"), detail: t("productUsage.toast.invalidRange"), life: 3000 });
+      notify.error(t("productUsage.toast.invalidRange"));
       return;
     }
   }
   savingRecipes.value = true;
   try {
     await api.put(`/api/v1/services/${selectedServiceId.value}/recipes`, { recipes: recipeRows.value });
-    toast.add({ severity: "success", summary: t("common.success"), detail: t("productUsage.toast.saved"), life: 3000 });
+    notify.success(t("productUsage.toast.saved"));
   } catch {
-    toast.add({ severity: "error", summary: t("common.error"), detail: t("productUsage.toast.saveFailed"), life: 3000 });
+    notify.error(t("productUsage.toast.saveFailed"));
   } finally {
     savingRecipes.value = false;
   }
@@ -304,11 +307,11 @@ const submitStocktake = async () => {
   savingStocktake.value = true;
   try {
     await api.post(`/api/v1/product-inventory/${selectedInventoryId.value}/stocktake`, stocktakeForm.value);
-    toast.add({ severity: "success", summary: t("common.success"), detail: t("productUsage.toast.stocktakeSaved"), life: 3000 });
+    notify.success(t("productUsage.toast.stocktakeSaved"));
     stocktakeForm.value = { remaining_amount_ml: null, restocked_amount_ml: 0, notes: "" };
     await loadStocktakeHistory();
   } catch {
-    toast.add({ severity: "error", summary: t("common.error"), detail: t("productUsage.toast.stocktakeFailed"), life: 3000 });
+    notify.error(t("productUsage.toast.stocktakeFailed"));
   } finally {
     savingStocktake.value = false;
   }

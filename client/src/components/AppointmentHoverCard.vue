@@ -99,6 +99,7 @@
 
 <script setup lang="ts">
 import type { OutsideHours } from "../utils/staffAvailability";
+import { statusDot, statusKey } from "../utils/appointmentStatus";
 import { formatMoney } from "../utils/format";
 import { paymentStatus } from "../utils/money";
 import { useAuthStore } from "../stores/auth";
@@ -117,28 +118,7 @@ const positionStyle = ref<Record<string, string>>({ top: "-9999px", left: "-9999
 // Appointment status (new/confirmed/arrived/started/completed/cancelled/no-show)
 // reuses the exact same i18n labels/colors BookingDialog already uses, so the
 // hover card reads consistently with the dialog it's previewing.
-const STATUS_I18N_KEY: Record<string, string> = {
-  new: "new",
-  confirmed: "confirmed",
-  arrived: "arrived",
-  started: "started",
-  completed: "completed",
-  cancelled: "cancelled",
-  "no-show": "noShow",
-  "no-response": "noResponse",
-};
-const STATUS_BAR_COLOR: Record<string, string> = {
-  new: "bg-blue-500",
-  confirmed: "bg-purple-500",
-  arrived: "bg-orange-500",
-  started: "bg-green-500",
-  completed: "bg-gray-500",
-  cancelled: "bg-red-500",
-  "no-show": "bg-red-700",
-  "no-response": "bg-amber-500",
-};
-
-const statusBarClass = computed(() => STATUS_BAR_COLOR[props.appointment.status] || "bg-gray-400");
+const statusBarClass = computed(() => statusDot(props.appointment.status));
 
 // "Outside working hours: 30 min before 10:00 · schedule 10:00–18:00" (see
 // outsideWorkingHours in utils/staffAvailability.ts).
@@ -161,7 +141,7 @@ const overtimeText = computed(() => {
   return `${k("title")}: ${parts.join(", ")} · ${k("schedule", { hours: o.schedule })}`;
 });
 const statusHeaderText = computed(() => {
-  const key = STATUS_I18N_KEY[props.appointment.status];
+  const key = props.appointment.status ? statusKey(props.appointment.status) : undefined;
   const label = key ? t(`common.status.${key}`) : props.appointment.status;
   return `${label} ${t("scheduler.hoverCard.appointmentSuffix")}`;
 });

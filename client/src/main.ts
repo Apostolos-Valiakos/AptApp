@@ -42,7 +42,7 @@ import Tooltip from "primevue/tooltip";
 // the screens that use it (unplugin-vue-components, see vite.config.mjs), so
 // the first download only carries what the first screen needs.
 import { useThemeStore } from "./stores/themes";
-import { i18n } from "./i18n";
+import { i18n, savedLocale, setLocale } from "./i18n";
 import { elDatePickerNames } from "./i18n/datePicker";
 import { initOfflineSync } from "./offline/queue";
 
@@ -112,6 +112,9 @@ const initApp = async () => {
       console.warn("App service worker not registered", err);
     });
   }
+
+  // The language chosen last time (English is loaded first; Greek if that fails).
+  await setLocale(savedLocale).catch(() => {});
 
   // 6. Mount the app (Removes the index.html spinner)
   app.mount("#app");

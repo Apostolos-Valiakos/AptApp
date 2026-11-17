@@ -3,9 +3,9 @@
 // it mounts this router (see "Area routers" near the end of server.js).
 const express = require("express");
 const { asyncHandler } = require("../http");
-const crypto = require("crypto");
 const pool = require("../db");
 const { PUBLIC_BASE_URL } = require("../reminderService");
+const { isValidLinkToken } = require("../domain/linkTokens");
 
 module.exports = function publicLinksRouter({
   io,
@@ -14,21 +14,13 @@ module.exports = function publicLinksRouter({
   const router = express.Router();
 
   router.get("/unsubscribe", publicActionLimiter, async (req, res) => {
-    const crypto = require("crypto");
-
     const { id, token } = req.query;
 
     if (!id || !token) {
       return res.status(400).send("Μη έγκυρο αίτημα.");
     }
 
-    // Verify the token matches the ID using your secret
-    const expectedToken = crypto
-      .createHmac("sha256", process.env.JWT_SECRET)
-      .update(id)
-      .digest("hex");
-
-    if (token !== expectedToken) {
+    if (!isValidLinkToken(id, token)) {
       return res.status(403).send("Ο σύνδεσμος είναι άκυρος ή έχει λήξει.");
     }
 
@@ -112,20 +104,13 @@ module.exports = function publicLinksRouter({
     "/confirm-appointment",
     publicActionLimiter,
     async (req, res) => {
-      const crypto = require("crypto");
       const { id, token } = req.query;
 
       if (!id || !token) {
         return res.status(400).send("Μη έγκυρο αίτημα.");
       }
 
-      // Verify the token matches the Appointment ID
-      const expectedToken = crypto
-        .createHmac("sha256", process.env.JWT_SECRET)
-        .update(id.toString())
-        .digest("hex");
-
-      if (token !== expectedToken) {
+      if (!isValidLinkToken(id, token)) {
         return res.status(403).send("Ο σύνδεσμος είναι άκυρος ή έχει λήξει.");
       }
 

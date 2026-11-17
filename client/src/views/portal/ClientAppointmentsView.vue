@@ -366,6 +366,8 @@
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../../composables/useNotify";
+import { toLocalDateStr } from "../../utils/staffAvailability";
 import { api, ApiError, withMessage } from "../../api/http";
 import { formatMoney } from "../../utils/format";
 import { ref, computed, watch, onMounted } from "vue";
@@ -387,6 +389,7 @@ const totalOf = (appt: any) => Number(appt.total_service_price || 0) + Number(ap
 const route = useRoute();
 const router = useRouter();
 const toast = useToast();
+const notify = useNotify();
 const confirm = useConfirm();
 const authStore = useAuthStore();
 
@@ -451,7 +454,7 @@ const cancelAppointment = async (appt: any) => {
     );
     toast.add({ severity: "success", summary: t("portal.toast.cancelled"), detail: t("portal.toast.appointmentCancelled"), life: 3000 });
   } catch (e: any) {
-    toast.add({ severity: "error", summary: t("common.error"), detail: e.message, life: 3000 });
+    notify.error(e.message);
   }
 };
 
@@ -463,7 +466,7 @@ const confirmAppointment = async (appt: any) => {
     );
     toast.add({ severity: "success", summary: t("portal.toast.confirmed"), detail: t("portal.toast.appointmentConfirmed"), life: 3000 });
   } catch (e: any) {
-    toast.add({ severity: "error", summary: t("common.error"), detail: e.message, life: 3000 });
+    notify.error(e.message);
   }
 };
 
@@ -575,12 +578,7 @@ const fetchSlots = async () => {
   }
 };
 
-const toDateInputValue = (d: Date) => {
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
-};
+const toDateInputValue = toLocalDateStr;
 
 watch(selectedDate, () => {
   if (step.value === 3) fetchSlots();

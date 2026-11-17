@@ -5,6 +5,8 @@ const crypto = require("crypto");
 const express = require("express");
 const { MONEY_METHODS } = require("../domain/common");
 const { HttpError, asyncHandler, withTransaction } = require("../http");
+const { appointmentCostSql, appointmentPaidSql } = require("../domain/moneySql");
+const { markBooked } = require("../domain/waitlist");
 
 module.exports = function appointmentsRouter({
   notForStaff,
@@ -35,6 +37,8 @@ module.exports = function appointmentsRouter({
   sanitizeClientBookingPayload,
   saveIdempotency,
   settleAmount,
+  notForClients,
+  notRoles,
 }) {
   const router = express.Router();
 
@@ -148,7 +152,7 @@ module.exports = function appointmentsRouter({
           c.phone as client_phone,
           c.notes as client_notes,
           COALESCE(c.outstanding_balance, 0) as client_outstanding_balance,
-          COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0) as deposit_amount,
+          ${appointmentPaidSql("a.id")} as deposit_amount,
           -- True only on a client's first visit: their earliest booking by its
           -- first service's start (not cancelled / no-show; ties by id). It
           -- powers the "new client" badge on the hover card. The day a
@@ -174,8 +178,7 @@ module.exports = function appointmentsRouter({
             ORDER BY t.created_at DESC LIMIT 1
           ) as gift_card_source_method,
           (
-            COALESCE((SELECT SUM(COALESCE(aps2.price_override, s2.price)) FROM appointment_services aps2 JOIN services s2 ON aps2.service_id = s2.id WHERE aps2.appointment_id = a.id), 0) +
-            COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = a.id), 0)
+            ${appointmentCostSql("a.id")}
           ) as total_cost,
           COALESCE((
             SELECT json_agg(json_build_object(
@@ -276,6 +279,10 @@ module.exports = function appointmentsRouter({
         req.shopId,
       );
 
+      // Booked from the waitlist: that entry is booked now.
+      const waitlistEntryId = req.user.role !== "client" && safeUUID(req.body.waitlist_entry_id);
+      if (waitlistEntryId) await markBooked(client, req.shopId, waitlistEntryId, firstAppointmentId);
+
       let newBalance = 0;
       if (validClientId) {
         newBalance = await recalculateClientBalance(client, validClientId);
@@ -294,17 +301,14 @@ module.exports = function appointmentsRouter({
     res.status(status).json(body);
   }, { log: "Create Appointment Error:", message: "Failed to create appointment", mapError: createBookingError }));
 
-  router.put("/:id", authenticateToken, notForStaff, asyncHandler(async (req, res) => {
+  // Clients never edit an appointment directly — confirm/cancel go through
+  // the dedicated /api/v1/portal/appointments/:id/{confirm,cancel} routes.
+  // Without this, a client JWT could rewrite any appointment in the shop.
+  router.put("/:id", authenticateToken, notForStaff, notRoles(["client"], "forbidden"), asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { scope } = req.query;
     const idempotencyKey = req.headers["idempotency-key"] || null;
 
-    // Clients never edit an appointment directly — confirm/cancel go through
-    // the dedicated /api/v1/portal/appointments/:id/{confirm,cancel} routes.
-    // Without this, a client JWT could rewrite any appointment in the shop.
-    if (req.user.role === "client") {
-      return res.status(403).json({ error: "forbidden" });
-    }
     // Same overrides as on create: only these roles may book outside working
     // hours (allow_overtime) or skip availability checks (allow_unavailable).
     if (!["admin", "super_admin", "frontdesk"].includes(req.user.role)) {
@@ -429,8 +433,7 @@ module.exports = function appointmentsRouter({
   // portal's own cancel endpoint, plus releasing any redeemed package visit
   // (the portal one doesn't — a pre-existing gap there, left alone since the
   // client portal is a separate, not-yet-shipped feature).
-  router.post("/:id/cancel", authenticateToken, notForStaff, asyncHandler(async (req, res) => {
-    if (req.user.role === "client") return res.status(403).json({ error: "Forbidden" });
+  router.post("/:id/cancel", authenticateToken, notForStaff, notForClients, asyncHandler(async (req, res) => {
     const { id } = req.params;
     const newBalance = await withTransaction(async (client) => {
       const check = await client.query(
@@ -502,10 +505,7 @@ module.exports = function appointmentsRouter({
                 LEFT JOIN products p ON p.id = pi.product_id
                 WHERE ps.appointment_id = a.id), '[]'::jsonb),
               GREATEST(0,
-                COALESCE((SELECT SUM(COALESCE(aps.price_override, s.price, 0))
-                          FROM appointment_services aps LEFT JOIN services s ON s.id = aps.service_id
-                          WHERE aps.appointment_id = a.id), 0)
-                + COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = a.id), 0)),
+                ${appointmentCostSql("a.id")}),
               a.internal_notes, a.booking_notes, a.booked_at,
               $3, $4, $5
        FROM appointments a
@@ -655,10 +655,8 @@ module.exports = function appointmentsRouter({
     const result = await withTransaction(async (db) => {
       const apptRes = await db.query(
         `SELECT a.id, a.client_id,
-                COALESCE((SELECT SUM(COALESCE(aps.price_override, s.price)) FROM appointment_services aps
-                          JOIN services s ON s.id = aps.service_id WHERE aps.appointment_id = a.id), 0)
-                  + COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = a.id), 0) AS cost,
-                COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = a.id), 0) AS paid
+                ${appointmentCostSql("a.id")} AS cost,
+                ${appointmentPaidSql("a.id")} AS paid
          FROM appointments a
          WHERE a.id = $1 AND a.shop_id = $2 AND a.status <> 'cancelled'
          FOR UPDATE OF a`,
@@ -901,8 +899,7 @@ module.exports = function appointmentsRouter({
   );
 
   // Use one visit of a package for a service line of this appointment.
-  router.post("/:id/package-redemptions", authenticateToken, notForStaff, asyncHandler(async (req, res) => {
-    if (req.user.role === "client") return res.status(403).json({ error: "Forbidden" });
+  router.post("/:id/package-redemptions", authenticateToken, notForStaff, notForClients, asyncHandler(async (req, res) => {
     const packageId = safeUUID(req.body.client_package_id);
     if (!packageId) return res.status(400).json({ error: "client_package_id is required" });
     const result = await withTransaction(async (client) => {
@@ -955,9 +952,8 @@ module.exports = function appointmentsRouter({
 
       const totals = await client.query(
         `SELECT
-           COALESCE((SELECT SUM(price_override) FROM appointment_services WHERE appointment_id = $1), 0)
-           + COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = $1), 0) AS total_price,
-           COALESCE((SELECT SUM(amount) FROM transactions WHERE appointment_id = $1), 0) AS paid`,
+           ${appointmentCostSql("$1")} AS total_price,
+           ${appointmentPaidSql("$1")} AS paid`,
         [appt.id],
       );
       const fullyPaid = Number(totals.rows[0].paid) >= Number(totals.rows[0].total_price) - 0.01;

@@ -420,10 +420,11 @@
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../composables/useNotify";
+import { clockTime } from "../utils/format";
 import { api, ApiError, ifRefused } from "../api/http";
 import { ref, computed, watch, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
-import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 import { useCalendarStore } from "../stores/calendar";
 import { useAuthStore } from "../stores/auth";
@@ -442,11 +443,7 @@ import {
 } from "../utils/staffAvailability";
 
 const { t, locale } = useI18n();
-const toast = useToast();
-const notify = {
-  success: (detail: string) => toast.add({ severity: "success", summary: t("common.success"), detail, life: 3000 }),
-  error: (detail: string) => toast.add({ severity: "error", summary: t("common.error"), detail, life: 4000 }),
-};
+const notify = useNotify();
 const confirm = useConfirm();
 const calendarStore = useCalendarStore();
 const authStore = useAuthStore();
@@ -455,17 +452,8 @@ const authStore = useAuthStore();
 // Date#getDay() is 0=Sun..6=Sat).
 const WEEKDAY_DISPLAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
 
-const toDateStr = (d: Date) => {
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
-};
-const toTimeStr = (d: Date) => {
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mm = String(d.getMinutes()).padStart(2, "0");
-  return `${hh}:${mm}`;
-};
+const toDateStr = toLocalDateStr;
+const toTimeStr = clockTime;
 const parseTimeToDate = (time: string) => {
   const [h, m] = (time || "09:00").split(":").map(Number);
   const d = new Date();

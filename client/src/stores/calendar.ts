@@ -26,6 +26,7 @@ const PREFETCH_DAYS_AHEAD = 30;
 const PREFETCH_EVERY_MS = 15 * 60 * 1000;
 
 export const useCalendarStore = defineStore("calendar", () => {
+  const authStore = useAuthStore();
   const resources = ref<any[]>([]);
   const serverEvents = ref<any[]>([]);
   const services = ref<any[]>([]);
@@ -59,7 +60,7 @@ export const useCalendarStore = defineStore("calendar", () => {
 
   // 1. Static data for dropdowns and the calendar's columns.
   const fetchBaseResources = async () => {
-    if (!localStorage.getItem("token")) return;
+    if (!authStore.token) return;
     const sources: [string, string, (v: any) => void][] = [
       ["/api/v1/staff", "staff", (v) => {
         resources.value = v
@@ -94,7 +95,7 @@ export const useCalendarStore = defineStore("calendar", () => {
   // out of order, and only the latest request's may be shown.
   let fetchSeq = 0;
   const fetchAppointments = async (start: string, end: string) => {
-    if (!localStorage.getItem("token")) return;
+    if (!authStore.token) return;
     lastRange = { start, end };
     const seq = ++fetchSeq;
     const params = new URLSearchParams({ start, end });
@@ -159,23 +160,17 @@ export const useCalendarStore = defineStore("calendar", () => {
     } catch {}
   };
 
-  const refreshTimeOff = async () => {
+  /** Reloads one list from the server and keeps a copy for offline use. */
+  const refreshList = async (target: typeof timeOff, url: string, cacheKey: string) => {
     try {
-      timeOff.value = await getJson("/api/v1/time-off");
-      cacheValue("timeOff", timeOff.value).catch(() => {});
+      target.value = await getJson(url);
+      cacheValue(cacheKey, target.value).catch(() => {});
     } catch (err) {
-      console.error("refreshTimeOff failed", err);
+      console.error(`refreshing ${cacheKey} failed`, err);
     }
   };
-
-  const refreshWorkingHours = async () => {
-    try {
-      workingHours.value = await getJson("/api/v1/working-hours");
-      cacheValue("workingHours", workingHours.value).catch(() => {});
-    } catch (err) {
-      console.error("refreshWorkingHours failed", err);
-    }
-  };
+  const refreshTimeOff = () => refreshList(timeOff, "/api/v1/time-off", "timeOff");
+  const refreshWorkingHours = () => refreshList(workingHours, "/api/v1/working-hours", "workingHours");
 
   /** Shows the new order right away; if it can't be saved, puts the old one back and throws. */
   const updateResourceOrder = async (reorderedStaff: any[]) => {
@@ -215,7 +210,6 @@ export const useCalendarStore = defineStore("calendar", () => {
 
   // Every way a user stops being the current one: logout, an expired or
   // revoked session, entering or leaving a shop's view.
-  const authStore = useAuthStore();
   watch(() => authStore.user?.id, forgetLoadedData, { flush: "sync" });
 
   // Synced changes now have real ids and server data: reload what's visible.

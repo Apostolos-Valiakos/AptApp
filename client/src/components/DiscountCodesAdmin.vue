@@ -110,7 +110,9 @@
 </template>
 
 <script setup lang="ts">
-import { api as http, withMessage } from "../api/http";
+import { useNotify } from "../composables/useNotify";
+import { formatDate as dateText } from "../utils/format";
+import { useAdminActions } from "../composables/useResource";
 import { formatMoney } from "../utils/format";
 import { ref, reactive, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
@@ -119,6 +121,7 @@ import { useConfirm } from "primevue/useconfirm";
 
 const { t, locale } = useI18n();
 const toast = useToast();
+const notify = useNotify();
 const confirm = useConfirm();
 
 const codes = ref<any[]>([]);
@@ -129,8 +132,7 @@ const form = reactive<{ name: string; percentage: number | null }>({
   percentage: null,
 });
 
-const api = (url: string, method = "GET", body?: any) =>
-  http.request(method, url, body || undefined).then((data) => data ?? {}).catch(withMessage(t("discount.admin.failed")));
+const { call: api, run } = useAdminActions(() => t("discount.admin.failed"), () => load());
 
 const load = async () => {
   try {
@@ -139,18 +141,10 @@ const load = async () => {
       api("/api/v1/discounts/usage"),
     ]);
   } catch (e: any) {
-    toast.add({ severity: "error", summary: t("common.error"), detail: e.message, life: 3000 });
+    notify.error(e.message);
   }
 };
 
-const run = async (fn: () => Promise<any>) => {
-  try {
-    await fn();
-    await load();
-  } catch (e: any) {
-    toast.add({ severity: "error", summary: t("common.error"), detail: e.message, life: 3500 });
-  }
-};
 
 const createCode = async () => {
   saving.value = true;
@@ -178,16 +172,7 @@ const remove = (c: any) =>
     accept: () => run(() => api(`/api/v1/discount-codes/${c.id}`, "DELETE")),
   });
 
-const fmtDate = (d: string | null) =>
-  d
-    ? new Date(d).toLocaleString(locale.value, {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    : "—";
+const fmtDate = (d: string | null) => dateText(d, locale.value, "shortTime", "—");
 
 const describe = (u: any) => {
   const v = Number(u.discount_value);

@@ -198,23 +198,14 @@ module.exports = function attachSockets(io, { cardFilterCache, cashFilterCache }
       }
     });
 
-    // Remote cash-filter broadcast — super_admin only
-    socket.on("cash:filter:broadcast", ({ hidden }) => {
-      if (socket.user.role !== "super_admin") return;
-      cashFilterCache.set(socket.user.shopId, !!hidden);
-      io.to(`shop:${socket.user.shopId}`).emit("cash:filter:set", {
-        hidden: !!hidden,
+    // Remote cash- and card-filter broadcasts — super_admin only, each on its own
+    for (const [kind, cache] of [["cash", cashFilterCache], ["card", cardFilterCache]]) {
+      socket.on(`${kind}:filter:broadcast`, ({ hidden }) => {
+        if (socket.user.role !== "super_admin") return;
+        cache.set(socket.user.shopId, !!hidden);
+        io.to(`shop:${socket.user.shopId}`).emit(`${kind}:filter:set`, { hidden: !!hidden });
       });
-    });
-
-    // Remote card-filter broadcast — super_admin only, independent of cash
-    socket.on("card:filter:broadcast", ({ hidden }) => {
-      if (socket.user.role !== "super_admin") return;
-      cardFilterCache.set(socket.user.shopId, !!hidden);
-      io.to(`shop:${socket.user.shopId}`).emit("card:filter:set", {
-        hidden: !!hidden,
-      });
-    });
+    }
 
     socket.on("disconnect", () => {
       console.log(`User disconnected: ${socket.user.userId}`);

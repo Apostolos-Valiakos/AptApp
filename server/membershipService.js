@@ -20,13 +20,7 @@ const transporter = nodemailer.createTransport({
 
 const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email || "");
 
-const formatDate = (date) =>
-  new Intl.DateTimeFormat("el-GR", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-    timeZone: "Europe/Athens",
-  }).format(new Date(date));
+const { athensDate: formatDate } = require("./domain/greekDates");
 
 // Sends a renewal-reminder email 3 days before current_period_end, once per
 // cycle (renewal_reminder_sent_at is reset to NULL whenever a membership is

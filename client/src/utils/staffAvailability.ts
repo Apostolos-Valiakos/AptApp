@@ -1,3 +1,4 @@
+import { askConfirm, type Confirm } from "./confirm";
 // Single source of truth for "is this staff member bookable at this
 // time?", covering both staff_time_off (leave/break) and the optional
 // recurring staff_working_hours pattern. Used identically by FullCalendar's
@@ -293,6 +294,20 @@ export const describeWorkingDay = (
   if (ranges === null) return null;
   return ranges.map((r) => `${r.start.slice(0, 5)}–${r.end.slice(0, 5)}`).join(", ");
 };
+
+/** Asks before booking outside working hours; true = book it as overtime. */
+export const askOvertime = (
+  confirm: Confirm,
+  t: (key: string, values?: Record<string, unknown>) => string,
+  entries: { name: string; hours: string | null }[],
+): Promise<boolean> =>
+  askConfirm(confirm, {
+    header: t("booking.overtime.header"),
+    message: overtimeConfirmMessage(entries, t),
+    icon: "pi pi-clock",
+    acceptLabel: t("booking.overtime.accept"),
+    rejectLabel: t("common.cancel"),
+  });
 
 // Shared overtime confirmation text (booking dialog, calendar click and
 // drag): one line per staff member, e.g. "Ιωάννα: ωράριο 10:00–20:20".

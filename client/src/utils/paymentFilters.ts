@@ -14,10 +14,6 @@ export const hiddenAmount = (hidden: Hidden, filters: Filters) => {
   return key ? Number(hidden[key] || 0) : 0;
 };
 
-/** What a service shows under the filters: its price less the hidden part. */
-export const shownPrice = (price: number | string | null | undefined, hidden: Hidden, filters: Filters) =>
-  Math.max(0, Number(price || 0) - hiddenAmount(hidden, filters));
-
 /** True when the filters hide all of a service. */
 export const fullyHidden = (price: number | string | null | undefined, hidden: Hidden, filters: Filters) => {
   const amount = hiddenAmount(hidden, filters);

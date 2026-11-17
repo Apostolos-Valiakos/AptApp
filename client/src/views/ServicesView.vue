@@ -423,6 +423,9 @@
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../composables/useNotify";
+import { formatDuration } from "../utils/format";
+import { round2 } from "../utils/money";
 import { formatMoney } from "../utils/format";
 import { ref, onMounted, computed, watch, h } from "vue";
 import { useI18n } from "vue-i18n";
@@ -531,6 +534,7 @@ onMounted(() => {
 });
 
 const toast = useToast();
+const notify = useNotify();
 const confirm = useConfirm();
 
 const services = ref<any[]>([]);
@@ -612,7 +616,7 @@ watch(
   () => {
     if (comboPriced.value) {
       const sum = comboParts.value.reduce((total: number, p: any) => total + Number(partPrice(p.id)), 0);
-      editingService.value.price = Math.round(sum * 100) / 100;
+      editingService.value.price = round2(sum);
     }
   },
 );
@@ -671,12 +675,7 @@ const fetchServices = async () => {
     services.value = await api.get("/api/v1/services");
     rebuildGroups();
   } catch (err) {
-    toast.add({
-      severity: "error",
-      summary: t('common.error'),
-      detail: t('services.toast.loadFailed'),
-      life: 3000,
-    });
+    notify.error(t('services.toast.loadFailed'));
   } finally {
     // Also when it fails (the spinner used to stay on).
     loading.value = false;
@@ -691,7 +690,7 @@ const saveCategoryColor = async (name: string, color: string | null) => {
     });
     fetchServices();
   } catch {
-    toast.add({ severity: "error", summary: t("common.error"), detail: t("services.toast.saveFailed"), life: 3000 });
+    notify.error(t("services.toast.saveFailed"));
   }
 };
 
@@ -711,34 +710,23 @@ const saveRenameCategory = async () => {
     fetchServices();
   } catch (e) {
     const exists = e instanceof ApiError && e.data?.error === "category_exists";
-    toast.add({
-      severity: "error",
-      summary: t("common.error"),
-      detail: t(exists ? "services.renameCategory.exists" : "services.toast.saveFailed"),
-      life: 4000,
-    });
+    notify.error(t(exists ? "services.renameCategory.exists" : "services.toast.saveFailed"));
   } finally {
     renameCategory.value.saving = false;
   }
 };
 
-const onCategoryDragEnd = async () => {
+// Saves a new order after a drag; if it fails, says so and reloads the real order.
+const saveOrder = async (url: string, order: any[]) => {
   try {
-    await api.put("/api/v1/service-categories/reorder", { order: groupedServices.value.map((g) => g.label) });
+    await api.put(url, { order });
   } catch (err) {
-    toast.add({ severity: "error", summary: t("common.error"), detail: t("services.toast.reorderFailed"), life: 3000 });
+    notify.error(t("services.toast.reorderFailed"));
     fetchServices();
   }
 };
-
-const onServiceDragEnd = async (group: { items: any[] }) => {
-  try {
-    await api.put("/api/v1/services/reorder", { order: group.items.map((s) => s.id) });
-  } catch (err) {
-    toast.add({ severity: "error", summary: t("common.error"), detail: t("services.toast.reorderFailed"), life: 3000 });
-    fetchServices();
-  }
-};
+const onCategoryDragEnd = () => saveOrder("/api/v1/service-categories/reorder", groupedServices.value.map((g) => g.label));
+const onServiceDragEnd = (group: { items: any[] }) => saveOrder("/api/v1/services/reorder", group.items.map((s) => s.id));
 
 const openNew = () => {
   editingService.value = {
@@ -819,21 +807,11 @@ const saveService = async () => {
   try {
     // A refusal now shows as an error (it used to say "saved" regardless).
     await api.request(method, url, payload);
-    toast.add({
-      severity: "success",
-      summary: t('common.success'),
-      detail: t('services.toast.saved'),
-      life: 3000,
-    });
+    notify.success(t('services.toast.saved'));
     dialogVisible.value = false;
     fetchServices();
   } catch (err) {
-    toast.add({
-      severity: "error",
-      summary: t('common.error'),
-      detail: t('services.toast.saveFailed'),
-      life: 3000,
-    });
+    notify.error(t('services.toast.saveFailed'));
   }
 };
 
@@ -850,32 +828,16 @@ const confirmDelete = (service: any) => {
 const deleteService = async (service: any) => {
   try {
     const { archived } = await api.del(`/api/v1/services/${service.id}`);
-    toast.add({
-      severity: "success",
-      summary: t('common.success'),
-      detail: archived
+    notify.success(archived
         ? t('services.toast.archived', { name: service.name })
-        : t('services.toast.deleted', { name: service.name }),
-      life: 4000,
-    });
+        : t('services.toast.deleted', { name: service.name }));
     fetchServices();
   } catch (err) {
-    toast.add({
-      severity: "error",
-      summary: t('common.error'),
-      detail: t('services.toast.deleteFailed'),
-      life: 3000,
-    });
+    notify.error(t('services.toast.deleteFailed'));
   }
 };
 
-const formatDurationLabel = (minutes: number) => {
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return h > 0
-    ? t('services.duration.hoursMinutes', { h, m })
-    : t('services.duration.minutes', { m });
-};
+const formatDurationLabel = (minutes: number) => formatDuration(minutes, t);
 </script>
 
 <style scoped>

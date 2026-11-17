@@ -231,23 +231,20 @@ export const flushQueue = async () => {
   }
 };
 
-/** "Keep mine": send the conflicting write again, overwriting / booking anyway. */
-export const keepMineQueuedWrite = async (id: string) => {
+/** Rewrites a waiting change with `change`, then tries to send it again. */
+const resolveQueuedWrite = async (id: string, change: (write: QueuedWrite) => QueuedWrite) => {
   const write = pending.value.find((w) => w.id === id);
   if (!write) return;
-  await updateQueuedWrite(plain(keepMine(write)));
+  await updateQueuedWrite(plain(change(write)));
   await refreshPending();
   flushQueue();
 };
 
+/** "Keep mine": send the conflicting write again, overwriting / booking anyway. */
+export const keepMineQueuedWrite = (id: string) => resolveQueuedWrite(id, keepMine);
+
 /** "Cancel instead": a refused delete (the booking has payments) becomes a cancellation. */
-export const cancelInsteadQueuedWrite = async (id: string) => {
-  const write = pending.value.find((w) => w.id === id);
-  if (!write) return;
-  await updateQueuedWrite(plain(cancelInstead(write)));
-  await refreshPending();
-  flushQueue();
-};
+export const cancelInsteadQueuedWrite = (id: string) => resolveQueuedWrite(id, cancelInstead);
 
 /** Try again unchanged (e.g. after fixing something on the server side). */
 export const retryQueuedWrite = async (id: string) => {

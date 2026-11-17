@@ -62,6 +62,7 @@
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../composables/useNotify";
 import { ref, computed, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useToast } from "primevue/usetoast";
@@ -72,6 +73,7 @@ import Button from "primevue/button";
 const route = useRoute();
 const router = useRouter();
 const toast = useToast();
+const notify = useNotify();
 const { t } = useI18n();
 
 const password = ref("");
@@ -108,12 +110,7 @@ const handleSignup = async () => {
     });
     router.push("/login");
   } catch (err: any) {
-    toast.add({
-      severity: "error",
-      summary: t('common.error'),
-      detail: err.message,
-      life: 3000,
-    });
+    notify.error(err.message);
   } finally {
     loading.value = false;
   }

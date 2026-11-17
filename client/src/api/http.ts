@@ -113,19 +113,3 @@ export const saveBlob = (data: Blob, filename: string) => {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
-
-/** Opens an API file (a PDF, an image) in a new tab, logged in. */
-export const openBlob = async (url: string) => {
-  // Opened first, while still in the click, so pop-up blockers allow it.
-  const win = window.open("", "_blank");
-  try {
-    const data = await blob(url);
-    const objectUrl = URL.createObjectURL(data);
-    if (win) win.location.href = objectUrl;
-    else window.location.href = objectUrl;
-    setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
-  } catch (err) {
-    win?.close();
-    throw err;
-  }
-};

@@ -83,25 +83,23 @@
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../composables/useNotify";
+import { formatDate as dateText } from "../utils/format";
 import { api } from "../api/http";
 import { ref, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const toast = useToast();
+const notify = useNotify();
 const confirm = useConfirm();
 
 const requests = ref<any[]>([]);
 const loading = ref(false);
 
-const formatDate = (d: string) =>
-  new Date(d).toLocaleDateString("el-GR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
+const formatDate = (d: string) => dateText(d, locale.value);
 
 const fetchData = async () => {
   loading.value = true;
@@ -120,19 +118,9 @@ const toggleStatus = async (request: any) => {
   try {
     await api.put(`/api/v1/platform/demo-requests/${request.id}`, { status: newStatus });
     request.status = newStatus;
-    toast.add({
-      severity: "success",
-      summary: t("common.success"),
-      detail: t("demoRequests.toast.statusUpdated"),
-      life: 3000,
-    });
+    notify.success(t("demoRequests.toast.statusUpdated"));
   } catch (err) {
-    toast.add({
-      severity: "error",
-      summary: t("common.error"),
-      detail: t("demoRequests.toast.failed"),
-      life: 4000,
-    });
+    notify.error(t("demoRequests.toast.failed"));
   }
 };
 
@@ -146,19 +134,9 @@ const confirmDelete = (request: any) => {
       try {
         await api.del(`/api/v1/platform/demo-requests/${request.id}`);
         requests.value = requests.value.filter((r) => r.id !== request.id);
-        toast.add({
-          severity: "success",
-          summary: t("common.success"),
-          detail: t("demoRequests.toast.deleted"),
-          life: 3000,
-        });
+        notify.success(t("demoRequests.toast.deleted"));
       } catch (err) {
-        toast.add({
-          severity: "error",
-          summary: t("common.error"),
-          detail: t("demoRequests.toast.failed"),
-          life: 4000,
-        });
+        notify.error(t("demoRequests.toast.failed"));
       }
     },
   });

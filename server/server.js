@@ -23,7 +23,7 @@ const { checkIdempotency, saveIdempotency } = require("./domain/idempotency");
 const { releasePackageUsage, loadClientPackages } = require("./domain/packages");
 const { parseDebtResolution, settleAmount } = require("./domain/debts");
 const { StaffUnavailableError, MissingStaffError, RepeatedServiceError, getGroupDetails, DiscountError, createAppointmentSeries, performSingleUpdate, SelfBookingNotAllowedError, sanitizeClientBookingPayload, OfflineConflictError, assertCapacity, assertNoNewOverlaps, assertBaseVersion } = require("./domain/bookings");
-const { forceLogoutCache, userRevokedCache, revokeUserSessions, isSessionToken, authenticateToken, requireAnalyticsAccess, notForClients, notForStaff, requireShopAdminAccess, isAdminRole, canSellExtras, isReauthed, requireReauth, requireSensitiveAccess, signReauth } = require("./middleware/auth");
+const { forceLogoutCache, userRevokedCache, revokeUserSessions, isSessionToken, authenticateToken, requireAnalyticsAccess, notForClients, notForStaff, requireShopAdminAccess, onlyRoles, notRoles, onlyAdmins, onlySuperAdmins, onlyOwner, onlyClients, ownClientOnly, isAdminRole, canSellExtras, isReauthed, requireReauth, requireSensitiveAccess, signReauth } = require("./middleware/auth");
 const path = require("path");
 const cors = require("cors");
 const helmet = require("helmet");
@@ -127,6 +127,18 @@ app.use(CALENDAR_WRITE_PATHS, (req, res, next) => {
   if (req.method !== "GET") {
     res.on("finish", () => {
       if (res.statusCode < 300 && req.shopId) io.to(`shop:${req.shopId}`).emit("appointments:changed");
+    });
+  }
+  next();
+});
+
+// The waitlist changed (an entry added, changed, removed, or a freed time
+// dismissed): the front desk's waitlist buttons reload. Cancellations reach
+// them through "appointments:changed".
+app.use("/api/v1/waitlist", (req, res, next) => {
+  if (req.method !== "GET") {
+    res.on("finish", () => {
+      if (res.statusCode < 300 && req.shopId) io.to(`shop:${req.shopId}`).emit("waitlist:changed");
     });
   }
   next();
@@ -377,6 +389,8 @@ app.use(
     sanitizeClientBookingPayload,
     saveIdempotency,
     settleAmount,
+    notForClients,
+    notRoles,
   }),
 );
 app.use(
@@ -409,6 +423,9 @@ app.use(
     safeUUID,
     saveIdempotency,
     walkInClientRow,
+    notForClients,
+    onlyAdmins,
+    ownClientOnly,
   }),
 );
 
@@ -454,6 +471,7 @@ app.use(
     authenticateToken,
     io,
     revokeUserSessions,
+    onlyOwner,
   }),
 );
 app.use(
@@ -480,6 +498,8 @@ app.use(
     requireAnalyticsAccess,
     requireShopAdminAccess,
     TIME_HHMM,
+    onlyAdmins,
+    onlySuperAdmins,
   }),
 );
 app.use(
@@ -504,6 +524,7 @@ app.use(
   require("./routes/portal")({
     authenticateToken,
     safeUUID,
+    onlyClients,
   }),
 );
 app.use(
@@ -512,6 +533,7 @@ app.use(
     authenticateToken,
     canSellExtras,
     notForClients,
+    onlyAdmins,
   }),
 );
 app.use(
@@ -520,6 +542,7 @@ app.use(
     authenticateToken,
     loadClientPackages,
     notForClients,
+    requireShopAdminAccess,
   }),
 );
 app.use(
@@ -558,6 +581,15 @@ app.use(
   require("./routes/exercises")({
     authenticateToken,
     notForClients,
+    onlyRoles,
+  }),
+);
+app.use(
+  "/api/v1",
+  require("./routes/waitlist")({
+    authenticateToken,
+    requireShopAdminAccess,
+    safeUUID,
   }),
 );
 app.use(
@@ -566,6 +598,7 @@ app.use(
     authenticateToken,
     dbFileUpload,
     notForClients,
+    onlyAdmins,
   }),
 );
 app.use(

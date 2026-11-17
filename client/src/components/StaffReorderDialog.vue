@@ -11,7 +11,7 @@
       >
         <h3 class="font-bold text-gray-800 text-lg">{{ t("scheduler.reorder.title") }}</h3>
         <button
-          @click="$emit('update:visible', false)"
+          @click="visible = false"
           class="text-gray-400 hover:text-gray-600 transition-colors"
         >
           <i class="pi pi-times text-xl"></i>
@@ -55,7 +55,7 @@
               class="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center overflow-hidden border border-gray-100 shrink-0"
             >
               <span class="font-bold text-xs text-gray-500">{{
-                getInitials(staff.name)
+                initials(staff.name)
               }}</span>
             </div>
 
@@ -70,7 +70,7 @@
         class="p-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3"
       >
         <button
-          @click="$emit('update:visible', false)"
+          @click="visible = false"
           class="px-4 py-2 text-gray-600 font-medium hover:bg-gray-200 rounded-lg transition-colors"
         >
           {{ t("common.cancel") }}
@@ -87,24 +87,25 @@
 </template>
 
 <script setup lang="ts">
+import { initials } from "../utils/avatar";
 import { ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 const { t } = useI18n();
 
 const props = defineProps<{
-  visible: boolean;
   staffList: any[];
 }>();
 
-const emit = defineEmits(["update:visible", "save"]);
+const emit = defineEmits(["save"]);
+const visible = defineModel<boolean>("visible", { default: false });
 
 const localStaff = ref<any[]>([]);
 const draggedIndex = ref<number | null>(null);
 
 // Sync local state when modal opens
 watch(
-  () => props.visible,
+  () => visible.value,
   (newVal) => {
     if (newVal) {
       localStaff.value = [...props.staffList];
@@ -112,14 +113,6 @@ watch(
   },
 );
 
-const getInitials = (name: string) => {
-  return name
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .substring(0, 2)
-    .toUpperCase();
-};
 
 // --- Drag & Drop Logic ---
 const onDragStart = (e: DragEvent, index: number) => {
@@ -142,7 +135,7 @@ const onDrop = (e: DragEvent, index: number) => {
 
 const saveOrder = () => {
   emit("save", localStaff.value);
-  emit("update:visible", false);
+  visible.value = false;
 };
 </script>
 

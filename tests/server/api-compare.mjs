@@ -105,6 +105,25 @@ const scenario = (ids) => {
   add("pay part: replay", "frontdesk", "POST", "/api/v1/transactions", { appointment_id: "$appt1", client_id: "$client1", amount: 15, payment_method: "cash" }, idem(4));
   add("pay split", "frontdesk", "POST", "/api/v1/transactions", { appointment_id: "$appt1", client_id: "$client1", amount: 10, payment_method: "card", amount2: 15, payment_method2: "cash" });
   add("pay as staff", "staff", "POST", "/api/v1/transactions", { appointment_id: "$appt2", client_id: "$client1", amount: 5, payment_method: "cash" });
+  // The payment route's other paths: combined same-day payments, money
+  // reaching past one booking's debt, sales alongside, gift cards, refusals.
+  add("book third", "frontdesk", "POST", "/api/v1/appointments", booking("14:00"));
+  add("book fourth", "frontdesk", "POST", "/api/v1/appointments", booking("16:00"));
+  const pay = (extra) => ({ appointment_id: "$apptb1", client_id: "$client1", payment_method: "card", ...extra });
+  add("pay combined", "frontdesk", "POST", "/api/v1/transactions", pay({ appointment_ids: ["$apptb1", "$apptc1"], amount: 60 }));
+  add("pay combined: unknown booking", "frontdesk", "POST", "/api/v1/transactions", pay({ appointment_ids: ["$apptb1", "11111111-1111-4111-8111-111111111111"], amount: 5 }));
+  add("pay combined: without the booking", "frontdesk", "POST", "/api/v1/transactions", pay({ appointment_ids: ["$apptc1"], amount: 5 }));
+  add("pay more than owed", "frontdesk", "POST", "/api/v1/transactions", pay({ amount: 9999 }));
+  add("pay past this booking's debt", "frontdesk", "POST", "/api/v1/transactions", pay({ appointment_id: "$apptc1", amount: 25, payment_method: "cash" }));
+  add("pay with a package sold", "frontdesk", "POST", "/api/v1/transactions", pay({ appointment_id: "$apptc1", amount: 5, payment_method: "cash", package_purchases: [{ package_type_id: ids.packageType }] }));
+  add("pay with a gift card sold, split", "frontdesk", "POST", "/api/v1/transactions", pay({ appointment_id: "$apptc1", amount: 0, payment_method: "card", amount2: 0, payment_method2: "cash", extras_amount2: 20, gift_card_purchases: [{ card_number: "CMP-0001", customer_name: "Compare", initial_amount: 50 }] }));
+  add("pay by gift card", "frontdesk", "POST", "/api/v1/transactions", pay({ appointment_id: "$apptc1", amount: 3, payment_method: "gift-card", gift_card_id: ids.giftCard }));
+  add("pay by gift card: none given", "frontdesk", "POST", "/api/v1/transactions", pay({ amount: 3, payment_method: "gift-card" }));
+  add("pay by membership: nothing redeemed", "frontdesk", "POST", "/api/v1/transactions", pay({ amount: 3, payment_method: "membership" }));
+  add("pay by membership: no membership", "frontdesk", "POST", "/api/v1/transactions", pay({ payment_method: "membership", redemptions: [{ service_id: ids.service, count: 1 }] }));
+  add("pay extras by an unknown way", "frontdesk", "POST", "/api/v1/transactions", pay({ amount: 0, payment_method: "bitcoin", package_purchases: [{ package_type_id: ids.packageType }] }));
+  add("bookings after these payments", "admin", "GET", "/api/v1/appointments?date=2027-02-10");
+  add("balance after these payments", "admin", "GET", "/api/v1/clients/$client1/balance");
   add("refund too much", "admin", "POST", "/api/v1/appointments/$appt1/refund", { amount: 999, payment_method: "cash", reason: "x" });
   add("refund", "admin", "POST", "/api/v1/appointments/$appt1/refund", { amount: 5, payment_method: "cash", reason: "compare" });
   add("price change", "admin", "POST", "/api/v1/appointments/$appt2/price-change", { new_total: 30, reason: "compare" });
@@ -298,6 +317,7 @@ const ids = {
   exercise: sql(db, `SELECT coalesce((SELECT id::text FROM exercises ORDER BY id LIMIT 1), '')`),
   inventory: sql(db, `SELECT coalesce((SELECT pi.id::text FROM product_inventory pi JOIN products p ON p.id = pi.product_id WHERE p.shop_id = '${SHOP}' ORDER BY pi.id LIMIT 1), '')`),
   tier: sql(db, `SELECT coalesce((SELECT id::text FROM membership_tiers WHERE shop_id='${SHOP}' ORDER BY id LIMIT 1), '')`),
+  giftCard: sql(db, `SELECT coalesce((SELECT id::text FROM gift_cards WHERE shop_id='${SHOP}' AND remaining_balance >= 3 AND (expires_at IS NULL OR expires_at > NOW()) ORDER BY id LIMIT 1), '')`),
   packageType: sql(db, `SELECT coalesce((SELECT id::text FROM package_types WHERE shop_id='${SHOP}' AND is_active ORDER BY id LIMIT 1), '')`),
 };
 ids.clientSearch = sql(db, `SELECT left(last_name, 4) FROM clients WHERE id='${ids.client}'`);
@@ -373,6 +393,8 @@ try {
       if (step.label === "create client") vars[name].client1 = r.data?.client?.id;
       if (step.label === "book") vars[name].appt1 = r.data?.id;
       if (step.label === "book second") vars[name].appt2 = r.data?.id;
+      if (step.label === "book third") vars[name].apptb1 = r.data?.id;
+      if (step.label === "book fourth") vars[name].apptc1 = r.data?.id;
       // Records made by the area requests: their id for the later steps.
       const made = {
         "create staff": "staff1", "staff time off add": "timeoff1", "create service": "service1", "create product": "product1",
@@ -381,6 +403,8 @@ try {
       }[step.label];
       if (made) vars[name][made] = r.data?.id ?? r.data?.productId;
       results[name].push({ label: step.label, status: r.status, data: normalize(r.data, known) });
+      // SHOW=<text>: prints the answers to the requests whose label has it.
+      if (name === "cur" && process.env.SHOW && step.label.includes(process.env.SHOW)) console.log(`${step.label}: ${r.status} ${JSON.stringify(r.data).slice(0, 160)}`);
     }
   }
   // What each server left in its database: counts and totals per table.

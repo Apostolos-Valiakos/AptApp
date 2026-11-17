@@ -9,6 +9,7 @@ module.exports = function giftCardsRouter({
   authenticateToken,
   canSellExtras,
   notForClients,
+  onlyAdmins,
 }) {
   const router = express.Router();
 
@@ -129,10 +130,7 @@ module.exports = function giftCardsRouter({
   }));
 
   // Edit gift card metadata (admin only) — balance/expiry are not editable here
-  router.put("/gift-cards/:id", authenticateToken, notForClients, asyncHandler(async (req, res) => {
-    if (req.user.role !== "admin" && req.user.role !== "super_admin") {
-      return res.status(403).json({ error: "Admins only" });
-    }
+  router.put("/gift-cards/:id", authenticateToken, notForClients, onlyAdmins, asyncHandler(async (req, res) => {
     const { card_number, customer_name, client_id, sold_by_staff_id } = req.body;
     const { rows } = await pool.query(
       `UPDATE gift_cards
@@ -154,10 +152,7 @@ module.exports = function giftCardsRouter({
   }));
 
   // Delete a gift card (admin only)
-  router.delete("/gift-cards/:id", authenticateToken, notForClients, asyncHandler(async (req, res) => {
-    if (req.user.role !== "admin" && req.user.role !== "super_admin") {
-      return res.status(403).json({ error: "Admins only" });
-    }
+  router.delete("/gift-cards/:id", authenticateToken, notForClients, onlyAdmins, asyncHandler(async (req, res) => {
     const { rowCount } = await pool.query(
       `DELETE FROM gift_cards WHERE id = $1 AND shop_id = $2`,
       [req.params.id, req.shopId],

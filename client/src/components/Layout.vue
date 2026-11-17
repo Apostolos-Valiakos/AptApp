@@ -277,6 +277,8 @@
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../composables/useNotify";
+import { useLocaleToggle } from "../composables/useLocaleToggle";
 import { api, ApiError } from "../api/http";
 import { ref, onMounted, onUnmounted, watch, computed, nextTick, defineAsyncComponent } from "vue";
 import { useRouter, useRoute } from "vue-router";
@@ -309,6 +311,7 @@ const authStore = useAuthStore();
 const chatStore = useChatStore();
 const settingsStore = useSettingsStore();
 const toast = useToast();
+const notify = useNotify();
 const mobileMenuOpen = ref(false);
 const { t, locale } = useI18n();
 
@@ -447,16 +450,9 @@ const navItems = computed(() => [
   },
 ]);
 
-const toggleLocale = () => {
-  const next = locale.value === "el" ? "en" : "el";
-  locale.value = next;
-  localStorage.setItem("locale", next);
-};
+const toggleLocale = useLocaleToggle();
 
-const isShopAdmin = computed(() => {
-  const role = authStore.user?.role;
-  return role === "admin" || role === "super_admin" || role === "frontdesk";
-});
+const isShopAdmin = computed(() => authStore.isShopAdmin);
 const isAnalyticsAllowed = computed(() => authStore.isAnalyticsAllowed);
 const isClient = computed(() => authStore.isClient);
 
@@ -471,7 +467,7 @@ const visibleNavItems = computed(() => {
     if (item.frontdeskOnly && authStore.user?.role !== "frontdesk") return false;
     if (item.hideFromAdmin && isAnalyticsAllowed.value) return false;
     if (item.platformOnly && !authStore.isOwner) return false;
-    if (item.hideFromStaff && authStore.user?.role === "staff") return false;
+    if (item.hideFromStaff && authStore.isStaff) return false;
 
     return true;
   });
@@ -538,9 +534,7 @@ const handleExitImpersonation = () => {
 
 // --- Ctrl+1: hide cash/gift-card revenue (global — works on any authenticated page) ---
 const isSuperAdmin = computed(() => authStore.user?.role === "super_admin");
-const isAdminOrAbove = computed(
-  () => authStore.user?.role === "admin" || authStore.user?.role === "super_admin",
-);
+const isAdminOrAbove = computed(() => authStore.isAnalyticsAllowed);
 
 // Admin/super_admin: persists + broadcasts shop-wide via the server, which
 // enforces who's allowed to change a currently-locked filter (an admin's
@@ -560,7 +554,7 @@ const toggleCashFilterAsAdmin = async () => {
     settingsStore.setHideCashPaid(newHidden);
     settingsStore.setCashLockedByShop(data.hidden, data.lockedBy);
   } catch {
-    toast.add({ severity: "error", summary: t("common.error"), detail: t("booking.toast.networkError"), life: 3000 });
+    notify.error(t("booking.toast.networkError"));
   }
 };
 
@@ -640,8 +634,7 @@ onMounted(() => {
 
   window.addEventListener("keydown", handleKeydown);
   if (authStore.isAuthenticated && !authStore.isClient) {
-    const token = localStorage.getItem("token");
-    if (token) chatStore.connect(token);
+    if (authStore.token) chatStore.connect(authStore.token);
   }
 
   resyncFilterState();

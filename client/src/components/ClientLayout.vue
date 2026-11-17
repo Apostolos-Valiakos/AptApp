@@ -174,6 +174,7 @@
 </template>
 
 <script setup lang="ts">
+import { useLocaleToggle } from "../composables/useLocaleToggle";
 import { api } from "../api/http";
 import { ref, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -234,11 +235,7 @@ const openNotification = async (n: any) => {
 
 const isActive = (path: string) => route.path.startsWith(path);
 
-const toggleLocale = () => {
-  const next = locale.value === "el" ? "en" : "el";
-  locale.value = next;
-  localStorage.setItem("locale", next);
-};
+const toggleLocale = useLocaleToggle();
 
 // Only ever active on client-portal pages (this component isn't mounted
 // anywhere else) — never touches admin/staff pages.

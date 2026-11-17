@@ -271,6 +271,8 @@
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../composables/useNotify";
+import { formatDate as dateText } from "../utils/format";
 import { api, withMessage } from "../api/http";
 import { ref, onMounted, computed } from "vue";
 import { useI18n } from "vue-i18n";
@@ -279,8 +281,9 @@ import { useConfirm } from "primevue/useconfirm";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "../stores/auth";
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const toast = useToast();
+const notify = useNotify();
 const confirm = useConfirm();
 const router = useRouter();
 const authStore = useAuthStore();
@@ -310,14 +313,7 @@ const statusSeverity = (status: string) => {
   return "danger";
 };
 
-const formatDate = (d: string) =>
-  d
-    ? new Date(d).toLocaleDateString("el-GR", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-      })
-    : "—";
+const formatDate = (d: string) => dateText(d, locale.value, "numeric", "—");
 
 const fetchData = async () => {
   tableLoading.value = true;
@@ -325,12 +321,7 @@ const fetchData = async () => {
     shops.value = await api.get("/api/v1/platform/shops");
   } catch (err) {
     console.error(err);
-    toast.add({
-      severity: "error",
-      summary: t("common.error"),
-      detail: t("platform.shops.toast.loadFailed"),
-      life: 4000,
-    });
+    notify.error(t("platform.shops.toast.loadFailed"));
   } finally {
     tableLoading.value = false;
   }
@@ -382,21 +373,11 @@ const saveShop = async () => {
   try {
     await api.request(method, url, body).catch(withMessage("Failed"));
 
-    toast.add({
-      severity: "success",
-      summary: t("common.success"),
-      detail: t("platform.shops.toast.saved"),
-      life: 3000,
-    });
+    notify.success(t("platform.shops.toast.saved"));
     showDialog.value = false;
     fetchData();
   } catch (err: any) {
-    toast.add({
-      severity: "error",
-      summary: t("common.error"),
-      detail: err.message || t("platform.shops.toast.saveFailed"),
-      life: 4000,
-    });
+    notify.error(err.message || t("platform.shops.toast.saveFailed"));
   } finally {
     loading.value = false;
   }
@@ -437,23 +418,13 @@ const createAdmin = async () => {
       })
       .catch(withMessage("Failed"));
 
-    toast.add({
-      severity: "success",
-      summary: t("common.success"),
-      detail: t("platform.admins.toast.created"),
-      life: 3000,
-    });
+    notify.success(t("platform.admins.toast.created"));
     newAdminUsername.value = "";
     newAdminPassword.value = "";
     openAdminsDialog(adminsTarget.value);
     fetchData();
   } catch (err: any) {
-    toast.add({
-      severity: "error",
-      summary: t("common.error"),
-      detail: err.message || t("platform.admins.toast.failed"),
-      life: 4000,
-    });
+    notify.error(err.message || t("platform.admins.toast.failed"));
   } finally {
     loading.value = false;
   }
@@ -469,21 +440,11 @@ const toggleAdminActive = (admin: any) => {
     accept: async () => {
       try {
         await api.put(`/api/v1/platform/admins/${admin.id}`, { is_active: !admin.is_active });
-        toast.add({
-          severity: "success",
-          summary: t("common.success"),
-          detail: t("platform.admins.toast.statusUpdated"),
-          life: 3000,
-        });
+        notify.success(t("platform.admins.toast.statusUpdated"));
         openAdminsDialog(adminsTarget.value);
         fetchData();
       } catch (err) {
-        toast.add({
-          severity: "error",
-          summary: t("common.error"),
-          detail: t("platform.admins.toast.failed"),
-          life: 4000,
-        });
+        notify.error(t("platform.admins.toast.failed"));
       }
     },
   });
@@ -518,20 +479,10 @@ const confirmResetPassword = async () => {
       })
       .catch(withMessage("Failed"));
 
-    toast.add({
-      severity: "success",
-      summary: t("common.success"),
-      detail: t("platform.admins.toast.passwordReset"),
-      life: 3000,
-    });
+    notify.success(t("platform.admins.toast.passwordReset"));
     showResetPasswordDialog.value = false;
   } catch (err: any) {
-    toast.add({
-      severity: "error",
-      summary: t("common.error"),
-      detail: err.message || t("platform.admins.toast.failed"),
-      life: 4000,
-    });
+    notify.error(err.message || t("platform.admins.toast.failed"));
   } finally {
     loading.value = false;
   }
@@ -548,20 +499,10 @@ const confirmImpersonate = (shop: any) => {
         const data = await api.post(`/api/v1/platform/impersonate/${shop.id}`).catch(withMessage("Failed"));
 
         authStore.startImpersonation(data.token, data.user);
-        toast.add({
-          severity: "success",
-          summary: t("common.success"),
-          detail: t("platform.shops.toast.impersonating", { name: shop.name }),
-          life: 3000,
-        });
+        notify.success(t("platform.shops.toast.impersonating", { name: shop.name }));
         router.push("/app/scheduler");
       } catch (err: any) {
-        toast.add({
-          severity: "error",
-          summary: t("common.error"),
-          detail: err.message || t("platform.shops.toast.impersonateFailed"),
-          life: 4000,
-        });
+        notify.error(err.message || t("platform.shops.toast.impersonateFailed"));
       }
     },
   });

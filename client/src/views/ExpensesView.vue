@@ -172,11 +172,12 @@
 </template>
 
 <script setup lang="ts">
-import { api as http, withMessage } from "../api/http";
+import { useNotify } from "../composables/useNotify";
+import { formatDate as dateText } from "../utils/format";
+import { useAdminActions } from "../composables/useResource";
 import { formatMoney } from "../utils/format";
 import { ref, reactive, computed, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
-import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 import { toLocalDateStr } from "../utils/staffAvailability";
 import { useSettingsStore } from "../stores/settings";
@@ -198,7 +199,7 @@ const sectionOptions = computed(() => [
 ]);
 const categories = ref<any[]>([]);
 const showCategories = ref(false);
-const toast = useToast();
+const notify = useNotify();
 const confirm = useConfirm();
 
 const METHODS = ["cash", "card", "bank-transfer"];
@@ -271,18 +272,12 @@ const visible = computed(() =>
 const visibleTotal = computed(() => visible.value.reduce((sum, e) => sum + Number(e.amount), 0));
 const canSave = computed(() => !!form.amount && form.amount > 0 && !!form.date && form.description.trim().length > 0);
 
-const formatDate = (iso: string) =>
-  new Date(`${iso}T00:00:00`).toLocaleDateString(locale.value === "el" ? "el-GR" : "en-GB", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
+const formatDate = (iso: string) => dateText(iso, locale.value);
 
 const formatMonth = (iso: string) =>
   new Date(`${iso}T00:00:00`).toLocaleDateString(locale.value === "el" ? "el-GR" : "en-GB", { month: "long", year: "numeric" });
 
-const api = (url: string, method = "GET", body?: any) =>
-  http.request(method, url, body || undefined).then((data) => data ?? {}).catch(withMessage(t("expenses.failed")));
+const { call: api } = useAdminActions(() => t("expenses.failed"), () => load());
 
 const load = async () => {
   loading.value = true;
@@ -293,7 +288,7 @@ const load = async () => {
     params.append("kind", section.value === "monthly" ? "monthly" : "daily");
     expenses.value = await api(`/api/v1/expenses?${params}`);
   } catch (e: any) {
-    toast.add({ severity: "error", summary: t("common.error"), detail: e.message, life: 3500 });
+    notify.error(e.message);
   } finally {
     loading.value = false;
   }
@@ -361,10 +356,10 @@ const save = async () => {
     if (form.id) await api(`/api/v1/expenses/${form.id}`, "PUT", body);
     else await api("/api/v1/expenses", "POST", body);
     showDialog.value = false;
-    toast.add({ severity: "success", summary: t("common.success"), detail: t("expenses.saved"), life: 2500 });
+    notify.success(t("expenses.saved"));
     await load();
   } catch (e: any) {
-    toast.add({ severity: "error", summary: t("common.error"), detail: e.message, life: 3500 });
+    notify.error(e.message);
   } finally {
     saving.value = false;
   }
@@ -381,7 +376,7 @@ const remove = (e: any) =>
         await api(`/api/v1/expenses/${e.id}`, "DELETE");
         await load();
       } catch (err: any) {
-        toast.add({ severity: "error", summary: t("common.error"), detail: err.message, life: 3500 });
+        notify.error(err.message);
       }
     },
   });

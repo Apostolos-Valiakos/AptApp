@@ -78,6 +78,8 @@
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../../composables/useNotify";
+import { formatDate as dateText } from "../../utils/format";
 import { api, ApiError } from "../../api/http";
 import { formatMoney } from "../../utils/format";
 import { ref, computed, watch, onMounted } from "vue";
@@ -87,6 +89,7 @@ import SellPackageDialog from "./SellPackageDialog.vue";
 
 const { t, locale } = useI18n();
 const toast = useToast();
+const notify = useNotify();
 
 const props = defineProps<{
   view: "use" | "sell";
@@ -133,8 +136,7 @@ const load = async () => {
 watch(() => [props.clientId, props.appointmentId], load);
 onMounted(load);
 
-const fmtDate = (d: string) =>
-  new Date(d).toLocaleDateString(locale.value, { day: "2-digit", month: "short", year: "numeric" });
+const fmtDate = (d: string) => dateText(d, locale.value, "short");
 
 const lineCount = (serviceId: string) =>
   props.servicesList.filter((s) => s.service_id === serviceId).length;
@@ -164,7 +166,7 @@ const redeem = async (p: any) => {
     emit("changed", data);
     await load();
   } catch (e: any) {
-    toast.add({ severity: "error", summary: t("common.error"), detail: e.message, life: 3500 });
+    notify.error(e.message);
   } finally {
     busyId.value = null;
   }
@@ -178,7 +180,7 @@ const undo = async (u: any) => {
     emit("changed", { ...data, amount: -Number(u.amount || 0), undo: true } as any);
     await load();
   } catch (e: any) {
-    toast.add({ severity: "error", summary: t("common.error"), detail: e.message, life: 3500 });
+    notify.error(e.message);
   }
 };
 
