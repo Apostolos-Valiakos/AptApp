@@ -10,6 +10,7 @@ import SchedulerView from "../../client/src/views/SchedulerView.vue";
 import BookingDialog from "../../client/src/components/BookingDialog.vue";
 import { useCalendarStore } from "../../client/src/stores/calendar";
 import { useWaitlist } from "../../client/src/composables/useWaitlist";
+import { useSettingsStore } from "../../client/src/stores/settings";
 import { clearOfflineData } from "../../client/src/offline/queue";
 import el from "../../client/src/i18n/locales/el";
 import {
@@ -854,8 +855,16 @@ describe("the phone's day view", () => {
     expect(shownStaff()).toEqual(["st1", "st2"]);
   });
 
-  test("a computer still shows staff on leave", async () => {
-    await openDay(onLeave("st2"));
+  test("phones have the switch in the week view too", async () => {
+    onPhone();
+    localStorage.setItem("scheduler.showAllStaff", "1");
+    const opened = await open("admin", onLeave("st2"));
+    await opened.options.datesSet({
+      startStr: `${MONDAY}T00:00:00`,
+      endStr: "2026-11-09T00:00:00",
+      view: { title: "", type: "resourceTimeGridWeek", calendar: { getDate: () => new Date(`${MONDAY}T00:00:00`) } },
+    });
+    await settle();
     expect(shownStaff()).toEqual(["st1", "st2"]);
   });
 
@@ -876,6 +885,71 @@ describe("the phone's day view", () => {
     expect(html).toContain("Massage");
     expect(html).toContain("line-clamp-2");
     expect(html).not.toContain("10:00");
+  });
+});
+
+describe("LV staff on leave aren't shown on the calendar", () => {
+  const bella = { ...staff[0], id: "st2", name: "Bella" };
+  const leave = (start: string, end: string) => ({
+    "GET /api/v1/staff": { body: [staff[0], bella] },
+    "GET /api/v1/time-off": { body: [{ staff_id: "st2", type: "leave", start_date: start, end_date: end }] },
+  });
+  const shownStaff = () => {
+    const calls = calendarApi.setOption.mock.calls.filter((c: any[]) => c[0] === "resources");
+    return calls[calls.length - 1][1].map((r: any) => r.id);
+  };
+  const show = async (options: any, type: string, start: string, end: string) => {
+    await options.datesSet({ startStr: `${start}T00:00:00`, endStr: `${end}T00:00:00`, view: { title: "", type, calendar: { getDate: () => new Date(`${start}T00:00:00`) } } });
+    await settle();
+  };
+  const bellaBooked = (day: string) => ({
+    "GET /api/v1/appointments": {
+      body: [{ ...appointment(), services: [{ ...appointment().services[0], staff_id: "st2", start_time: `${day}T10:00:00` }] }],
+    },
+  });
+  afterEach(() => localStorage.removeItem("scheduler.showAllStaff"));
+
+  test("a computer's day view leaves out who's on leave that day", async () => {
+    const { options } = await open("admin", leave(MONDAY, MONDAY));
+    await show(options, "resourceTimeGridDay", MONDAY, "2026-11-03");
+    expect(shownStaff()).toEqual(["st1"]);
+    // The next day they're back (Anna works Mondays only, so she's the one off).
+    await show(options, "resourceTimeGridDay", "2026-11-03", "2026-11-04");
+    expect(shownStaff()).toEqual(["st2"]);
+  });
+
+  test("unless they have a booking that day, which would otherwise be hidden with them", async () => {
+    const { options } = await open("admin", { ...leave(MONDAY, MONDAY), ...bellaBooked(MONDAY) });
+    await show(options, "resourceTimeGridDay", MONDAY, "2026-11-03");
+    expect(shownStaff()).toEqual(["st1", "st2"]);
+  });
+
+  test("the week view leaves out who's on leave all week; part of it, they're shown", async () => {
+    const all = await open("admin", leave(MONDAY, "2026-11-08"));
+    await show(all.options, "resourceTimeGridWeek", MONDAY, "2026-11-09");
+    expect(shownStaff()).toEqual(["st1"]);
+    all.wrapper.unmount();
+    const part = await open("admin", leave(MONDAY, "2026-11-04"));
+    await show(part.options, "resourceTimeGridWeek", MONDAY, "2026-11-09");
+    expect(shownStaff()).toEqual(["st1", "st2"]);
+  });
+
+  test("a booking in the week keeps them in the week view", async () => {
+    const { options } = await open("admin", { ...leave(MONDAY, "2026-11-08"), ...bellaBooked("2026-11-05") });
+    await show(options, "resourceTimeGridWeek", MONDAY, "2026-11-09");
+    expect(shownStaff()).toEqual(["st1", "st2"]);
+  });
+
+  test("the computer's \"show everyone\" button brings them back, and is remembered", async () => {
+    const { options } = await open("admin", leave(MONDAY, MONDAY));
+    await show(options, "resourceTimeGridDay", MONDAY, "2026-11-03");
+    const button = document.querySelector<HTMLElement>('[data-testid="show-all-staff-button"]')!;
+    expect(button.getAttribute("aria-pressed")).toBe("false");
+    button.click();
+    await settle();
+    expect(shownStaff()).toEqual(["st1", "st2"]);
+    expect(button.getAttribute("aria-pressed")).toBe("true");
+    expect(localStorage.getItem("scheduler.showAllStaff")).toBe("1");
   });
 });
 
@@ -1071,6 +1145,31 @@ describe("WS6 the waitlist on the calendar", () => {
     await settle();
     expect(count()).toBeUndefined();
     expect(document.querySelector('[data-testid="waitlist-button"]')).not.toBeNull();
+  });
+
+  test("Ctrl+1 hides it all: no button or number, the panel closes, and nothing is loaded until it's off", async () => {
+    const { server } = await open("frontdesk", {
+      "GET /api/v1/waitlist": { body: [waiting] },
+      "GET /api/v1/waitlist/freed": { body: [] },
+      "GET /api/v1/waitlist/bookable": { body: ["w1"] },
+    });
+    document.querySelector<HTMLElement>('[data-testid="waitlist-button"]')!.click();
+    await settle();
+    expect(useWaitlist().panelVisible.value).toBe(true);
+    const settings = useSettingsStore();
+    settings.setHideCashPaid(true);
+    await settle();
+    expect(document.querySelector('[data-testid="waitlist-button"]')).toBeNull();
+    expect(document.querySelector('[data-testid="waitlist-panel"]')).toBeNull();
+    expect(useWaitlist().panelVisible.value).toBe(false);
+    const loads = server.called("GET", "/api/v1/waitlist/bookable").length;
+    window.dispatchEvent(new CustomEvent("appointments-changed"));
+    await afterReload();
+    expect(server.called("GET", "/api/v1/waitlist/bookable")).toHaveLength(loads);
+    settings.setHideCashPaid(false);
+    await settle();
+    expect(count()).toBe("1");
+    expect(server.called("GET", "/api/v1/waitlist/bookable").length).toBeGreaterThan(loads);
   });
 
   test("staff neither see it nor load it", async () => {

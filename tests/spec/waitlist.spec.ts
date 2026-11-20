@@ -1,8 +1,8 @@
 // The front desk's waitlist on the calendar: who's waiting and for what,
 // adding and changing entries, booking one (the booking dialog opens filled
 // in, and the entry is sent along so it's marked booked), and the waiting
-// clients a cancelled booking's time suits. WS1–WS5 (WS6, on the calendar
-// itself, is in schedulerView.spec.ts).
+// clients a cancelled booking's time suits; filtering the list. WS1–WS5 and
+// WS7 (WS6, on the calendar itself, is in schedulerView.spec.ts).
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { defineComponent, h } from "vue";
 import WaitlistPanel from "../../client/src/components/waitlist/WaitlistPanel.vue";
@@ -308,5 +308,84 @@ describe("WS5 the booking dialog", () => {
     await settle();
     await answerConfirm(true);
     expect(freed).toHaveBeenCalledWith([{ staff_id: "st1", start: new Date("2026-11-19T18:00:00"), end: new Date("2026-11-19T19:00:00") }]);
+  });
+});
+
+describe("WS7 filtering the list", () => {
+  // Three waiting: MARIA (massage, anyone, Tue/Thu), ELENI (facial with Anna,
+  // any day) and NIKI (any service, Eleni, from 1 Dec), with ELENI bookable now.
+  const list = () => [
+    entry(),
+    entry({ id: "w2", client_name: "ΕΛΕΝΗ ΚΩΣΤΑ", client_phone: "6977 111 222", service_id: "fac", service_name: "Facial", staff_id: "st1", staff_name: "Anna", days: [], note: "πρωινά" }),
+    entry({ id: "w3", client_name: "NIKI S", client_phone: null, service_id: null, service_name: null, staff_id: "st2", staff_name: "Eleni", date_from: "2026-12-01", date_to: "2026-12-20", days: [] }),
+  ];
+  const names = () => [...document.querySelectorAll('[data-testid="waitlist-entry"]')].map((e) => e.textContent!.match(/MARIA PAPA|ΕΛΕΝΗ ΚΩΣΤΑ|NIKI S/)![0]);
+  const control = (wrapper: any, testid: string) =>
+    wrapper.findAllComponents({ name: testid.includes("date") ? "DatePicker" : "Select" }).find((c: any) => c.attributes("data-testid") === testid);
+  const setFilter = async (wrapper: any, testid: string, value: unknown) => {
+    control(wrapper, testid).vm.$emit("update:modelValue", value);
+    await settle();
+  };
+  const search = async (text: string) => {
+    const input = document.querySelector<HTMLInputElement>('[data-testid="waitlist-filter-search"]')!;
+    input.value = text;
+    input.dispatchEvent(new Event("input"));
+    await settle();
+  };
+  const openList = () => openPanel(list(), { "GET /api/v1/waitlist/bookable": { body: ["w2"] } });
+
+  test("a service keeps that service's entries and the ones for any service", async () => {
+    const { wrapper } = await openList();
+    await setFilter(wrapper, "waitlist-filter-service", "svc");
+    expect(names()).toEqual(["MARIA PAPA", "NIKI S"]);
+    expect(document.querySelector('[data-testid="waitlist-filter-count"]')!.textContent).toContain("2 από 3");
+  });
+
+  test("a therapist keeps the entries asking for them and the ones for anyone", async () => {
+    const { wrapper } = await openList();
+    await setFilter(wrapper, "waitlist-filter-staff", "st1");
+    expect(names()).toEqual(["ΕΛΕΝΗ ΚΩΣΤΑ", "MARIA PAPA"]);
+  });
+
+  test("a date keeps who can come on it: in their dates and on one of their weekdays", async () => {
+    const { wrapper } = await openList();
+    await setFilter(wrapper, "waitlist-filter-date", new Date("2026-11-19T00:00:00")); // a Thursday
+    expect(names()).toEqual(["ΕΛΕΝΗ ΚΩΣΤΑ", "MARIA PAPA"]);
+    await setFilter(wrapper, "waitlist-filter-date", new Date("2026-11-20T00:00:00")); // a Friday: not MARIA's
+    expect(names()).toEqual(["ΕΛΕΝΗ ΚΩΣΤΑ"]);
+    await setFilter(wrapper, "waitlist-filter-date", new Date("2026-12-05T00:00:00"));
+    expect(names()).toEqual(["NIKI S"]);
+  });
+
+  test("only those who can be booked now", async () => {
+    await openList();
+    (document.querySelector('[data-testid="waitlist-filter-bookable"] input') as HTMLInputElement).click();
+    await settle();
+    expect(names()).toEqual(["ΕΛΕΝΗ ΚΩΣΤΑ"]);
+  });
+
+  test("the search finds a name without accents, a phone written with spaces, or a note; filters add up and clear together", async () => {
+    const { wrapper } = await openList();
+    await search("ελενη");
+    expect(names()).toEqual(["ΕΛΕΝΗ ΚΩΣΤΑ"]);
+    await search("6977111");
+    expect(names()).toEqual(["ΕΛΕΝΗ ΚΩΣΤΑ"]);
+    await search("ΠΡΩΙΝΑ");
+    expect(names()).toEqual(["ΕΛΕΝΗ ΚΩΣΤΑ"]);
+    await setFilter(wrapper, "waitlist-filter-staff", "st2");
+    expect(names()).toEqual([]);
+    expect(pageText()).toContain(el.waitlist.filters.none);
+    await press("waitlist-filter-clear");
+    expect(names()).toEqual(["ΕΛΕΝΗ ΚΩΣΤΑ", "MARIA PAPA", "NIKI S"]);
+    expect(document.querySelector('[data-testid="waitlist-filter-count"]')).toBeNull();
+  });
+
+  test("a freed time's clients aren't filtered, and the filters are hidden there", async () => {
+    const { wrapper } = await openList();
+    await setFilter(wrapper, "waitlist-filter-staff", "st2");
+    useWaitlist().freedSlot.value = { id: "f1", staff_id: "st1", staff_name: "Anna", start: new Date("2026-11-19T18:00:00"), end: new Date("2026-11-19T19:00:00"), matches: [entry()] };
+    await settle();
+    expect(document.querySelector('[data-testid="waitlist-filters"]')).toBeNull();
+    expect(names()).toEqual(["MARIA PAPA"]);
   });
 });

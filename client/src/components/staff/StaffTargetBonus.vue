@@ -148,7 +148,11 @@ const fill = (r: Rule) => {
   draft.steps = r.steps.map((s) => ({ target: s.target, bonus: s.bonus }));
 };
 
-const { rules, current, loaded, dirty, load, add, remove, commit } = useStaffRules<Rule>("target-rules", () => props.staffId, fill);
+const { rules, current, loaded, dirty, incomplete, load, add, remove, commit } = useStaffRules<Rule>("target-rules", () => props.staffId, fill, {
+  values: () => ({ enabled: draft.enabled, steps: draft.steps }),
+  canAdd: () => canAdd.value,
+  addRule: () => addRule(),
+});
 const addRule = () =>
   add(draft.from as Date, {
     enabled: draft.enabled,
@@ -158,5 +162,5 @@ const addRule = () =>
 onMounted(load);
 // Today's rule in words, for the bonus picker.
 const summary = computed(() => (current.value ? describe(current.value) : null));
-defineExpose({ commit, dirty, summary });
+defineExpose({ commit, dirty, incomplete, summary });
 </script>

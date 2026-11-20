@@ -8,6 +8,7 @@ import AppointmentHoverCard from "../../client/src/components/AppointmentHoverCa
 import PaidAmount from "../../client/src/components/PaidAmount.vue";
 import AppointmentNotesTip from "../../client/src/components/AppointmentNotesTip.vue";
 import ClientQuickProfileDialog from "../../client/src/components/ClientQuickProfileDialog.vue";
+import ClientProfileDialog from "../../client/src/components/ClientProfileDialog.vue";
 import Tooltip from "primevue/tooltip";
 import { clearOfflineData } from "../../client/src/offline/queue";
 import { i18n } from "../../client/src/i18n";
@@ -128,10 +129,10 @@ describe("NP1 the client's notes in the booking dialog", () => {
 });
 
 describe("NP2 past visits in the booking dialog's sidebar", () => {
-  test("show what was paid of the total, and both notes behind an info icon", async () => {
+  test("show only what was paid, and both notes behind an info icon", async () => {
     await openBooking("admin");
     const row = document.querySelector('[data-testid="past-appointment"]')!;
-    expect(row.querySelector('[data-testid="paid-amount"]')?.textContent?.replace(/\s+/g, " ").trim()).toBe("20,00 € από 40,00 €");
+    expect(row.querySelector('[data-testid="paid-amount"]')?.textContent?.replace(/\s+/g, " ").trim()).toBe("20,00 €");
     expect(row.querySelector('[data-testid="appointment-notes-tip"]')?.getAttribute("aria-label")).toBe(
       "Σημειώσεις ραντεβού: Σχόλιο Ραντεβού\n\nΕσωτερική σημείωση: Prefers a firm massage",
     );
@@ -159,6 +160,18 @@ describe("NP3 the amount paid", () => {
   });
   test("nothing to pay reads as paid", () => {
     expect(text(0, 0)).toBe("0,00 €");
+  });
+  // A client's history shows only what the client paid.
+  const onlyPaid = (paid: number, total: number) =>
+    mount(PaidAmount, { props: { paid, total, onlyPaid: true }, global: { plugins: [i18n] } }).text().replace(/\s+/g, " ");
+  test("in a client's history: what was paid, never the total", () => {
+    expect(onlyPaid(40, 40)).toBe("40,00 €");
+    expect(onlyPaid(20, 40)).toBe("20,00 €");
+  });
+  test("in a client's history: nothing paid (or refunded), no amount at all", () => {
+    expect(onlyPaid(0, 40)).toBe("");
+    expect(onlyPaid(0, 0)).toBe("");
+    expect(onlyPaid(-10, 40)).toBe("");
   });
 });
 
@@ -234,5 +247,47 @@ describe("NP6 a visit in the client's quick profile", () => {
     await settle();
     expect(server.called("GET", "/api/v1/appointments")[0].url).toContain("date=2026-10-05");
     expect(opened).toHaveBeenCalledWith(dayRow);
+  });
+});
+
+describe("NP7 a client's history shows only what they paid", () => {
+  const visit = (id: string, paid: number, total: number) => ({
+    id, status: "completed", start_time: "2026-10-05T10:00:00", service_names: `Massage ${id}`, internal_notes: null, booking_notes: null,
+    paid, total_service_price: total, total_product_price: 0, services_paid: [],
+  });
+  const history = [visit("full", 40, 40), visit("part", 20, 40), visit("none", 0, 35)];
+  const amounts = (selector: string) =>
+    [...document.querySelectorAll<HTMLElement>(selector)].map((row) => row.querySelector('[data-testid="paid-amount"]')?.textContent?.replace(/\s+/g, " ").trim() ?? null);
+
+  test("the full profile: paid in full or in part, the amount paid; nothing paid, no amount", async () => {
+    saveLogin({ id: "u1", role: "admin", shop_id: "s1" });
+    fakeServer({ "GET /api/v1/clients/c1/full": { body: { client: clientRow, history, files: [] } } });
+    const Parent = defineComponent({
+      data: () => ({ visible: false }),
+      render() {
+        return h(ClientProfileDialog, { visible: (this as any).visible, clientId: "c1", initialTab: "History" });
+      },
+    });
+    const wrapper = mountScreen(Parent);
+    (wrapper.findComponent(Parent).vm as any).visible = true;
+    await settle();
+    const rows = [...document.querySelectorAll<HTMLElement>(".p-dialog .border-gray-100.rounded-lg")].filter((r) => r.textContent?.includes("Massage"));
+    expect(rows.map((r) => r.querySelector('[data-testid="paid-amount"]')?.textContent?.replace(/\s+/g, " ").trim() ?? null)).toEqual(["40,00 €", "20,00 €", null]);
+    expect(document.querySelector(".p-dialog")!.textContent).not.toContain("από");
+  });
+
+  test("the quick profile too", async () => {
+    saveLogin({ id: "u1", role: "admin", shop_id: "s1" });
+    fakeServer({ "GET /api/v1/clients/c1/full": { body: { client: clientRow, history } } });
+    const Parent = defineComponent({
+      data: () => ({ visible: false }),
+      render() {
+        return h(ClientQuickProfileDialog, { visible: (this as any).visible, clientId: "c1" });
+      },
+    });
+    const wrapper = mountScreen(Parent);
+    (wrapper.findComponent(Parent).vm as any).visible = true;
+    await settle();
+    expect(amounts('[data-testid="quick-profile-appointment"]')).toEqual(["40,00 €", "20,00 €", null]);
   });
 });

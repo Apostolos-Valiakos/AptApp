@@ -126,7 +126,7 @@
                   {{ t(`common.status.${statusKey(a.status)}`) }}
                 </span>
               </span>
-              <PaidAmount v-if="!authStore.isStaff" :paid="a.paid" :total="a.total" class="text-xs" />
+              <PaidAmount v-if="!authStore.isStaff" :paid="a.paid" :total="a.total" onlyPaid class="text-xs" />
             </span>
           </div>
         </div>

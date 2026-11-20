@@ -55,8 +55,60 @@
       </label>
     </div>
 
+    <!-- Filters for the list (not for a freed time's clients). -->
+    <div v-if="!freedSlot && entries.length" class="mb-3 space-y-2" data-testid="waitlist-filters">
+      <IconField>
+        <InputIcon class="pi pi-search" />
+        <InputText v-model="filters.search" :placeholder="t('waitlist.filters.search')" class="w-full" size="small" data-testid="waitlist-filter-search" />
+      </IconField>
+      <div class="grid grid-cols-2 gap-2">
+        <Select
+          v-model="filters.service"
+          :options="serviceOptions"
+          optionLabel="name"
+          optionValue="id"
+          filter
+          showClear
+          :placeholder="t('waitlist.filters.allServices')"
+          class="w-full min-w-0"
+          size="small"
+          data-testid="waitlist-filter-service"
+        />
+        <Select
+          v-model="filters.staff"
+          :options="staffOptions"
+          optionLabel="name"
+          optionValue="id"
+          filter
+          showClear
+          :placeholder="t('waitlist.filters.allStaff')"
+          class="w-full min-w-0"
+          size="small"
+          data-testid="waitlist-filter-staff"
+        />
+        <DatePicker
+          v-model="filters.date"
+          dateFormat="dd/mm/yy"
+          showButtonBar
+          :placeholder="t('waitlist.filters.date')"
+          class="w-full min-w-0"
+          inputClass="w-full"
+          size="small"
+          data-testid="waitlist-filter-date"
+        />
+        <label class="flex items-center gap-2 text-xs text-gray-600 cursor-pointer min-w-0">
+          <ToggleSwitch v-model="filters.bookableOnly" data-testid="waitlist-filter-bookable" />
+          <span class="leading-tight">{{ t("waitlist.filters.bookableOnly") }}</span>
+        </label>
+      </div>
+      <div v-if="filtering" class="flex items-center justify-between text-xs text-gray-500">
+        <span data-testid="waitlist-filter-count">{{ t("waitlist.filters.showing", { n: shown.length, total: entries.length }) }}</span>
+        <Button :label="t('waitlist.filters.clear')" icon="pi pi-times" text size="small" data-testid="waitlist-filter-clear" @click="clearFilters" />
+      </div>
+    </div>
+
     <p v-if="!shown.length && !loading" class="text-sm text-gray-400 text-center py-8">
-      {{ freedSlot ? t("waitlist.noMatches") : t("waitlist.empty") }}
+      {{ freedSlot ? t("waitlist.noMatches") : filtering ? t("waitlist.filters.none") : t("waitlist.empty") }}
     </p>
 
     <div class="space-y-2">
@@ -108,7 +160,7 @@
 // dialog opens filled in, and the entry is marked booked when it's saved).
 // On top, the times cancellations freed that suit someone waiting, each
 // opening on who it suits.
-import { computed, ref } from "vue";
+import { computed, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useConfirm } from "primevue/useconfirm";
 import WaitlistEntryDialog from "./WaitlistEntryDialog.vue";
@@ -118,6 +170,8 @@ import { useNotify } from "../../composables/useNotify";
 import { formatDate, clockTime } from "../../utils/format";
 import { askConfirm } from "../../utils/confirm";
 import { toLocalDateStr } from "../../utils/staffAvailability";
+import { foldText } from "../../utils/text";
+import { useCalendarStore } from "../../stores/calendar";
 
 // The booking to open: client, service, therapist, start and the entry it's from.
 const emit = defineEmits<{ book: [seed: Record<string, any>] }>();
@@ -134,11 +188,47 @@ const dismiss = async (f: FreedSlot) => {
   }
 };
 
+// The list's filters. A service or therapist also keeps the entries that take
+// any service or anyone; a date keeps the entries that can come on it (in
+// their dates and on one of their weekdays).
+const calendarStore = useCalendarStore();
+const filters = reactive({ search: "", service: null as string | null, staff: null as string | null, date: null as Date | null, bookableOnly: false });
+const filtering = computed(() => !!(filters.search.trim() || filters.service || filters.staff || filters.date || filters.bookableOnly));
+const clearFilters = () => Object.assign(filters, { search: "", service: null, staff: null, date: null, bookableOnly: false });
+// The shop's services and staff, plus any an entry names that has since gone.
+const optionsFrom = (list: any[], idKey: "service_id" | "staff_id", nameKey: "service_name" | "staff_name") => {
+  const named = new Map<string, string>(list.map((x: any) => [String(x.id), x.name]));
+  for (const e of entries.value) if (e[idKey] && !named.has(String(e[idKey]))) named.set(String(e[idKey]), e[nameKey] || "—");
+  return [...named].map(([id, name]) => ({ id, name }));
+};
+const serviceOptions = computed(() => optionsFrom((calendarStore.services || []).filter((s: any) => s.is_active !== false), "service_id", "service_name"));
+const staffOptions = computed(() => optionsFrom(calendarStore.resources || [], "staff_id", "staff_name"));
+// The search: name, phone or note, ignoring accents; a phone also matches
+// written without its spaces ("690 000" finds 6900001234).
+const searchHits = (e: WaitlistEntry, q: string) => {
+  if ([e.client_name, e.client_phone, e.note].some((v) => foldText(v || "").includes(q))) return true;
+  const digits = q.replace(/\D/g, "");
+  return !!digits && (e.client_phone || "").replace(/\D/g, "").includes(digits);
+};
+const matches = (e: WaitlistEntry) => {
+  const q = foldText(filters.search.trim());
+  if (q && !searchHits(e, q)) return false;
+  if (filters.service && e.service_id && String(e.service_id) !== filters.service) return false;
+  if (filters.staff && e.staff_id && String(e.staff_id) !== filters.staff) return false;
+  if (filters.date) {
+    const day = toLocalDateStr(filters.date);
+    if (day < e.date_from || day > e.date_to) return false;
+    if (e.days?.length && !e.days.includes(filters.date.getDay())) return false;
+  }
+  if (filters.bookableOnly && !bookable.value.includes(e.id)) return false;
+  return true;
+};
+
 // The ones who can be booked now first (otherwise in the list's order).
 const shown = computed(() => {
   if (freedSlot.value) return freedSlot.value.matches;
   const can = (e: WaitlistEntry) => (bookable.value.includes(e.id) ? 0 : 1);
-  return [...entries.value].sort((a, b) => can(a) - can(b));
+  return entries.value.filter(matches).sort((a, b) => can(a) - can(b));
 });
 const todayStr = () => toLocalDateStr(new Date());
 const isPast = (e: WaitlistEntry) => e.date_to < todayStr();

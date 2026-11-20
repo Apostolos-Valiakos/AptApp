@@ -616,3 +616,66 @@ describe("BN13 the staff form shows one kind of bonus at a time, picked from a l
     expect(server.called("POST", "/api/v1/staff/st1/product-commission-rules")).toHaveLength(1);
   });
 });
+
+describe("BN14 a change typed in but not added with + isn't lost", () => {
+  const allSaves = {
+    ...ruleSaves,
+    "POST /api/v1/staff/st1/product-commission-rules": { status: 201, body: { rules: [] } },
+  };
+
+  test("Save adds it: a new percentage is sent, from the date picked", async () => {
+    const server = await openStaffForm("admin", allSaves);
+    await setNumber("bonus-percent", "15");
+    // Marked as not saved yet, before Save.
+    expect(byTestId("bonus-rule-unsaved")).not.toBeNull();
+    await saveStaffForm();
+    const posts = server.called("POST", "/api/v1/staff/st1/bonus-rules");
+    expect(posts).toHaveLength(1);
+    expect(posts[0].body).toMatchObject({ enabled: true, kind: "percent", threshold_minutes: 300, percent: 15 });
+    expect(posts[0].body.effective_from).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(document.querySelector(".p-dialog")).toBeNull();
+  });
+
+  test("also in a section not on show: commission switched on while the hours bonus is shown", async () => {
+    const server = await openStaffForm("admin", allSaves);
+    (byTestId("commission-enabled")!.querySelector("input") as HTMLInputElement).click();
+    await settle();
+    await saveStaffForm();
+    expect(server.called("POST", "/api/v1/staff/st1/product-commission-rules")[0]?.body).toMatchObject({ enabled: true, percent: 10 });
+    expect(server.called("POST", "/api/v1/staff/st1/bonus-rules")).toHaveLength(0);
+  });
+
+  test("added with + and then left alone: sent once", async () => {
+    const server = await openStaffForm("admin", allSaves);
+    await setNumber("bonus-percent", "15");
+    await press("bonus-add");
+    await saveStaffForm();
+    expect(server.called("POST", "/api/v1/staff/st1/bonus-rules")).toHaveLength(1);
+  });
+
+  test("nothing changed, or changed and put back: no rule is sent", async () => {
+    const server = await openStaffForm("admin", allSaves);
+    await setNumber("bonus-percent", "15");
+    await setNumber("bonus-percent", "10");
+    expect(byTestId("bonus-rule-unsaved")).toBeNull();
+    await saveStaffForm();
+    expect(server.called("PUT", "/api/v1/staff/st1")).toHaveLength(1);
+    expect(server.called("POST", "/api/v1/staff/st1/bonus-rules")).toHaveLength(0);
+    expect(server.called("POST", "/api/v1/staff/st1/product-commission-rules")).toHaveLength(0);
+  });
+
+  test("an incomplete change stops Save before anything is saved, and says why", async () => {
+    const server = await openStaffForm("admin", allSaves);
+    [...byTestId("bonus-kind")!.querySelectorAll<HTMLElement>("button")].find((b) => b.textContent?.includes(el.bonus.rules.kinds.per_hour))!.click();
+    await settle();
+    await saveStaffForm();
+    expect(server.called("PUT", "/api/v1/staff/st1")).toHaveLength(0);
+    expect(server.called("POST", "/api/v1/staff/st1/bonus-rules")).toHaveLength(0);
+    expect(pageText()).toContain(el.bonus.rules.incomplete);
+    expect(document.querySelector(".p-dialog")).not.toBeNull();
+    // Finished: Save goes through.
+    await setNumber("bonus-amount", "4");
+    await saveStaffForm();
+    expect(server.called("POST", "/api/v1/staff/st1/bonus-rules")[0]?.body).toMatchObject({ kind: "per_hour", amount_per_hour: 4 });
+  });
+});

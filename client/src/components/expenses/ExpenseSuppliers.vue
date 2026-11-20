@@ -19,11 +19,25 @@
     </div>
 
     <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-3 sm:p-6">
-      <div class="flex justify-between items-baseline mb-4 flex-wrap gap-2 px-1 sm:px-0">
+      <div class="flex justify-between items-center mb-4 flex-wrap gap-2 px-1 sm:px-0">
         <span class="text-sm text-gray-500">{{ t("expenses.suppliers.count", { n: shown.length }) }}</span>
-        <span class="text-lg font-bold text-gray-900 tabular-nums" data-testid="suppliers-total">
-          {{ t("expenses.suppliers.paidTotal") }}: {{ formatMoney(shownTotal) }}
-        </span>
+        <div class="flex items-center gap-3 flex-wrap">
+          <span class="text-lg font-bold text-gray-900 tabular-nums" data-testid="suppliers-total">
+            {{ t("expenses.suppliers.paidTotal") }}: {{ formatMoney(shownTotal) }}
+          </span>
+          <Button
+            :label="t('expenses.export')"
+            icon="pi pi-file-excel"
+            severity="secondary"
+            outlined
+            size="small"
+            class="whitespace-nowrap"
+            :disabled="!shown.length"
+            :loading="exporting"
+            data-testid="suppliers-export"
+            @click="exportExcel"
+          />
+        </div>
       </div>
 
       <DataTable
@@ -127,6 +141,7 @@ import { useNotify } from "../../composables/useNotify";
 import { formatDate as dateText, formatMoney } from "../../utils/format";
 import { foldText } from "../../utils/text";
 import { askConfirm } from "../../utils/confirm";
+import { exportXlsx } from "../../utils/exportXlsx";
 import { toLocalDateStr } from "../../utils/staffAvailability";
 import { useSettingsStore } from "../../stores/settings";
 import SupplierDialog from "./SupplierDialog.vue";
@@ -200,6 +215,47 @@ const loadOrders = async (id: string) => {
 };
 
 const onRowExpand = (e: { data: { id: string } }) => loadOrders(e.data.id);
+
+// The suppliers shown (the search applies) with their totals, and every
+// payment to them in the dates (Ctrl+1 / Ctrl+8 apply, as on screen).
+const exporting = ref(false);
+const exportExcel = async () => {
+  exporting.value = true;
+  try {
+    const list = shown.value;
+    const withOrders = list.filter((s) => Number(s.orders) > 0);
+    const payments = await Promise.all(withOrders.map((s) => api.get(`/api/v1/suppliers/${s.id}/expenses?${query()}`) as Promise<any[]>));
+    const supplierRows = list.map((s) => ({
+      [t("expenses.suppliers.name")]: s.name,
+      [t("expenses.suppliers.phone")]: s.phone || "",
+      [t("expenses.suppliers.vat")]: s.vat_number || "",
+      [t("expenses.suppliers.ordersHeader")]: Number(s.orders) || 0,
+      [t("expenses.suppliers.lastPaid")]: s.last_paid ? formatDate(s.last_paid) : "",
+      [t("expenses.suppliers.paid")]: Number(s.total) || 0,
+      [t("expenses.suppliers.removed")]: s.is_active ? "" : "✓",
+    }));
+    const paymentRows = withOrders.flatMap((s, i) =>
+      payments[i].map((o) => ({
+        [t("expenses.suppliers.name")]: s.name,
+        [t("expenses.date")]: o.kind === "monthly" ? formatMonth(o.expense_date) : formatDate(o.expense_date),
+        [t("expenses.suppliers.kind")]: t(`expenses.kinds.${o.kind}`),
+        [t("expenses.category")]: o.category_name || "",
+        [t("expenses.description")]: o.description,
+        [t("expenses.method")]: t(`common.paymentMethod.${o.payment_method}`),
+        [t("expenses.amount")]: Number(o.amount),
+      })),
+    );
+    const span = [from.value, to.value].map((d) => (d ? toLocalDateStr(d) : "")).filter(Boolean).join("_");
+    await exportXlsx(`suppliers${span ? `_${span}` : ""}.xlsx`, [
+      { name: t("expenses.suppliers.sheetSuppliers"), rows: supplierRows, fitColumns: true },
+      { name: t("expenses.suppliers.sheetOrders"), rows: paymentRows, fitColumns: true },
+    ]);
+  } catch {
+    notify.error(t("expenses.failed"));
+  } finally {
+    exporting.value = false;
+  }
+};
 
 const openNew = () => {
   editing.value = null;

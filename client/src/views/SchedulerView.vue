@@ -83,7 +83,7 @@
       @open-appointment="selectedAppointment = $event"
       @freed="refreshWaitlist"
     />
-    <WaitlistPanel v-if="!isStaffRole" @book="openFromWaitlist" />
+    <WaitlistPanel v-if="showWaitlist" @book="openFromWaitlist" />
     <AppointmentSwapDialog
       v-model:visible="swapDialogVisible"
       :appointments="calendarStore.events"
@@ -146,7 +146,7 @@ import SchedulerToolbar from "./scheduler/SchedulerToolbar.vue";
 import SchedulerDayStrip from "./scheduler/SchedulerDayStrip.vue";
 import SchedulerDockedCalendar from "./scheduler/SchedulerDockedCalendar.vue";
 import { SchedulerKey } from "./scheduler/context";
-import { onMounted, onUnmounted } from "vue";
+import { onMounted, onUnmounted, watch } from "vue";
 import WaitlistPanel from "../components/waitlist/WaitlistPanel.vue";
 import { useWaitlist } from "../composables/useWaitlist";
 import { useSchedulerCore } from "./scheduler/useSchedulerCore";
@@ -172,7 +172,7 @@ const options = useCalendarOptions({ ...core, ...phone, ...docked, ...data, ...h
 provide(SchedulerKey, { ...core, ...phone, ...docked, ...data, ...hover, ...zoom, ...moves, ...live, ...options });
 
 const {
-  reorderDialogVisible, calendarStore, isStaffRole, dialogVisible, clientSearchVisible, quickProfileVisible, quickProfileClientId, fullProfileVisible,
+  reorderDialogVisible, calendarStore, isStaffRole, showWaitlist, dialogVisible, clientSearchVisible, quickProfileVisible, quickProfileClientId, fullProfileVisible,
   fullProfileTab, swapDialogVisible, selectedAppointment, fullCalendar, isFetching, shopSlotMinTime, shopSlotMaxTime, handleSwap,
   handleReorderSave, handleSave, handleRefresh, onClientSelected, onBookForClient, quickProfileReloadKey, openFromQuickProfile, onOpenFullProfile,
   t, calendarResources, hoveredAppointment, hoverAnchorRect, slotRowHeight, closeMenus, calendarOptions,
@@ -185,16 +185,22 @@ const {
 const waitlist = useWaitlist();
 let waitlistTimer: ReturnType<typeof setTimeout> | null = null;
 const refreshWaitlist = () => {
-  if (isStaffRole.value) return;
+  if (!showWaitlist.value) return;
   if (waitlistTimer) clearTimeout(waitlistTimer);
   waitlistTimer = setTimeout(() => {
     waitlistTimer = null;
     waitlist.refresh();
   }, 300);
 };
+// Ctrl+1 on: the panel closes; off again: the waitlist is loaded afresh.
+watch(showWaitlist, (shown) => {
+  if (shown) return waitlist.refresh();
+  waitlist.panelVisible.value = false;
+  waitlist.freedSlot.value = null;
+});
 onMounted(() => {
   if (isStaffRole.value) return;
-  waitlist.refresh();
+  if (showWaitlist.value) waitlist.refresh();
   window.addEventListener("appointments-changed", refreshWaitlist);
   window.addEventListener("waitlist-changed", refreshWaitlist);
 });

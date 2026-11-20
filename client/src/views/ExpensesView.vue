@@ -73,11 +73,24 @@
     <ExpenseSuppliers v-else-if="section === 'suppliers'" ref="suppliersPanel" @changed="loadSuppliers" @addExpense="openForSupplier" />
 
     <div v-else class="bg-white rounded-2xl shadow-sm border border-gray-100 p-3 sm:p-6">
-      <div class="flex justify-between items-baseline mb-4 flex-wrap gap-2 px-1 sm:px-0">
+      <div class="flex justify-between items-center mb-4 flex-wrap gap-2 px-1 sm:px-0">
         <span class="text-sm text-gray-500">{{ t("expenses.count", { n: visible.length }) }}</span>
-        <span class="text-lg font-bold text-gray-900 tabular-nums">
-          {{ t("expenses.total") }}: {{ formatMoney(visibleTotal) }}
-        </span>
+        <div class="flex items-center gap-3 flex-wrap">
+          <span class="text-lg font-bold text-gray-900 tabular-nums">
+            {{ t("expenses.total") }}: {{ formatMoney(visibleTotal) }}
+          </span>
+          <Button
+            :label="t('expenses.export')"
+            icon="pi pi-file-excel"
+            severity="secondary"
+            outlined
+            size="small"
+            class="whitespace-nowrap"
+            :disabled="!visible.length"
+            data-testid="expenses-export"
+            @click="exportExcel"
+          />
+        </div>
       </div>
 
       <DataTable
@@ -211,6 +224,7 @@ import { useNotify } from "../composables/useNotify";
 import { formatDate as dateText } from "../utils/format";
 import { useAdminActions } from "../composables/useResource";
 import { formatMoney } from "../utils/format";
+import { exportXlsx } from "../utils/exportXlsx";
 import { ref, reactive, computed, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useConfirm } from "primevue/useconfirm";
@@ -343,6 +357,23 @@ const visible = computed(() =>
   ),
 );
 const visibleTotal = computed(() => visible.value.reduce((sum, e) => sum + Number(e.amount), 0));
+
+// The list as shown (its filters, Ctrl+1 / Ctrl+8 included), newest first.
+const exportExcel = () => {
+  const monthly = section.value === "monthly";
+  const rows = [...visible.value]
+    .sort((a, b) => (a.expense_date < b.expense_date ? 1 : a.expense_date > b.expense_date ? -1 : 0))
+    .map((e) => ({
+      [monthly ? t("expenses.month") : t("expenses.date")]: monthly ? formatMonth(e.expense_date) : formatDate(e.expense_date),
+      [t("expenses.category")]: e.category_name || t("expenses.noCategory"),
+      [t("expenses.supplier")]: e.supplier_name || "",
+      [t("expenses.description")]: e.description,
+      [t("expenses.method")]: t(`common.paymentMethod.${e.payment_method}`),
+      [t("expenses.amount")]: Number(e.amount),
+    }));
+  const span = [filters.from, filters.to].map((d) => (d ? toLocalDateStr(d) : "")).filter(Boolean).join("_");
+  return exportXlsx(`expenses_${section.value}${span ? `_${span}` : ""}.xlsx`, [{ name: t("expenses.sheet"), rows, fitColumns: true }]);
+};
 const canSave = computed(() => !!form.amount && form.amount > 0 && !!form.date && form.description.trim().length > 0);
 
 const formatDate = (iso: string) => dateText(iso, locale.value);

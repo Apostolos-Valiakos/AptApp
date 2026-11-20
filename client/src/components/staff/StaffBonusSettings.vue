@@ -66,7 +66,7 @@ const hours = ref<InstanceType<typeof StaffBonusRules> | null>(null);
 const commission = ref<InstanceType<typeof StaffProductCommission> | null>(null);
 const target = ref<InstanceType<typeof StaffTargetBonus> | null>(null);
 const reviews = ref<InstanceType<typeof StaffReviewBonus> | null>(null);
-const sections = computed<Record<Section, { dirty: boolean; summary: string | null } | null>>(() => ({
+const sections = computed<Record<Section, { dirty: boolean; incomplete: boolean; summary: string | null } | null>>(() => ({
   hours: hours.value,
   commission: commission.value,
   target: target.value,
@@ -75,10 +75,18 @@ const sections = computed<Record<Section, { dirty: boolean; summary: string | nu
 
 const info = (value: Section) => sections.value[value];
 
+// A section with a change that can't be saved as it is: shown, so it can be
+// finished. Answers whether there was one.
+const showIncomplete = () => {
+  const found = (Object.keys(sections.value) as Section[]).find((key) => sections.value[key]?.incomplete);
+  if (found) section.value = found;
+  return !!found;
+};
+
 const commit = async (staffId: string) => {
   for (const s of [hours.value, commission.value, target.value, reviews.value]) {
     if (s) await s.commit(staffId);
   }
 };
-defineExpose({ commit });
+defineExpose({ commit, showIncomplete });
 </script>

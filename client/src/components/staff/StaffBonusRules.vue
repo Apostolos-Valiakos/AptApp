@@ -155,7 +155,11 @@ const fill = (r: Rule) => {
   draft.amount = r.amount_per_hour || null;
 };
 
-const { rules, current, loaded, dirty, load, add, remove, commit } = useStaffRules<Rule>("bonus-rules", () => props.staffId, fill);
+const { rules, current, loaded, dirty, incomplete, load, add, remove, commit } = useStaffRules<Rule>("bonus-rules", () => props.staffId, fill, {
+  values: () => ({ enabled: draft.enabled, kind: draft.kind, hours: draft.hours, percent: draft.percent, amount: draft.amount }),
+  canAdd: () => canAdd.value,
+  addRule: () => addRule(),
+});
 
 // The kind not chosen keeps its value, ready if the rule is switched back.
 const addRule = () =>
@@ -170,7 +174,7 @@ const addRule = () =>
 onMounted(load);
 // Today's rule in words, for the bonus picker.
 const summary = computed(() => (current.value ? describe(current.value) : null));
-defineExpose({ commit, dirty, summary });
+defineExpose({ commit, dirty, incomplete, summary });
 </script>
 
 <style>

@@ -181,9 +181,9 @@
         </button>
       </div>
 
-      <!-- Phone: staff who are off that day are hidden unless asked for -->
+      <!-- Phone: staff who are off or on leave are hidden unless asked for -->
       <label
-        v-if="isPhone && currentView === 'resourceTimeGridDay'"
+        v-if="isPhone && currentView !== 'dayGridMonth'"
         class="flex items-center justify-between gap-3 text-xs font-medium text-gray-600"
       >
         {{ t("scheduler.showAllStaff") }}
@@ -232,9 +232,21 @@
 
       <!-- Secondary: Swap + Reorder -->
       <div class="flex items-center gap-1">
-        <!-- The waitlist (front desk and admins); its number: the waiting clients who can be booked now. -->
+        <!-- Computer: staff who are off or on leave are hidden unless asked for (the phone's is a switch above). -->
         <button
-          v-if="!isStaffRole"
+          v-if="!isPhone && currentView !== 'dayGridMonth'"
+          @click="setShowAllStaff(!showAllStaff)"
+          class="p-2 rounded-lg border transition-colors flex-shrink-0"
+          :class="showAllStaff ? 'border-[var(--p-primary-color)] bg-[var(--p-primary-50)] text-[var(--p-primary-700)]' : 'border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-800'"
+          :title="t('scheduler.showAllStaff')"
+          :aria-pressed="showAllStaff"
+          data-testid="show-all-staff-button"
+        >
+          <i class="pi pi-users text-sm"></i>
+        </button>
+        <!-- The waitlist (front desk and admins; hidden by Ctrl+1); its number: the waiting clients who can be booked now. -->
+        <button
+          v-if="showWaitlist"
           @click="waitlistPanel = true"
           class="relative p-2 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-800 transition-colors flex-shrink-0"
           :title="waitlistCount ? `${t('waitlist.title')}: ${t('waitlist.countTitle', { n: waitlistCount })}` : t('waitlist.title')"
@@ -290,7 +302,7 @@ import { useScheduler } from "./context";
 import { useWaitlist } from "../../composables/useWaitlist";
 
 const {
-  reorderDialogVisible, settings, isStaffRole, clientSearchVisible, currentTitle, currentView, todayDate, canGoPrev,
+  reorderDialogVisible, settings, isStaffRole, showWaitlist, clientSearchVisible, currentTitle, currentView, todayDate, canGoPrev,
   fitStaff, toggleFitStaff, statusFilter, statusFilterOptions, viewOptions, calendarApi, openSwapDialog, t,
   isPhone, mobileMenuOpen, mobileMonthTitle, showDatePicker, pickerDate, calendarDocked, dockCalendar, toggleDatePicker,
   onDatePicked, showAllStaff, setShowAllStaff, zoomIn, zoomOut, changeView,

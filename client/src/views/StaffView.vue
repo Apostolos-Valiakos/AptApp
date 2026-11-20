@@ -654,7 +654,12 @@ const editStaff = (data: any) => {
 };
 
 const saveStaff = async () => {
-  // ... (Keep existing save logic, ensure you add Authorization header) ...
+  // A bonus rule changed but left incomplete: nothing is saved until it's
+  // finished or put back (its section is shown).
+  if (bonusSettings.value?.showIncomplete()) {
+    notify.error(t("bonus.rules.incomplete"));
+    return;
+  }
   loading.value = true;
   const url = editingStaff.value.id
     ? `/api/v1/staff/${editingStaff.value.id}`

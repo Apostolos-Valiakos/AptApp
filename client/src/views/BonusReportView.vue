@@ -262,10 +262,99 @@ const saveReviews = async () => {
   }
 };
 
-const exportExcel = () =>
-  exportXlsx(`bonus_${report.value.from}_${report.value.to}.xlsx`, [
+// Excel sheet names: at most 31 characters, none of : \ / ? * [ ], and no two alike.
+const sheetNames = (names: string[]) => {
+  const used = new Set<string>();
+  return names.map((raw) => {
+    const base = raw.replace(/[:\\/?*[\]]/g, " ").trim().slice(0, 31) || "—";
+    let name = base;
+    for (let n = 2; used.has(name.toLowerCase()); n++) name = `${base.slice(0, 31 - String(n).length - 1)} ${n}`;
+    used.add(name.toLowerCase());
+    return name;
+  });
+};
+
+// One staff member's sheet: each day (and, under a percent rule, the services
+// that earned on it), each product sold, each month's target and review
+// bonus, then the total, so the sheet can be handed to them as it is.
+const staffSheetRows = (r: any) => {
+  const k = (key: string) => t(`bonus.staffSheet.${key}`);
+  const row = (o: Record<string, unknown>) => ({
+    [k("kind")]: "", [t("bonus.date")]: "", [k("time")]: "", [k("item")]: "", [k("client")]: "",
+    [k("minutes")]: "", [k("extraMinutes")]: "", [k("value")]: "", [t("bonus.bonus")]: "", ...o,
+  });
+  const rows: Record<string, unknown>[] = [];
+  for (const d of r.days) {
+    rows.push(row({
+      [k("kind")]: k("day"),
+      [t("bonus.date")]: d.date,
+      [k("item")]: t("bonus.staffSheet.dayLine", {
+        minutes: number(d.minutes),
+        hours: number(d.threshold_minutes / 60),
+        rule: d.kind === "per_hour" ? t("bonus.perHourShort", { amount: number(d.amount_per_hour) }) : `${number(d.percent)}%`,
+      }),
+      [k("minutes")]: d.minutes,
+      [k("extraMinutes")]: d.extra_minutes,
+      [t("bonus.bonus")]: d.bonus,
+    }));
+    for (const sv of d.services) {
+      rows.push(row({
+        [k("kind")]: sv.is_redemption ? `${k("service")} (${t("bonus.redemption")})` : k("service"),
+        [t("bonus.date")]: d.date,
+        [k("time")]: clockTime(sv.start_time),
+        [k("item")]: sv.service_name,
+        [k("client")]: sv.client_name || "",
+        [k("minutes")]: sv.minutes,
+        [k("extraMinutes")]: sv.extra_minutes,
+        [k("value")]: sv.price,
+        [t("bonus.bonus")]: sv.bonus,
+      }));
+    }
+  }
+  for (const p of r.products) {
+    rows.push(row({
+      [k("kind")]: k("product"),
+      [t("bonus.date")]: p.day,
+      [k("item")]: [
+        t("bonus.staffSheet.productLine", { quantity: p.quantity, product: p.product_name || "—" }),
+        p.cost != null ? t("bonus.staffSheet.productCost", { cost: formatMoney(p.cost), profit: formatMoney(p.base), percent: number(p.percent) }) : `${number(p.percent)}%`,
+      ].join(" · "),
+      [k("client")]: p.client_name || "",
+      [k("value")]: p.total_price,
+      [t("bonus.bonus")]: p.bonus,
+    }));
+  }
+  for (const m of r.targets || []) {
+    rows.push(row({
+      [k("kind")]: k("target"),
+      [t("bonus.date")]: m.month,
+      [k("item")]: t("bonus.staffSheet.targetLine", {
+        sales: formatMoney(m.sales),
+        reached: m.reached ? t("bonus.staffSheet.targetReached", { target: formatMoney(m.reached.target) }) : "",
+      }),
+      [k("value")]: m.sales,
+      [t("bonus.bonus")]: m.bonus,
+    }));
+  }
+  for (const m of r.reviews || []) {
+    rows.push(row({
+      [k("kind")]: k("reviews"),
+      [t("bonus.date")]: m.month,
+      [k("item")]: m.reviews == null
+        ? k("reviewsMissing")
+        : t("bonus.staffSheet.reviewsLine", { start: m.start_count, end: m.end_count, n: m.reviews, amount: formatMoney(m.amount_per_review) }),
+      [t("bonus.bonus")]: m.bonus,
+    }));
+  }
+  rows.push(row({ [k("kind")]: k("total"), [t("bonus.bonus")]: r.bonus }));
+  return rows;
+};
+
+const exportExcel = () => {
+  const names = sheetNames([t("bonus.sheetStaff"), ...rows.value.map((r: any) => r.staff_name)]);
+  return exportXlsx(`bonus_${report.value.from}_${report.value.to}.xlsx`, [
     {
-      name: t("bonus.sheetStaff"),
+      name: names[0],
       fitColumns: true,
       rows: rows.value.map((r: any) => ({
         [t("bonus.staff")]: r.staff_name,
@@ -279,62 +368,9 @@ const exportExcel = () =>
         [t("bonus.bonus")]: r.bonus,
       })),
     },
-    {
-      name: t("bonus.sheetDays"),
-      fitColumns: true,
-      rows: rows.value.flatMap((r: any) =>
-        r.days.map((d: any) => ({
-          [t("bonus.staff")]: r.staff_name,
-          [t("bonus.date")]: d.date,
-          [t("bonus.hours")]: Math.round((d.minutes / 60) * 100) / 100,
-          [t("bonus.extraHours")]: Math.round((d.extra_minutes / 60) * 100) / 100,
-          [t("bonus.rules.title")]: d.kind === "per_hour" ? t("bonus.perHourShort", { amount: number(d.amount_per_hour) }) : `${number(d.percent)}%`,
-          [t("bonus.bonus")]: d.bonus,
-        })),
-      ),
-    },
-    {
-      name: t("bonus.sheetMonths"),
-      fitColumns: true,
-      rows: rows.value.flatMap((r: any) => [
-        ...(r.targets || []).map((m: any) => ({
-          [t("bonus.staff")]: r.staff_name,
-          [t("bonus.month")]: m.month,
-          [t("bonus.kind")]: t("bonus.target.title"),
-          [t("bonus.target.sales")]: m.sales,
-          [t("bonus.reviews.start")]: "",
-          [t("bonus.reviews.end")]: "",
-          [t("bonus.bonus")]: m.bonus,
-        })),
-        ...(r.reviews || []).map((m: any) => ({
-          [t("bonus.staff")]: r.staff_name,
-          [t("bonus.month")]: m.month,
-          [t("bonus.kind")]: t("bonus.reviews.title"),
-          [t("bonus.target.sales")]: "",
-          [t("bonus.reviews.start")]: m.start_count ?? "",
-          [t("bonus.reviews.end")]: m.end_count ?? "",
-          [t("bonus.bonus")]: m.bonus,
-        })),
-      ]),
-    },
-    {
-      name: t("bonus.sheetProducts"),
-      fitColumns: true,
-      rows: rows.value.flatMap((r: any) =>
-        r.products.map((p: any) => ({
-          [t("bonus.staff")]: r.staff_name,
-          [t("bonus.date")]: p.day,
-          [t("bonus.product")]: p.product_name,
-          [t("bonus.quantity")]: p.quantity,
-          [t("bonus.soldFor")]: p.total_price,
-          [t("bonus.bulkCost")]: p.cost ?? "",
-          [t("bonus.profit")]: p.base,
-          [t("bonus.percent")]: p.percent,
-          [t("bonus.bonus")]: p.bonus,
-        })),
-      ),
-    },
+    ...rows.value.map((r: any, i: number) => ({ name: names[i + 1], fitColumns: true, rows: staffSheetRows(r) })),
   ]);
+};
 
 onMounted(load);
 </script>

@@ -182,7 +182,7 @@
               </span>
               <AppointmentNotesTip :appointment="appt" />
             </span>
-            <PaidAmount v-if="!authStore.isStaff" :paid="appt.paid" :total="appt.total" class="text-xs" />
+            <PaidAmount v-if="!authStore.isStaff" :paid="appt.paid" :total="appt.total" onlyPaid class="text-xs" />
           </span>
           <span
             class="text-right truncate"

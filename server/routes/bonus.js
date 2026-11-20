@@ -8,7 +8,13 @@ const pool = require("../db");
 const { bonusReport, ruleOn, commissionOn, targetOn, reviewRuleOn, monthsBetween } = require("../domain/bonus");
 
 const TZ = process.env.TZ || "Europe/Athens";
-const isDate = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || "")) && !isNaN(new Date(`${v}T00:00:00`).getTime());
+// A real calendar day: JavaScript would quietly turn 30 Feb into 2 March, so
+// the day must read back as written (the database refuses it otherwise).
+const isDate = (v) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(v || ""))) return false;
+  const d = new Date(`${v}T00:00:00Z`);
+  return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+};
 const shopToday = () => new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(new Date());
 const BONUS_COLUMNS = `id, staff_id, to_char(effective_from, 'YYYY-MM-DD') AS effective_from, enabled, kind,
   threshold_minutes, percent::float AS percent, amount_per_hour::float AS amount_per_hour`;

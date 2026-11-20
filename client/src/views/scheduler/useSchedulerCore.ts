@@ -32,6 +32,9 @@ export const useSchedulerCore = () => {
   // and forward — mirrors the same restriction enforced server-side in
   // GET /api/v1/appointments, so navigation UI can't even attempt to go back.
   const isStaffRole = computed(() => authStore.isStaff);
+  // The waitlist: front desk and admins, and hidden (button, number and
+  // panel) while Ctrl+1 hides cash amounts.
+  const showWaitlist = computed(() => !isStaffRole.value && !settings.hideCashPaid);
   const todayDateStr = () => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -236,5 +239,5 @@ export const useSchedulerCore = () => {
     },
   );
 
-  return { flags, reorderDialogVisible, authStore, toast, notify, confirm, calendarStore, settings, isStaffRole, todayDateStr, dialogVisible, clientSearchVisible, quickProfileVisible, quickProfileClientId, fullProfileVisible, fullProfileTab, swapDialogVisible, selectedAppointment, fullCalendar, currentTitle, currentView, currentStart, currentEnd, isFetching, shopSlotMinTime, shopSlotMaxTime, todayDate, getDayMinWidth, canGoPrev, fitStaff, toggleFitStaff, statusFilter, statusFilterOptions, viewOptions, calendarApi, openSwapDialog, handleSwap, handleReorderSave, handleSave, handleRefresh, onClientSelected, onBookForClient, quickProfileReloadKey, openFromQuickProfile, onOpenFullProfile, t, locale };
+  return { flags, reorderDialogVisible, authStore, toast, notify, confirm, calendarStore, settings, isStaffRole, showWaitlist, todayDateStr, dialogVisible, clientSearchVisible, quickProfileVisible, quickProfileClientId, fullProfileVisible, fullProfileTab, swapDialogVisible, selectedAppointment, fullCalendar, currentTitle, currentView, currentStart, currentEnd, isFetching, shopSlotMinTime, shopSlotMaxTime, todayDate, getDayMinWidth, canGoPrev, fitStaff, toggleFitStaff, statusFilter, statusFilterOptions, viewOptions, calendarApi, openSwapDialog, handleSwap, handleReorderSave, handleSave, handleRefresh, onClientSelected, onBookForClient, quickProfileReloadKey, openFromQuickProfile, onOpenFullProfile, t, locale };
 };

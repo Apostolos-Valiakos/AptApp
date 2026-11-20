@@ -11,8 +11,8 @@ import type { useSchedulerPhone } from "./useSchedulerPhone";
 
 export const useCalendarData = (ctx: ReturnType<typeof useSchedulerCore> & ReturnType<typeof useSchedulerPhone>) => {
   const {
-    authStore, calendarStore, settings, todayDateStr, currentView, currentStart, shopSlotMinTime, shopSlotMaxTime,
-    canGoPrev, statusFilter, t, isPhone,
+    authStore, calendarStore, settings, todayDateStr, currentView, currentStart, currentEnd, shopSlotMinTime, shopSlotMaxTime,
+    canGoPrev, statusFilter, t,
   } = ctx;
 
   // Still used by the unrelated staff-role navigation restriction below
@@ -53,6 +53,30 @@ export const useCalendarData = (ctx: ReturnType<typeof useSchedulerCore> & Retur
   const isOnLeaveOnDay = (r: any) =>
     !!currentStart.value && !!leaveOnDay(calendarStore.timeOff, r.id, currentStart.value);
 
+  // The week view's days (its end is the day after the last one).
+  const shownDays = computed(() => {
+    const days: string[] = [];
+    if (!currentStart.value || !currentEnd.value) return days;
+    const last = toLocalDateStr(currentEnd.value);
+    const d = new Date(`${toLocalDateStr(currentStart.value)}T12:00:00`);
+    while (toLocalDateStr(d) < last && days.length < 31) {
+      days.push(toLocalDateStr(d));
+      d.setDate(d.getDate() + 1);
+    }
+    return days;
+  });
+  // Staff with a live booking on any shown day (the store holds the shown range).
+  const staffWithAppointmentsShown = computed(() => {
+    const ids = new Set<string>();
+    for (const appt of calendarStore.events || []) {
+      if (appt.status === "cancelled" || appt.status === "no-show") continue;
+      for (const svc of appt.services || []) if (svc.staff_id) ids.add(String(svc.staff_id));
+    }
+    return ids;
+  });
+  const isOnLeaveAllWeek = (r: any) =>
+    shownDays.value.length > 0 && shownDays.value.every((day) => !!leaveOnDay(calendarStore.timeOff, r.id, day));
+
   const SHOW_ALL_STAFF_KEY = "scheduler.showAllStaff";
   const readShowAllStaff = () => {
     try {
@@ -78,29 +102,23 @@ export const useCalendarData = (ctx: ReturnType<typeof useSchedulerCore> & Retur
       filtered = filtered.filter((r: any) => r.id === authStore.user.staff_id);
     }
 
-    // Day view only — staff who opted into a working-hours pattern but don't
-    // work the currently-displayed day disappear as a resource entirely. This
-    // now resolves the schedule VERSION that was/is actually active on the
-    // displayed date, so it's correct whether that date is in the past,
-    // present, or a staged future change. Unconfigured staff (working_hours_enabled
-    // falsy) always pass through, exactly like today, and Week/Month views are
-    // untouched by design since FullCalendar's resource views use one fixed
-    // column set for the whole visible range — there's no way to show
-    // different staff per day there.
-    //
-    // On a phone every column counts: staff on leave that day go too, and the
-    // switch in the menu brings everyone back (to book someone who is off).
-    // If that would leave no one at all, everyone stays.
-    if (
-      currentView.value === "resourceTimeGridDay" &&
-      currentStart.value &&
-      !(isPhone.value && showAllStaff.value)
-    ) {
-      const working = filtered.filter(
-        (r: any) =>
-          !(isNotWorkingOnDay(r) || (isPhone.value && isOnLeaveOnDay(r))) ||
-          staffWithAppointmentsOnDay.value.has(String(r.id)),
-      );
+    // The day view leaves out staff who don't work the shown day (by the
+    // schedule in force on it; staff without working hours always show) and
+    // staff on leave that day. The week view shows one set of columns for
+    // the whole week, so it can't drop someone for a single day: it hides
+    // those on leave every day of the shown week. Anyone with a booking in
+    // the shown days stays, so the booking isn't hidden with them; the "show
+    // everyone" switch brings everyone back (to book someone who is off). If
+    // that would leave no one at all, everyone stays.
+    if (currentStart.value && !showAllStaff.value) {
+      let working = filtered;
+      if (currentView.value === "resourceTimeGridDay") {
+        working = filtered.filter(
+          (r: any) => !(isNotWorkingOnDay(r) || isOnLeaveOnDay(r)) || staffWithAppointmentsOnDay.value.has(String(r.id)),
+        );
+      } else if (currentView.value === "resourceTimeGridWeek") {
+        working = filtered.filter((r: any) => !isOnLeaveAllWeek(r) || staffWithAppointmentsShown.value.has(String(r.id)));
+      }
       if (working.length > 0) filtered = working;
     }
 

@@ -238,7 +238,7 @@
                 {{ t(`common.status.${statusKey(appt.status)}`) }}
               </span>
               <AppointmentNotesTip :appointment="appt" class="mr-1 align-middle" />
-              <PaidAmount v-if="!authStore.isStaff" :paid="appt.paid" :total="appt.total" />
+              <PaidAmount v-if="!authStore.isStaff" :paid="appt.paid" :total="appt.total" onlyPaid />
             </div>
           </div>
         </div>

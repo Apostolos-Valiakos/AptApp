@@ -75,11 +75,15 @@ const fill = (r: Rule) => {
   draft.enabled = r.enabled;
   draft.percent = r.enabled ? r.percent : 10;
 };
-const { rules, current, loaded, dirty, load, add, remove, commit } = useStaffRules<Rule>("product-commission-rules", () => props.staffId, fill);
+const { rules, current, loaded, dirty, incomplete, load, add, remove, commit } = useStaffRules<Rule>("product-commission-rules", () => props.staffId, fill, {
+  values: () => ({ enabled: draft.enabled, percent: draft.percent }),
+  canAdd: () => canAdd.value,
+  addRule: () => addRule(),
+});
 const addRule = () => add(draft.from as Date, { enabled: draft.enabled, percent: draft.percent ?? 10 });
 
 onMounted(load);
 // Today's rule in words, for the bonus picker.
 const summary = computed(() => (current.value ? describe(current.value) : null));
-defineExpose({ commit, dirty, summary });
+defineExpose({ commit, dirty, incomplete, summary });
 </script>

@@ -113,6 +113,11 @@ test("admins only, with the password retyped for the report; bad input is refuse
   assert.equal((await bad({ percent: 101 })).status, 400);
   assert.equal((await bad({ threshold_minutes: -1 })).status, 400);
   assert.equal((await bad({ effective_from: "soon" })).status, 400);
+  // Days that don't exist are refused, not an error 500.
+  assert.equal((await bad({ effective_from: "2030-02-30" })).status, 400);
+  assert.equal((await report("2030-02-30", "2030-03-04")).status, 400);
+  assert.equal((await report("2030-11-01", "2030-11-31")).status, 400);
+  assert.equal((await report("2028-02-29", "2028-02-29")).status, 200, "a leap day is a day");
   assert.equal((await admin("GET", "/api/v1/staff/00000000-0000-4000-8000-000000000000/bonus-rules")).status, 404);
 });
 
