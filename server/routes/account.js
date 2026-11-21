@@ -136,6 +136,7 @@ module.exports = function accountRouter({
         s.self_booking_enabled,
         s.portal_min_notice_minutes,
         s.cancellation_note,
+        s.google_review_url,
         st.id as staff_id,
         st.name as staff_name,
         st.email as staff_email,

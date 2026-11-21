@@ -301,7 +301,8 @@ module.exports = function shopRouter({
   );
 
   // The shop's rules for online bookings: the notice period (minutes before a
-  // booking's start, 0–7 days) and the cancellation note clients read.
+  // booking's start, 0–7 days), the cancellation note clients read, and the
+  // review page a happy client is sent to.
   router.put(
     "/shop/portal-rules",
     authenticateToken,
@@ -312,7 +313,13 @@ module.exports = function shopRouter({
         return res.status(400).json({ error: "portal_min_notice_minutes must be 0–10080" });
       }
       const note = typeof req.body.cancellation_note === "string" ? req.body.cancellation_note.trim().slice(0, 1000) : "";
-      await pool.query("UPDATE shops SET portal_min_notice_minutes = $1, cancellation_note = $2 WHERE id = $3", [notice, note || null, req.shopId]);
+      // The review page clients are sent to after a five-star visit (https only).
+      const reviewUrl = typeof req.body.google_review_url === "string" ? req.body.google_review_url.trim() : "";
+      if (reviewUrl && !/^https:\/\/[^\s]+$/.test(reviewUrl)) return res.status(400).json({ error: "google_review_url must be an https link" });
+      await pool.query(
+        "UPDATE shops SET portal_min_notice_minutes = $1, cancellation_note = $2, google_review_url = $3 WHERE id = $4",
+        [notice, note || null, reviewUrl || null, req.shopId],
+      );
       res.json({ success: true });
     }, { log: "Error updating portal rules:" }),
   );

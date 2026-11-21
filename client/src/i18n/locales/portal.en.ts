@@ -86,4 +86,9 @@ export default {
     light: "Light",
     dark: "Dark",
   },
+  review: {
+    stars: "{n} star | {n} stars",
+    thanks: "Thank you! We'll take it on board.",
+    thanksReview: "Thank you! A review helps us a lot.",
+  },
 };

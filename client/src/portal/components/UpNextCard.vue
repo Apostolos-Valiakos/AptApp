@@ -31,7 +31,7 @@
         <router-link to="/portal/wallet/pass" class="p-button p-button-outlined p-component">{{ t("portal.v2.actions.pass") }}</router-link>
       </template>
       <template v-else-if="state.kind === 'done'">
-        <slot name="done" />
+        <ReviewPrompt v-if="shop.shop?.google_review_url && !b.review_prompted_at" :bookingId="b.id" :reviewUrl="shop.shop.google_review_url" />
         <router-link :to="bookAgainLink" class="p-button p-button-outlined p-component">{{ t("portal.v2.actions.bookAgain") }}</router-link>
       </template>
       <router-link v-if="state.kind !== 'done'" :to="`/portal/bookings/${b.id}`" class="p-button p-button-text p-component">{{ t("portal.v2.actions.details") }}</router-link>
@@ -50,6 +50,7 @@ import { serviceNames, staffNames } from "../stores/bookings";
 import { useBookingExtras } from "../composables/useBookingExtras";
 import { usePortalBookingActions } from "../composables/usePortalBookingActions";
 import { usePortalShopStore } from "../stores/shop";
+import ReviewPrompt from "./ReviewPrompt.vue";
 
 const props = defineProps<{ state: UpNext }>();
 const shop = usePortalShopStore();

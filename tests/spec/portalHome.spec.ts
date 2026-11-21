@@ -125,3 +125,40 @@ describe("K12, K13 and the wallet on the new Home", () => {
     expect(document.querySelector('[data-testid="greeting"]')!.textContent).toContain("Μαρία");
   });
 });
+
+describe("UN6 'How was it?' after today's visit (N10)", () => {
+  test("five stars opens the shop's review page; the visit is marked as asked", async () => {
+    const opened: string[] = [];
+    const original = window.open;
+    window.open = ((url: string) => void opened.push(url)) as any;
+    const server = await open({
+      list: [booking(-120, { id: "visit" }, new Date())],
+      shop: { google_review_url: "https://g.page/r/pure/review" },
+    });
+    (server.routes as any)["POST /api/v1/portal/appointments/visit/review-prompted"] = { body: { success: true } };
+    expect(card()!.dataset.kind).toBe("done");
+    const stars = [...document.querySelectorAll<HTMLElement>('[data-testid="review-prompt"] button')];
+    expect(stars).toHaveLength(5);
+    stars[4].click();
+    await settle();
+    expect(opened).toEqual(["https://g.page/r/pure/review"]);
+    expect(server.called("POST", "/api/v1/portal/appointments/visit/review-prompted")).toHaveLength(1);
+    expect(document.querySelector('[data-testid="review-thanks"]')).not.toBeNull();
+    window.open = original;
+  });
+
+  test("fewer stars only say thank you; a visit already asked about isn't asked again", async () => {
+    const opened: string[] = [];
+    window.open = ((url: string) => void opened.push(url)) as any;
+    await open({ list: [booking(-120, { id: "visit" }, new Date())], shop: { google_review_url: "https://g.page/r/pure/review" } });
+    document.querySelectorAll<HTMLElement>('[data-testid="review-prompt"] button')[2].click();
+    await settle();
+    expect(opened).toEqual([]);
+    expect(document.querySelector('[data-testid="review-thanks"]')!.textContent).toContain(el.portal.v2.review.thanks);
+  });
+
+  test("not asked twice, nor without a review link", async () => {
+    await open({ list: [booking(-120, { id: "visit", review_prompted_at: "2026-11-20T10:00:00Z" }, new Date())], shop: { google_review_url: "https://g.page/r/pure/review" } });
+    expect(document.querySelector('[data-testid="review-prompt"]')).toBeNull();
+  });
+});

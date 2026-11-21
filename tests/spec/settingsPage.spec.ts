@@ -115,7 +115,7 @@ describe("SP2 saving", () => {
     await settle();
     document.querySelector<HTMLElement>('[data-testid="save-rules"]')!.click();
     await settle();
-    expect(server.called("PUT", "/api/v1/shop/portal-rules")[0].body).toEqual({ portal_min_notice_minutes: 0, cancellation_note: "Δωρεάν ακύρωση έως 24 ώρες πριν." });
+    expect(server.called("PUT", "/api/v1/shop/portal-rules")[0].body).toEqual({ portal_min_notice_minutes: 0, cancellation_note: "Δωρεάν ακύρωση έως 24 ώρες πριν.", google_review_url: "" });
   });
 });
 

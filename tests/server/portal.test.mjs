@@ -246,3 +246,22 @@ test("RT4 the client saves their times; only 24 h, 2 h and 1 h", async () => {
   assert.equal((await as.client("PUT", "/api/v1/portal/notifications", { receive_emails: false })).status, 200);
   assert.equal(sql(DB, `SELECT receive_emails FROM clients WHERE id = '${ids.client}'`), "f");
 });
+
+test("RV1 the review link: admins save it (https only) and the portal reads it", async () => {
+  assert.equal((await as.admin("PUT", "/api/v1/shop/portal-rules", { portal_min_notice_minutes: 0, google_review_url: "javascript:alert(1)" })).status, 400);
+  assert.equal((await as.admin("PUT", "/api/v1/shop/portal-rules", { portal_min_notice_minutes: 0, google_review_url: "https://g.page/r/pure/review" })).status, 200);
+  assert.equal((await as.client("GET", "/api/v1/shop")).data.google_review_url, "https://g.page/r/pure/review");
+});
+
+test("RV2 'How was it?' is asked once per visit, only for one that has begun", async () => {
+  clearDay();
+  const coming = await bookAs(as.frontdesk, ids.client, [svc(ids.anna, at(day, "10:00"))]);
+  const done = await bookAs(as.frontdesk, ids.client, [svc(ids.eleni, new Date(Date.now() - 3 * 3600e3).toISOString())]);
+  assert.equal((await as.client("POST", `/api/v1/portal/appointments/${coming}/review-prompted`)).status, 404);
+  assert.equal((await as.client("POST", `/api/v1/portal/appointments/${done}/review-prompted`)).status, 200);
+  const first = sql(DB, `SELECT review_prompted_at FROM appointments WHERE id = '${done}'`);
+  assert.equal((await as.client("POST", `/api/v1/portal/appointments/${done}/review-prompted`)).status, 200);
+  assert.equal(sql(DB, `SELECT review_prompted_at FROM appointments WHERE id = '${done}'`), first, "the first time is kept");
+  const listed = (await as.client("GET", "/api/v1/portal/appointments")).data.find((a) => a.id === done);
+  assert.ok(listed.review_prompted_at);
+});

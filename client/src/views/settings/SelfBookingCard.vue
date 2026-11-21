@@ -30,7 +30,11 @@
         <span class="block text-xs text-gray-500">{{ t("profile.portalRules.noteHint") }}</span>
         <Textarea v-model="rules.cancellation_note" rows="3" autoResize class="w-full" maxlength="1000" data-testid="cancellation-note" />
       </label>
-      <slot name="extra-rules" :rules="rules" />
+      <label class="block space-y-1">
+        <span class="text-sm font-semibold text-gray-800">{{ t("profile.portalRules.reviewUrl") }}</span>
+        <span class="block text-xs text-gray-500">{{ t("profile.portalRules.reviewUrlHint") }}</span>
+        <InputText v-model="rules.google_review_url" type="url" placeholder="https://g.page/r/…/review" class="w-full" data-testid="review-url" />
+      </label>
       <Button type="submit" :label="t('common.save')" :loading="isSavingRules" size="small" data-testid="save-rules" />
     </form>
   </div>
@@ -49,10 +53,15 @@ const notify = useNotify();
 
 const isSavingSelfBooking = ref(false);
 const isSavingRules = ref(false);
-const rules = reactive({ portal_min_notice_minutes: 0, cancellation_note: "" });
+const rules = reactive({ portal_min_notice_minutes: 0, cancellation_note: "", google_review_url: "" });
 watch(
   () => props.profile,
-  (p) => Object.assign(rules, { portal_min_notice_minutes: Number(p?.portal_min_notice_minutes) || 0, cancellation_note: p?.cancellation_note || "" }),
+  (p) =>
+    Object.assign(rules, {
+      portal_min_notice_minutes: Number(p?.portal_min_notice_minutes) || 0,
+      cancellation_note: p?.cancellation_note || "",
+      google_review_url: p?.google_review_url || "",
+    }),
   { immediate: true },
 );
 const noticeOptions = computed(() => [

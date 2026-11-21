@@ -9,9 +9,7 @@
     <div v-if="!bookings.loaded" class="portal-card p-5 space-y-3" aria-busy="true">
       <Skeleton width="40%" /><Skeleton width="70%" height="1.5rem" /><Skeleton width="50%" />
     </div>
-    <UpNextCard v-else-if="next" :state="next">
-      <template #done><slot name="review" :booking="next.booking" /></template>
-    </UpNextCard>
+    <UpNextCard v-else-if="next" :state="next" />
     <section v-else class="portal-card p-6 text-center space-y-3" data-testid="home-empty">
       <i class="pi pi-sparkles text-3xl text-[var(--p-primary-color)]"></i>
       <h2 class="portal-display portal-h3">{{ t("portal.v2.home.emptyTitle") }}</h2>

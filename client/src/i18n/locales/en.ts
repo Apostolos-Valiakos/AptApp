@@ -1099,6 +1099,8 @@ export default {
       updated: 'Calendar settings updated',
     },
     portalRules: {
+      reviewUrl: "Google review link",
+      reviewUrlHint: "After a visit the client is asked \"How was it?\". Five stars opens this page.",
       notice: "Minimum notice",
       noticeHint: "How long before an appointment a client may still book, move or cancel it online (and through the assistant).",
       none: "None (up to the start)",

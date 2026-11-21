@@ -292,7 +292,7 @@ module.exports = function portalRouter({
   // was paid. Blocks and the shop's notes are never part of it.
   router.get("/portal/appointments", authenticateToken, onlyClients, asyncHandler(async (req, res) => {
     const { rows } = await pool.query(
-      `SELECT a.id, a.status, a.payment_status, a.booking_notes,
+      `SELECT a.id, a.status, a.payment_status, a.booking_notes, a.review_prompted_at,
               ${appointmentPaidSql("a.id")}::float AS paid,
               (COALESCE((SELECT SUM(price_override) FROM appointment_services WHERE appointment_id = a.id), 0)
                + COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = a.id), 0))::float AS total,
@@ -323,6 +323,19 @@ module.exports = function portalRouter({
     );
     res.json(rows);
   }, { log: "Portal appointments error:" }));
+
+  // The "How was it?" question was shown for this visit (answered or not):
+  // it isn't asked again. Only for a visit of the client's that has begun.
+  router.post("/portal/appointments/:id/review-prompted", authenticateToken, onlyClients, asyncHandler(async (req, res) => {
+    const { rowCount } = await pool.query(
+      `UPDATE appointments a SET review_prompted_at = COALESCE(a.review_prompted_at, NOW())
+       WHERE a.id = $1 AND a.client_id = $2 AND a.shop_id = $3 AND a.status NOT IN ('cancelled', 'no-show', 'no_show')
+         AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) <= NOW()`,
+      [safeUUID(req.params.id), req.user.clientId, req.shopId],
+    );
+    if (!rowCount) return res.status(404).json({ error: "not_found" });
+    res.json({ success: true });
+  }, { log: "Portal review prompt error:" }));
 
   // The client's own upcoming, still-active bookings, with the service and
   // staff ids the AI assistant needs to cancel or move them.

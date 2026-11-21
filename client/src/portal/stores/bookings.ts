@@ -18,6 +18,8 @@ export type PortalBooking = {
   status: string;
   payment_status: string;
   booking_notes: string | null;
+  /** When "How was it?" was asked for this visit (never again after). */
+  review_prompted_at?: string | null;
   paid: number;
   total: number;
   start_time: string;
