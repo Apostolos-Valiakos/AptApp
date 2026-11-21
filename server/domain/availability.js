@@ -85,4 +85,41 @@ const freeStartTimes = async (
   return slots;
 };
 
-module.exports = { shiftsOn, freeStartTimes, STEP_MINUTES };
+/**
+ * The staff who can be booked online for a service, in the shop's own order:
+ * active, shown in the calendar, and either linked to the service or linked
+ * to none (staff with no services linked do any). The order decides who
+ * "Anyone" gets.
+ */
+const eligibleStaff = async (db, shopId, serviceId) =>
+  (
+    await db.query(
+      `SELECT s.id, s.name, s.photo_url, s.specialty
+       FROM staff s
+       WHERE s.shop_id = $1 AND s.is_active = true AND s.visible_in_calendar = true
+         AND (
+           NOT EXISTS (SELECT 1 FROM staff_services ss WHERE ss.staff_id = s.id)
+           OR EXISTS (SELECT 1 FROM staff_services ss WHERE ss.staff_id = s.id AND ss.service_id = $2)
+         )
+       ORDER BY s.sort_order, s.name`,
+      [shopId, serviceId],
+    )
+  ).rows;
+
+/**
+ * Free start times on a date across several staff members, each time once,
+ * with the first of them (in the order given) who is free then: what
+ * "Anyone" books. [{ start_time, staff_id, staff_name }], earliest first.
+ */
+const mergedStartTimes = async (db, { shopId, staff, date, durationMinutes, skipPast = true, excludeAppointmentId = null }) => {
+  const perStaff = await Promise.all(
+    staff.map((m) => freeStartTimes(db, { shopId, staffId: m.id, date, durationMinutes, skipPast, excludeAppointmentId })),
+  );
+  const byTime = new Map();
+  staff.forEach((m, i) => {
+    for (const t of perStaff[i]) if (!byTime.has(t)) byTime.set(t, { start_time: t, staff_id: m.id, staff_name: m.name });
+  });
+  return [...byTime.values()].sort((a, b) => a.start_time.localeCompare(b.start_time));
+};
+
+module.exports = { shiftsOn, freeStartTimes, eligibleStaff, mergedStartTimes, STEP_MINUTES };

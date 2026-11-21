@@ -89,6 +89,8 @@
       <AiChat />
     </Drawer>
 
+    <BookingSuccessSheet />
+
     <Dialog v-model:visible="activity.visible.value" modal :style="{ width: '400px', maxWidth: '92vw' }">
       <template #header>
         <div class="flex items-center justify-between w-full pr-4">
@@ -115,6 +117,7 @@ import SelectButton from "primevue/selectbutton";
 import { setLocale } from "../i18n";
 import AiChat from "../components/portal/AiChat.vue";
 import ActivityList from "./components/ActivityList.vue";
+import BookingSuccessSheet from "./components/BookingSuccessSheet.vue";
 import { usePortalTheme } from "./composables/usePortalTheme";
 import { usePortalNotifications } from "./composables/usePortalNotifications";
 import { usePortalInstall, setShopManifest } from "./composables/usePortalInstall";

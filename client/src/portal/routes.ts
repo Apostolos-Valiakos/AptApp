@@ -5,8 +5,11 @@ import { defineComponent, h, type Component } from "vue";
 import { portalV2 } from "./flag";
 import ClientHomeView from "../views/portal/ClientHomeView.vue";
 import HomeView from "./views/HomeView.vue";
+import BookView from "./views/BookView.vue";
 
 const byPortal = (old: Component, redesigned: Component) =>
   defineComponent({ name: "PortalPick", render: () => h(portalV2.value ? redesigned : old) });
 
 export const Home = byPortal(ClientHomeView, HomeView);
+
+export { BookView as Book };

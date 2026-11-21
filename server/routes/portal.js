@@ -6,7 +6,7 @@ const { upperName, passwordProblem } = require("../domain/common");
 const { asyncHandler } = require("../http");
 const pool = require("../db");
 const bcrypt = require("bcrypt");
-const { freeStartTimes } = require("../domain/availability");
+const { freeStartTimes, eligibleStaff, mergedStartTimes } = require("../domain/availability");
 const { appointmentPaidSql } = require("../domain/moneySql");
 
 module.exports = function portalRouter({
@@ -175,24 +175,8 @@ module.exports = function portalRouter({
     if (!serviceRes.rows[0]) {
       return res.status(404).json({ error: "service_not_bookable" });
     }
-    // Empty mapping in staff_services means "eligible for every service" —
-    // same convention already used for the staff/admin booking picker.
-    const { rows } = await pool.query(
-      `SELECT s.id, s.name, s.photo_url, s.specialty
-       FROM staff s
-       WHERE s.shop_id = $1
-         AND s.is_active = true
-         AND s.visible_in_calendar = true
-         AND (
-           NOT EXISTS (SELECT 1 FROM staff_services ss WHERE ss.staff_id = s.id)
-           OR EXISTS (
-             SELECT 1 FROM staff_services ss
-             WHERE ss.staff_id = s.id AND ss.service_id = $2
-           )
-         )
-       ORDER BY s.sort_order, s.name`,
-      [req.shopId, validServiceId],
-    );
+    // Staff with no services linked do any (the staff app's convention).
+    const rows = await eligibleStaff(pool, req.shopId, validServiceId);
     res.json(rows);
   }, { log: "Portal staff list error:" }));
 
@@ -423,6 +407,62 @@ module.exports = function portalRouter({
   // client self-booking wizard. Role-agnostic at the route level (staff/admin
   // could reuse it later), but a client caller additionally requires
   // self_booking_enabled + bookable_online, and never sees past-dated slots.
+  // --- The redesigned Book screen's free times (one staff member, or
+  // "Anyone": every eligible one merged, the first free taking the time) ---
+  const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+  const realDay = (d) => DAY_RE.test(String(d || "")) && !Number.isNaN(new Date(`${d}T12:00:00Z`).getTime()) && new Date(`${d}T12:00:00Z`).toISOString().slice(0, 10) === d;
+  const addDays = (d, n) => {
+    const x = new Date(`${d}T12:00:00Z`);
+    x.setUTCDate(x.getUTCDate() + n);
+    return x.toISOString().slice(0, 10);
+  };
+
+  // What both routes need: the shop taking online bookings, the service
+  // bookable, the staff asked for (or all eligible), and the client's own
+  // booking being moved, whose time doesn't count as taken.
+  const bookingContext = async (req) => {
+    const shopRes = await pool.query("SELECT self_booking_enabled FROM shops WHERE id = $1", [req.shopId]);
+    if (!shopRes.rows[0]?.self_booking_enabled) return { status: 404, error: "self_booking_disabled" };
+    const serviceId = safeUUID(req.query.service_id);
+    if (!serviceId) return { status: 400, error: "service_id is required" };
+    const serviceRes = await pool.query(
+      "SELECT duration_minutes FROM services WHERE id = $1 AND shop_id = $2 AND is_active = true AND bookable_online = true",
+      [serviceId, req.shopId],
+    );
+    if (!serviceRes.rows[0]) return { status: 404, error: "service_not_bookable" };
+    let staff = await eligibleStaff(pool, req.shopId, serviceId);
+    if (req.query.staff_id) {
+      staff = staff.filter((m) => m.id === req.query.staff_id);
+      if (!staff.length) return { status: 404, error: "staff_not_eligible" };
+    }
+    let excludeAppointmentId = null;
+    if (req.query.exclude) {
+      const own = await pool.query("SELECT id FROM appointments WHERE id = $1 AND client_id = $2 AND shop_id = $3", [
+        safeUUID(req.query.exclude), req.user.clientId, req.shopId,
+      ]);
+      excludeAppointmentId = own.rows[0]?.id || null;
+    }
+    return { staff, excludeAppointmentId, durationMinutes: serviceRes.rows[0].duration_minutes || 60 };
+  };
+
+  router.get("/portal/availability/slots", authenticateToken, onlyClients, asyncHandler(async (req, res) => {
+    if (!realDay(req.query.date)) return res.status(400).json({ error: "date must be YYYY-MM-DD" });
+    const ctx = await bookingContext(req);
+    if (ctx.error) return res.status(ctx.status).json({ error: ctx.error });
+    res.json(await mergedStartTimes(pool, { shopId: req.shopId, date: req.query.date, ...ctx }));
+  }, { log: "Portal slots error:" }));
+
+  // How many free times each day has, for the date strip's dots.
+  router.get("/portal/availability/days", authenticateToken, onlyClients, asyncHandler(async (req, res) => {
+    if (!realDay(req.query.from)) return res.status(400).json({ error: "from must be YYYY-MM-DD" });
+    const days = Math.min(Math.max(Number(req.query.days) || 14, 1), 21);
+    const ctx = await bookingContext(req);
+    if (ctx.error) return res.status(ctx.status).json({ error: ctx.error });
+    const dates = Array.from({ length: days }, (_, i) => addDays(req.query.from, i));
+    const counts = await Promise.all(dates.map((date) => mergedStartTimes(pool, { shopId: req.shopId, date, ...ctx }).then((s) => s.length)));
+    res.json(dates.map((date, i) => ({ date, count: counts[i] })));
+  }, { log: "Portal days error:" }));
+
   router.get("/availability", authenticateToken, asyncHandler(async (req, res) => {
     const { service_id, staff_id, date } = req.query;
     const validServiceId = safeUUID(service_id);

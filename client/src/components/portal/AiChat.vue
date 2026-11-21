@@ -116,11 +116,14 @@ import { useAuthStore } from "../../stores/auth";
 import { newIdempotencyKey, PortalActionError, usePortalBookingActions } from "../../portal/composables/usePortalBookingActions";
 import { formatDate, formatDuration, formatMoney } from "../../utils/format";
 
+import { useBookingSuccessStore } from "../../portal/stores/success";
+import { portalV2 } from "../../portal/flag";
 import { useAssistantStore, type AssistantCard as Card, type AssistantMessage as Message } from "../../portal/stores/assistant";
 
 const { t, locale } = useI18n();
 const authStore = useAuthStore();
 const actions = usePortalBookingActions();
+const success = useBookingSuccessStore();
 
 // The conversation outlives the panel (closing it, changing tab).
 const { messages, draft: input } = storeToRefs(useAssistantStore());
@@ -242,11 +245,14 @@ const confirmCard = async (card: Card) => {
       // One key per card: pressing Confirm again after a lost answer can't
       // book twice.
       a.idempotency_key ||= newIdempotencyKey();
-      await actions.book({ service_id: a.service_id, staff_id: a.staff_id, start_time: a.start_time }, { key: a.idempotency_key, quiet: true });
+      const done = await actions.book({ service_id: a.service_id, staff_id: a.staff_id, start_time: a.start_time }, { key: a.idempotency_key, quiet: true });
+      // The same "done" sheet as booking from the screen (Add to calendar, Share).
+      if (portalV2.value) success.show(done.id, "booked");
     } else if (a.type === "cancel") {
       await actions.cancel(a.appointment_id, { quiet: true });
     } else {
       await actions.reschedule(a.appointment_id, { start_time: a.start_time, staff_id: a.staff_id }, { quiet: true });
+      if (portalV2.value) success.show(a.appointment_id, "moved");
     }
     card.status = "done";
     note(`[Portal note: the client pressed Confirm and the ${a.type} succeeded: ${describe(a)}.]`);

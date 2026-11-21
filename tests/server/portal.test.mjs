@@ -38,6 +38,8 @@ before(async () => {
       ON CONFLICT (staff_id, date) DO UPDATE SET ranges = EXCLUDED.ranges`);
   }
   sql(DB, `UPDATE shops SET self_booking_enabled = true WHERE id = '${SHOP}'`);
+  // Only these two can be booked online here, so "Anyone" is one of them.
+  sql(DB, `UPDATE staff SET visible_in_calendar = false WHERE shop_id = '${SHOP}' AND id NOT IN ('${ids.anna}', '${ids.eleni}')`);
   server = await startServer(uri, PORT);
   as.admin = api(PORT, token(one("admin"), "admin"));
   as.frontdesk = api(PORT, token(one("frontdesk"), "frontdesk"));
@@ -55,6 +57,8 @@ const bookAs = async (who, clientId, services, extra = {}) => {
   assert.equal(r.status, 200, JSON.stringify(r.data));
   return r.data.id;
 };
+// Every booking on the test day goes, whoever's it is.
+const clearDay = () => sql(DB, `DELETE FROM appointments WHERE id IN (SELECT appointment_id FROM appointment_services WHERE start_time::date = '${day}')`);
 const svc = (staffId, start, extra = {}) => ({ service_id: ids.service, staff_id: staffId, start_time: start, duration_override: 60, price_override: 40, ...extra });
 
 test("PV1 the client's bookings: to come and past, with what to book again, the price and what was paid", async () => {
@@ -89,4 +93,42 @@ test("PV2 a client reads only the shop details the portal shows", async () => {
   }
   assert.ok(["id", "name", "phone", "address", "self_booking_enabled", "ai_assistant_enabled"].every((k) => k in r.data));
   assert.ok("owner_email" in (await as.admin("GET", "/api/v1/shop")).data, "staff still get the whole shop");
+});
+
+test("PV3 free times for one staff member or for anyone, and each day's count", async () => {
+  clearDay();
+  // Anna (first in the shop's order) is taken 10:00–11:00; Eleni is free all morning.
+  const order = sql(DB, `SELECT id FROM staff WHERE id IN ('${ids.anna}', '${ids.eleni}') ORDER BY sort_order, name`).split("\n");
+  const [first, second] = order;
+  await bookAs(as.frontdesk, sql(DB, `INSERT INTO clients (first_name, last_name, shop_id) VALUES ('Τρίτη', 'Πελάτισσα', '${SHOP}') RETURNING id`).split("\n")[0], [svc(first, at(day, "10:00"))]);
+
+  const slots = (q) => as.client("GET", `/api/v1/portal/availability/slots?service_id=${ids.service}&date=${day}${q}`);
+  const mine = await slots(`&staff_id=${first}`);
+  assert.ok(!mine.data.some((s) => s.start_time === at(day, "10:00")));
+  assert.ok(mine.data.every((s) => s.staff_id === first));
+
+  const anyone = (await slots("")).data;
+  const ten = anyone.find((s) => s.start_time === at(day, "10:00"));
+  assert.equal(ten.staff_id, second, "at 10:00 only the second is free");
+  const eleven = anyone.find((s) => s.start_time === at(day, "11:00"));
+  assert.equal(eleven.staff_id, first, "when both are free, the first in the shop's order");
+  assert.equal(new Set(anyone.map((s) => s.start_time)).size, anyone.length, "each time once");
+
+  const days = await as.client("GET", `/api/v1/portal/availability/days?service_id=${ids.service}&from=${day}&days=3`);
+  assert.equal(days.status, 200, JSON.stringify(days.data));
+  assert.equal(days.data.length, 3);
+  assert.equal(days.data[0].date, day);
+  assert.equal(days.data[0].count, anyone.length);
+
+  assert.equal((await slots("&staff_id=00000000-0000-0000-0000-000000000000")).status, 404);
+  assert.equal((await as.client("GET", `/api/v1/portal/availability/slots?service_id=${ids.service}&date=2026-02-31`)).status, 400);
+});
+
+test("PV4 moving a booking: its own time counts as free", async () => {
+  clearDay();
+  const mine = await bookAs(as.frontdesk, ids.client, [svc(ids.anna, at(day, "12:00"))]);
+  const q = `/api/v1/portal/availability/slots?service_id=${ids.service}&date=${day}&staff_id=${ids.anna}`;
+  assert.ok(!(await as.client("GET", q)).data.some((s) => s.start_time === at(day, "12:00")));
+  const moved = await as.client("GET", `${q}&exclude=${mine}`);
+  assert.ok(moved.data.some((s) => s.start_time === at(day, "12:30")), JSON.stringify(moved.data));
 });

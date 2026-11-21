@@ -140,8 +140,8 @@ const routes = [
       { path: "more", name: "ClientMore", component: ClientMoreView },
       // The redesigned portal (REDESIGN_SPEC.md §2). Until its own screens
       // arrive (phase 2 of IMPLEMENTATION_PLAN.md) these show the old ones.
-      { path: "book", name: "PortalBook", component: ClientAppointmentsView, meta: { portalTab: "book" } },
-      { path: "book/reschedule/:id", name: "PortalReschedule", component: ClientAppointmentsView, meta: { portalTab: "book" } },
+      { path: "book", name: "PortalBook", component: () => import("../portal/routes").then((m) => m.Book) },
+      { path: "book/reschedule/:id", name: "PortalReschedule", component: () => import("../portal/routes").then((m) => m.Book) },
       { path: "bookings", name: "PortalBookings", component: ClientAppointmentsView },
       { path: "bookings/:id", name: "PortalBooking", component: ClientAppointmentsView },
       { path: "wallet", name: "PortalWallet", component: ClientMoreView },
