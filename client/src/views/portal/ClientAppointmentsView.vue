@@ -370,7 +370,7 @@ import { useNotify } from "../../composables/useNotify";
 import { toLocalDateStr } from "../../utils/staffAvailability";
 import { api, ApiError, withMessage } from "../../api/http";
 import { formatMoney } from "../../utils/format";
-import { ref, computed, watch, onMounted } from "vue";
+import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { groupServicesByCategory } from "../../utils/serviceGroups";
@@ -640,4 +640,8 @@ onMounted(() => {
   fetchHistory();
   fetchServices();
 });
+// A booking made, moved or cancelled from the assistant shows here at once.
+const onAppointmentsChanged = () => fetchHistory();
+window.addEventListener("appointments-changed", onAppointmentsChanged);
+onUnmounted(() => window.removeEventListener("appointments-changed", onAppointmentsChanged));
 </script>

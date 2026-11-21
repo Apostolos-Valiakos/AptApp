@@ -1113,6 +1113,8 @@ export default {
       tooLarge: 'The file is larger than 10 MB.',
       uploadFailed: 'Could not upload the document.',
       deleteFailed: 'Could not delete the document.',
+      deleteTitle: 'Delete document',
+      deleteMessage: 'Delete “{name}”? The assistant will no longer answer from it.',
     },
     broadcast: {
       title: 'Send a Push Notification',

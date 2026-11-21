@@ -119,6 +119,32 @@ test("AI4 moving a booking: only to a time the booking screens would offer", asy
   sql(DB, `UPDATE shops SET self_booking_enabled = true WHERE id = '${SHOP}'`);
 });
 
+test("AI6 a client's booking (screens or assistant): only a time the screens offer", async () => {
+  sql(DB, `DELETE FROM appointments WHERE client_id = '${ids.client}'; UPDATE services SET bookable_online = true WHERE id = '${ids.service}'`);
+  await bookFor(ids.anna, "12:00");
+  const book = (start, key) => as.client("POST", "/api/v1/appointments", { services: [{ service_id: ids.service, staff_id: ids.anna, start_time: start }] }, { "Idempotency-Key": key });
+  const offered = (await as.client("GET", `/api/v1/availability?service_id=${ids.service}&staff_id=${ids.anna}&date=${day}`)).data.slots;
+  assert.ok(offered.includes(at(day, "10:00")) && !offered.includes(at(day, "12:00")));
+  for (const [start, why] of [[at(day, "12:00"), "taken"], [at(day, "13:30"), "ends after her hours"], [at(day, "10:05"), "off the 15-minute steps"], [new Date(Date.now() - 864e5).toISOString(), "past"]]) {
+    const r = await book(start, `ai6-${why}`);
+    assert.equal(r.status, 422, why);
+    assert.equal(r.data.reason, "slot_unavailable", why);
+  }
+  const ok = await book(at(day, "10:00"), "ai6-ok");
+  assert.equal(ok.status, 200, JSON.stringify(ok.data));
+  assert.equal(sql(DB, `SELECT save_receipt FROM appointments WHERE id = '${ok.data.id}'`), "t");
+});
+
+test("AI7 a client can't cancel a booking that has already happened", async () => {
+  sql(DB, `DELETE FROM appointments WHERE client_id = '${ids.client}'`);
+  const past = await bookFor(null, null, [{ service_id: ids.service, staff_id: ids.anna, start_time: new Date(Date.now() - 2 * 864e5).toISOString(), duration_override: 60, price_override: 30 }]);
+  assert.equal((await as.client("POST", `/api/v1/portal/appointments/${past}/cancel`)).status, 404);
+  assert.equal(sql(DB, `SELECT status FROM appointments WHERE id = '${past}'`), "confirmed");
+  const coming = await bookFor(ids.anna, "10:00");
+  assert.equal((await as.client("POST", `/api/v1/portal/appointments/${coming}/cancel`)).status, 200);
+  assert.equal(sql(DB, `SELECT status FROM appointments WHERE id = '${coming}'`), "cancelled");
+});
+
 test("AI5 a booking with several services is left to the shop", async () => {
   sql(DB, `DELETE FROM appointments WHERE client_id = '${ids.client}'`);
   const two = await bookFor(null, null, [

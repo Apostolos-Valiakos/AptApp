@@ -131,6 +131,10 @@ async def run_chat(
                     ],
                 }
             )
+        else:
+            # Still calling tools after every step allowed: the client would
+            # otherwise be left with no answer at all.
+            yield _sse("error", {"code": "too_long"})
     except anthropic.RateLimitError:
         yield _sse("error", {"code": "busy"})
     except anthropic.APIConnectionError:

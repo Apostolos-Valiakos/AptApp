@@ -59,7 +59,7 @@
               v-if="card.action.type === 'booking' && card.action.price != null"
               class="text-xs text-gray-500 mt-1"
             >
-              {{ card.action.duration_minutes }}′ · €{{ Number(card.action.price).toFixed(2) }}
+              {{ formatDuration(card.action.duration_minutes || 0, t) }} · {{ formatMoney(card.action.price) }}
             </div>
 
             <div v-if="card.status === 'pending' || card.status === 'working'" class="flex gap-2 mt-3">
@@ -118,6 +118,8 @@ import { ref, computed, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
 import Dialog from "primevue/dialog";
 import { useAuthStore } from "../../stores/auth";
+import { api, ApiError } from "../../api/http";
+import { formatDate, formatDuration, formatMoney } from "../../utils/format";
 
 type Card = { action: any; status: "pending" | "working" | "done" | "dismissed" | "failed" };
 type Message = { role: "user" | "assistant"; content: string; hidden?: boolean; actions?: Card[] };
@@ -146,14 +148,7 @@ const suggestions = computed(() => [
   t("portal.ai.suggestions.myAppointments"),
 ]);
 
-const formatWhen = (iso: string) =>
-  new Date(iso).toLocaleString(locale.value === "el" ? "el-GR" : "en-GB", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+const formatWhen = (iso: string) => formatDate(iso, locale.value, "weekdayTime");
 
 const scrollDown = () =>
   nextTick(() => listRef.value?.scrollTo({ top: listRef.value.scrollHeight }));
@@ -247,46 +242,35 @@ const note = (text: string) => messages.value.push({ role: "user", content: text
 const describe = (a: any) =>
   `${a.service_name}${a.staff_name ? `, ${a.staff_name}` : ""}, ${a.when}`;
 
+// The same requests the portal's own screens make, so the server applies the
+// same rules (only offered times, only future bookings) to both.
 const performAction = (a: any) => {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${authStore.token}`,
-  };
   if (a.type === "booking") {
-    return fetch("/api/v1/appointments", {
-      method: "POST",
-      headers: {
-        ...headers,
-        "Idempotency-Key": `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      },
-      body: JSON.stringify({
-        services: [{ service_id: a.service_id, staff_id: a.staff_id, start_time: a.start_time }],
-      }),
-    });
+    // One key per card: pressing Confirm again after a lost answer can't
+    // book twice.
+    a.idempotency_key ||= typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+    return api.post(
+      "/api/v1/appointments",
+      { services: [{ service_id: a.service_id, staff_id: a.staff_id, start_time: a.start_time }] },
+      { headers: { "Idempotency-Key": a.idempotency_key } },
+    );
   }
-  if (a.type === "cancel") {
-    return fetch(`/api/v1/portal/appointments/${a.appointment_id}/cancel`, {
-      method: "POST",
-      headers,
-    });
-  }
-  return fetch(`/api/v1/portal/appointments/${a.appointment_id}/reschedule`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ start_time: a.start_time, staff_id: a.staff_id }),
-  });
+  if (a.type === "cancel") return api.post(`/api/v1/portal/appointments/${a.appointment_id}/cancel`);
+  return api.post(`/api/v1/portal/appointments/${a.appointment_id}/reschedule`, { start_time: a.start_time, staff_id: a.staff_id });
 };
 
 const confirmCard = async (card: Card) => {
   card.status = "working";
   try {
-    const res = await performAction(card.action);
-    if (!res.ok) throw new Error();
+    await performAction(card.action);
     card.status = "done";
     note(`[Portal note: the client pressed Confirm and the ${card.action.type} succeeded: ${describe(card.action)}.]`);
-  } catch {
+    // The portal's lists (next booking, bookings) show the change at once.
+    window.dispatchEvent(new CustomEvent("appointments-changed"));
+  } catch (err) {
     card.status = "failed";
-    note(`[Portal note: the client pressed Confirm but the ${card.action.type} failed (${describe(card.action)}). The time may no longer be free.]`);
+    const reason = err instanceof ApiError ? err.data?.reason || err.data?.error || `HTTP ${err.status}` : "no connection";
+    note(`[Portal note: the client pressed Confirm but the ${card.action.type} failed (${describe(card.action)}); the spa's system said: ${reason}. Nothing was changed.]`);
   }
 };
 

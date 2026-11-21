@@ -64,7 +64,13 @@ module.exports = function portalRouter({
     asyncHandler(async (req, res) => {
       const { id } = req.params;
       const check = await pool.query(
-        `SELECT id FROM appointments WHERE id = $1 AND client_id = $2 AND shop_id = $3 AND status NOT IN ('cancelled', 'completed')`,
+        // Only a booking still to come: one that has happened (or was a
+        // no-show) is the shop's record, and cancelling it would change the
+        // client's balance.
+        `SELECT a.id FROM appointments a
+         WHERE a.id = $1 AND a.client_id = $2 AND a.shop_id = $3
+           AND a.status NOT IN ('cancelled', 'completed', 'no-show', 'no_show')
+           AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) > NOW()`,
         [id, req.user.clientId, req.shopId],
       );
       if (check.rows.length === 0) {

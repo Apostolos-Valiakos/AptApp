@@ -44,7 +44,7 @@
           <div class="text-sm font-medium text-gray-800 truncate">{{ doc.filename }}</div>
           <div class="text-xs text-gray-400">
             {{ (doc.size / 1024).toFixed(0) }} KB ·
-            {{ new Date(doc.uploaded_at * 1000).toLocaleDateString() }}
+            {{ formatDate(doc.uploaded_at * 1000, locale) }}
           </div>
         </div>
         <Button
@@ -52,6 +52,7 @@
           severity="danger"
           text
           size="small"
+          :aria-label="t('profile.aiAssistant.deleteTitle')"
           @click="removeDocument(doc)"
         />
       </div>
@@ -62,10 +63,15 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
-import { useToast } from "primevue/usetoast";
+import { useConfirm } from "primevue/useconfirm";
+import { api } from "../api/http";
+import { askConfirm } from "../utils/confirm";
+import { formatDate } from "../utils/format";
+import { useNotify } from "../composables/useNotify";
 
-const { t } = useI18n();
-const toast = useToast();
+const { t, locale } = useI18n();
+const confirm = useConfirm();
+const notify = useNotify();
 
 const enabled = ref(false);
 const saving = ref(false);
@@ -74,16 +80,11 @@ const uploading = ref(false);
 const unavailable = ref(false);
 const fileInput = ref<HTMLInputElement | null>(null);
 
-const auth = () => ({ Authorization: `Bearer ${localStorage.getItem("token")}` });
-
-const fail = (detail: string) =>
-  toast.add({ severity: "error", summary: t("common.error"), detail, life: 4000 });
+const fail = (detail: string) => notify.error(detail);
 
 const loadDocuments = async () => {
   try {
-    const res = await fetch("/ai/documents", { headers: auth() });
-    if (!res.ok) throw new Error();
-    documents.value = await res.json();
+    documents.value = await api.get("/ai/documents");
     unavailable.value = false;
   } catch {
     unavailable.value = true;
@@ -92,8 +93,7 @@ const loadDocuments = async () => {
 
 onMounted(async () => {
   try {
-    const res = await fetch("/api/v1/shop", { headers: auth() });
-    if (res.ok) enabled.value = !!(await res.json()).ai_assistant_enabled;
+    enabled.value = !!(await api.get("/api/v1/shop"))?.ai_assistant_enabled;
   } catch {}
   loadDocuments();
 });
@@ -101,12 +101,7 @@ onMounted(async () => {
 const saveEnabled = async (value: boolean) => {
   saving.value = true;
   try {
-    const res = await fetch("/api/v1/shop/ai-assistant", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", ...auth() },
-      body: JSON.stringify({ ai_assistant_enabled: value }),
-    });
-    if (!res.ok) throw new Error();
+    await api.put("/api/v1/shop/ai-assistant", { ai_assistant_enabled: value });
     enabled.value = value;
   } catch {
     fail(t("profile.toast.saveFailed"));
@@ -125,8 +120,7 @@ const onFilePicked = async (event: Event) => {
   try {
     const body = new FormData();
     body.append("file", file);
-    const res = await fetch("/ai/documents", { method: "POST", headers: auth(), body });
-    if (!res.ok) throw new Error();
+    await api.upload("/ai/documents", body);
     await loadDocuments();
   } catch {
     fail(t("profile.aiAssistant.uploadFailed"));
@@ -135,10 +129,18 @@ const onFilePicked = async (event: Event) => {
   }
 };
 
+// The assistant stops answering from a document as soon as it's removed.
 const removeDocument = async (doc: any) => {
+  const yes = await askConfirm(confirm, {
+    header: t("profile.aiAssistant.deleteTitle"),
+    message: t("profile.aiAssistant.deleteMessage", { name: doc.filename }),
+    icon: "pi pi-exclamation-triangle",
+    acceptLabel: t("common.delete"),
+    rejectLabel: t("common.cancel"),
+  });
+  if (!yes) return;
   try {
-    const res = await fetch(`/ai/documents/${doc.id}`, { method: "DELETE", headers: auth() });
-    if (!res.ok) throw new Error();
+    await api.del(`/ai/documents/${encodeURIComponent(doc.id)}`);
     documents.value = documents.value.filter((d) => d.id !== doc.id);
   } catch {
     fail(t("profile.aiAssistant.deleteFailed"));

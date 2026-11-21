@@ -162,3 +162,13 @@ def test_documents_are_admin_only(client):
     client.state["context"]["role"] = "frontdesk"
     assert client.get("/ai/documents", headers=AUTH).status_code == 403
     assert client.delete("/ai/documents/" + "a" * 32, headers=AUTH).status_code == 403
+
+
+def test_a_reply_that_never_stops_calling_tools_ends_with_an_error(client):
+    # Every step asks for another tool: after the last allowed step the client
+    # is told something went wrong instead of being left with nothing.
+    turns = [message(tool_use("list_services", {}), stop_reason="tool_use") for _ in range(main.config.MAX_AGENT_TURNS)]
+    main.app.state.claude = FakeClaude(turns)
+    got = events(client.post("/ai/chat", json={"question": "services?"}, headers=AUTH))
+    assert got[-2] == ("error", {"code": "too_long"})
+    assert got[-1][0] == "done"

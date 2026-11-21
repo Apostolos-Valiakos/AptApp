@@ -6,6 +6,7 @@ const { safeUUID } = require("./common");
 const { recalculateClientBalance } = require("./balances");
 const { releasePackageUsage } = require("./packages");
 const { workingRangesOn } = require("./staffSchedule");
+const { freeStartTimes } = require("./availability");
 
 // A product's seller (who earns its product commission): the one the screen
 // picked, none when it sent none, or `fallback` from a screen that doesn't send
@@ -734,6 +735,17 @@ const sanitizeClientBookingPayload = async (client, rawBody, shopId, clientId) =
       throw new SelfBookingNotAllowedError("staff_not_eligible");
     }
   }
+
+  // Only a time the booking screens (and the AI assistant) would offer: in
+  // the future, inside the staff member's hours, clear of their bookings,
+  // breaks and leave. Without this a hand-made request could book any time.
+  const when = new Date(startTime);
+  if (Number.isNaN(when.getTime())) throw new SelfBookingNotAllowedError("missing_fields");
+  const dayRes = await client.query("SELECT to_char($1::timestamptz, 'YYYY-MM-DD') AS day", [when.toISOString()]);
+  const free = await freeStartTimes(client, {
+    shopId, staffId, date: dayRes.rows[0].day, durationMinutes: Number(service.duration_minutes) || 60, skipPast: true,
+  });
+  if (!free.includes(when.toISOString())) throw new SelfBookingNotAllowedError("slot_unavailable");
 
   return {
     client_id: clientId,

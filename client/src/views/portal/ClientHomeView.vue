@@ -164,7 +164,7 @@
 <script setup lang="ts">
 import { api } from "../../api/http";
 import PaidAmount from "../../components/PaidAmount.vue";
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useI18n } from "vue-i18n";
 import Button from "primevue/button";
 import { usePushNotifications } from "../../composables/usePushNotifications";
@@ -215,13 +215,18 @@ onMounted(async () => {
     shopPhone.value = data?.phone || "";
   } catch {}
 
+  await loadHistory();
+  loading.value = false;
+});
+
+const loadHistory = async () => {
   try {
     const data = await api.get(`/api/v1/clients/${authStore.clientId}/full`);
     clientData.value = data.client;
     history.value = data.history || [];
-  } catch {
-  } finally {
-    loading.value = false;
-  }
-});
+  } catch {}
+};
+// A booking made, moved or cancelled from the assistant shows here at once.
+window.addEventListener("appointments-changed", loadHistory);
+onUnmounted(() => window.removeEventListener("appointments-changed", loadHistory));
 </script>
