@@ -25,8 +25,7 @@ import router from "./router";
 import { installSessionRecovery } from "./utils/sessionRecovery";
 
 // === PrimeVue v4 Theming ===
-import Aura from "@primevue/themes/aura";
-import { definePreset, palette } from "@primeuix/themes";
+import { appPreset } from "./theme/appPreset";
 
 // Core Styles
 import "primeicons/primeicons.css";
@@ -47,12 +46,6 @@ import { elDatePickerNames } from "./i18n/datePicker";
 import { initOfflineSync } from "./offline/queue";
 
 declare const __APP_SW__: boolean; // set by vite.config.mjs
-
-const MyPreset = definePreset(Aura, {
-  semantic: {
-    primary: palette("#8B6F4E"),
-  },
-});
 
 const initApp = async () => {
   const app = createApp(App);
@@ -78,7 +71,7 @@ const initApp = async () => {
     // Weeks start on Monday in every date picker.
     locale: { firstDayOfWeek: 1 },
     theme: {
-      preset: MyPreset,
+      preset: appPreset,
       options: {
         darkModeSelector: ".my-app-dark",
       },

@@ -1,0 +1,63 @@
+/* The portal's type, radii and elevation (docs/redesign/REDESIGN_SPEC.md §4).
+   Scoped to .portal-shell so nothing here reaches the staff app. Colours come
+   from the portal preset's tokens, so they follow the shop's colour and dark
+   mode by themselves. */
+@import "@fontsource/noto-serif-display/400.css";
+@import "@fontsource/noto-serif-display/600.css";
+
+.portal-shell {
+  --portal-font-display: "Noto Serif Display", Georgia, serif;
+  --portal-radius-card: 20px;
+  --portal-radius-sheet: 28px;
+  --portal-radius-button: 14px;
+  --portal-shadow-1: 0 1px 2px rgb(33 26 20 / 0.06);
+  --portal-shadow-2: 0 8px 24px rgb(33 26 20 / 0.08);
+  --portal-shadow-3: 0 24px 48px rgb(33 26 20 / 0.16);
+  --portal-bg: var(--p-surface-50);
+  --portal-card: var(--p-content-background);
+  --portal-border: var(--p-content-border-color);
+  --portal-text: var(--p-text-color);
+  --portal-muted: var(--p-text-muted-color);
+
+  background: var(--portal-bg);
+  color: var(--portal-text);
+  font-size: 17px;
+  line-height: 1.45;
+}
+
+/* In the dark, borders instead of shadows (shadows vanish on dark surfaces). */
+.my-app-dark .portal-shell {
+  --portal-bg: var(--p-surface-950);
+  --portal-shadow-1: 0 0 0 1px var(--p-surface-700);
+  --portal-shadow-2: 0 0 0 1px var(--p-surface-700);
+  --portal-shadow-3: 0 0 0 1px var(--p-surface-600);
+}
+
+.portal-shell .portal-display {
+  font-family: var(--portal-font-display);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.portal-shell .portal-h1 { font-size: 34px; line-height: 1.1; }
+.portal-shell .portal-h2 { font-size: 26px; line-height: 1.15; }
+.portal-shell .portal-h3 { font-size: 20px; line-height: 1.2; }
+.portal-shell .portal-small { font-size: 15px; }
+.portal-shell .portal-caption { font-size: 13px; color: var(--portal-muted); }
+.portal-shell .portal-micro { font-size: 11px; color: var(--portal-muted); }
+
+.portal-shell .portal-card {
+  background: var(--portal-card);
+  border-radius: var(--portal-radius-card);
+  box-shadow: var(--portal-shadow-1);
+}
+.portal-shell .portal-card-raised {
+  background: var(--portal-card);
+  border-radius: var(--portal-radius-card);
+  box-shadow: var(--portal-shadow-2);
+}
+
+/* Thumb-sized targets everywhere in the portal. */
+.portal-shell .portal-target {
+  min-height: 44px;
+  min-width: 44px;
+}
