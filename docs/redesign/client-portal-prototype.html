@@ -1,0 +1,888 @@
+<!doctype html>
+<html lang="el">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Client Portal Prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+Display:wght@500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="https://unpkg.com/primeicons@7.0.0/primeicons.css" />
+<script src="https://unpkg.com/vue@3.5.13/dist/vue.global.prod.js"></script>
+<script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
+<style>
+/* ---------- Tokens: the portal preset in plain CSS (see REDESIGN_SPEC.md §4) ---------- */
+:root {
+  --primary: #8b6f4e; --primary-600: #765c3f; --primary-100: #efe6da; --primary-50: #f8f3ec; --on-primary: #fff;
+  --bg: #faf7f2; --surface: #ffffff; --surface-2: #f4eee6; --border: #e9e0d4;
+  --text: #211a14; --muted: #6f604f; --faint: #94826d;
+  --success: #3f7d58; --success-bg: #e6f2ea; --warn: #a3581b; --warn-bg: #fbeee2; --danger: #b3402e; --danger-bg: #f9e6e2;
+  --shadow-1: 0 1px 2px rgb(33 26 20 / .06); --shadow-2: 0 8px 24px rgb(33 26 20 / .08); --shadow-3: 0 24px 48px rgb(33 26 20 / .16);
+  --r-card: 20px; --r-sheet: 28px; --r-btn: 14px;
+  --serif: "Noto Serif Display", Georgia, serif;
+  --sans: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --page: #ece5db; --page-ink: #211a14; --chrome: #ffffffcc;
+}
+.dark {
+  --primary: #c49a6c; --primary-600: #d6ae84; --primary-100: #3a2e23; --primary-50: #2a2119; --on-primary: #1a1612;
+  --bg: #1a1612; --surface: #231e19; --surface-2: #2b241e; --border: #3a3129;
+  --text: #f4eee6; --muted: #c6b8a8; --faint: #a08f7c;
+  --success: #7cc79a; --success-bg: #1f2f25; --warn: #f0b27a; --warn-bg: #352418; --danger: #f08a78; --danger-bg: #3a1f1a;
+  --shadow-1: none; --shadow-2: none; --shadow-3: 0 24px 48px rgb(0 0 0 / .5);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { font-family: var(--sans); background: var(--page); color: var(--page-ink); -webkit-font-smoothing: antialiased; min-height: 100vh; }
+body.page-dark { --page: #0f0c0a; --page-ink: #f4eee6; --chrome: #1a1612cc; }
+button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; }
+button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* ---------- Prototype chrome (outside the app) ---------- */
+.proto-bar { position: sticky; top: 0; z-index: 50; display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; padding: 10px 16px; background: var(--chrome); backdrop-filter: blur(12px); border-bottom: 1px solid rgb(127 110 90 / .2); }
+.proto-title { font-family: var(--serif); font-size: 18px; }
+.proto-title small { font-family: var(--sans); font-size: 12px; opacity: .65; margin-left: 6px; }
+.proto-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.seg { display: inline-flex; padding: 3px; border-radius: 999px; background: rgb(127 110 90 / .14); }
+.seg button { padding: 6px 12px; border-radius: 999px; font-size: 13px; font-weight: 500; white-space: nowrap; }
+.seg button.on { background: #fff; color: #211a14; box-shadow: 0 1px 3px rgb(0 0 0 / .12); }
+body.page-dark .seg button.on { background: #3a3129; color: #f4eee6; }
+.proto-select { font: inherit; font-size: 13px; padding: 6px 10px; border-radius: 999px; border: 1px solid rgb(127 110 90 / .3); background: transparent; color: inherit; }
+.stage { display: flex; justify-content: center; align-items: flex-start; padding: 24px 16px 48px; }
+
+/* ---------- Native call HUD ---------- */
+.hud { position: fixed; top: 64px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; flex-direction: column; gap: 6px; align-items: center; pointer-events: none; width: max-content; max-width: calc(100vw - 32px); }
+.hud-pill { display: flex; gap: 8px; align-items: center; padding: 8px 14px; border-radius: 999px; background: #17120e; color: #f4eee6; font-size: 12.5px; box-shadow: 0 10px 30px rgb(0 0 0 / .3); animation: pill-in .25s ease-out; }
+.hud-pill code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #f0c897; }
+.hud-pill .tag { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; padding: 2px 6px; border-radius: 6px; background: #3a3129; color: #d6c8b6; }
+@keyframes pill-in { from { opacity: 0; transform: translateY(-6px) scale(.97); } to { opacity: 1; transform: none; } }
+
+/* ---------- Device frames ---------- */
+.phone { position: relative; width: min(393px, calc(100vw - 32px)); height: min(852px, calc(100vh - 110px)); min-height: 640px; border-radius: 54px; padding: 11px; background: #17120e; box-shadow: 0 40px 80px rgb(0 0 0 / .25), inset 0 0 0 2px #3a3129; }
+.phone .screen { position: relative; height: 100%; border-radius: 44px; overflow: hidden; background: var(--bg); }
+.island { position: absolute; top: 11px; left: 50%; transform: translateX(-50%); width: 120px; height: 34px; border-radius: 20px; background: #000; z-index: 40; }
+.statusbar { height: 54px; padding: 18px 30px 0; display: flex; justify-content: space-between; align-items: flex-start; font-size: 15px; font-weight: 600; color: var(--text); position: relative; z-index: 30; }
+.statusbar i { font-size: 13px; margin-left: 5px; }
+.browser { width: min(1280px, calc(100vw - 32px)); height: min(820px, calc(100vh - 110px)); min-height: 600px; border-radius: 14px; overflow: hidden; background: var(--bg); box-shadow: 0 30px 60px rgb(0 0 0 / .2); display: flex; flex-direction: column; border: 1px solid rgb(127 110 90 / .25); }
+.browser-bar { height: 40px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 14px; background: var(--surface-2); border-bottom: 1px solid var(--border); }
+.dot { width: 11px; height: 11px; border-radius: 50%; }
+.url { margin-left: 14px; flex: 1; max-width: 460px; height: 26px; border-radius: 8px; background: var(--surface); color: var(--muted); font-size: 12.5px; display: flex; align-items: center; padding: 0 12px; gap: 6px; }
+
+/* ---------- App shell ---------- */
+.app { color: var(--text); background: var(--bg); font-size: 15px; height: 100%; display: flex; flex-direction: column; position: relative; overflow: hidden; }
+.app.mobile .topbar { height: 52px; flex: none; display: flex; align-items: center; justify-content: space-between; padding: 0 18px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px; }
+.brand-mark { width: 32px; height: 32px; border-radius: 10px; background: var(--primary); color: var(--on-primary); display: grid; place-items: center; font-family: var(--serif); font-size: 17px; }
+.icon-btn { position: relative; width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; color: var(--text); }
+.icon-btn:hover { background: var(--surface-2); }
+.badge { position: absolute; top: 6px; right: 6px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: var(--danger); color: #fff; font-size: 10px; font-weight: 700; display: grid; place-items: center; }
+.scroll { flex: 1; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.app.mobile .scroll { padding: 4px 18px 120px; }
+.tabbar { position: absolute; left: 0; right: 0; bottom: 0; height: 86px; padding: 8px 10px 26px; display: grid; grid-template-columns: repeat(5, 1fr); align-items: end; background: color-mix(in srgb, var(--surface) 88%, transparent); backdrop-filter: blur(16px); border-top: 1px solid var(--border); z-index: 20; }
+.tab { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 10.5px; font-weight: 600; color: var(--faint); padding: 4px 0; }
+.tab i { font-size: 19px; }
+.tab.on { color: var(--primary); }
+.tab-book { width: 56px; height: 56px; margin: -22px auto 0; border-radius: 18px; background: var(--primary); color: var(--on-primary); display: grid; place-items: center; box-shadow: var(--shadow-2); }
+.tab-book i { font-size: 22px; }
+
+/* Desktop layout */
+.app.desktop { flex-direction: row; }
+.rail { width: 232px; flex: none; padding: 20px 14px; border-right: 1px solid var(--border); display: flex; flex-direction: column; gap: 4px; background: var(--surface); }
+.rail .brand { padding: 4px 8px 18px; }
+.rail-link { display: flex; align-items: center; gap: 12px; padding: 11px 12px; border-radius: 12px; font-weight: 500; color: var(--muted); text-align: left; }
+.rail-link i { font-size: 17px; width: 20px; }
+.rail-link:hover { background: var(--surface-2); color: var(--text); }
+.rail-link.on { background: var(--primary-100); color: var(--primary-600); }
+.dark .rail-link.on { color: var(--primary); }
+.rail-book { margin: 6px 0 12px; justify-content: center; background: var(--primary); color: var(--on-primary); font-weight: 600; }
+.rail-book:hover { background: var(--primary-600); color: var(--on-primary); }
+.rail-foot { margin-top: auto; display: flex; gap: 6px; align-items: center; padding: 8px; color: var(--muted); font-size: 13px; }
+.desk-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.desk-top { height: 64px; flex: none; display: flex; align-items: center; justify-content: space-between; padding: 0 28px; border-bottom: 1px solid var(--border); }
+.app.desktop .scroll { padding: 24px 28px 40px; }
+.desk-body { flex: 1; display: flex; min-height: 0; }
+.context { width: 380px; flex: none; border-left: 1px solid var(--border); overflow-y: auto; padding: 24px 22px; background: var(--surface); }
+.context h4 { margin: 0 0 12px; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--faint); }
+
+/* ---------- Type & building blocks ---------- */
+.serif { font-family: var(--serif); font-weight: 500; letter-spacing: -.01em; }
+.h1 { font-size: 30px; line-height: 1.15; margin: 6px 0 4px; }
+.h2 { font-size: 21px; margin: 26px 0 12px; display: flex; justify-content: space-between; align-items: baseline; }
+.h2 button { font-family: var(--sans); font-size: 13px; color: var(--primary); font-weight: 600; }
+.sub { color: var(--muted); font-size: 14px; margin: 0; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); box-shadow: var(--shadow-1); }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 46px; padding: 0 18px; border-radius: var(--r-btn); font-weight: 600; font-size: 15px; transition: transform .08s, background .15s; }
+.btn:active { transform: scale(.98); }
+.btn-primary { background: var(--primary); color: var(--on-primary); }
+.btn-primary:hover { background: var(--primary-600); }
+.btn-primary:disabled { opacity: .45; cursor: not-allowed; }
+.btn-soft { background: var(--primary-50); color: var(--primary-600); border: 1px solid var(--primary-100); }
+.dark .btn-soft { color: var(--primary); }
+.btn-ghost { color: var(--text); border: 1px solid var(--border); background: var(--surface); }
+.btn-danger { background: var(--danger); color: #fff; }
+.btn-block { width: 100%; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; font-size: 13px; font-weight: 500; background: var(--surface-2); color: var(--muted); white-space: nowrap; }
+.chip.on { background: var(--primary); color: var(--on-primary); }
+.chip-status { font-size: 12px; padding: 4px 10px; }
+.chip-ok { background: var(--success-bg); color: var(--success); }
+.chip-warn { background: var(--warn-bg); color: var(--warn); }
+.row { display: flex; gap: 10px; align-items: center; }
+.grow { flex: 1; min-width: 0; }
+.hscroll { display: flex; gap: 12px; overflow-x: auto; padding: 2px 2px 8px; margin: 0 -2px; scrollbar-width: none; scroll-snap-type: x mandatory; }
+.hscroll::-webkit-scrollbar { display: none; }
+.hscroll > * { scroll-snap-align: start; flex: none; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.money { font-variant-numeric: tabular-nums; }
+
+/* Up Next card */
+.upnext { position: relative; overflow: hidden; padding: 20px; border-radius: 24px; background: linear-gradient(140deg, var(--primary) 0%, var(--primary-600) 100%); color: var(--on-primary); box-shadow: var(--shadow-2); }
+.upnext::after { content: ""; position: absolute; right: -60px; top: -60px; width: 200px; height: 200px; border-radius: 50%; background: rgb(255 255 255 / .08); }
+.upnext .label { font-size: 12px; text-transform: uppercase; letter-spacing: .1em; opacity: .8; display: flex; justify-content: space-between; align-items: center; }
+.upnext .when { font-family: var(--serif); font-size: 26px; margin: 10px 0 2px; }
+.upnext .what { opacity: .9; font-size: 14.5px; }
+.countdown { display: flex; gap: 8px; margin: 16px 0; }
+.countdown div { flex: 1; text-align: center; padding: 8px 0; border-radius: 12px; background: rgb(255 255 255 / .14); }
+.countdown b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
+.countdown span { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; opacity: .8; }
+.upnext-actions { display: flex; gap: 8px; flex-wrap: wrap; position: relative; z-index: 1; }
+.upnext .btn-on { background: var(--on-primary); color: var(--primary-600); }
+.dark .upnext .btn-on { color: #2b241e; background: #f4eee6; }
+.upnext .btn-glass { background: rgb(255 255 255 / .16); color: var(--on-primary); min-height: 40px; padding: 0 12px; font-size: 13.5px; }
+.upnext-pill { background: rgb(255 255 255 / .18); padding: 4px 10px; border-radius: 999px; font-size: 11.5px; letter-spacing: 0; text-transform: none; }
+
+/* Rebook cards */
+.rebook { width: 210px; padding: 16px; display: flex; flex-direction: column; gap: 10px; text-align: left; }
+.rebook .svc { font-weight: 600; }
+.avatar { width: 34px; height: 34px; border-radius: 50%; background: var(--primary-100); color: var(--primary-600); display: grid; place-items: center; font-weight: 700; font-size: 13px; flex: none; }
+.dark .avatar { color: var(--primary); }
+
+/* Wallet strip & rings */
+.ring { --p: 60; width: 58px; height: 58px; border-radius: 50%; background: conic-gradient(var(--primary) calc(var(--p) * 1%), var(--surface-2) 0); display: grid; place-items: center; flex: none; }
+.ring span { width: 44px; height: 44px; border-radius: 50%; background: var(--surface); display: grid; place-items: center; font-size: 12.5px; font-weight: 700; }
+
+/* Booking */
+.steps { display: flex; gap: 6px; margin: 6px 0 16px; }
+.steps div { flex: 1; height: 4px; border-radius: 4px; background: var(--border); }
+.steps div.on { background: var(--primary); }
+.svc-card { width: 100%; padding: 16px; display: flex; gap: 14px; align-items: center; text-align: left; margin-bottom: 10px; transition: border-color .15s; }
+.svc-card.on { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-100); }
+.svc-icon { width: 46px; height: 46px; border-radius: 14px; background: var(--primary-50); color: var(--primary); display: grid; place-items: center; font-size: 19px; flex: none; }
+.datestrip .day { width: 58px; padding: 10px 0 8px; border-radius: 16px; display: flex; flex-direction: column; align-items: center; gap: 2px; background: var(--surface); border: 1px solid var(--border); }
+.datestrip .day b { font-size: 18px; }
+.datestrip .day span { font-size: 11px; color: var(--muted); text-transform: uppercase; }
+.datestrip .day.on { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.datestrip .day.on span { color: var(--on-primary); opacity: .85; }
+.datestrip .day.none { opacity: .4; }
+.avail { display: flex; gap: 2px; height: 6px; margin-top: 2px; }
+.avail i { width: 5px; height: 5px; border-radius: 50%; background: currentColor; opacity: .5; }
+.slots-group { margin: 16px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--faint); }
+.slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 8px; }
+.slot { position: relative; padding: 12px 0; border-radius: 12px; background: var(--surface); border: 1px solid var(--border); font-weight: 600; font-variant-numeric: tabular-nums; }
+.slot.on { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
+.slot .few { position: absolute; top: -7px; right: 6px; font-size: 10px; padding: 1px 6px; border-radius: 999px; background: var(--warn-bg); color: var(--warn); font-weight: 600; }
+.summary { position: absolute; left: 12px; right: 12px; bottom: 96px; z-index: 15; padding: 12px 12px 12px 16px; border-radius: 20px; background: var(--surface); box-shadow: var(--shadow-3); border: 1px solid var(--border); display: flex; align-items: center; gap: 12px; animation: up .25s ease-out; }
+.app.desktop .summary { position: sticky; bottom: 0; left: auto; right: auto; margin-top: 20px; }
+@keyframes up { from { transform: translateY(20px); opacity: 0; } to { transform: none; opacity: 1; } }
+.moving { padding: 10px 14px; border-radius: 14px; background: var(--warn-bg); color: var(--warn); font-size: 13.5px; margin-bottom: 14px; display: flex; gap: 8px; align-items: center; }
+
+/* Lists */
+.list-item { width: 100%; display: flex; gap: 14px; align-items: center; padding: 14px 16px; text-align: left; }
+.list-item + .list-item { border-top: 1px solid var(--border); }
+.datebox { width: 50px; height: 54px; border-radius: 14px; background: var(--primary-50); color: var(--primary-600); display: flex; flex-direction: column; align-items: center; justify-content: center; flex: none; }
+.dark .datebox { color: var(--primary); }
+.datebox b { font-size: 19px; line-height: 1; }
+.datebox span { font-size: 10.5px; text-transform: uppercase; font-weight: 600; margin-top: 3px; }
+.segmented { display: flex; padding: 4px; border-radius: 14px; background: var(--surface-2); margin: 10px 0 14px; }
+.segmented button { flex: 1; padding: 9px; border-radius: 11px; font-weight: 600; font-size: 14px; color: var(--muted); }
+.segmented button.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow-1); }
+
+/* Sheets */
+.scrim { position: absolute; inset: 0; background: rgb(20 15 11 / .45); z-index: 60; animation: fade .2s; }
+@keyframes fade { from { opacity: 0; } }
+.sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 61; max-height: 88%; overflow-y: auto; background: var(--surface); border-radius: var(--r-sheet) var(--r-sheet) 0 0; padding: 10px 20px 34px; box-shadow: var(--shadow-3); animation: sheet .28s cubic-bezier(.2, .9, .3, 1); }
+@keyframes sheet { from { transform: translateY(100%); } }
+.grabber { width: 40px; height: 5px; border-radius: 5px; background: var(--border); margin: 0 auto 14px; }
+.sheet-title { font-family: var(--serif); font-size: 22px; margin: 4px 0 2px; }
+.app.desktop .scrim { background: rgb(20 15 11 / .3); }
+.app.desktop .sheet { left: auto; right: 24px; bottom: 24px; top: 24px; width: 420px; max-height: none; border-radius: 24px; animation: side .25s ease-out; }
+@keyframes side { from { transform: translateX(30px); opacity: 0; } }
+.kv { display: grid; grid-template-columns: 26px 1fr; gap: 10px 8px; align-items: start; margin: 14px 0; font-size: 14.5px; }
+.kv i { color: var(--primary); margin-top: 2px; }
+.map { height: 120px; border-radius: 16px; position: relative; overflow: hidden; background:
+  linear-gradient(90deg, transparent 47%, var(--border) 47%, var(--border) 53%, transparent 53%),
+  linear-gradient(0deg, transparent 60%, var(--border) 60%, var(--border) 64%, transparent 64%),
+  linear-gradient(35deg, transparent 30%, var(--surface-2) 30%, var(--surface-2) 70%, transparent 70%), var(--primary-50); }
+.map .pin { position: absolute; left: 50%; top: 45%; transform: translate(-50%, -100%); color: var(--primary); font-size: 30px; }
+.actions-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 16px 0; }
+.action { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 4px; border-radius: 16px; background: var(--surface-2); font-size: 12.5px; font-weight: 600; color: var(--text); }
+.action i { font-size: 18px; color: var(--primary); }
+.action.danger i, .action.danger { color: var(--danger); }
+
+/* Pass */
+.pass-wrap { position: absolute; inset: 0; z-index: 80; display: grid; place-items: center; background: rgb(20 15 11 / .6); animation: fade .2s; padding: 20px; }
+.pass-wrap.bright::before { content: ""; position: absolute; inset: 0; background: rgb(255 255 255 / .55); animation: flash .5s ease-out; pointer-events: none; }
+@keyframes flash { from { background: rgb(255 255 255 / .95); } }
+.pass { position: relative; width: min(330px, 100%); border-radius: 26px; overflow: hidden; background: #fff; color: #211a14; box-shadow: 0 30px 60px rgb(0 0 0 / .35); animation: passin .35s cubic-bezier(.2, .9, .3, 1.1); }
+@keyframes passin { from { transform: translateY(40px) scale(.95); opacity: 0; } }
+.pass-head { background: var(--primary); color: #fff; padding: 18px 20px; display: flex; justify-content: space-between; align-items: center; }
+.dark .pass-head { color: #1a1612; }
+.pass-body { padding: 18px 20px 22px; text-align: center; }
+.qr { width: 210px; height: 210px; margin: 6px auto 10px; }
+.qr svg { width: 100%; height: 100%; }
+.pass-meta { display: flex; justify-content: space-between; text-align: left; font-size: 12px; color: #6f604f; border-top: 1px dashed #e9e0d4; padding-top: 12px; margin-top: 6px; }
+.pass-meta b { display: block; color: #211a14; font-size: 14px; }
+
+/* Success */
+.success { position: absolute; inset: 0; z-index: 70; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 32px; animation: fade .2s; }
+.check { width: 88px; height: 88px; border-radius: 50%; background: var(--success-bg); color: var(--success); display: grid; place-items: center; font-size: 40px; animation: pop .45s cubic-bezier(.2, 1.4, .4, 1); }
+@keyframes pop { from { transform: scale(.4); opacity: 0; } }
+
+/* Profile */
+.set-row { display: flex; align-items: center; gap: 14px; padding: 14px 16px; width: 100%; text-align: left; }
+.set-row + .set-row { border-top: 1px solid var(--border); }
+.set-row > i:first-child { width: 34px; height: 34px; border-radius: 10px; background: var(--primary-50); color: var(--primary); display: grid; place-items: center; font-size: 15px; flex: none; }
+.toggle { width: 50px; height: 30px; border-radius: 999px; background: var(--border); position: relative; transition: background .2s; flex: none; }
+.toggle::after { content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / .2); transition: transform .2s; }
+.toggle.on { background: var(--success); }
+.toggle.on::after { transform: translateX(20px); }
+
+/* In-app toast */
+.toast { position: absolute; left: 50%; bottom: 104px; transform: translateX(-50%); z-index: 90; padding: 12px 16px; border-radius: 14px; background: #211a14; color: #f4eee6; font-size: 14px; box-shadow: var(--shadow-3); display: flex; gap: 8px; align-items: center; animation: up .25s; white-space: nowrap; }
+.app.desktop .toast { bottom: 24px; }
+.offer { padding: 16px; display: flex; gap: 14px; align-items: center; background: linear-gradient(120deg, var(--primary-50), var(--surface)); }
+.stars { display: flex; gap: 6px; justify-content: center; margin: 14px 0; }
+.stars button { font-size: 28px; color: var(--border); }
+.stars button.on { color: #e0a43a; }
+
+@media (max-width: 720px) {
+  .proto-bar { position: static; }
+  .stage { padding: 16px 8px 40px; }
+  .phone { border-radius: 44px; padding: 8px; }
+  .phone .screen { border-radius: 36px; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<div id="proto"></div>
+
+<script>
+const { createApp, reactive, ref, computed, watch, onMounted, onUnmounted, nextTick } = Vue;
+
+// ---------- Copy (EL default, EN) ----------
+const COPY = {
+  el: {
+    shop: "Pure Spa & Massage", morning: "Καλημέρα", afternoon: "Καλησπέρα", evening: "Καλησπέρα",
+    tabs: { home: "Αρχική", bookings: "Ραντεβού", book: "Κράτηση", wallet: "Πορτοφόλι", profile: "Προφίλ" },
+    upNext: "Επόμενο ραντεβού", needsConfirm: "Επιβεβαιώστε", confirmed: "Επιβεβαιωμένο",
+    days: "ημέρες", hours: "ώρες", minutes: "λεπτά", seconds: "δεύτ.",
+    confirm: "Επιβεβαίωση", pass: "Κάρτα check-in", calendar: "Ημερολόγιο", directions: "Οδηγίες", reschedule: "Αλλαγή ώρας", call: "Κλήση", share: "Κοινοποίηση", cancel: "Ακύρωση",
+    headOver: "Ώρα να ξεκινήσετε", enjoy: "Καλή απόλαυση", howWas: "Πώς ήταν η επίσκεψη;", rate: "Αξιολόγηση", today: "Σήμερα", tomorrow: "Αύριο",
+    bookAgain: "Κλείστε ξανά", sameAsLast: "Όπως την τελευταία φορά", seeAll: "Όλα",
+    walletTitle: "Πορτοφόλι", visitsLeft: "επισκέψεις απομένουν", membership: "Συνδρομή", renews: "Ανανεώνεται", package: "Πακέτο",
+    offerTitle: "Διαγωνισμός Δεκεμβρίου", offerText: "Κλείστε 2 επισκέψεις και μπείτε στην κλήρωση για ένα spa day.",
+    chooseService: "Τι θα θέλατε;", chooseTime: "Πότε σας βολεύει;", confirmTitle: "Επιβεβαίωση κράτησης",
+    anyone: "Οποιοσδήποτε", with: "με", morningSlots: "Πρωί", afternoonSlots: "Απόγευμα", eveningSlots: "Βράδυ", few: "λίγες", none: "Καμία ελεύθερη ώρα αυτή τη μέρα",
+    continue: "Συνέχεια", bookNow: "Κράτηση", back: "Πίσω", notes: "Σημειώσεις για το spa (προαιρετικά)", policy: "Δωρεάν ακύρωση έως 24 ώρες πριν.",
+    booked: "Κλείσατε!", bookedText: "Θα λάβετε υπενθύμιση πριν από το ραντεβού.", done: "Τέλος", moving: "Μετακίνηση από",
+    upcoming: "Επερχόμενα", past: "Προηγούμενα", paid: "Πληρώθηκε", details: "Λεπτομέρειες", where: "Πού", cancelTitle: "Ακύρωση ραντεβού;", cancelText: "Δωρεάν ακύρωση έως 24 ώρες πριν. Η θέση θα δοθεί σε άλλον πελάτη.", keep: "Διατήρηση", cancelIt: "Ακύρωση ραντεβού",
+    showAtDesk: "Δείξτε τον κωδικό στη ρεσεψιόν", member: "Μέλος", tier: "Επίπεδο",
+    profile: "Προφίλ", account: "Λογαριασμός", info: "Τα στοιχεία μου", password: "Κωδικός", security: "Ασφάλεια", faceId: "Ξεκλείδωμα με Face ID", notifications: "Ειδοποιήσεις", push: "Ειδοποιήσεις push", email: "Υπενθυμίσεις email", remindMe: "Υπενθύμιση πριν", appearance: "Εμφάνιση", system: "Σύστημα", light: "Φωτεινό", dark: "Σκούρο", language: "Γλώσσα", activity: "Δραστηριότητα", logout: "Αποσύνδεση",
+    toastConfirmed: "Το ραντεβού επιβεβαιώθηκε", toastCancelled: "Το ραντεβού ακυρώθηκε", toastCal: "Προστέθηκε στο ημερολόγιο", toastShared: "Κοινοποιήθηκε", toastMoved: "Το ραντεβού μετακινήθηκε", toastThanks: "Ευχαριστούμε! Άνοιξε η σελίδα κριτικών",
+    empty: "Δεν έχετε επερχόμενα ραντεβού.", rateText: "Η γνώμη σας βοηθά άλλους να μας βρουν.", recent: "Πρόσφατες ειδοποιήσεις",
+  },
+  en: {
+    shop: "Pure Spa & Massage", morning: "Good morning", afternoon: "Good afternoon", evening: "Good evening",
+    tabs: { home: "Home", bookings: "Bookings", book: "Book", wallet: "Wallet", profile: "Profile" },
+    upNext: "Up next", needsConfirm: "Please confirm", confirmed: "Confirmed",
+    days: "days", hours: "hours", minutes: "min", seconds: "sec",
+    confirm: "Confirm", pass: "Check-in pass", calendar: "Calendar", directions: "Directions", reschedule: "Reschedule", call: "Call", share: "Share", cancel: "Cancel",
+    headOver: "Time to head over", enjoy: "Enjoy your treatment", howWas: "How was your visit?", rate: "Rate", today: "Today", tomorrow: "Tomorrow",
+    bookAgain: "Book again", sameAsLast: "Same as last time", seeAll: "See all",
+    walletTitle: "Wallet", visitsLeft: "visits left", membership: "Membership", renews: "Renews", package: "Package",
+    offerTitle: "December contest", offerText: "Book 2 visits and enter the draw for a spa day.",
+    chooseService: "What would you like?", chooseTime: "When suits you?", confirmTitle: "Confirm your booking",
+    anyone: "Anyone", with: "with", morningSlots: "Morning", afternoonSlots: "Afternoon", eveningSlots: "Evening", few: "few left", none: "No free times this day",
+    continue: "Continue", bookNow: "Book", back: "Back", notes: "Notes for the spa (optional)", policy: "Free cancellation up to 24 hours before.",
+    booked: "You're booked!", bookedText: "We'll remind you before your visit.", done: "Done", moving: "Moving from",
+    upcoming: "Upcoming", past: "Past", paid: "Paid", details: "Details", where: "Where", cancelTitle: "Cancel this booking?", cancelText: "Free cancellation up to 24 hours before. The time goes to another client.", keep: "Keep it", cancelIt: "Cancel booking",
+    showAtDesk: "Show this code at reception", member: "Member", tier: "Tier",
+    profile: "Profile", account: "Account", info: "My information", password: "Password", security: "Security", faceId: "Unlock with Face ID", notifications: "Notifications", push: "Push notifications", email: "Email reminders", remindMe: "Remind me before", appearance: "Appearance", system: "System", light: "Light", dark: "Dark", language: "Language", activity: "Activity", logout: "Log out",
+    toastConfirmed: "Booking confirmed", toastCancelled: "Booking cancelled", toastCal: "Added to your calendar", toastShared: "Shared", toastMoved: "Booking moved", toastThanks: "Thank you! Review page opened",
+    empty: "No upcoming bookings.", rateText: "Your review helps others find us.", recent: "Recent notifications",
+  },
+};
+
+// ---------- Sample data (invented) ----------
+const STAFF = [ { id: "anna", name: "Άννα" }, { id: "eleni", name: "Ελένη" }, { id: "maria", name: "Μαρία Μ." }, { id: "ioanna", name: "Ιωάννα" } ];
+const CATS = [ { id: "massage", el: "Μασάζ", en: "Massage", icon: "pi-heart" }, { id: "face", el: "Πρόσωπο", en: "Facial", icon: "pi-sparkles" }, { id: "heat", el: "Σάουνα & Χαμάμ", en: "Sauna & Hammam", icon: "pi-sun" } ];
+const SERVICES = [
+  { id: "holistic", cat: "massage", el: "Holistic Massage", en: "Holistic Massage", min: 60, price: 32, desc: { el: "Ολιστικό μασάζ σώματος", en: "Full-body holistic massage" }, staff: ["anna", "eleni", "maria"] },
+  { id: "hotstones", cat: "massage", el: "Hot Stones", en: "Hot Stones", min: 75, price: 45, desc: { el: "Ζεστές πέτρες βασάλτη", en: "Warm basalt stones" }, staff: ["anna", "maria"] },
+  { id: "pure", cat: "massage", el: "Pure Signature", en: "Pure Signature", min: 90, price: 55, desc: { el: "Η υπογραφή του Pure", en: "The house signature ritual" }, staff: ["eleni"] },
+  { id: "facial", cat: "face", el: "Θεραπεία Προσώπου", en: "Signature Facial", min: 60, price: 48, desc: { el: "Καθαρισμός και ενυδάτωση", en: "Cleanse and deep hydration" }, staff: ["ioanna"] },
+  { id: "hammam", cat: "heat", el: "Hammam Ritual", en: "Hammam Ritual", min: 90, price: 45, desc: { el: "Ατμός, απολέπιση, μάσκα", en: "Steam, scrub and mask" }, staff: ["maria", "eleni"] },
+  { id: "sauna", cat: "heat", el: "Σάουνα", en: "Sauna", min: 30, price: 15, desc: { el: "Φινλανδική σάουνα", en: "Finnish sauna" }, staff: ["anna"] },
+];
+const at = (dayOffset, h, m = 0) => { const d = new Date(); d.setDate(d.getDate() + dayOffset); d.setHours(h, m, 0, 0); return d; };
+
+createApp({
+  setup() {
+    const view = reactive({ device: window.innerWidth < 720 ? "mobile" : "mobile", theme: "light", lang: "el", tab: "home", upState: "auto" });
+    const t = computed(() => COPY[view.lang]);
+    const L = (o) => o[view.lang];
+    const now = ref(new Date());
+    let timer;
+    onMounted(() => { timer = setInterval(() => (now.value = new Date()), 1000); });
+    onUnmounted(() => clearInterval(timer));
+    watch(() => view.theme, (v) => document.body.classList.toggle("page-dark", v === "dark"), { immediate: true });
+    watch(() => view.lang, (v) => (document.documentElement.lang = v));
+
+    // ---------- HUD (simulated native calls) ----------
+    const hud = ref([]);
+    let hudId = 0;
+    const native = (call, tag = "native") => {
+      const id = ++hudId;
+      hud.value = [...hud.value.slice(-2), { id, call, tag }];
+      setTimeout(() => (hud.value = hud.value.filter((h) => h.id !== id)), 2600);
+    };
+    const toastMsg = ref(null);
+    let toastT;
+    const toast = (msg, icon = "pi-check-circle") => { toastMsg.value = { msg, icon }; clearTimeout(toastT); toastT = setTimeout(() => (toastMsg.value = null), 2400); };
+
+    // ---------- Bookings ----------
+    const bookings = ref([
+      { id: "b1", service: "holistic", staff: "anna", start: at(1, 18, 30), status: "new", price: 32, paid: 0 },
+      { id: "b2", service: "hammam", staff: "maria", start: at(9, 11), status: "confirmed", price: 45, paid: 0 },
+    ]);
+    const past = ref([
+      { id: "p1", service: "holistic", staff: "anna", start: at(-14, 18), price: 32, paid: 32 },
+      { id: "p2", service: "facial", staff: "ioanna", start: at(-30, 12), price: 48, paid: 48 },
+      { id: "p3", service: "hotstones", staff: "maria", start: at(-52, 17, 30), price: 45, paid: 25 },
+    ]);
+    const svc = (id) => SERVICES.find((s) => s.id === id);
+    const staffName = (id) => STAFF.find((s) => s.id === id)?.name || t.value.anyone;
+    const upcoming = computed(() => [...bookings.value].sort((a, b) => a.start - b.start));
+    const next = computed(() => upcoming.value[0] || null);
+    const fmtDay = (d) => d.toLocaleDateString(view.lang === "el" ? "el-GR" : "en-GB", { weekday: "long", day: "numeric", month: "long" });
+    const fmtShort = (d) => d.toLocaleDateString(view.lang === "el" ? "el-GR" : "en-GB", { weekday: "short", day: "numeric", month: "short" });
+    const fmtTime = (d) => d.toLocaleTimeString(view.lang === "el" ? "el-GR" : "en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
+    const monthShort = (d) => d.toLocaleDateString(view.lang === "el" ? "el-GR" : "en-GB", { month: "short" }).replace(".", "");
+    const greeting = computed(() => { const h = now.value.getHours(); return h < 12 ? t.value.morning : h < 18 ? t.value.afternoon : t.value.evening; });
+
+    // Up Next state: real time, or forced from the prototype bar to show each state.
+    const cardState = computed(() => {
+      if (view.upState !== "auto") return view.upState;
+      if (!next.value) return "none";
+      const ms = next.value.start - now.value;
+      if (ms > 864e5) return "later";
+      if (ms > 36e5) return "today";
+      if (ms > 0) return "soon";
+      return "after";
+    });
+    const countdown = computed(() => {
+      if (!next.value) return null;
+      let ms = Math.max(0, next.value.start - now.value);
+      if (view.upState === "today") ms = 5 * 36e5 + 12 * 6e4 + 9e3;
+      if (view.upState === "soon") ms = 42 * 6e4 + 18e3;
+      const d = Math.floor(ms / 864e5), h = Math.floor(ms / 36e5) % 24, m = Math.floor(ms / 6e4) % 60, s = Math.floor(ms / 1e3) % 60;
+      return { d, h, m, s };
+    });
+    const whenLabel = (d) => {
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const diff = Math.round((new Date(d).setHours(0, 0, 0, 0) - today) / 864e5);
+      const day = diff === 0 ? t.value.today : diff === 1 ? t.value.tomorrow : fmtShort(d);
+      return `${day} · ${fmtTime(d)}`;
+    };
+
+    const confirmBooking = (b) => { b.status = "confirmed"; native("Haptics.notification({ type: NotificationType.Success })", "haptics"); toast(t.value.toastConfirmed); };
+
+    // ---------- Sheets ----------
+    const sheet = ref(null); // { kind: 'detail'|'cancel'|'activity'|'rate', booking }
+    const openSheet = (kind, booking = null) => { sheet.value = { kind, booking }; native(kind === "cancel" ? "Haptics.notification({ type: NotificationType.Warning })" : "Haptics.impact({ style: ImpactStyle.Light })", "haptics"); };
+    const closeSheet = () => (sheet.value = null);
+    const doCancel = (b) => { bookings.value = bookings.value.filter((x) => x.id !== b.id); closeSheet(); native("LocalNotifications.cancel({ notifications: [24h, 1h] })", "reminders"); toast(t.value.toastCancelled, "pi-calendar-times"); };
+
+    const addToCalendar = (b) => {
+      if (view.device === "desktop") native("download(appointment.ics) · Google Calendar link", "web");
+      else native(`CapacitorCalendar.createEvent({ title: "${L(svc(b.service))}", startDate: ${b.start.getTime()} })`, "calendar");
+      toast(t.value.toastCal, "pi-calendar-plus");
+    };
+    const share = (b) => {
+      native(view.device === "desktop" ? "navigator.share() → clipboard fallback" : "Share.share({ title, text, url })", "share");
+      toast(t.value.toastShared, "pi-share-alt");
+    };
+    const directions = () => native(view.device === "desktop" ? 'window.open("https://maps.google.com/?q=Pure+Spa+Larisa")' : 'AppLauncher.openUrl({ url: "maps://?q=Pure Spa Larisa" })', "maps");
+    const call = () => native('window.open("tel:+302410000000")', "web");
+
+    // ---------- Check-in pass ----------
+    const passOpen = ref(false);
+    const qrSvg = computed(() => {
+      try { const q = qrcode(0, "M"); q.addData("PURE-CLIENT-7Q4K-9X2M-DEMO"); q.make(); return q.createSvgTag({ cellSize: 6, margin: 2, scalable: true }); }
+      catch { return ""; }
+    });
+    const openPass = () => { passOpen.value = true; native("ScreenBrightness.setBrightness({ brightness: 1.0 })", "brightness"); setTimeout(() => native("Haptics.impact({ style: ImpactStyle.Medium })", "haptics"), 250); };
+    const closePass = () => { passOpen.value = false; native("ScreenBrightness.setBrightness({ brightness: previous })", "brightness"); };
+
+    // ---------- Booking flow ----------
+    const book = reactive({ step: 1, cat: "massage", service: null, staff: "any", dayIndex: 0, time: null, notes: "", moving: null });
+    const resetBook = (pre = {}) => Object.assign(book, { step: 1, cat: "massage", service: null, staff: "any", dayIndex: 0, time: null, notes: "", moving: null }, pre);
+    const days = computed(() => Array.from({ length: 14 }, (_, i) => at(i + (now.value.getHours() >= 19 ? 1 : 0), 0)));
+    // Deterministic sample availability: a few times per day, fewer on Sundays.
+    const slotsFor = (dayIndex, staffId) => {
+      const d = days.value[dayIndex]; if (!d) return [];
+      if (d.getDay() === 0) return [];
+      const seed = (dayIndex * 7 + (staffId === "any" ? 3 : staffId.length)) % 11;
+      const all = ["09:00", "10:00", "11:30", "12:30", "14:00", "15:30", "16:30", "17:30", "18:30", "19:30", "20:30"];
+      const taken = new Set(all.filter((_, i) => (i * 5 + seed) % 4 === 0));
+      if (dayIndex === 0) all.filter((s) => +s.slice(0, 2) <= now.value.getHours() + 1).forEach((s) => taken.add(s));
+      return all.filter((s) => !taken.has(s)).map((s, i, arr) => ({ time: s, few: arr.length <= 4 || (i + seed) % 5 === 0 }));
+    };
+    const daySlots = computed(() => slotsFor(book.dayIndex, book.staff));
+    const groups = computed(() => {
+      const g = { morningSlots: [], afternoonSlots: [], eveningSlots: [] };
+      daySlots.value.forEach((s) => { const h = +s.time.slice(0, 2); (h < 12 ? g.morningSlots : h < 17 ? g.afternoonSlots : g.eveningSlots).push(s); });
+      return Object.entries(g).filter(([, v]) => v.length);
+    });
+    const density = (i) => { const n = slotsFor(i, book.staff).length; return n === 0 ? 0 : n <= 4 ? 1 : n <= 7 ? 2 : 3; };
+    const startBooking = (pre = {}) => { resetBook(pre); view.tab = "book"; closeSheet(); };
+    const rebook = (p) => { startBooking({ service: p.service, staff: p.staff, step: 2, cat: svc(p.service).cat }); native("Haptics.impact({ style: ImpactStyle.Light })", "haptics"); };
+    const reschedule = (b) => { startBooking({ service: b.service, staff: b.staff, step: 2, cat: svc(b.service).cat, moving: b }); };
+    const pickService = (s) => { book.service = s.id; book.staff = s.staff.includes(book.staff) ? book.staff : "any"; native("Haptics.selectionChanged()", "haptics"); };
+    const pickDay = (i) => { book.dayIndex = i; book.time = null; native("Haptics.selectionChanged()", "haptics"); };
+    const pickTime = (s) => { book.time = s.time; native("Haptics.selectionChanged()", "haptics"); };
+    const pickStaff = (id) => { book.staff = id; book.time = null; native("Haptics.selectionChanged()", "haptics"); };
+    const chosen = computed(() => (book.service ? svc(book.service) : null));
+    const startOf = () => { const d = new Date(days.value[book.dayIndex]); const [h, m] = book.time.split(":"); d.setHours(+h, +m, 0, 0); return d; };
+    const success = ref(null);
+    const submit = () => {
+      const start = startOf();
+      const staff = book.staff === "any" ? chosen.value.staff[(book.dayIndex + 1) % chosen.value.staff.length] : book.staff;
+      if (book.moving) {
+        const b = bookings.value.find((x) => x.id === book.moving.id); if (b) { b.start = start; b.staff = staff; b.status = "new"; }
+        native("LocalNotifications.schedule([24h, 1h]) — old reminders cancelled", "reminders");
+        toast(t.value.toastMoved, "pi-calendar");
+        success.value = { booking: b, moved: true };
+      } else {
+        const b = { id: "b" + Date.now(), service: book.service, staff, start, status: "confirmed", price: chosen.value.price, paid: 0 };
+        bookings.value.push(b);
+        success.value = { booking: b };
+      }
+      native("Haptics.notification({ type: NotificationType.Success })", "haptics");
+      setTimeout(() => native("LocalNotifications.schedule({ at: start − 24h, start − 1h, actions: [Confirm, Directions] })", "reminders"), 700);
+    };
+    const finishSuccess = () => { success.value = null; resetBook(); view.tab = "home"; };
+
+    // ---------- Wallet & profile ----------
+    const pkg = { name: "5 PURE", used: 2, total: 5, expires: at(70, 0) };
+    const prefs = reactive({ faceId: false, push: true, email: true, remind: ["24h", "1h"] });
+    const toggleFaceId = () => {
+      if (!prefs.faceId) native("BiometricAuth.authenticate({ reason: \"Unlock Pure\" })", "biometrics");
+      prefs.faceId = !prefs.faceId;
+      native(`SecureStorage.set("biometricUnlock", ${prefs.faceId})`, "storage");
+    };
+    const toggleRemind = (r) => { prefs.remind = prefs.remind.includes(r) ? prefs.remind.filter((x) => x !== r) : [...prefs.remind, r]; native(`LocalNotifications.schedule — offsets: [${prefs.remind.join(", ")}]`, "reminders"); };
+    const setTheme = (v) => { view.theme = v === "system" ? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : v; native(`StatusBar.setStyle({ style: Style.${view.theme === "dark" ? "Dark" : "Light"} })`, "status-bar"); };
+    const go = (tab) => { if (tab === "book") resetBook(); view.tab = tab; closeSheet(); native("Haptics.impact({ style: ImpactStyle.Light })", "haptics"); };
+    const notifications = [
+      { icon: "pi-bell", text: { el: "Υπενθύμιση: αύριο 18:30, Holistic με την Άννα", en: "Reminder: tomorrow 18:30, Holistic with Άννα" }, ago: "2h" },
+      { icon: "pi-gift", text: { el: "Νέος διαγωνισμός Δεκεμβρίου", en: "New December contest" }, ago: "1d" },
+      { icon: "pi-check", text: { el: "Η κράτησή σας επιβεβαιώθηκε", en: "Your booking was confirmed" }, ago: "3d" },
+    ];
+    const unread = ref(2);
+    const rating = ref(0);
+    const sendRating = (n) => { rating.value = n; native(n >= 4 ? 'Browser.open({ url: googleReviewUrl })' : "POST /portal/feedback (private)", "browser"); setTimeout(() => { closeSheet(); toast(t.value.toastThanks, "pi-star"); rating.value = 0; }, 600); };
+
+    return { view, t, L, now, hud, toastMsg, bookings, past, upcoming, next, svc, staffName, fmtDay, fmtShort, fmtTime, monthShort, greeting, cardState, countdown, whenLabel,
+      confirmBooking, sheet, openSheet, closeSheet, doCancel, addToCalendar, share, directions, call, passOpen, qrSvg, openPass, closePass,
+      book, days, daySlots, groups, density, startBooking, rebook, reschedule, pickService, pickDay, pickTime, pickStaff, chosen, success, submit, finishSuccess,
+      pkg, prefs, toggleFaceId, toggleRemind, setTheme, go, notifications, unread, rating, sendRating, CATS, SERVICES, STAFF, native };
+  },
+  template: `
+  <header class="proto-bar">
+    <div class="proto-title">Pure · client portal <small>prototype · sample data</small></div>
+    <div class="proto-controls">
+      <div class="seg" role="group" aria-label="Preview">
+        <button :class="{on: view.device==='mobile'}" @click="view.device='mobile'"><i class="pi pi-mobile"></i> App</button>
+        <button :class="{on: view.device==='desktop'}" @click="view.device='desktop'"><i class="pi pi-desktop"></i> Desktop</button>
+      </div>
+      <div class="seg" role="group" aria-label="Theme">
+        <button :class="{on: view.theme==='light'}" @click="setTheme('light')"><i class="pi pi-sun"></i></button>
+        <button :class="{on: view.theme==='dark'}" @click="setTheme('dark')"><i class="pi pi-moon"></i></button>
+      </div>
+      <div class="seg" role="group" aria-label="Language">
+        <button :class="{on: view.lang==='el'}" @click="view.lang='el'">EL</button>
+        <button :class="{on: view.lang==='en'}" @click="view.lang='en'">EN</button>
+      </div>
+      <select class="proto-select" v-model="view.upState" aria-label="Up Next state">
+        <option value="auto">Up Next: live time</option>
+        <option value="later">Up Next: &gt; 24 h</option>
+        <option value="today">Up Next: today</option>
+        <option value="soon">Up Next: within 1 h</option>
+        <option value="after">Up Next: after the visit</option>
+      </select>
+    </div>
+  </header>
+
+  <div class="hud" aria-live="polite">
+    <div class="hud-pill" v-for="h in hud" :key="h.id"><span class="tag">{{ h.tag }}</span><code>{{ h.call }}</code></div>
+  </div>
+
+  <main class="stage">
+    <div :class="view.device==='mobile' ? 'phone' : 'browser'">
+      <div v-if="view.device==='desktop'" class="browser-bar">
+        <span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span>
+        <div class="url"><i class="pi pi-lock" style="font-size:11px"></i> pure-spa.gr/portal/{{ view.tab }}</div>
+      </div>
+      <div :class="view.device==='mobile' ? 'screen' : ''" style="flex:1;min-height:0;height:100%">
+        <div v-if="view.device==='mobile'" class="island"></div>
+        <div class="app" :class="[view.device, {dark: view.theme==='dark'}]">
+          <div v-if="view.device==='mobile'" class="statusbar"><span>{{ fmtTime(now) }}</span><span><i class="pi pi-wifi"></i><i class="pi pi-bolt"></i></span></div>
+
+          <!-- Desktop rail -->
+          <nav v-if="view.device==='desktop'" class="rail" aria-label="Portal">
+            <div class="brand"><span class="brand-mark">P</span>{{ t.shop }}</div>
+            <button class="rail-link rail-book btn" @click="go('book')"><i class="pi pi-plus"></i>{{ t.tabs.book }}</button>
+            <button v-for="k in ['home','bookings','wallet','profile']" :key="k" class="rail-link" :class="{on: view.tab===k}" @click="go(k)">
+              <i class="pi" :class="{home:'pi-home',bookings:'pi-calendar',wallet:'pi-wallet',profile:'pi-user'}[k]"></i>{{ t.tabs[k] }}
+            </button>
+            <div class="rail-foot"><i class="pi pi-globe"></i>
+              <button @click="view.lang = view.lang==='el' ? 'en' : 'el'" class="chip">{{ view.lang==='el' ? 'Ελληνικά' : 'English' }}</button>
+            </div>
+          </nav>
+
+          <div :class="view.device==='desktop' ? 'desk-main' : ''" style="flex:1;min-height:0;display:flex;flex-direction:column">
+            <div :class="view.device==='desktop' ? 'desk-top' : 'topbar'">
+              <div v-if="view.device==='mobile'" class="brand"><span class="brand-mark">P</span>{{ t.shop }}</div>
+              <div v-else class="serif" style="font-size:22px">{{ view.tab==='book' ? t.tabs.book : t.tabs[view.tab] }}</div>
+              <button class="icon-btn" :aria-label="t.activity" @click="openSheet('activity'); unread = 0"><i class="pi pi-bell" style="font-size:18px"></i><span v-if="unread" class="badge">{{ unread }}</span></button>
+            </div>
+
+            <div :class="view.device==='desktop' ? 'desk-body' : ''" style="flex:1;min-height:0;display:flex">
+              <div class="scroll">
+
+                <!-- HOME -->
+                <section v-if="view.tab==='home'">
+                  <p class="sub" style="margin-top:6px">{{ fmtDay(now) }}</p>
+                  <h1 class="serif h1">{{ greeting }}, Μαρία</h1>
+
+                  <div v-if="view.device==='mobile'" class="upnext" style="margin-top:18px">
+                    <template v-if="next && cardState!=='after'">
+                      <div class="label"><span>{{ t.upNext }}</span>
+                        <span class="upnext-pill"><i class="pi" :class="next.status==='confirmed' ? 'pi-check' : 'pi-exclamation-circle'"></i> {{ next.status==='confirmed' ? t.confirmed : t.needsConfirm }}</span>
+                      </div>
+                      <div class="when">{{ cardState==='soon' ? t.headOver : whenLabel(next.start) }}</div>
+                      <div class="what">{{ L(svc(next.service)) }} · {{ svc(next.service).min }}′ · {{ t.with }} {{ staffName(next.staff) }}</div>
+                      <div class="countdown" v-if="countdown">
+                        <div v-if="cardState==='later'"><b>{{ countdown.d }}</b><span>{{ t.days }}</span></div>
+                        <div><b>{{ String(countdown.h).padStart(2,'0') }}</b><span>{{ t.hours }}</span></div>
+                        <div><b>{{ String(countdown.m).padStart(2,'0') }}</b><span>{{ t.minutes }}</span></div>
+                        <div v-if="cardState!=='later'"><b>{{ String(countdown.s).padStart(2,'0') }}</b><span>{{ t.seconds }}</span></div>
+                      </div>
+                      <div class="upnext-actions">
+                        <button v-if="next.status!=='confirmed' && cardState==='later'" class="btn btn-on" @click="confirmBooking(next)"><i class="pi pi-check"></i>{{ t.confirm }}</button>
+                        <button v-else-if="cardState==='soon'" class="btn btn-on" @click="directions"><i class="pi pi-directions"></i>{{ t.directions }}</button>
+                        <button v-else class="btn btn-on" @click="openPass"><i class="pi pi-qrcode"></i>{{ t.pass }}</button>
+                        <button class="btn btn-glass" @click="cardState==='soon' ? openPass() : addToCalendar(next)"><i class="pi" :class="cardState==='soon' ? 'pi-qrcode' : 'pi-calendar-plus'"></i>{{ cardState==='soon' ? t.pass : t.calendar }}</button>
+                        <button class="btn btn-glass" @click="cardState==='later' ? reschedule(next) : directions()"><i class="pi" :class="cardState==='later' ? 'pi-clock' : 'pi-map-marker'"></i>{{ cardState==='later' ? t.reschedule : t.directions }}</button>
+                      </div>
+                    </template>
+                    <template v-else-if="cardState==='after'">
+                      <div class="label"><span>{{ t.enjoy }}</span></div>
+                      <div class="when">{{ t.howWas }}</div>
+                      <div class="what" style="margin-bottom:16px">{{ L(svc(past[0].service)) }} · {{ staffName(past[0].staff) }}</div>
+                      <div class="upnext-actions">
+                        <button class="btn btn-on" @click="openSheet('rate')"><i class="pi pi-star"></i>{{ t.rate }}</button>
+                        <button class="btn btn-glass" @click="rebook(past[0])"><i class="pi pi-replay"></i>{{ t.bookAgain }}</button>
+                      </div>
+                    </template>
+                    <template v-else>
+                      <div class="when">{{ t.empty }}</div>
+                      <button class="btn btn-on" style="margin-top:14px" @click="go('book')">{{ t.tabs.book }}</button>
+                    </template>
+                  </div>
+
+                  <h2 class="serif h2">{{ t.bookAgain }} <button @click="go('bookings')">{{ t.seeAll }}</button></h2>
+                  <div class="hscroll">
+                    <button v-for="p in past" :key="p.id" class="card rebook" @click="rebook(p)">
+                      <span class="chip" style="align-self:flex-start;font-size:11.5px">{{ t.sameAsLast }}</span>
+                      <div class="svc">{{ L(svc(p.service)) }}</div>
+                      <div class="row"><span class="avatar">{{ staffName(p.staff)[0] }}</span><div class="grow small muted">{{ staffName(p.staff) }}<br>{{ svc(p.service).min }}′ · €{{ svc(p.service).price }}</div><i class="pi pi-arrow-right" style="color:var(--primary)"></i></div>
+                    </button>
+                  </div>
+
+                  <h2 class="serif h2">{{ t.walletTitle }} <button @click="go('wallet')">{{ t.seeAll }}</button></h2>
+                  <div class="card row" style="padding:16px;gap:16px">
+                    <div class="ring" :style="{'--p': (pkg.total-pkg.used)/pkg.total*100}"><span>{{ pkg.total-pkg.used }}/{{ pkg.total }}</span></div>
+                    <div class="grow"><b>{{ t.package }} {{ pkg.name }}</b><div class="small muted">{{ pkg.total-pkg.used }} {{ t.visitsLeft }}</div></div>
+                    <button class="btn btn-soft" style="min-height:40px" @click="openPass"><i class="pi pi-qrcode"></i></button>
+                  </div>
+
+                  <div class="card offer" style="margin-top:14px">
+                    <div class="svc-icon"><i class="pi pi-gift"></i></div>
+                    <div class="grow"><b>{{ t.offerTitle }}</b><div class="small muted">{{ t.offerText }}</div></div>
+                  </div>
+                  <div class="row" style="margin-top:14px;gap:8px">
+                    <button class="btn btn-ghost" style="flex:1" @click="call"><i class="pi pi-phone"></i>{{ t.call }}</button>
+                    <button class="btn btn-ghost" style="flex:1" @click="directions"><i class="pi pi-map-marker"></i>{{ t.directions }}</button>
+                  </div>
+                </section>
+
+                <!-- BOOK -->
+                <section v-if="view.tab==='book'">
+                  <div class="steps"><div v-for="n in 3" :key="n" :class="{on: n <= book.step}"></div></div>
+                  <div v-if="book.moving" class="moving"><i class="pi pi-arrow-right-arrow-left"></i>{{ t.moving }} {{ whenLabel(book.moving.start) }}</div>
+
+                  <template v-if="book.step===1">
+                    <h1 class="serif h1" style="font-size:26px">{{ t.chooseService }}</h1>
+                    <div class="hscroll" style="margin:12px 0 14px">
+                      <button v-for="c in CATS" :key="c.id" class="chip" :class="{on: book.cat===c.id}" @click="book.cat=c.id; native('Haptics.selectionChanged()','haptics')"><i class="pi" :class="c.icon"></i>{{ L(c) }}</button>
+                    </div>
+                    <button v-for="s in SERVICES.filter(x => x.cat===book.cat)" :key="s.id" class="card svc-card" :class="{on: book.service===s.id}" @click="pickService(s)">
+                      <div class="svc-icon"><i class="pi" :class="CATS.find(c=>c.id===s.cat).icon"></i></div>
+                      <div class="grow"><b>{{ L(s) }}</b><div class="small muted">{{ L(s.desc) }} · {{ s.min }}′</div></div>
+                      <b class="money">€{{ s.price }}</b>
+                    </button>
+                  </template>
+
+                  <template v-if="book.step===2">
+                    <h1 class="serif h1" style="font-size:26px">{{ t.chooseTime }}</h1>
+                    <p class="sub">{{ L(chosen) }} · {{ chosen.min }}′</p>
+                    <div class="hscroll" style="margin:14px 0 10px">
+                      <button class="chip" :class="{on: book.staff==='any'}" @click="pickStaff('any')"><i class="pi pi-users"></i>{{ t.anyone }}</button>
+                      <button v-for="id in chosen.staff" :key="id" class="chip" :class="{on: book.staff===id}" @click="pickStaff(id)">{{ staffName(id) }}</button>
+                    </div>
+                    <div class="hscroll datestrip" style="margin-bottom:4px">
+                      <button v-for="(d,i) in days" :key="i" class="day" :class="{on: book.dayIndex===i, none: density(i)===0}" @click="pickDay(i)" :aria-label="fmtDay(d)">
+                        <span>{{ d.toLocaleDateString(view.lang==='el'?'el-GR':'en-GB',{weekday:'short'}).replace('.','') }}</span><b>{{ d.getDate() }}</b>
+                        <div class="avail"><i v-for="n in density(i)" :key="n"></i></div>
+                      </button>
+                    </div>
+                    <p v-if="!daySlots.length" class="sub" style="padding:24px 0;text-align:center">{{ t.none }}</p>
+                    <div v-for="[label, list] in groups" :key="label">
+                      <div class="slots-group">{{ t[label] }}</div>
+                      <div class="slots">
+                        <button v-for="s in list" :key="s.time" class="slot" :class="{on: book.time===s.time}" @click="pickTime(s)">{{ s.time }}<span v-if="s.few && book.time!==s.time" class="few">{{ t.few }}</span></button>
+                      </div>
+                    </div>
+                    <div style="height:90px" v-if="view.device==='mobile'"></div>
+                  </template>
+
+                  <template v-if="book.step===3">
+                    <h1 class="serif h1" style="font-size:26px">{{ t.confirmTitle }}</h1>
+                    <div class="card" style="padding:18px;margin-top:14px">
+                      <div class="row"><div class="svc-icon"><i class="pi pi-heart"></i></div><div class="grow"><b>{{ L(chosen) }}</b><div class="small muted">{{ chosen.min }}′ · {{ t.with }} {{ staffName(book.staff) }}</div></div><b class="money">€{{ chosen.price }}</b></div>
+                      <div class="kv"><i class="pi pi-calendar"></i><span>{{ fmtDay(days[book.dayIndex]) }} · {{ book.time }}</span><i class="pi pi-map-marker"></i><span>{{ t.shop }}, Λάρισα</span></div>
+                      <textarea v-model="book.notes" :placeholder="t.notes" rows="2" style="width:100%;border-radius:12px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);padding:10px 12px;font:inherit;resize:none"></textarea>
+                      <p class="small muted" style="margin:10px 0 0"><i class="pi pi-info-circle"></i> {{ t.policy }}</p>
+                    </div>
+                    <div style="height:90px" v-if="view.device==='mobile'"></div>
+                  </template>
+
+                  <!-- Sticky summary bar -->
+                  <div v-if="book.service" class="summary">
+                    <button v-if="book.step>1" class="icon-btn" :aria-label="t.back" @click="book.step--"><i class="pi pi-arrow-left"></i></button>
+                    <div class="grow"><b style="font-size:14px">{{ L(chosen) }}</b><div class="small muted">{{ book.time ? fmtShort(days[book.dayIndex]) + ' · ' + book.time : chosen.min + '′' }} · €{{ chosen.price }}</div></div>
+                    <button v-if="book.step<3" class="btn btn-primary" :disabled="book.step===2 && !book.time" @click="book.step++">{{ t.continue }}</button>
+                    <button v-else class="btn btn-primary" @click="submit"><i class="pi pi-check"></i>{{ book.moving ? t.reschedule : t.bookNow }}</button>
+                  </div>
+                </section>
+
+                <!-- BOOKINGS -->
+                <section v-if="view.tab==='bookings'">
+                  <div class="segmented" role="tablist">
+                    <button :class="{on: !view.pastTab}" @click="view.pastTab=false">{{ t.upcoming }} · {{ upcoming.length }}</button>
+                    <button :class="{on: view.pastTab}" @click="view.pastTab=true">{{ t.past }}</button>
+                  </div>
+                  <div v-if="!view.pastTab" class="card" style="overflow:hidden">
+                    <p v-if="!upcoming.length" class="sub" style="padding:24px;text-align:center">{{ t.empty }}</p>
+                    <button v-for="b in upcoming" :key="b.id" class="list-item" @click="openSheet('detail', b)">
+                      <div class="datebox"><b>{{ b.start.getDate() }}</b><span>{{ monthShort(b.start) }}</span></div>
+                      <div class="grow"><b>{{ L(svc(b.service)) }}</b><div class="small muted">{{ fmtTime(b.start) }} · {{ staffName(b.staff) }}</div></div>
+                      <span class="chip chip-status" :class="b.status==='confirmed' ? 'chip-ok' : 'chip-warn'">{{ b.status==='confirmed' ? t.confirmed : t.needsConfirm }}</span>
+                    </button>
+                  </div>
+                  <div v-else class="card" style="overflow:hidden">
+                    <div v-for="p in past" :key="p.id" class="list-item">
+                      <div class="datebox" style="opacity:.75"><b>{{ p.start.getDate() }}</b><span>{{ monthShort(p.start) }}</span></div>
+                      <div class="grow"><b>{{ L(svc(p.service)) }}</b><div class="small muted">{{ staffName(p.staff) }} · {{ t.paid }} <span class="money">€{{ p.paid }}</span></div></div>
+                      <button class="btn btn-soft" style="min-height:38px;padding:0 12px;font-size:13px" @click="rebook(p)"><i class="pi pi-replay"></i>{{ t.bookAgain }}</button>
+                    </div>
+                  </div>
+                </section>
+
+                <!-- WALLET -->
+                <section v-if="view.tab==='wallet'">
+                  <button class="card" style="width:100%;padding:0;overflow:hidden;text-align:left" @click="openPass">
+                    <div class="pass-head" style="border-radius:0"><div><div class="small" style="opacity:.85">{{ t.member }}</div><div class="serif" style="font-size:22px">Μαρία Π.</div></div><i class="pi pi-qrcode" style="font-size:26px"></i></div>
+                    <div class="row" style="padding:14px 18px"><div class="grow small muted">{{ t.showAtDesk }}</div><b style="color:var(--primary)">{{ t.pass }} <i class="pi pi-angle-right"></i></b></div>
+                  </button>
+                  <h2 class="serif h2">{{ t.membership }}</h2>
+                  <div class="card row" style="padding:16px;gap:16px">
+                    <div class="svc-icon"><i class="pi pi-crown"></i></div>
+                    <div class="grow"><b>Gold</b><div class="small muted">{{ t.renews }} {{ fmtShort(pkg.expires) }}</div></div>
+                    <span class="chip chip-ok chip-status">{{ t.confirmed }}</span>
+                  </div>
+                  <h2 class="serif h2">{{ t.package }}</h2>
+                  <div class="card row" style="padding:16px;gap:16px">
+                    <div class="ring" :style="{'--p': (pkg.total-pkg.used)/pkg.total*100}"><span>{{ pkg.total-pkg.used }}/{{ pkg.total }}</span></div>
+                    <div class="grow"><b>{{ pkg.name }}</b><div class="small muted">{{ pkg.total-pkg.used }} {{ t.visitsLeft }} · {{ fmtShort(pkg.expires) }}</div></div>
+                    <button class="btn btn-soft" style="min-height:40px" @click="startBooking({cat:'massage', service:'pure', step:2})">{{ t.tabs.book }}</button>
+                  </div>
+                </section>
+
+                <!-- PROFILE -->
+                <section v-if="view.tab==='profile'">
+                  <div class="row" style="margin:8px 0 18px;gap:14px"><span class="avatar" style="width:56px;height:56px;font-size:20px">ΜΠ</span><div><div class="serif" style="font-size:22px">Μαρία Παπαδοπούλου</div><div class="small muted">maria@example.com · 690 000 0000</div></div></div>
+                  <h2 class="serif h2" style="margin-top:8px">{{ t.account }}</h2>
+                  <div class="card" style="overflow:hidden">
+                    <button class="set-row"><i class="pi pi-user"></i><span class="grow">{{ t.info }}</span><i class="pi pi-angle-right muted"></i></button>
+                    <button class="set-row"><i class="pi pi-key"></i><span class="grow">{{ t.password }}</span><i class="pi pi-angle-right muted"></i></button>
+                  </div>
+                  <h2 class="serif h2">{{ t.security }}</h2>
+                  <div class="card"><button class="set-row" @click="toggleFaceId" role="switch" :aria-checked="prefs.faceId"><i class="pi pi-shield"></i><span class="grow">{{ t.faceId }}</span><span class="toggle" :class="{on: prefs.faceId}"></span></button></div>
+                  <h2 class="serif h2">{{ t.notifications }}</h2>
+                  <div class="card" style="overflow:hidden">
+                    <button class="set-row" @click="prefs.push=!prefs.push; native(prefs.push ? 'PushNotifications.register()' : 'PushNotifications.unregister()','push')" role="switch" :aria-checked="prefs.push"><i class="pi pi-bell"></i><span class="grow">{{ t.push }}</span><span class="toggle" :class="{on: prefs.push}"></span></button>
+                    <button class="set-row" @click="prefs.email=!prefs.email" role="switch" :aria-checked="prefs.email"><i class="pi pi-envelope"></i><span class="grow">{{ t.email }}</span><span class="toggle" :class="{on: prefs.email}"></span></button>
+                    <div class="set-row"><i class="pi pi-clock"></i><span class="grow">{{ t.remindMe }}</span>
+                      <div class="row" style="gap:6px"><button v-for="r in ['24h','2h','1h']" :key="r" class="chip" :class="{on: prefs.remind.includes(r)}" @click="toggleRemind(r)">{{ r }}</button></div>
+                    </div>
+                  </div>
+                  <h2 class="serif h2">{{ t.appearance }}</h2>
+                  <div class="segmented" style="margin-top:0">
+                    <button @click="setTheme('system')">{{ t.system }}</button>
+                    <button :class="{on: view.theme==='light'}" @click="setTheme('light')">{{ t.light }}</button>
+                    <button :class="{on: view.theme==='dark'}" @click="setTheme('dark')">{{ t.dark }}</button>
+                  </div>
+                  <h2 class="serif h2" style="margin-top:14px">{{ t.language }}</h2>
+                  <div class="segmented" style="margin-top:0">
+                    <button :class="{on: view.lang==='el'}" @click="view.lang='el'">Ελληνικά</button>
+                    <button :class="{on: view.lang==='en'}" @click="view.lang='en'">English</button>
+                  </div>
+                  <button class="btn btn-ghost btn-block" style="margin-top:20px;color:var(--danger)" @click="native('SecureStorage.clear() · LocalNotifications.cancel(all)','storage')"><i class="pi pi-sign-out"></i>{{ t.logout }}</button>
+                </section>
+              </div>
+
+              <!-- Desktop context panel: Up Next stays in view -->
+              <aside v-if="view.device==='desktop'" class="context">
+                <h4>{{ t.upNext }}</h4>
+                <div class="upnext" v-if="next">
+                  <div class="label"><span>{{ whenLabel(next.start) }}</span><span class="upnext-pill">{{ next.status==='confirmed' ? t.confirmed : t.needsConfirm }}</span></div>
+                  <div class="when" style="font-size:22px">{{ L(svc(next.service)) }}</div>
+                  <div class="what">{{ svc(next.service).min }}′ · {{ t.with }} {{ staffName(next.staff) }}</div>
+                  <div class="countdown" v-if="countdown"><div><b>{{ countdown.d }}</b><span>{{ t.days }}</span></div><div><b>{{ String(countdown.h).padStart(2,'0') }}</b><span>{{ t.hours }}</span></div><div><b>{{ String(countdown.m).padStart(2,'0') }}</b><span>{{ t.minutes }}</span></div></div>
+                  <div class="upnext-actions">
+                    <button v-if="next.status!=='confirmed'" class="btn btn-on" @click="confirmBooking(next)"><i class="pi pi-check"></i>{{ t.confirm }}</button>
+                    <button class="btn btn-glass" @click="addToCalendar(next)"><i class="pi pi-calendar-plus"></i>{{ t.calendar }}</button>
+                    <button class="btn btn-glass" @click="openSheet('detail', next)"><i class="pi pi-ellipsis-h"></i></button>
+                  </div>
+                </div>
+                <p v-else class="sub">{{ t.empty }}</p>
+                <h4 style="margin-top:24px">{{ t.recent }}</h4>
+                <div v-for="n in notifications" :key="n.ago" class="row small" style="padding:8px 0;align-items:flex-start"><i class="pi" :class="n.icon" style="color:var(--primary);margin-top:2px"></i><span class="grow">{{ L(n.text) }}</span><span class="muted">{{ n.ago }}</span></div>
+              </aside>
+            </div>
+          </div>
+
+          <!-- Mobile tab bar -->
+          <nav v-if="view.device==='mobile'" class="tabbar" aria-label="Portal">
+            <button class="tab" :class="{on: view.tab==='home'}" @click="go('home')"><i class="pi pi-home"></i>{{ t.tabs.home }}</button>
+            <button class="tab" :class="{on: view.tab==='bookings'}" @click="go('bookings')"><i class="pi pi-calendar"></i>{{ t.tabs.bookings }}</button>
+            <button class="tab" @click="go('book')" :aria-label="t.tabs.book"><span class="tab-book"><i class="pi pi-plus"></i></span></button>
+            <button class="tab" :class="{on: view.tab==='wallet'}" @click="go('wallet')"><i class="pi pi-wallet"></i>{{ t.tabs.wallet }}</button>
+            <button class="tab" :class="{on: view.tab==='profile'}" @click="go('profile')"><i class="pi pi-user"></i>{{ t.tabs.profile }}</button>
+          </nav>
+
+          <!-- Sheets -->
+          <template v-if="sheet">
+            <div class="scrim" @click="closeSheet"></div>
+            <div class="sheet" role="dialog" aria-modal="true">
+              <div class="grabber" v-if="view.device==='mobile'"></div>
+              <button v-else class="icon-btn" style="float:right" @click="closeSheet" aria-label="Close"><i class="pi pi-times"></i></button>
+
+              <template v-if="sheet.kind==='detail'">
+                <div class="sheet-title">{{ L(svc(sheet.booking.service)) }}</div>
+                <span class="chip chip-status" :class="sheet.booking.status==='confirmed' ? 'chip-ok' : 'chip-warn'">{{ sheet.booking.status==='confirmed' ? t.confirmed : t.needsConfirm }}</span>
+                <div class="kv">
+                  <i class="pi pi-calendar"></i><span>{{ fmtDay(sheet.booking.start) }} · {{ fmtTime(sheet.booking.start) }} ({{ svc(sheet.booking.service).min }}′)</span>
+                  <i class="pi pi-user"></i><span>{{ staffName(sheet.booking.staff) }}</span>
+                  <i class="pi pi-euro"></i><span class="money">€{{ sheet.booking.price }}</span>
+                </div>
+                <div class="map"><i class="pi pi-map-marker pin"></i></div>
+                <button v-if="sheet.booking.status!=='confirmed'" class="btn btn-primary btn-block" style="margin-top:16px" @click="confirmBooking(sheet.booking)"><i class="pi pi-check"></i>{{ t.confirm }}</button>
+                <div class="actions-grid">
+                  <button class="action" @click="openPass"><i class="pi pi-qrcode"></i>{{ t.pass }}</button>
+                  <button class="action" @click="addToCalendar(sheet.booking)"><i class="pi pi-calendar-plus"></i>{{ t.calendar }}</button>
+                  <button class="action" @click="directions"><i class="pi pi-directions"></i>{{ t.directions }}</button>
+                  <button class="action" @click="reschedule(sheet.booking)"><i class="pi pi-clock"></i>{{ t.reschedule }}</button>
+                  <button class="action" @click="share(sheet.booking)"><i class="pi pi-share-alt"></i>{{ t.share }}</button>
+                  <button class="action danger" @click="openSheet('cancel', sheet.booking)"><i class="pi pi-times-circle"></i>{{ t.cancel }}</button>
+                </div>
+              </template>
+
+              <template v-if="sheet.kind==='cancel'">
+                <div class="svc-icon" style="background:var(--danger-bg);color:var(--danger);margin:6px 0 10px"><i class="pi pi-exclamation-triangle"></i></div>
+                <div class="sheet-title">{{ t.cancelTitle }}</div>
+                <p class="sub" style="margin:6px 0 4px">{{ L(svc(sheet.booking.service)) }} · {{ whenLabel(sheet.booking.start) }}</p>
+                <p class="small muted">{{ t.cancelText }}</p>
+                <button class="btn btn-danger btn-block" style="margin-top:14px" @click="doCancel(sheet.booking)">{{ t.cancelIt }}</button>
+                <button class="btn btn-ghost btn-block" style="margin-top:8px" @click="openSheet('detail', sheet.booking)">{{ t.keep }}</button>
+              </template>
+
+              <template v-if="sheet.kind==='activity'">
+                <div class="sheet-title">{{ t.activity }}</div>
+                <div v-for="n in notifications" :key="n.ago" class="row" style="padding:12px 0;border-bottom:1px solid var(--border);align-items:flex-start">
+                  <div class="svc-icon" style="width:38px;height:38px;font-size:15px"><i class="pi" :class="n.icon"></i></div>
+                  <div class="grow">{{ L(n.text) }}<div class="small muted">{{ n.ago }}</div></div>
+                </div>
+              </template>
+
+              <template v-if="sheet.kind==='rate'">
+                <div class="sheet-title" style="text-align:center">{{ t.howWas }}</div>
+                <p class="sub" style="text-align:center">{{ t.rateText }}</p>
+                <div class="stars"><button v-for="n in 5" :key="n" :class="{on: n <= rating}" @click="sendRating(n)" :aria-label="n + ' stars'"><i class="pi pi-star-fill"></i></button></div>
+              </template>
+            </div>
+          </template>
+
+          <!-- Booking success -->
+          <div v-if="success" class="success">
+            <div class="check"><i class="pi pi-check"></i></div>
+            <div class="serif" style="font-size:28px;margin:18px 0 6px">{{ success.moved ? t.toastMoved : t.booked }}</div>
+            <p class="sub">{{ L(svc(success.booking.service)) }} · {{ whenLabel(success.booking.start) }} · {{ staffName(success.booking.staff) }}</p>
+            <p class="small muted">{{ t.bookedText }}</p>
+            <div class="row" style="gap:8px;margin-top:20px;width:100%;max-width:340px">
+              <button class="btn btn-soft" style="flex:1" @click="addToCalendar(success.booking)"><i class="pi pi-calendar-plus"></i>{{ t.calendar }}</button>
+              <button class="btn btn-soft" style="flex:1" @click="share(success.booking)"><i class="pi pi-share-alt"></i>{{ t.share }}</button>
+            </div>
+            <button class="btn btn-primary" style="margin-top:10px;width:100%;max-width:340px" @click="finishSuccess">{{ t.done }}</button>
+          </div>
+
+          <!-- Check-in pass -->
+          <div v-if="passOpen" class="pass-wrap bright" @click.self="closePass">
+            <div class="pass" role="dialog" aria-modal="true" :aria-label="t.pass">
+              <div class="pass-head"><div><div class="small" style="opacity:.85">{{ t.shop }}</div><div class="serif" style="font-size:20px">{{ t.pass }}</div></div>
+                <button class="icon-btn" style="color:inherit" @click="closePass" aria-label="Close"><i class="pi pi-times"></i></button></div>
+              <div class="pass-body">
+                <div class="qr" v-html="qrSvg"></div>
+                <div style="font-weight:600">{{ t.showAtDesk }}</div>
+                <div class="pass-meta">
+                  <div>{{ t.member }}<b>Μαρία Π.</b></div>
+                  <div>{{ t.tier }}<b>Gold</b></div>
+                  <div v-if="next">{{ t.upNext }}<b>{{ fmtTime(next.start) }}</b></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="toastMsg" class="toast" role="status"><i class="pi" :class="toastMsg.icon"></i>{{ toastMsg.msg }}</div>
+        </div>
+      </div>
+    </div>
+  </main>
+  `,
+}).mount("#proto");
+</script>
+</body>
+</html>
