@@ -35,7 +35,21 @@
           <Button v-if="pushPermission !== 'granted'" :label="t('portal.notifications.button')" size="small" outlined @click="enablePush" />
           <i v-else class="pi pi-check text-green-600"></i>
         </div>
-        <slot name="reminder-timing" />
+        <div class="p-4 space-y-2" data-testid="reminder-timing">
+          <span class="block">{{ t("portal.v2.profile.remindMe") }}</span>
+          <div class="flex gap-2">
+            <ToggleButton
+              v-for="o in REMINDER_CHOICES"
+              :key="`${o}-${redraw}`"
+              :modelValue="offsets.includes(o)"
+              :onLabel="t(`portal.v2.profile.before.${o}`)"
+              :offLabel="t(`portal.v2.profile.before.${o}`)"
+              class="flex-1"
+              :data-offset="o"
+              @update:modelValue="(on: boolean) => toggleOffset(o, on)"
+            />
+          </div>
+        </div>
         <button type="button" class="w-full p-4 flex items-center gap-3 text-left portal-target" data-testid="open-activity" @click="activity.open">
           <span class="flex-1">{{ t("portal.v2.profile.activity") }}</span>
           <Badge v-if="activity.unreadCount.value" :value="activity.unreadCount.value" />
@@ -99,6 +113,7 @@ import InputText from "primevue/inputtext";
 import Password from "primevue/password";
 import SelectButton from "primevue/selectbutton";
 import ToggleSwitch from "primevue/toggleswitch";
+import ToggleButton from "primevue/togglebutton";
 import { api, withMessage } from "../../api/http";
 import { setLocale } from "../../i18n";
 import { passwordOk } from "../../utils/password";
@@ -109,11 +124,13 @@ import { useAppearance, type Appearance } from "../composables/usePortalTheme";
 import { usePortalNotifications } from "../composables/usePortalNotifications";
 import { forgetPortal } from "../logout";
 import { usePortalWalletStore } from "../stores/wallet";
+import { usePortalShopStore } from "../stores/shop";
 
 const { t, locale } = useI18n();
 const router = useRouter();
 const auth = useAuthStore();
 const wallet = usePortalWalletStore();
+const shop = usePortalShopStore();
 const notify = useNotify();
 const activity = usePortalNotifications({ watchPushes: false });
 const { appearance, setAppearance } = useAppearance();
@@ -189,6 +206,33 @@ const savePassword = async () => {
 // --- Notifications ---
 const receiveEmails = ref(true);
 watch(() => wallet.client?.receive_emails, (v) => (receiveEmails.value = v ?? true), { immediate: true });
+// When to be reminded: any of 24 h, 2 h and 1 h before (at least one). With
+// no choice of their own, the shop's time is shown as chosen.
+const REMINDER_CHOICES = [1440, 120, 60] as const;
+const offsets = ref<number[]>([]);
+const redraw = ref(0);
+watch(
+  () => [wallet.client?.reminder_offsets_minutes, shop.shop?.reminder_hours_before] as const,
+  ([own, shopHours]) => (offsets.value = own?.length ? [...own] : [Number(shopHours ?? 24) * 60].filter((m) => (REMINDER_CHOICES as readonly number[]).includes(m))),
+  { immediate: true },
+);
+const toggleOffset = async (minutes: number, on: boolean) => {
+  const next = on ? [...offsets.value, minutes] : offsets.value.filter((m) => m !== minutes);
+  // At least one reminder: the button that was pressed is drawn back on (it
+  // keeps its own pressed state).
+  if (!next.length) return void redraw.value++;
+  const previous = offsets.value;
+  offsets.value = next;
+  try {
+    await api.put("/api/v1/portal/notifications", { reminder_offsets_minutes: next });
+    if (wallet.client) wallet.client.reminder_offsets_minutes = next;
+  } catch {
+    offsets.value = previous;
+    redraw.value++;
+    notify.error(t("portal.toast.failed"));
+  }
+};
+
 const saveNotifications = async () => {
   try {
     await api.put("/api/v1/portal/notifications", { receive_emails: receiveEmails.value });
@@ -203,5 +247,8 @@ const logout = () => {
   router.push("/");
 };
 
-onMounted(() => wallet.load(auth.clientId));
+onMounted(() => {
+  shop.load();
+  wallet.load(auth.clientId);
+});
 </script>

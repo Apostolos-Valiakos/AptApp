@@ -77,6 +77,8 @@ export default {
     showAtReception: "Show this at reception",
   },
   profile: {
+    remindMe: "Remind me",
+    before: { 1440: "24 h before", 120: "2 h before", 60: "1 h before" },
     notifications: "Notifications",
     activity: "Notification history",
     appearance: "Appearance",

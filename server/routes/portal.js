@@ -129,12 +129,24 @@ module.exports = function portalRouter({
     }, { log: "Portal appointment confirm error:" }),
   );
 
+  // The client's reminder choices: emails on or off, and (when sent) when to
+  // be reminded: any of 24 h, 2 h and 1 h before, or null for the shop's time.
+  const REMINDER_OFFSETS = [1440, 120, 60];
   router.put("/portal/notifications", authenticateToken, onlyClients, asyncHandler(async (req, res) => {
-    const { receive_emails } = req.body;
-    await pool.query(
-      `UPDATE clients SET receive_emails = $1 WHERE id = $2 AND shop_id = $3`,
-      [!!receive_emails, req.user.clientId, req.shopId],
-    );
+    const { receive_emails, reminder_offsets_minutes: offsets } = req.body;
+    if (receive_emails !== undefined) {
+      await pool.query(
+        `UPDATE clients SET receive_emails = $1 WHERE id = $2 AND shop_id = $3`,
+        [!!receive_emails, req.user.clientId, req.shopId],
+      );
+    }
+    if (offsets !== undefined) {
+      const valid = offsets === null || (Array.isArray(offsets) && offsets.length > 0 && offsets.every((m) => REMINDER_OFFSETS.includes(m)));
+      if (!valid) return res.status(400).json({ error: "reminder_offsets_minutes must be some of 1440, 120, 60" });
+      await pool.query("UPDATE clients SET reminder_offsets_minutes = $1 WHERE id = $2 AND shop_id = $3", [
+        offsets && [...new Set(offsets)].sort((a, b) => b - a), req.user.clientId, req.shopId,
+      ]);
+    }
     res.json({ success: true });
   }, { log: "Portal notifications update error:" }));
 

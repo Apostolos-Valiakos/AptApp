@@ -39,37 +39,75 @@ const describeReminderWindow = (hoursBefore) => {
 
 const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
-// Appointments whose reminder time has come (the shop's hours before, give or
-// take 5 minutes), not yet reminded, for clients who take emails: one row
-// each, its first service.
-const DUE_REMINDERS_SQL = `
-    SELECT DISTINCT ON (a.id)
-        a.id AS appointment_id,
-        c.first_name AS client_name,
-        c.id AS client_id,
-			c.last_name AS client_last_name,
-        c.email AS client_email,
-        s.name AS shop_name,
-        s.reply_email AS shop_reply_email,
-        s.reminder_hours_before AS reminder_hours_before,
-        aps.start_time,
-        (aps.start_time + (COALESCE(aps.duration_override, 60)) * INTERVAL '1 minute') AS end_time,
-        ser.name AS service_name,
-        st.name AS staff_name
-    FROM appointments a
-    JOIN clients c ON a.client_id = c.id
-    JOIN shops s ON a.shop_id = s.id
-    JOIN appointment_services aps ON a.id = aps.appointment_id
-    JOIN services ser ON aps.service_id = ser.id
-    LEFT JOIN staff st ON aps.staff_id = st.id
-    WHERE aps.start_time <= (NOW() + ((s.reminder_hours_before || ' hours')::interval) + INTERVAL '5 minutes')
-        AND aps.start_time >= (NOW() + ((s.reminder_hours_before || ' hours')::interval) - INTERVAL '5 minutes')
-        AND a.email_reminder_sent = false
-        AND a.status != 'cancelled'
-        AND c.receive_emails = true
+// The reminders due now on one channel ("email" or "push"): for each of the
+// client's chosen times before (or the shop's one), a booking starting that
+// long from now, give or take 5 minutes, whose reminders aren't all sent and
+// that hasn't had this one for its current start. One row per booking and
+// time, about its first service. `is_last` marks the client's last reminder
+// before the booking: once it's sent, the booking's flag says "all sent".
+const dueRemindersSql = (channel) => {
+  const flag = channel === "email" ? "email_reminder_sent" : "push_reminder_sent";
+  return `
+    WITH booked AS (
+      SELECT a.id, a.client_id, a.shop_id,
+             COALESCE(c.reminder_offsets_minutes, ARRAY[(COALESCE(s.reminder_hours_before, 24) * 60)::int]) AS offsets,
+             (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) AS start_time
+      FROM appointments a
+      JOIN clients c ON c.id = a.client_id
+      JOIN shops s ON s.id = a.shop_id
+      WHERE a.${flag} = false
+        AND a.status NOT IN ('cancelled', 'no-show', 'no_show')
         AND a.is_block = false
-    ORDER BY a.id, aps.start_time;
-    `
+        ${channel === "email" ? "AND c.receive_emails = true" : ""}
+    )
+    SELECT b.id AS appointment_id, b.client_id, b.shop_id, o.mins AS offset_minutes,
+           (o.mins = (SELECT MIN(x) FROM unnest(b.offsets) x)) AS is_last,
+           (o.mins / 60.0) AS reminder_hours_before,
+           c.first_name AS client_name, c.last_name AS client_last_name, c.email AS client_email,
+           s.name AS shop_name, s.reply_email AS shop_reply_email,
+           b.start_time,
+           (b.start_time + (COALESCE(NULLIF(aps.duration_override, 0), ser.duration_minutes, 60)) * INTERVAL '1 minute') AS end_time,
+           ser.name AS service_name, st.name AS staff_name
+    FROM booked b
+    CROSS JOIN LATERAL unnest(b.offsets) AS o(mins)
+    JOIN clients c ON c.id = b.client_id
+    JOIN shops s ON s.id = b.shop_id
+    JOIN LATERAL (
+      SELECT * FROM appointment_services WHERE appointment_id = b.id ORDER BY start_time LIMIT 1
+    ) aps ON true
+    JOIN services ser ON ser.id = aps.service_id
+    LEFT JOIN staff st ON st.id = aps.staff_id
+    WHERE b.start_time BETWEEN NOW() + o.mins * INTERVAL '1 minute' - INTERVAL '5 minutes'
+                           AND NOW() + o.mins * INTERVAL '1 minute' + INTERVAL '5 minutes'
+      AND NOT EXISTS (
+        SELECT 1 FROM appointment_reminders r
+        WHERE r.appointment_id = b.id AND r.channel = '${channel}' AND r.offset_minutes = o.mins AND r.start_time = b.start_time
+      )
+    ORDER BY b.id, o.mins`;
+};
+
+// Takes one reminder for this run (whoever records it first sends it, so an
+// overlapping run can't send it too). False when another run already has.
+const claimReminder = async (channel, appt) =>
+  (
+    await pool.query(
+      `INSERT INTO appointment_reminders (appointment_id, channel, offset_minutes, start_time)
+       VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING RETURNING appointment_id`,
+      [appt.appointment_id, channel, appt.offset_minutes, appt.start_time],
+    )
+  ).rowCount === 1;
+
+// A failed send gives it back for the next run.
+const releaseReminder = (channel, appt) =>
+  pool
+    .query("DELETE FROM appointment_reminders WHERE appointment_id = $1 AND channel = $2 AND offset_minutes = $3 AND start_time = $4", [
+      appt.appointment_id, channel, appt.offset_minutes, appt.start_time,
+    ])
+    .catch((err) => console.error("Reminder retry mark error:", err));
+
+const markAllSent = (channel, appt) =>
+  appt.is_last &&
+  pool.query(`UPDATE appointments SET ${channel === "email" ? "email_reminder_sent" : "push_reminder_sent"} = true WHERE id = $1`, [appt.appointment_id]);
 
 // The reminder email for one appointment: its subject and its page, with
 // links to confirm, to add it to a calendar and to stop these emails.
@@ -448,17 +486,10 @@ const reminderEmail = (appt) => {
   return { subject: `Υπενθύμιση Ραντεβού - ${windowText}`, html: htmlContent };
 };
 
-// Sends one reminder. Marked before sending, by whoever gets there first, so
-// an overlapping run can't send it too; a failed send gives it back for the
-// next run.
+// Sends one email reminder.
 const sendReminder = async (appt) => {
+  if (!(await claimReminder("email", appt))) return;
   const { subject, html } = reminderEmail(appt);
-  const claim = await pool.query(
-    "UPDATE appointments SET email_reminder_sent = true WHERE id = $1 AND email_reminder_sent = false RETURNING id",
-    [appt.appointment_id],
-  );
-  if (claim.rowCount === 0) return;
-
   try {
     await transporter.sendMail({
       from: `"${appt.shop_name}" <${process.env.EMAIL_USER}>`,
@@ -468,18 +499,16 @@ const sendReminder = async (appt) => {
       html,
       attachments: [{ filename: "logo.png", path: LOGO_PATH, cid: "brand-logo" }],
     });
+    await markAllSent("email", appt);
   } catch (mailErr) {
     console.error("Mail send error:", mailErr);
-    await pool.query(
-      "UPDATE appointments SET email_reminder_sent = false WHERE id = $1",
-      [appt.appointment_id],
-    ).catch((err) => console.error("Reminder retry mark error:", err));
+    await releaseReminder("email", appt);
   }
 };
 
 const processReminders = async () => {
   try {
-    const { rows } = await pool.query(DUE_REMINDERS_SQL);
+    const { rows } = await pool.query(dueRemindersSql("email"));
     for (const appt of rows) {
       if (!appt.client_email || !isValidEmail(appt.client_email)) continue;
       await sendReminder(appt);
@@ -489,61 +518,27 @@ const processReminders = async () => {
   }
 };
 
-// Same reminder window as the email job above, gated on its own
-// push_reminder_sent flag (independent of email_reminder_sent — a client can
-// have push enabled with emails off, or vice versa). Runs for every client
-// due a reminder, not just ones with a push subscription: the in-app
-// notification history (recordNotification) should show the reminder either
-// way, and sendPushToClient below is already a safe no-op when there's no
-// subscription to deliver to.
+// The same times as the emails, on their own record (a client can have push
+// on with emails off, or the other way round). Runs for every client due a
+// reminder, not only those with a push subscription: the portal's
+// notification history shows it either way, and sendPushToClient does
+// nothing without a subscription.
 const processPushReminders = async () => {
   try {
-    const query = `
-        SELECT DISTINCT ON (a.id)
-            a.id AS appointment_id,
-            a.client_id,
-            a.shop_id,
-            s.name AS shop_name,
-            aps.start_time,
-            ser.name AS service_name
-        FROM appointments a
-        JOIN shops s ON a.shop_id = s.id
-        JOIN appointment_services aps ON a.id = aps.appointment_id
-        JOIN services ser ON aps.service_id = ser.id
-        WHERE aps.start_time <= (NOW() + ((s.reminder_hours_before || ' hours')::interval) + INTERVAL '5 minutes')
-            AND aps.start_time >= (NOW() + ((s.reminder_hours_before || ' hours')::interval) - INTERVAL '5 minutes')
-            AND a.push_reminder_sent = false
-            AND a.status != 'cancelled'
-            AND a.is_block = false
-        ORDER BY a.id, aps.start_time;
-        `;
-    const { rows } = await pool.query(query);
-
+    const { rows } = await pool.query(dueRemindersSql("push"));
     for (const appt of rows) {
-      const claim = await pool.query(
-        "UPDATE appointments SET push_reminder_sent = true WHERE id = $1 AND push_reminder_sent = false RETURNING id",
-        [appt.appointment_id],
-      );
-      if (claim.rowCount === 0) continue;
-
+      if (!(await claimReminder("push", appt))) continue;
       try {
-        const startTimeStr = formatTime(appt.start_time);
         const title = `Ραντεβού: ${appt.service_name}`;
-        const body = `${appt.shop_name} · ${startTimeStr}`;
-        const url = "/portal/appointments";
-        await recordNotification(appt.client_id, appt.shop_id, {
-          type: "reminder",
-          title,
-          body,
-          url,
-        });
+        const body = `${appt.shop_name} · ${formatTime(appt.start_time)}`;
+        // Opens the booking's details (the old portal sends it to its list).
+        const url = `/portal/bookings/${appt.appointment_id}`;
+        await recordNotification(appt.client_id, appt.shop_id, { type: "reminder", title, body, url });
         await sendPushToClient(appt.client_id, { title, body, url });
+        await markAllSent("push", appt);
       } catch (pushErr) {
         console.error("Push reminder error:", pushErr);
-        await pool.query(
-          "UPDATE appointments SET push_reminder_sent = false WHERE id = $1",
-          [appt.appointment_id],
-        ).catch((err) => console.error("Reminder retry mark error:", err));
+        await releaseReminder("push", appt);
       }
     }
   } catch (err) {

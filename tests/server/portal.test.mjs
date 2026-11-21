@@ -16,6 +16,7 @@ const jwt = require("jsonwebtoken");
 const DB = "portal_test";
 const PORT = 3218;
 let server;
+let dbUri;
 const ids = {};
 const as = {};
 let day; // a Wednesday next week
@@ -23,7 +24,7 @@ const offset = (date) => sql(DB, `SELECT to_char('${date}'::date::timestamptz, '
 const at = (date, hhmm) => new Date(`${date}T${hhmm}:00${offset(date)}`).toISOString();
 
 before(async () => {
-  const uri = createTestDb(DB);
+  const uri = (dbUri = createTestDb(DB));
   const one = (role) => sql(DB, `SELECT id FROM users WHERE shop_id = '${SHOP}' AND role = '${role}' ORDER BY id LIMIT 1`);
   [ids.anna, ids.eleni] = sql(DB, `SELECT id FROM staff WHERE shop_id = '${SHOP}' AND is_active AND visible_in_calendar AND COALESCE(capacity, 1) = 1 ORDER BY id LIMIT 2`).split("\n");
   ids.service = sql(DB, `SELECT id FROM services WHERE shop_id = '${SHOP}' AND is_active AND duration_minutes = 60 ORDER BY id LIMIT 1`);
@@ -183,4 +184,65 @@ test("PR3 no notice (the default) changes nothing; the rules are saved by admins
   assert.deepEqual([ctx.portal_min_notice_minutes, ctx.cancellation_note], [1440, "Δωρεάν έως 24 ώρες πριν."]);
   await as.admin("PUT", "/api/v1/shop/portal-rules", { portal_min_notice_minutes: 0, cancellation_note: "" });
   assert.equal(sql(DB, `SELECT COALESCE(cancellation_note, 'null') FROM shops WHERE id = '${SHOP}'`), "null");
+});
+
+// --- Reminder timing (RT) ---
+import { execFileSync } from "node:child_process";
+const runReminders = (mode) =>
+  JSON.parse(
+    execFileSync("node", [path.join(ROOT, "tests/server/reminder-runner.cjs"), mode], {
+      env: { ...process.env, POSTGRES_URI: dbUri },
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim().split("\n").pop(),
+  );
+// A booking for a client of its own (with an email), starting `minutes` from now.
+const remindable = async (name, minutes, offsets = null) => {
+  sql(DB, "UPDATE appointments SET email_reminder_sent = true, push_reminder_sent = true");
+  const email = `${name.toLowerCase()}@example.invalid`;
+  const clientId = sql(DB, `INSERT INTO clients (first_name, last_name, email, receive_emails, shop_id, reminder_offsets_minutes)
+    VALUES ('${name}', 'Υπενθύμιση', '${email}', true, '${SHOP}', ${offsets ? `ARRAY[${offsets}]` : "NULL"}) RETURNING id`).split("\n")[0];
+  const id = await bookAs(as.frontdesk, clientId, [svc(ids.anna, new Date(Date.now() + minutes * 60000).toISOString())]);
+  sql(DB, `UPDATE appointments SET email_reminder_sent = false, push_reminder_sent = false WHERE id = '${id}'`);
+  return { id, email, clientId };
+};
+
+test("RT1 a client's chosen times: each reminder once, the booking's flag only after the last", async () => {
+  const { id, email } = await remindable("Δύο", 120, "1440,120,60");
+  assert.deepEqual(runReminders("one"), [email], "2 hours before");
+  assert.deepEqual(runReminders("one"), [], "not twice");
+  assert.equal(sql(DB, `SELECT email_reminder_sent FROM appointments WHERE id = '${id}'`), "f", "the 1-hour one is still to come");
+  // An hour later: the last one, then the booking is done.
+  sql(DB, `UPDATE appointment_services SET start_time = NOW() + INTERVAL '60 minutes' WHERE appointment_id = '${id}'`);
+  sql(DB, `UPDATE appointment_reminders SET start_time = NOW() + INTERVAL '60 minutes' WHERE appointment_id = '${id}'`);
+  assert.deepEqual(runReminders("one"), [email], "1 hour before");
+  assert.equal(sql(DB, `SELECT email_reminder_sent FROM appointments WHERE id = '${id}'`), "t");
+});
+
+test("RT2 a time the client didn't choose sends nothing; no choice means the shop's time", async () => {
+  await remindable("Μόνο", 120, "1440");
+  assert.deepEqual(runReminders("one"), []);
+  const hours = Number(sql(DB, `SELECT reminder_hours_before FROM shops WHERE id = '${SHOP}'`));
+  const { email } = await remindable("Κατάστημα", hours * 60);
+  assert.deepEqual(runReminders("one"), [email]);
+});
+
+test("RT3 a moved booking is reminded again for its new time", async () => {
+  const { id, email } = await remindable("Μετακίνηση", 60, "60");
+  assert.deepEqual(runReminders("one"), [email]);
+  // Moved by the shop a few minutes later: its flag is cleared, as every move does.
+  sql(DB, `UPDATE appointment_services SET start_time = start_time + INTERVAL '4 minutes' WHERE appointment_id = '${id}';
+    UPDATE appointments SET email_reminder_sent = false WHERE id = '${id}'`);
+  assert.deepEqual(runReminders("one"), [email]);
+});
+
+test("RT4 the client saves their times; only 24 h, 2 h and 1 h", async () => {
+  assert.equal((await as.client("PUT", "/api/v1/portal/notifications", { reminder_offsets_minutes: [60, 1440, 60] })).status, 200);
+  assert.equal(sql(DB, `SELECT reminder_offsets_minutes FROM clients WHERE id = '${ids.client}'`), "{1440,60}");
+  assert.equal((await as.client("PUT", "/api/v1/portal/notifications", { reminder_offsets_minutes: [30] })).status, 400);
+  assert.equal((await as.client("PUT", "/api/v1/portal/notifications", { reminder_offsets_minutes: [] })).status, 400);
+  assert.equal((await as.client("PUT", "/api/v1/portal/notifications", { reminder_offsets_minutes: null })).status, 200);
+  assert.equal(sql(DB, `SELECT COALESCE(reminder_offsets_minutes::text, 'shop') FROM clients WHERE id = '${ids.client}'`), "shop");
+  assert.equal((await as.client("PUT", "/api/v1/portal/notifications", { receive_emails: false })).status, 200);
+  assert.equal(sql(DB, `SELECT receive_emails FROM clients WHERE id = '${ids.client}'`), "f");
 });

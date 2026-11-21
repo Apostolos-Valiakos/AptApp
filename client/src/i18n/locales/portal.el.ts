@@ -78,6 +78,8 @@ export default {
     showAtReception: "Δείξτε τον στην υποδοχή",
   },
   profile: {
+    remindMe: "Υπενθύμιση",
+    before: { 1440: "24 ώρες πριν", 120: "2 ώρες πριν", 60: "1 ώρα πριν" },
     notifications: "Ειδοποιήσεις",
     activity: "Ιστορικό ειδοποιήσεων",
     appearance: "Εμφάνιση",

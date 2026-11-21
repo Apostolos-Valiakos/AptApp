@@ -114,3 +114,21 @@ describe("PF5 logging out", () => {
     expect(useAssistantStore().messages).toHaveLength(0);
   });
 });
+
+describe("PF6 when to be reminded (K9)", () => {
+  test("the shop's time shows as chosen until the client picks; at least one stays on", async () => {
+    const server = await open({ "GET /api/v1/shop": { body: { id: "s1", name: "Pure", reminder_hours_before: 24 } } });
+    const button = (m: number) => document.querySelector<HTMLElement>(`[data-testid="reminder-timing"] [data-offset="${m}"]`)!;
+    const pressed = () => [1440, 120, 60].filter((m) => button(m).getAttribute("aria-pressed") === "true");
+    expect(pressed()).toEqual([1440]);
+    button(60).click();
+    await settle();
+    expect(server.called("PUT", "/api/v1/portal/notifications").at(-1)!.body).toEqual({ reminder_offsets_minutes: [1440, 60] });
+    button(1440).click();
+    await settle();
+    button(60).click();
+    await settle();
+    expect(pressed()).toEqual([60]);
+    expect(server.called("PUT", "/api/v1/portal/notifications").at(-1)!.body).toEqual({ reminder_offsets_minutes: [60] });
+  });
+});
