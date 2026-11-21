@@ -120,7 +120,7 @@
               </div>
               <div class="text-xs text-gray-500">
                 {{ hours(d.minutes) }} · {{ t("bonus.extraShort") }} {{ hours(d.extra_minutes) }} ·
-                {{ t("bonus.ruleShort", { hours: hours(d.threshold_minutes), percent: d.kind === "per_hour" ? t("bonus.perHourShort", { amount: number(d.amount_per_hour) }) : `${number(d.percent)}%` }) }}
+                {{ t("bonus.ruleShort", { hours: hours(d.threshold_minutes), percent: d.kind === "per_hour" ? t("bonus.perHourShort", { amount: number(d.amount_per_hour) }) : `${number(d.percent)}%` }) }}<template v-if="d.kind !== 'per_hour'"><template v-if="d.deduction_per_service">, {{ t("bonus.rules.describeDeduction", { amount: number(d.deduction_per_service) }) }}</template><template v-if="d.laser_amount_per_hour != null">, {{ t("bonus.rules.describeLaser", { amount: number(d.laser_amount_per_hour) }) }}</template></template>
               </div>
               <table v-if="d.services.length" class="w-full text-xs mt-1.5">
                 <tbody>
@@ -131,6 +131,9 @@
                       <Tag v-if="s.is_redemption" :value="t('bonus.redemption')" severity="info" class="ml-1 !text-[10px] !py-0" data-testid="bonus-redemption" />
                       <div class="text-gray-400">
                         {{ t(s.is_redemption ? "bonus.servicePartRedemption" : "bonus.servicePart", { part: minutesText(s.extra_minutes), of: minutesText(s.minutes), price: formatMoney(s.price) }) }}
+                        <span v-if="s.how === 'laser'" data-testid="bonus-how">· {{ t("bonus.howLaser", { amount: formatMoney(d.laser_amount_per_hour) }) }}</span>
+                        <span v-else-if="s.how === 'last'" data-testid="bonus-how">· {{ t("bonus.howLast") }}</span>
+                        <span v-else-if="s.deduction" data-testid="bonus-how">· {{ t("bonus.howDeducted", { base: formatMoney(s.base) }) }}</span>
                       </div>
                     </td>
                     <td class="py-0.5 text-right tabular-nums whitespace-nowrap align-top">{{ formatMoney(s.bonus) }}</td>

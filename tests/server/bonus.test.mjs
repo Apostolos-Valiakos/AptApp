@@ -14,7 +14,7 @@ let frontdesk;
 const ids = {};
 
 // A booking with one service for the test staff member, in shop time.
-const book = (local, minutes, price, status = "completed", staffId = ids.staff) => {
+const book = (local, minutes, price, status = "completed", staffId = ids.staff, serviceId = ids.service) => {
   const appt = sql(
     DB,
     `INSERT INTO appointments (client_id, status, shop_id) VALUES ('${ids.client}', '${status}', '${SHOP}') RETURNING id`,
@@ -22,7 +22,7 @@ const book = (local, minutes, price, status = "completed", staffId = ids.staff) 
   sql(
     DB,
     `INSERT INTO appointment_services (appointment_id, service_id, staff_id, start_time, duration_override, price_override, shop_id)
-     VALUES ('${appt}', '${ids.service}', '${staffId}', TIMESTAMP '${local}' AT TIME ZONE 'Europe/Athens', ${minutes}, ${price}, '${SHOP}')`,
+     VALUES ('${appt}', '${serviceId}', '${staffId}', TIMESTAMP '${local}' AT TIME ZONE 'Europe/Athens', ${minutes}, ${price}, '${SHOP}')`,
   );
   return appt;
 };
@@ -336,4 +336,42 @@ test("a sales target pays the highest step reached in the month; review counts p
   assert.equal(of(desk).bonus, 21);
   const part = (await report("2031-01-15", "2031-01-31")).data.staff.find((s) => s.staff_id === seller);
   assert.equal(part.targets[0].sales, 120, "the whole month, not only the 15th on");
+});
+
+test("laser by the hour, a deduction per service and a fixed short last service; aestheticians set up by the migration", async () => {
+  // The migration made ΕΥΗ's (Αισθητικός) per-hour rule: percent, laser at €4 an hour, €15 off, €2.20 last.
+  const evi = sql(DB, `SELECT laser_amount_per_hour || ' ' || deduction_per_service || ' ' || last_service_fixed || ' ' || kind FROM staff_bonus_rules r JOIN staff st ON st.id = r.staff_id WHERE st.shop_id = '${SHOP}' AND upper(st.specialty) LIKE '%ΑΙΣΘΗΤΙΚ%' ORDER BY r.effective_from LIMIT 1`);
+  assert.equal(evi, "4.00 15.00 2.20 percent");
+
+  const member = sql(DB, `INSERT INTO staff (name, shop_id) VALUES ('Laser Tester', '${SHOP}') RETURNING id`).split("\n")[0];
+  const service = (name, category) =>
+    sql(DB, `INSERT INTO services (name, category, duration_minutes, price, shop_id) VALUES ('${name}', '${category}', 60, 50, '${SHOP}') RETURNING id`).split("\n")[0];
+  const laser = service("Αποτρίχωση test", "Λειζερ");
+  const facial = service("Facial test", "Πρόσωπο");
+  const rule = (body) => admin("POST", `/api/v1/staff/${member}/bonus-rules`, { effective_from: "2032-01-01", enabled: true, kind: "percent", threshold_minutes: 240, percent: 10, ...body });
+  assert.equal((await rule({ laser_amount_per_hour: -1 })).status, 400);
+  const saved = await rule({ laser_amount_per_hour: 4, deduction_per_service: 15, last_service_fixed: 2.2 });
+  assert.equal(saved.status, 201, JSON.stringify(saved.data));
+  assert.deepEqual(
+    [saved.data.rules[0].laser_amount_per_hour, saved.data.rules[0].deduction_per_service, saved.data.rules[0].last_service_fixed],
+    [4, 15, 2.2],
+  );
+
+  // 3h laser, a 2h €45 facial (1h past 4h), 1h laser, then a 30-min €45 facial last.
+  book("2032-01-05 09:00", 180, 300, "completed", member, laser);
+  book("2032-01-05 12:00", 120, 45, "completed", member, facial);
+  book("2032-01-05 14:00", 60, 70, "completed", member, laser);
+  book("2032-01-05 15:00", 30, 45, "completed", member, facial);
+  const day = (await report("2032-01-05", "2032-01-05")).data.staff.find((s) => s.staff_id === member).days[0];
+  assert.deepEqual(day.services.map((s) => [s.how, s.extra_minutes, s.bonus]), [
+    ["percent", 60, 1.5],
+    ["laser", 60, 4],
+    ["last", 30, 2.2],
+  ]);
+  assert.equal(day.bonus, 7.7);
+
+  // Empty amounts switch them off: everything by percent of the full price.
+  await rule({ laser_amount_per_hour: null, deduction_per_service: 0, last_service_fixed: null });
+  const plain = (await report("2032-01-05", "2032-01-05")).data.staff.find((s) => s.staff_id === member).days[0];
+  assert.deepEqual(plain.services.map((s) => s.bonus), [2.25, 7, 4.5]);
 });

@@ -17,7 +17,9 @@ const isDate = (v) => {
 };
 const shopToday = () => new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(new Date());
 const BONUS_COLUMNS = `id, staff_id, to_char(effective_from, 'YYYY-MM-DD') AS effective_from, enabled, kind,
-  threshold_minutes, percent::float AS percent, amount_per_hour::float AS amount_per_hour`;
+  threshold_minutes, percent::float AS percent, amount_per_hour::float AS amount_per_hour,
+  laser_amount_per_hour::float AS laser_amount_per_hour, deduction_per_service::float AS deduction_per_service,
+  last_service_fixed::float AS last_service_fixed`;
 // A redemption: a service in the category Εξαργύρωση (see migration 0020).
 const IS_REDEMPTION = "(trim(COALESCE(s.category, '')) = 'Εξαργύρωση')";
 const COMMISSION_COLUMNS = "id, staff_id, to_char(effective_from, 'YYYY-MM-DD') AS effective_from, enabled, percent::float AS percent";
@@ -104,7 +106,23 @@ module.exports = function bonusRouter({ authenticateToken, requireAnalyticsAcces
     const amount = Number(body.amount_per_hour ?? 0);
     if (!(amount >= 0 && amount <= 1000)) return { error: "amount_per_hour must be 0 to 1000" };
     if (kind === "per_hour" && body.enabled !== false && !(amount > 0)) return { error: "amount_per_hour is required" };
-    return { kind, threshold_minutes: threshold, percent, amount_per_hour: Math.round(amount * 100) / 100 };
+    // Empty (null) laser or last-service amounts are off; no deduction is 0.
+    const money = (v) => (v === null || v === undefined || v === "" ? null : Math.round(Number(v) * 100) / 100);
+    const laser = money(body.laser_amount_per_hour);
+    const deduction = money(body.deduction_per_service) ?? 0;
+    const last = money(body.last_service_fixed);
+    for (const v of [laser, deduction, last]) {
+      if (v !== null && !(v >= 0 && v <= 1000)) return { error: "amounts must be 0 to 1000" };
+    }
+    return {
+      kind,
+      threshold_minutes: threshold,
+      percent,
+      amount_per_hour: Math.round(amount * 100) / 100,
+      laser_amount_per_hour: laser,
+      deduction_per_service: deduction,
+      last_service_fixed: last,
+    };
   }, "bonus rules");
 
   ruleRoutes("product-commission-rules", "staff_product_commission_rules", commissionRules, (rules, day) => commissionOn(rules, day), (body) => {
@@ -197,7 +215,7 @@ module.exports = function bonusRouter({ authenticateToken, requireAnalyticsAcces
                 -- stored when it was booked, else that service's price now.
                 ${SERVICE_VALUE}::float AS price,
                 ${IS_REDEMPTION} AS is_redemption,
-                s.name AS service_name,
+                s.name AS service_name, s.category AS service_category,
                 NULLIF(TRIM(CONCAT_WS(' ', c.first_name, c.last_name)), '') AS client_name
          FROM appointment_services aps
          JOIN appointments a ON a.id = aps.appointment_id
