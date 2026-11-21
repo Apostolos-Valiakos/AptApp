@@ -427,14 +427,12 @@ import { MONEY_METHODS, methodChoiceLabel } from "../utils/paymentMethods";
 import { api, ApiError, ifRefused, saveBlob, withMessage } from "../api/http";
 import { formatMoney } from "../utils/format";
 import { ref, watch, computed } from "vue";
-import Exercises from "./Exercises.vue";
 import ClientPackagesPanel from "./ClientPackagesPanel.vue";
 import { useAuthStore } from "../stores/auth";
 import { useSettingsStore } from "../stores/settings";
 import { fullyHidden, hiddenAmount, shownMoney } from "../utils/paymentFilters";
 import PaidAmount from "./PaidAmount.vue";
 import AppointmentNotesTip from "./AppointmentNotesTip.vue";
-import { storeToRefs } from "pinia";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 import { useI18n } from "vue-i18n";
@@ -445,7 +443,6 @@ const notify = useNotify();
 const confirm = useConfirm();
 const isShopAdmin = authStore.isShopAdmin;
 const settingsStore = useSettingsStore();
-const { shopSettings } = storeToRefs(settingsStore);
 
 const props = defineProps(["clientId", "initialTab"]);
 const emit = defineEmits(["refresh"]);
@@ -462,14 +459,6 @@ const files = ref<any[]>([]);
 const editForm = ref<any>({});
 const fileInput = ref<HTMLInputElement | null>(null);
 const viewingFileId = ref<number | null>(null); // Track which file is loading
-
-// Computed property for the Avatar initials
-const initials = computed(() => {
-  if (!clientData.value) return "";
-  const f = clientData.value.first_name?.[0] || "";
-  const l = clientData.value.last_name?.[0] || "";
-  return `${f}${l}`.toUpperCase();
-});
 
 // The cash and card filters hide the services paid that way, or part of one;
 // a visit left with none is hidden, and its money shown leaves that out.
@@ -493,43 +482,6 @@ const visibleHistory = computed(() =>
     })
     .filter(Boolean),
 );
-
-const attendanceRate = computed(() => {
-  if (!history.value || history.value.length === 0) return 0;
-
-  // Calculate the end of the current day (23:59:59)
-  const endOfToday = new Date();
-  endOfToday.setHours(23, 59, 59, 999);
-
-  // Filter appointments up to the end of today
-  const relevantAppointments = history.value.filter((appt) => {
-    return new Date(appt.start_time) <= endOfToday;
-  });
-
-  if (relevantAppointments.length === 0) return 0;
-
-  // Calculate Numerator: (Completed + New)
-  const successCount = relevantAppointments.filter((appt) =>
-    ["completed", "new"].includes(appt.status?.toLowerCase()),
-  ).length;
-
-  // Calculate Denominator: (Completed + No-Show + New + Confirmed + Cancelled)
-  const validStatuses = [
-    "completed",
-    "no-show",
-    "new",
-    "confirmed",
-    "cancelled",
-  ];
-  const totalCount = relevantAppointments.filter((appt) =>
-    validStatuses.includes(appt.status?.toLowerCase()),
-  ).length;
-
-  if (totalCount === 0) return 0;
-
-  // Return as a whole percentage
-  return Math.round((successCount / totalCount) * 100);
-});
 
 const fetchClientData = async () => {
   if (!props.clientId) return;

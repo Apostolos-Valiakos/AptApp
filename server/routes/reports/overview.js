@@ -2,7 +2,7 @@
 const express = require("express");
 const { asyncHandler } = require("../../http");
 const pool = require("../../db");
-const { hiddenAmountSql, shownPriceSql, buildServiceExclusionClause, buildRevenueExclusionClause, analyticsWindow, RETURNING_SQL, clientName } = require("../../domain/reportSql");
+const { hiddenAmountSql, shownPriceSql, buildServiceExclusionClause, buildRevenueExclusionClause, analyticsWindow, RETURNING_SQL } = require("../../domain/reportSql");
 
 module.exports = function overviewRouter({
   authenticateToken,
@@ -36,7 +36,7 @@ module.exports = function overviewRouter({
   }));
   // --- REPORT ENDPOINTS (ALL FILTERED BY SHOP_ID AND VISIBILITY) ---
   router.get("/reports/analytics", authenticateToken, requireAnalyticsAccess, asyncHandler(async (req, res) => {
-    const { from, to, excludeCash, excludeCard } = req.query;
+    const { excludeCash, excludeCard } = req.query;
     // Default to last 30 days if no dates provided
     const { start: startDate, end: endDate } = analyticsWindow(req);
     const client = await pool.connect();

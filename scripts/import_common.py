@@ -41,6 +41,11 @@ def _missing(s) -> bool:
         return True
 
 
+def cell_text(value) -> str:
+    """A spreadsheet cell as trimmed text; "" for an empty one (not "nan")."""
+    return "" if _missing(value) else str(value).strip()
+
+
 def normalize(s) -> str:
     """Lowercase, trimmed, without Greek accents: the key names are matched on. Empty cells give ""."""
     if _missing(s):

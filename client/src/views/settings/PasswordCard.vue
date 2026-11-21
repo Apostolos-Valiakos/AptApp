@@ -91,6 +91,7 @@
 <script setup lang="ts">
 // Changing one's own password (at least 8 characters, with a number).
 import { computed, reactive, ref } from "vue";
+import { passwordHasDigit, passwordLongEnough } from "../../utils/password";
 import { useI18n } from "vue-i18n";
 import Button from "primevue/button";
 import Password from "primevue/password";
@@ -103,8 +104,8 @@ const notify = useNotify();
 const isSavingPassword = ref(false);
 const security = reactive({ currentPassword: "", newPassword: "", confirmPassword: "" });
 const passwordsMatch = computed(() => security.newPassword === security.confirmPassword);
-const hasMinLength = computed(() => security.newPassword.length >= 8);
-const hasNumber = computed(() => /\d/.test(security.newPassword));
+const hasMinLength = computed(() => passwordLongEnough(security.newPassword));
+const hasNumber = computed(() => passwordHasDigit(security.newPassword));
 const isValidSecurityForm = computed(
   () => security.currentPassword && hasMinLength.value && hasNumber.value && passwordsMatch.value,
 );

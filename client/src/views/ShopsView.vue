@@ -175,13 +175,20 @@
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('platform.shops.dialog.adminPassword') }}</label>
             <InputText v-model="editingShop.admin_password" type="password" class="w-full" />
+            <small class="block mt-1" :class="editingShop.admin_password && !passwordOk(editingShop.admin_password) ? 'text-red-500' : 'text-gray-500'" data-testid="password-rule">{{ t("common.passwordRule") }}</small>
           </div>
         </div>
       </div>
     </div>
     <template #footer>
       <Button :label="t('common.cancel')" icon="pi pi-times" text @click="showDialog = false" />
-      <Button :label="t('common.save')" icon="pi pi-check" @click="saveShop" :loading="loading" />
+      <Button
+        :label="t('common.save')"
+        icon="pi pi-check"
+        :disabled="createAdminNow && !!editingShop.admin_username && !passwordOk(editingShop.admin_password)"
+        @click="saveShop"
+        :loading="loading"
+      />
     </template>
   </Dialog>
 
@@ -202,8 +209,9 @@
           <div class="flex-1">
             <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('staff.loginDialog.password') }}</label>
             <InputText v-model="newAdminPassword" type="password" class="w-full" />
+            <small class="block mt-1" :class="newAdminPassword && !passwordOk(newAdminPassword) ? 'text-red-500' : 'text-gray-500'" data-testid="password-rule">{{ t("common.passwordRule") }}</small>
           </div>
-          <Button icon="pi pi-plus" :loading="loading" @click="createAdmin" />
+          <Button icon="pi pi-plus" :loading="loading" :disabled="!newAdminUsername || !passwordOk(newAdminPassword)" @click="createAdmin" />
         </div>
       </div>
 
@@ -260,6 +268,7 @@
     <div class="pt-2">
       <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('platform.admins.resetDialog.newPassword') }}</label>
       <InputText v-model="resetPasswordValue" type="password" class="w-full" />
+      <small class="block mt-1" :class="resetPasswordValue && !passwordOk(resetPasswordValue) ? 'text-red-500' : 'text-gray-500'" data-testid="password-rule">{{ t("common.passwordRule") }}</small>
     </div>
     <template #footer>
       <Button :label="t('common.cancel')" text @click="showResetPasswordDialog = false" />
@@ -280,6 +289,7 @@ import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "../stores/auth";
+import { passwordOk } from "../utils/password";
 
 const { t, locale } = useI18n();
 const toast = useToast();
@@ -408,7 +418,7 @@ const openAdminsDialog = async (shop: any) => {
 };
 
 const createAdmin = async () => {
-  if (!newAdminUsername.value || !newAdminPassword.value) return;
+  if (!newAdminUsername.value || !passwordOk(newAdminPassword.value)) return;
   loading.value = true;
   try {
     await api
@@ -462,7 +472,7 @@ const openResetPasswordDialog = (admin: any) => {
 };
 
 const confirmResetPassword = async () => {
-  if (!resetPasswordValue.value || resetPasswordValue.value.length < 6) {
+  if (!passwordOk(resetPasswordValue.value)) {
     toast.add({
       severity: "warn",
       summary: t("common.error"),

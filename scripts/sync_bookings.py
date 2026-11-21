@@ -24,7 +24,7 @@ import psycopg2
 import psycopg2.extras
 import pandas as pd
 
-from import_common import SHOP_ID, FUZZY_THRESHOLD, best_match, db_uri, normalize
+from import_common import SHOP_ID, FUZZY_THRESHOLD, best_match, cell_text, db_uri, normalize
 
 DB_URI = db_uri()
 
@@ -214,7 +214,12 @@ def main():
         except (ValueError, TypeError):
             order_date = start_time  # fallback: use appointment time itself
 
-        client_raw = str(row.get("Πελάτης", "")).strip()
+        # A row without a client name can't be booked for anyone: it's listed,
+        # never turned into a client called "nan".
+        client_raw = cell_text(row.get("Πελάτης"))
+        if not client_raw:
+            errors.append(f"Row {i}: no client name")
+            continue
         staff_raw = str(row.get("Υπάλληλος", "")).strip()
         service_raw = str(row.get("Υπηρεσία", "")).strip()
 

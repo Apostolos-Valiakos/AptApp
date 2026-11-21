@@ -12,7 +12,7 @@ import type { useSchedulerPhone } from "./useSchedulerPhone";
 export const useCalendarData = (ctx: ReturnType<typeof useSchedulerCore> & ReturnType<typeof useSchedulerPhone>) => {
   const {
     authStore, calendarStore, settings, todayDateStr, currentView, currentStart, currentEnd, shopSlotMinTime, shopSlotMaxTime,
-    canGoPrev, statusFilter, t,
+    statusFilter, t,
   } = ctx;
 
   // Still used by the unrelated staff-role navigation restriction below

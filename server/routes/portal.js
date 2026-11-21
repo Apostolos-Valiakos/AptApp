@@ -2,7 +2,7 @@
 // Moved out of server.js; helpers that still live there are handed over when
 // it mounts this router (see "Area routers" near the end of server.js).
 const express = require("express");
-const { upperName } = require("../domain/common");
+const { upperName, passwordProblem } = require("../domain/common");
 const { asyncHandler } = require("../http");
 const pool = require("../db");
 const bcrypt = require("bcrypt");
@@ -56,11 +56,7 @@ module.exports = function portalRouter({
 
   router.put("/portal/password", authenticateToken, onlyClients, asyncHandler(async (req, res) => {
     const { currentPassword, newPassword } = req.body;
-    if (!newPassword || newPassword.length < 6) {
-      return res
-        .status(400)
-        .json({ error: "New password must be at least 6 characters" });
-    }
+    if (passwordProblem(newPassword)) return res.status(400).json({ error: passwordProblem(newPassword) });
     const { rows } = await pool.query(
       "SELECT password FROM users WHERE id = $1",
       [req.user.userId],

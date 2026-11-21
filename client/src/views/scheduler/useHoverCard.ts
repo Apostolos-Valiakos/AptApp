@@ -6,7 +6,7 @@ import type { useCalendarData } from "./useCalendarData";
 
 export const useHoverCard = (ctx: ReturnType<typeof useSchedulerCore> & ReturnType<typeof useSchedulerPhone> & ReturnType<typeof useCalendarData>) => {
   const {
-    flags, confirm, calendarStore, isPhone, calendarEvents,
+    flags, calendarStore, isPhone, calendarEvents,
   } = ctx;
 
   // Uses the ConfirmDialog mounted inside BookingDialog. Resolves true on accept.

@@ -136,10 +136,8 @@ module.exports = function salesRouter({
     const { from, to, excludeCash, excludeCard } = req.query;
     const params = [req.shopId];
 
-    let whereClause = "WHERE a.shop_id = $1 AND a.status = 'completed'";
-    if (req.user.role !== "super_admin") {
-      whereClause += " AND a.save_receipt = true";
-    }
+    // Bookings off the receipts: super admins only (domain/common.js).
+    let whereClause = "WHERE a.shop_id = $1 AND a.status = 'completed'" + getVisibilityClause(req.user, "a");
     whereClause += " " + buildRevenueExclusionClause(excludeCash, excludeCard, "a");
     whereClause += " " + buildServiceExclusionClause(excludeCash, excludeCard);
 

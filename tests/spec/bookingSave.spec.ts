@@ -1,7 +1,7 @@
 // Saving in the booking dialog: what is checked before anything is sent,
 // what is sent, and how the server's refusals are handled. Written before
 // executeSave and recordPayment were split up (code review proposal 17), so
-// the split can't change any of it. BS1–BS6.
+// the split can't change any of it. BS1–BS6; BS7, editing a time-off block.
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { defineComponent, h } from "vue";
 import BookingDialog from "../../client/src/components/BookingDialog.vue";
@@ -223,5 +223,28 @@ describe("BS6 recording a payment", () => {
     opened = await open(appointment(), { "POST /api/v1/transactions": { status: 400, body: { error: "Amount exceeds total owed" } } });
     await pay();
     expect(pageText()).toContain("Amount exceeds total owed");
+  });
+});
+
+describe("BS7 editing a time-off block", () => {
+  // A block clicked on the calendar opens with its id, staff member and times.
+  const block = { time_off_id: "off1", staff_id: "st1", start_time: new Date(`${MONDAY}T13:00:00`), end_time: new Date(`${MONDAY}T14:00:00`), reason: "Lunch" };
+
+  test("Save sends the new block with the one it replaces, in one request, and deletes nothing itself", async () => {
+    const { server } = await open(block, { "POST /api/v1/staff/st1/time-off": { body: { id: "off2" } } });
+    await save();
+    const posts = server.called("POST", "/api/v1/staff/st1/time-off");
+    expect(posts).toHaveLength(1);
+    expect(posts[0].body).toMatchObject({ type: "break", start_date: MONDAY, start_time: "13:00", end_time: "14:00", replaces_id: "off1" });
+    expect(server.called("DELETE", "/api/v1/staff/st1/time-off/off1")).toHaveLength(0);
+    expect(pageText()).toContain(el.staff.timeOff.saved);
+  });
+
+  test("a save the server refuses says so, and nothing else is sent", async () => {
+    const { server } = await open(block, { "POST /api/v1/staff/st1/time-off": { status: 500, body: { error: "Internal server error" } } });
+    await save();
+    expect(pageText()).toContain(el.staff.timeOff.saveFailed);
+    expect(pageText()).not.toContain(el.staff.timeOff.saved);
+    expect(server.called("DELETE", "/api/v1/staff/st1/time-off/off1")).toHaveLength(0);
   });
 });

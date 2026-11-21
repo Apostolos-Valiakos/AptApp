@@ -28,11 +28,9 @@
 <script setup lang="ts">
 import { formatMoney } from "../../utils/format";
 import { ref, computed } from "vue";
-import { useI18n } from "vue-i18n";
 import { useAuthStore } from "../../stores/auth";
 import SellGiftCardDialog from "./SellGiftCardDialog.vue";
 
-const { t } = useI18n();
 const authStore = useAuthStore();
 
 const props = defineProps<{

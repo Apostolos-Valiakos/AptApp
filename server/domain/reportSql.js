@@ -1,5 +1,6 @@
 // SQL for the reports: the cash and card filters (what each hides), the periods the money tiles count, and the rows their lists show.
 const { appointmentPaidSql, productsCostSql } = require("./moneySql");
+const { getVisibilityClause } = require("./common");
 
 // --- REVENUE EXCLUSION HELPERS (Ctrl+1 hides cash + gift-cards that were themselves
 // bought with cash, Ctrl+8 hides card — independent toggles). A gift-card payment is
@@ -88,7 +89,6 @@ const expenseDateOf = (paramIndex) =>
 // revenue exclusion given (alias a2). Shared by the tiles and their details.
 const periodAppointments = (req, cashApptClause) => {
   const { from, to } = req.query;
-  const isSuperAdmin = req.user.role === "super_admin";
   const apptParams = [req.shopId];
   let apptDateFilter = "";
   if (from) {
@@ -111,7 +111,7 @@ const periodAppointments = (req, cashApptClause) => {
       a2.status = 'completed'
       OR (a2.status IN ('new', 'confirmed', 'started') AND aps2.start_time < CURRENT_TIMESTAMP)
     )
-    ${!isSuperAdmin ? "AND a2.save_receipt = true" : ""}
+    ${getVisibilityClause(req.user, "a2")}
     ${apptDateFilter}
     ${cashApptClause}
   `;

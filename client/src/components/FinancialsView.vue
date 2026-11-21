@@ -186,7 +186,7 @@ import { FinancialsKey } from "./financials/context";
 const financials = useFinancials();
 provide(FinancialsKey, financials);
 const {
-  router, loading, filters, analytics, insights, lastQuery, detailsVisible, detailsKind,
+  router, loading, filters, insights, lastQuery, detailsVisible, detailsKind,
   detailsRef, clientProfileVisible, clientProfileId, openClient, onClientChanged, insightsPeriod, clearFilters, setToday,
   fetchAllReports, t,
 } = financials;

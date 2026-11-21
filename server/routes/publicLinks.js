@@ -2,6 +2,7 @@
 // Moved out of server.js; helpers that still live there are handed over when
 // it mounts this router (see "Area routers" near the end of server.js).
 const express = require("express");
+const { createMailTransport } = require("../domain/mailer");
 const { asyncHandler } = require("../http");
 const pool = require("../db");
 const { PUBLIC_BASE_URL } = require("../reminderService");
@@ -63,19 +64,7 @@ module.exports = function publicLinksRouter({
 
     // Best-effort notification — the lead is already saved above regardless of email outcome.
     try {
-      const nodemailer = require("nodemailer");
-      const transporter = nodemailer.createTransport({
-        host: process.env.EMAIL_HOST,
-        port: process.env.EMAIL_PORT,
-        secure: process.env.EMAIL_PORT == 465,
-        auth: {
-          user: process.env.EMAIL_USER,
-          pass: process.env.EMAIL_PASS,
-        },
-        family: 4,
-        connectionTimeout: 10000,
-        greetingTimeout: 10000,
-      });
+      const transporter = createMailTransport();
 
       await transporter.sendMail({
         from: `"BookFlow" <${process.env.EMAIL_USER}>`,

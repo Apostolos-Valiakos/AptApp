@@ -1,14 +1,18 @@
 <template>
   <div class="flex items-center gap-4">
-    <div class="flex items-center space-x-2">
-      <span class="text-sm text-gray-600">View:</span>
-      <select
+    <div class="flex items-center gap-2">
+      <label for="resource-filter" class="text-sm text-gray-600">{{ t("scheduler.view.label") }}:</label>
+      <!-- Staff see their own column ("My schedule"), the only choice offered. -->
+      <Select
         v-model="resourceFilter"
-        class="text-sm border rounded-md px-3 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-      >
-        <!-- <option value="all">All Staff</option> -->
-        <option value="me" :disabled="!hasStaffProfile">{{ t("scheduler.mySchedule") }}</option>
-      </select>
+        inputId="resource-filter"
+        :options="options"
+        optionLabel="label"
+        optionValue="value"
+        optionDisabled="disabled"
+        size="small"
+        data-testid="resource-filter"
+      />
     </div>
   </div>
 </template>
@@ -28,6 +32,8 @@ const authStore = useAuthStore();
 const hasStaffProfile = computed(() => {
   return !!authStore.user?.staff_id;
 });
+
+const options = computed(() => [{ value: "me", label: t("scheduler.mySchedule"), disabled: !hasStaffProfile.value }]);
 
 // Getter/Setter for Resource Filter
 const resourceFilter = computed({

@@ -4,7 +4,7 @@ import type { useSchedulerCore } from "./useSchedulerCore";
 
 export const useDockedCalendar = (ctx: ReturnType<typeof useSchedulerCore>) => {
   const {
-    currentView, calendarApi, t,
+    currentView, calendarApi, 
   } = ctx;
 
   const showDatePicker = ref(false);

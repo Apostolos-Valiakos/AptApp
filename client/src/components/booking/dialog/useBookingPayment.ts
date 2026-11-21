@@ -21,7 +21,7 @@ export const useBookingPayment = (state: BookingState, later: Later) => {
     originalDiscountAmount, currentVersion, selectedClient, siblingAppointments, selectedSiblingIds, discount, pendingPackages, pendingPackagesTotal,
     pendingGiftCards, pendingGiftCardsTotal, paymentStep, paymentLoading, amountToPayNow, selectedPaymentMethod, selectedGiftCardId, selectedMembershipRedemptions,
     saleChoicesOpen, priceChangeVisible, refundVisible, bookingPaymentsRef, bookingPackagesRef, isPaymentSettled, currentTab, currentApptTotal,
-    previousDebt, totalDueNow, combinedTotalDueNow, suggestedAmount,
+    previousDebt, combinedTotalDueNow, suggestedAmount,
   } = state;
 
   const openSale = (sale: any) => {

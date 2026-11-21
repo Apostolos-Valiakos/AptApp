@@ -135,11 +135,9 @@ import AppointmentSwapDialog from "../components/AppointmentSwapDialog.vue";
 import ClientSearchDialog from "../components/ClientSearchDialog.vue";
 import ClientQuickProfileDialog from "../components/ClientQuickProfileDialog.vue";
 import ClientProfileDialog from "../components/ClientProfileDialog.vue";
-import ColorModelToggle from "../components/ColorModelToggle.vue";
 import StaffReorderDialog from "../components/StaffReorderDialog.vue";
 import AppointmentHoverCard from "../components/AppointmentHoverCard.vue";
 import FullCalendar from "@fullcalendar/vue3";
-import { api as http, ApiError } from "../api/http"; // (`api` in this file is FullCalendar's)
 import "./scheduler/scheduler.css";
 import { provide } from "vue";
 import SchedulerToolbar from "./scheduler/SchedulerToolbar.vue";

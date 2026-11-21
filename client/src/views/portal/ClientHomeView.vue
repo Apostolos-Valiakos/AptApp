@@ -167,13 +167,11 @@ import PaidAmount from "../../components/PaidAmount.vue";
 import { ref, computed, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import Button from "primevue/button";
-import { useToast } from "primevue/usetoast";
 import { usePushNotifications } from "../../composables/usePushNotifications";
 import { useAuthStore } from "../../stores/auth";
 
 const { t } = useI18n();
 const authStore = useAuthStore();
-const toast = useToast();
 const {
   isSupported: pushSupported,
   availableHere: pushAvailableHere,

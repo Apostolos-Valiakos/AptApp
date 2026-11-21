@@ -121,3 +121,43 @@ test("reordering staff only touches this shop's staff", async () => {
   await as.admin("POST", "/api/v1/staff/reorder", { orders: [{ id: other, sort_order: 987 }] });
   assert.equal(sql(DB, `SELECT sort_order FROM staff WHERE id = '${other}'`), before);
 });
+
+// Editing a time-off block from the calendar sends the new block with the one
+// it replaces: the new one is saved and the old one removed together, never
+// one without the other.
+test("editing a time-off block replaces it in one go", async () => {
+  const other = sql(DB, `SELECT id FROM staff WHERE shop_id = '${SHOP}' AND id <> '${ids.staff}' ORDER BY id LIMIT 1`);
+  const day = "2027-04-14";
+  const blocksOn = () => sql(DB, `SELECT staff_id || ' ' || to_char(start_time, 'HH24:MI') FROM staff_time_off WHERE start_date = '${day}' ORDER BY start_time`).split("\n").filter(Boolean);
+  const block = (staffId, from, to, extra = {}) =>
+    as.frontdesk("POST", `/api/v1/staff/${staffId}/time-off`, { type: "break", start_date: day, end_date: day, start_time: from, end_time: to, ...extra });
+
+  const first = await block(ids.staff, "10:00", "11:00");
+  assert.equal(first.status, 200, JSON.stringify(first.data));
+
+  // Moved to another staff member and time: only the new block is left.
+  const moved = await block(other, "12:00", "13:00", { replaces_id: first.data.id });
+  assert.equal(moved.status, 200, JSON.stringify(moved.data));
+  assert.deepEqual(blocksOn(), [`${other} 12:00`]);
+
+  // A new block that can't be saved leaves the old one where it was.
+  const bad = await block(ids.staff, "14:00", "15:00", { replaces_id: moved.data.id, start_date: "2027-02-30", end_date: "2027-02-30" });
+  assert.ok(bad.status >= 400, `refused (${bad.status})`);
+  assert.deepEqual(blocksOn(), [`${other} 12:00`]);
+
+  // Refused over a booking it would cover (asked first): nothing changes either.
+  const booked = await as.frontdesk("POST", "/api/v1/appointments", {
+    client_id: ids.client, status: "confirmed", save_receipt: true, allow_unavailable: true, allow_overtime: true,
+    services: [{ service_id: ids.service, staff_id: ids.staff, start_time: `${day}T16:00:00+03:00`, duration_override: 60, price_override: 10 }],
+  });
+  assert.equal(booked.status, 200, JSON.stringify(booked.data));
+  const clash = await block(ids.staff, "16:00", "17:00", { replaces_id: moved.data.id });
+  assert.equal(clash.status, 409);
+  assert.deepEqual(blocksOn(), [`${other} 12:00`]);
+
+  // The old block already removed elsewhere: the edit still saves.
+  sql(DB, `DELETE FROM staff_time_off WHERE id = '${moved.data.id}'`);
+  assert.equal((await block(ids.staff, "09:00", "09:30", { replaces_id: moved.data.id })).status, 200);
+  assert.deepEqual(blocksOn(), [`${ids.staff} 09:00`]);
+  assert.equal((await block(ids.staff, "09:00", "09:30", { replaces_id: "not-an-id" })).status, 400);
+});

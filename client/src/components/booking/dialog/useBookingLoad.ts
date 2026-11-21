@@ -19,7 +19,7 @@ export const useBookingLoad = (state: BookingState, later: Later) => {
     props, emit, dialogVisible, confirm, notify, t, form, servicesList,
     productsList, isRecurring, recurrenceForm, originalServices, originalSnapshot, originalDiscountAmount, currentVersion, savedStatus,
     selectedClient, clientNotesDraft, walkInClientId, groupedWithTime, siblingAppointments, selectedSiblingIds, discount, discountCodes,
-    pendingPackages, pendingGiftCards, currentTab, loadingPastId, showMobileSidebar, discountAmount, currentApptTotal, totalDueNow,
+    pendingPackages, pendingGiftCards, currentTab, loadingPastId, showMobileSidebar, discountAmount, currentApptTotal, 
   } = state;
 
 

@@ -23,7 +23,7 @@
       :value="visibleGiftCards"
       :loading="loading"
       responsiveLayout="scroll"
-      class="p-datatable-sm"
+      class="p-datatable-sm table-cells-top"
       :rowHover="true"
       :paginator="true"
       :rows="15"
@@ -377,9 +377,3 @@ const confirmDeleteCard = (card: any) => {
 };
 </script>
 
-<style scoped>
-:deep(.p-datatable .p-datatable-tbody > tr > td) {
-  padding: 1rem;
-  vertical-align: top;
-}
-</style>

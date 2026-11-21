@@ -10,6 +10,9 @@ const { appointmentPaidSql, productsCostSql } = require("./moneySql");
 // (credit). Write-offs are payment records too, so they clear debt without
 // counting as revenue (see the revenue exclusion helpers).
 const TZ = process.env.TZ || "Europe/Athens";
+// Bookings before this (shop time) aren't counted: the balances start here.
+// The screens use the same date (BALANCE_START in useBookingTotals.ts).
+const BALANCE_START = "2026-03-01 00:00:00";
 const clientBalanceSql = (clientRef) => `(
   COALESCE((
     SELECT SUM(x.total_cost - x.total_paid) FROM (
@@ -25,7 +28,7 @@ const clientBalanceSql = (clientRef) => `(
       WHERE a.client_id = ${clientRef} AND a.status != 'cancelled'
       GROUP BY a.id
     ) x
-    WHERE x.appt_time >= '2026-03-01 00:00:00'
+    WHERE x.appt_time >= '${BALANCE_START}'
       AND (x.appt_time <= CURRENT_TIMESTAMP
            OR (x.status = 'completed'
                AND (x.appt_time AT TIME ZONE '${TZ}')::date <= (NOW() AT TIME ZONE '${TZ}')::date))
@@ -42,7 +45,7 @@ const clientBalanceSql = (clientRef) => `(
     FROM transactions t
     JOIN appointments a ON a.id = t.appointment_id
     WHERE a.client_id = ${clientRef} AND a.status = 'cancelled'
-      AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) >= '2026-03-01 00:00:00'
+      AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) >= '${BALANCE_START}'
   ), 0)
 )`;
 
@@ -70,6 +73,7 @@ const recalculateAllClientBalances = async () => {
 };
 
 module.exports = {
+  BALANCE_START,
   clientBalanceSql,
   recalculateClientBalance,
   recalculateAllClientBalances,

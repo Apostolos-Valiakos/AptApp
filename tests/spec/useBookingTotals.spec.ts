@@ -259,6 +259,10 @@ describe("B11 a product quantity of 0 can't be entered", () => {
     await quantity.trigger("input");
     await quantity.trigger("blur");
     await settle();
-    expect(line.quantity).toBe(1);
+    // Read from what the list hands back (it no longer changes the row it was
+    // given in place); the requirement is the same.
+    const lists = wrapper.findComponent(BookingProducts).emitted("update:modelValue") as any[][];
+    expect(lists[lists.length - 1][0][0].quantity).toBe(1);
+    expect(line.quantity).toBe(3);
   });
 });
