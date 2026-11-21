@@ -6,7 +6,7 @@ const { upperName, passwordProblem } = require("../domain/common");
 const { asyncHandler } = require("../http");
 const pool = require("../db");
 const bcrypt = require("bcrypt");
-const { freeStartTimes, eligibleStaff, mergedStartTimes } = require("../domain/availability");
+const { freeStartTimes, eligibleStaff, mergedStartTimes, noticeMinutes } = require("../domain/availability");
 const { appointmentPaidSql } = require("../domain/moneySql");
 
 module.exports = function portalRouter({
@@ -68,7 +68,8 @@ module.exports = function portalRouter({
         // Only a booking still to come: one that has happened (or was a
         // no-show) is the shop's record, and cancelling it would change the
         // client's balance.
-        `SELECT a.id FROM appointments a
+        `SELECT a.id, (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) AS start_time
+         FROM appointments a
          WHERE a.id = $1 AND a.client_id = $2 AND a.shop_id = $3
            AND a.status NOT IN ('cancelled', 'completed', 'no-show', 'no_show')
            AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) > NOW()`,
@@ -78,6 +79,10 @@ module.exports = function portalRouter({
         return res
           .status(404)
           .json({ error: "Appointment not found or cannot be cancelled" });
+      }
+      // Inside the shop's notice period only the shop can cancel it.
+      if (new Date(check.rows[0].start_time).getTime() <= Date.now() + (await noticeMinutes(pool, req.shopId)) * 60000) {
+        return res.status(422).json({ error: "too_late" });
       }
       await pool.query(
         `UPDATE appointments SET status = 'cancelled' WHERE id = $1`,
@@ -370,18 +375,14 @@ module.exports = function portalRouter({
     if (svcRes.rows.length !== 1) return res.status(422).json({ error: "multi_service" });
     const row = svcRes.rows[0];
     if (new Date(row.start_time).getTime() <= Date.now()) return res.status(422).json({ error: "already_started" });
+    // Inside the shop's notice period only the shop can move it.
+    if (new Date(row.start_time).getTime() <= Date.now() + (await noticeMinutes(pool, req.shopId)) * 60000) {
+      return res.status(422).json({ error: "too_late" });
+    }
     const staffId = (req.body.staff_id && safeUUID(req.body.staff_id)) || row.staff_id;
     if (String(staffId) !== String(row.staff_id)) {
-      const staffRes = await pool.query(
-        `SELECT 1 FROM staff s
-         WHERE s.id = $1 AND s.shop_id = $2 AND s.is_active = true AND s.visible_in_calendar = true
-           AND (
-             NOT EXISTS (SELECT 1 FROM staff_services ss WHERE ss.staff_id = s.id)
-             OR EXISTS (SELECT 1 FROM staff_services ss WHERE ss.staff_id = s.id AND ss.service_id = $3)
-           )`,
-        [staffId, req.shopId, row.service_id],
-      );
-      if (!staffRes.rows.length) return res.status(422).json({ error: "staff_not_available" });
+      const eligible = await eligibleStaff(pool, req.shopId, row.service_id);
+      if (!eligible.some((m) => String(m.id) === String(staffId))) return res.status(422).json({ error: "staff_not_available" });
     }
     // The requested start's calendar date in shop time (the server runs in it).
     const date = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}-${String(start.getDate()).padStart(2, "0")}`;

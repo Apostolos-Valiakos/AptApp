@@ -1098,6 +1098,15 @@ export default {
       showWeekendsNote: 'Display Saturday and Sunday in the calendar.',
       updated: 'Calendar settings updated',
     },
+    portalRules: {
+      notice: "Minimum notice",
+      noticeHint: "How long before an appointment a client may still book, move or cancel it online (and through the assistant).",
+      none: "None (up to the start)",
+      hours: "{n} hour before | {n} hours before",
+      note: "Cancellation policy",
+      noteHint: "Shown to clients before they book or cancel, and known to the assistant.",
+      saved: "Online booking rules saved.",
+    },
     selfBooking: {
       title: 'Client Self-Booking',
       description: 'Let clients book an appointment themselves from their client portal, for services you\'ve marked "Bookable online" and with staff assigned to those services.',

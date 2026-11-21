@@ -172,3 +172,16 @@ def test_a_reply_that_never_stops_calling_tools_ends_with_an_error(client):
     got = events(client.post("/ai/chat", json={"question": "services?"}, headers=AUTH))
     assert got[-2] == ("error", {"code": "too_long"})
     assert got[-1][0] == "done"
+
+
+def test_the_shops_notice_and_cancellation_note_reach_the_model(client):
+    client.state["context"]["portal_min_notice_minutes"] = 1440
+    client.state["context"]["cancellation_note"] = "Free cancellation up to 24 hours before."
+    claude = FakeClaude([message(text("ok"))])
+    main.app.state.claude = claude
+    client.post("/ai/chat", json={"question": "cancel policy?"}, headers=AUTH)
+    dynamic = claude.requests[0]["system"][1]["text"]
+    assert "24 hours before they start" in dynamic
+    assert "Free cancellation up to 24 hours before." in dynamic
+    # The cached part of the instructions stays the same for every shop.
+    assert claude.requests[0]["system"][0]["text"] == main.run_chat.__globals__["STABLE_SYSTEM"]

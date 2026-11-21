@@ -41,6 +41,9 @@ class Caller(BaseModel):
     ai_assistant_enabled: bool
     self_booking_enabled: bool
     timezone: str
+    # The shop's online-booking rules (migration 0025); absent from an older API.
+    portal_min_notice_minutes: int = 0
+    cancellation_note: str | None = None
 
 
 class Session:
@@ -111,6 +114,7 @@ async def chat(body: ChatRequest, request: Request, session: Session = Depends(g
         shop_id=caller.shop_id,
         timezone=ZoneInfo(caller.timezone),
         self_booking_enabled=caller.self_booking_enabled,
+        notice_minutes=caller.portal_min_notice_minutes,
     )
     events = run_chat(
         request.app.state.claude,
@@ -118,6 +122,8 @@ async def chat(body: ChatRequest, request: Request, session: Session = Depends(g
         shop_name=caller.shop_name,
         client_first_name=caller.client_first_name,
         locale=body.locale,
+        notice_minutes=caller.portal_min_notice_minutes,
+        cancellation_note=caller.cancellation_note,
         messages=build_messages(body),
     )
     return StreamingResponse(

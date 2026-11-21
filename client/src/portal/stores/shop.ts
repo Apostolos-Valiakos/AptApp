@@ -13,6 +13,9 @@ export const usePortalShopStore = defineStore("portalShop", {
     name: (s) => (s.shop?.name as string) || "",
     phone: (s) => (s.shop?.phone as string) || "",
     aiEnabled: (s) => !!s.shop?.ai_assistant_enabled,
+    /** Whether a booking starting then can still be moved or cancelled online (the shop's notice period). */
+    changeableOnline: (s) => (startIso: string, now = Date.now()) =>
+      new Date(startIso).getTime() > now + (Number(s.shop?.portal_min_notice_minutes) || 0) * 60000,
   },
   actions: {
     /** Loads it the first time; later calls wait for the same request. */

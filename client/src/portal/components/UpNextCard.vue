@@ -49,8 +49,10 @@ import type { UpNext } from "../utils/upNext";
 import { serviceNames, staffNames } from "../stores/bookings";
 import { useBookingExtras } from "../composables/useBookingExtras";
 import { usePortalBookingActions } from "../composables/usePortalBookingActions";
+import { usePortalShopStore } from "../stores/shop";
 
 const props = defineProps<{ state: UpNext }>();
+const shop = usePortalShopStore();
 const { t, locale } = useI18n();
 const extras = useBookingExtras();
 const actions = usePortalBookingActions();
@@ -63,7 +65,7 @@ const staff = computed(() => staffNames(b.value));
 const needsConfirm = computed(() => b.value.status !== "confirmed" && b.value.payment_status !== "paid");
 const showStatus = computed(() => props.state.kind === "later" || props.state.kind === "soon");
 // Only a single-service booking can be moved online (the server says so too).
-const movable = computed(() => b.value.services.length === 1);
+const movable = computed(() => b.value.services.length === 1 && shop.changeableOnline(b.value.start_time));
 const bookAgainLink = computed(() => {
   const s = b.value.services[0];
   return { path: "/portal/book", query: { service: s?.service_id, ...(s?.staff_id ? { staff: s.staff_id } : {}) } };

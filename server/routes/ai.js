@@ -30,7 +30,7 @@ module.exports = function aiRouter({ authenticateToken, requireAnalyticsAccess }
 
   router.get("/ai/context", authenticateToken, aiChatLimiter, asyncHandler(async (req, res) => {
     const { rows } = await pool.query(
-      "SELECT name, ai_assistant_enabled, self_booking_enabled FROM shops WHERE id = $1",
+      "SELECT name, ai_assistant_enabled, self_booking_enabled, portal_min_notice_minutes, cancellation_note FROM shops WHERE id = $1",
       [req.shopId],
     );
     const shop = rows[0];
@@ -48,6 +48,8 @@ module.exports = function aiRouter({ authenticateToken, requireAnalyticsAccess }
       client_first_name: clientFirstName,
       ai_assistant_enabled: shop.ai_assistant_enabled,
       self_booking_enabled: shop.self_booking_enabled,
+      portal_min_notice_minutes: shop.portal_min_notice_minutes,
+      cancellation_note: shop.cancellation_note,
       timezone: process.env.TZ || "Europe/Athens",
     });
   }, { log: "AI context error:" }));

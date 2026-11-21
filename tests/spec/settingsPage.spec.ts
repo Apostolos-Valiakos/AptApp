@@ -106,6 +106,17 @@ describe("SP2 saving", () => {
     expect(server.called("PUT", "/api/v1/shop/self-booking")[0].body).toEqual({ self_booking_enabled: false });
     expect(selfBooking.checked).toBe(true);
   });
+
+  test("the online-booking rules: the notice and the cancellation note are saved together", async () => {
+    const { server } = await open("admin", { "PUT /api/v1/shop/portal-rules": { body: { success: true } } });
+    const note = document.querySelector<HTMLTextAreaElement>('[data-testid="portal-rules"] textarea')!;
+    note.value = "Δωρεάν ακύρωση έως 24 ώρες πριν.";
+    note.dispatchEvent(new Event("input"));
+    await settle();
+    document.querySelector<HTMLElement>('[data-testid="save-rules"]')!.click();
+    await settle();
+    expect(server.called("PUT", "/api/v1/shop/portal-rules")[0].body).toEqual({ portal_min_notice_minutes: 0, cancellation_note: "Δωρεάν ακύρωση έως 24 ώρες πριν." });
+  });
 });
 
 describe("SP3 the password", () => {

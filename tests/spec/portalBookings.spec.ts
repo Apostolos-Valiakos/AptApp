@@ -30,11 +30,11 @@ const LIST = [
   b("unpaid", -24 * 10, { status: "completed", paid: 0, total: 40 }),
 ];
 
-const open = async (path = "/portal/bookings", routes: Record<string, any> = {}) => {
+const open = async (path = "/portal/bookings", routes: Record<string, any> = {}, shop: Record<string, any> = {}) => {
   saveLogin({ id: "u1", role: "client", shop_id: "s1", client_id: "c1" });
   const server = fakeServer({
     "GET /api/v1/portal/appointments": { body: LIST },
-    "GET /api/v1/shop": { body: { id: "s1", name: "Pure", phone: "2410555555", address: "Παπαναστασίου 1", cancellation_note: "Δωρεάν ακύρωση έως 24 ώρες πριν." } },
+    "GET /api/v1/shop": { body: { id: "s1", name: "Pure", phone: "2410555555", address: "Παπαναστασίου 1", cancellation_note: "Δωρεάν ακύρωση έως 24 ώρες πριν.", ...shop } },
     ...routes,
   });
   const router = blankRouter([
@@ -140,5 +140,14 @@ describe("BH7 a change made elsewhere shows at once", () => {
     await settle();
     expect(names("upcoming-list")).toContain("fromChat");
     expect(usePortalBookingsStore().byId("fromChat")).toBeTruthy();
+  });
+});
+
+describe("BH8 inside the shop's notice period", () => {
+  test("no Cancel or Reschedule; the client is told to call", async () => {
+    await open("/portal/bookings/soon", {}, { portal_min_notice_minutes: 48 * 60 });
+    expect(one("detail-cancel")).toBeNull();
+    expect(one("detail-reschedule")).toBeNull();
+    expect(one("too-late")!.textContent).toContain(el.portal.actions.errors.too_late);
   });
 });

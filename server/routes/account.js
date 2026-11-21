@@ -134,6 +134,8 @@ module.exports = function accountRouter({
         s.show_weekends,
         s.reminder_hours_before,
         s.self_booking_enabled,
+        s.portal_min_notice_minutes,
+        s.cancellation_note,
         st.id as staff_id,
         st.name as staff_name,
         st.email as staff_email,

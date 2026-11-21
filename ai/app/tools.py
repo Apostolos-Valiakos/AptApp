@@ -90,6 +90,7 @@ class ToolContext:
     shop_id: str
     timezone: ZoneInfo
     self_booking_enabled: bool
+    notice_minutes: int = 0
     actions: list[dict] = field(default_factory=list)
     _services: list[dict] | None = None
     _staff: dict[str, list[dict]] = field(default_factory=dict)

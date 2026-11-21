@@ -300,6 +300,23 @@ module.exports = function shopRouter({
     }, { log: "Error updating self-booking setting:" }),
   );
 
+  // The shop's rules for online bookings: the notice period (minutes before a
+  // booking's start, 0–7 days) and the cancellation note clients read.
+  router.put(
+    "/shop/portal-rules",
+    authenticateToken,
+    requireAnalyticsAccess,
+    asyncHandler(async (req, res) => {
+      const notice = Number(req.body.portal_min_notice_minutes);
+      if (!Number.isInteger(notice) || notice < 0 || notice > 7 * 24 * 60) {
+        return res.status(400).json({ error: "portal_min_notice_minutes must be 0–10080" });
+      }
+      const note = typeof req.body.cancellation_note === "string" ? req.body.cancellation_note.trim().slice(0, 1000) : "";
+      await pool.query("UPDATE shops SET portal_min_notice_minutes = $1, cancellation_note = $2 WHERE id = $3", [notice, note || null, req.shopId]);
+      res.json({ success: true });
+    }, { log: "Error updating portal rules:" }),
+  );
+
   router.put(
     "/shop/calendar-settings",
     authenticateToken, requireShopAdminAccess,

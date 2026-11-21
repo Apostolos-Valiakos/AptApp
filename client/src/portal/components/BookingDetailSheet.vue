@@ -23,12 +23,14 @@
 
       <div v-if="upcoming" class="grid grid-cols-2 gap-2">
         <Button v-if="needsConfirm" :label="t('portal.v2.actions.confirm')" icon="pi pi-check" class="col-span-2" :loading="working === 'confirm'" data-testid="detail-confirm" @click="confirm" />
-        <router-link v-if="booking.services.length === 1" :to="`/portal/book/reschedule/${booking.id}`" class="p-button p-button-outlined p-component justify-center" data-testid="detail-reschedule">{{ t("portal.v2.actions.reschedule") }}</router-link>
+        <router-link v-if="changeable && booking.services.length === 1" :to="`/portal/book/reschedule/${booking.id}`" class="p-button p-button-outlined p-component justify-center" data-testid="detail-reschedule">{{ t("portal.v2.actions.reschedule") }}</router-link>
         <Button :label="t('portal.v2.actions.addToCalendar')" icon="pi pi-calendar-plus" outlined @click="extras.addToCalendar(booking)" />
         <Button :label="t('portal.v2.actions.share')" icon="pi pi-share-alt" outlined @click="extras.share(booking)" />
         <a :href="extras.directionsUrl()" target="_blank" rel="noopener" class="p-button p-button-outlined p-component justify-center">{{ t("portal.v2.actions.directions") }}</a>
         <a v-if="extras.callUrl()" :href="extras.callUrl()" class="p-button p-button-outlined p-component justify-center">{{ t("portal.v2.actions.call") }}</a>
-        <Button :label="t('portal.v2.actions.cancel')" severity="danger" text class="col-span-2" :loading="working === 'cancel'" data-testid="detail-cancel" @click="cancel" />
+        <Button v-if="changeable" :label="t('portal.v2.actions.cancel')" severity="danger" text class="col-span-2" :loading="working === 'cancel'" data-testid="detail-cancel" @click="cancel" />
+        <!-- Inside the shop's notice period only the shop can change it. -->
+        <p v-else class="col-span-2 portal-caption text-center" data-testid="too-late">{{ t("portal.actions.errors.too_late") }}</p>
       </div>
       <router-link v-else-if="booking.status !== 'cancelled' && booking.services[0]" :to="{ path: '/portal/book', query: { service: booking.services[0].service_id, ...(booking.services[0].staff_id ? { staff: booking.services[0].staff_id } : {}) } }" class="p-button p-component w-full justify-center">{{ t("portal.v2.actions.bookAgain") }}</router-link>
     </div>
@@ -65,6 +67,7 @@ const wide = useMinWidth(PORTAL_DESKTOP_WIDTH);
 const working = ref<"" | "confirm" | "cancel">("");
 
 const upcoming = computed(() => !!props.booking && props.booking.status !== "cancelled" && new Date(props.booking.start_time).getTime() > Date.now());
+const changeable = computed(() => !!props.booking && shop.changeableOnline(props.booking.start_time));
 const needsConfirm = computed(() => !!props.booking && props.booking.status !== "confirmed" && props.booking.payment_status !== "paid");
 
 const confirm = async () => {

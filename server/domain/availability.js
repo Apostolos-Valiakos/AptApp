@@ -7,6 +7,10 @@ const { workingRangesOn, bookableShifts } = require("./staffSchedule");
 
 const STEP_MINUTES = 15;
 
+/** How long before a booking's start a client may still book, move or cancel it online. */
+const noticeMinutes = async (db, shopId) =>
+  Number((await db.query("SELECT portal_min_notice_minutes FROM shops WHERE id = $1", [shopId])).rows[0]?.portal_min_notice_minutes) || 0;
+
 /**
  * Where a staff member can be booked on a date, as the calendar column shows
  * it (domain/staffSchedule.js): their own hours if they keep them, else the
@@ -35,6 +39,8 @@ const freeStartTimes = async (
 ) => {
   const shifts = await shiftsOn(db, staffId, shopId, date);
   if (!shifts.length) return [];
+  // A client can't book closer to the start than the shop's notice period.
+  const earliest = skipPast ? now + (await noticeMinutes(db, shopId)) * 60000 : -Infinity;
 
   const [busyRes, timeOffRes] = await Promise.all([
     db.query(
@@ -77,7 +83,7 @@ const freeStartTimes = async (
   const durationMs = durationMinutes * 60000;
   for (const shift of shifts) {
     for (let t = at(shift.start_time); t + durationMs <= at(shift.end_time); t += stepMs) {
-      if (skipPast && t < now) continue;
+      if (t < earliest) continue;
       const end = t + durationMs;
       if (!busy.some((b) => t < b.end && end > b.start)) slots.push(new Date(t).toISOString());
     }
@@ -122,4 +128,4 @@ const mergedStartTimes = async (db, { shopId, staff, date, durationMinutes, skip
   return [...byTime.values()].sort((a, b) => a.start_time.localeCompare(b.start_time));
 };
 
-module.exports = { shiftsOn, freeStartTimes, eligibleStaff, mergedStartTimes, STEP_MINUTES };
+module.exports = { shiftsOn, freeStartTimes, noticeMinutes, eligibleStaff, mergedStartTimes, STEP_MINUTES };

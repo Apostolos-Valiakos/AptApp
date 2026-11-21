@@ -132,3 +132,55 @@ test("PV4 moving a booking: its own time counts as free", async () => {
   const moved = await as.client("GET", `${q}&exclude=${mine}`);
   assert.ok(moved.data.some((s) => s.start_time === at(day, "12:30")), JSON.stringify(moved.data));
 });
+
+const setNotice = (minutes) => sql(DB, `UPDATE shops SET portal_min_notice_minutes = ${minutes} WHERE id = '${SHOP}'`);
+
+test("PR1 a time inside the shop's notice is neither offered nor bookable", async () => {
+  clearDay();
+  // From now until the end of the day after the test day: the whole test day is inside.
+  const minutesToEnd = Math.ceil((new Date(`${day}T23:59:00${offset(day)}`).getTime() - Date.now()) / 60000);
+  setNotice(minutesToEnd);
+  try {
+    const slots = await as.client("GET", `/api/v1/portal/availability/slots?service_id=${ids.service}&date=${day}`);
+    assert.deepEqual(slots.data, []);
+    const old = await as.client("GET", `/api/v1/availability?service_id=${ids.service}&staff_id=${ids.anna}&date=${day}`);
+    assert.deepEqual(old.data.slots, [], "the old booking screen's list too");
+    const r = await as.client("POST", "/api/v1/appointments", { services: [{ service_id: ids.service, staff_id: ids.anna, start_time: at(day, "10:00") }] }, { "Idempotency-Key": "pr1" });
+    assert.equal(r.status, 422);
+    assert.equal(r.data.reason, "slot_unavailable");
+  } finally {
+    setNotice(0);
+  }
+});
+
+test("PR2 inside the notice, cancelling or moving is the shop's to do", async () => {
+  clearDay();
+  const mine = await bookAs(as.frontdesk, ids.client, [svc(ids.anna, at(day, "10:00"))]);
+  const minutesToStart = Math.ceil((new Date(at(day, "10:00")).getTime() - Date.now()) / 60000);
+  setNotice(minutesToStart + 60);
+  try {
+    const cancel = await as.client("POST", `/api/v1/portal/appointments/${mine}/cancel`);
+    assert.deepEqual([cancel.status, cancel.data.error], [422, "too_late"]);
+    const move = await as.client("POST", `/api/v1/portal/appointments/${mine}/reschedule`, { start_time: at(day, "12:00") });
+    assert.deepEqual([move.status, move.data.error], [422, "too_late"]);
+    assert.equal(sql(DB, `SELECT status FROM appointments WHERE id = '${mine}'`), "confirmed");
+  } finally {
+    setNotice(0);
+  }
+});
+
+test("PR3 no notice (the default) changes nothing; the rules are saved by admins and reach the portal and the assistant", async () => {
+  clearDay();
+  const mine = await bookAs(as.frontdesk, ids.client, [svc(ids.anna, at(day, "10:00"))]);
+  assert.equal((await as.client("POST", `/api/v1/portal/appointments/${mine}/reschedule`, { start_time: at(day, "12:00") })).status, 200);
+
+  assert.equal((await as.frontdesk("PUT", "/api/v1/shop/portal-rules", { portal_min_notice_minutes: 60, cancellation_note: "x" })).status, 403);
+  assert.equal((await as.admin("PUT", "/api/v1/shop/portal-rules", { portal_min_notice_minutes: -5 })).status, 400);
+  assert.equal((await as.admin("PUT", "/api/v1/shop/portal-rules", { portal_min_notice_minutes: 1440, cancellation_note: "  Δωρεάν έως 24 ώρες πριν.  " })).status, 200);
+  const shop = (await as.client("GET", "/api/v1/shop")).data;
+  assert.deepEqual([shop.portal_min_notice_minutes, shop.cancellation_note], [1440, "Δωρεάν έως 24 ώρες πριν."]);
+  const ctx = (await as.client("GET", "/api/v1/ai/context")).data;
+  assert.deepEqual([ctx.portal_min_notice_minutes, ctx.cancellation_note], [1440, "Δωρεάν έως 24 ώρες πριν."]);
+  await as.admin("PUT", "/api/v1/shop/portal-rules", { portal_min_notice_minutes: 0, cancellation_note: "" });
+  assert.equal(sql(DB, `SELECT COALESCE(cancellation_note, 'null') FROM shops WHERE id = '${SHOP}'`), "null");
+});
