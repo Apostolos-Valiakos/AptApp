@@ -116,7 +116,11 @@ Bugs found and fixed in the AI branch:
   - The router guard sends `/portal/*` to the new screens when the flag is on and to the old ones
     otherwise.
   - The flag goes away in step 6.2.
-- R2: the commented-out chat markup and the tab-bar AI button are removed.
+- R2: the new shell has no chat button in its tab bar; the assistant is in the top bar. The old
+  portal keeps its tab-bar button until it is removed in step 6.2, since it's still the default until then.
+- Done early: the conversation lives in `portal/stores/assistant.ts` (planned for step 4.2). The
+  sheet, the side panel and the old dialog all show the same conversation, and Book can open it with
+  a question already typed.
 - Tests: `tests/spec/portalShell.spec.ts`:
   - PS1 five tabs in order;
   - PS2 the old links redirect;

@@ -393,8 +393,9 @@ const notify = useNotify();
 const confirm = useConfirm();
 const authStore = useAuthStore();
 
+// The redesigned portal's /portal/book opens straight on booking (route meta).
 const activeTab = ref<"myAppointments" | "book">(
-  route.query.tab === "book" ? "book" : "myAppointments",
+  route.query.tab === "book" || route.meta.portalTab === "book" ? "book" : "myAppointments",
 );
 watch(
   () => route.query.tab,

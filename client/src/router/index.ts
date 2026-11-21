@@ -22,7 +22,8 @@ const sensitive = (load: () => Promise<any>) => {
 };
 const FinancialsView = sensitive(() => import("../components/FinancialsView.vue"));
 const profileView = () => import("../views/profileView.vue");
-const ClientLayout = () => import("../components/ClientLayout.vue");
+const PortalEntry = () => import("../portal/PortalEntry.vue");
+import { portalPathFor, portalV2, setPortalV2 } from "../portal/flag";
 const ClientHomeView = () => import("../views/portal/ClientHomeView.vue");
 const ClientAppointmentsView = () =>
   import("../views/portal/ClientAppointmentsView.vue");
@@ -125,17 +126,28 @@ const routes = [
   },
   {
     path: "/portal",
-    component: ClientLayout,
+    // The redesigned portal or the one before it, as portal/flag.ts says.
+    component: PortalEntry,
     meta: { requiresAuth: true, role: "client" },
     children: [
       { path: "", redirect: "/portal/home" },
       { path: "home", name: "ClientHome", component: ClientHomeView },
+      // The portal before the redesign.
       {
         path: "appointments",
         name: "ClientAppointments",
         component: ClientAppointmentsView,
       },
       { path: "more", name: "ClientMore", component: ClientMoreView },
+      // The redesigned portal (REDESIGN_SPEC.md §2). Until its own screens
+      // arrive (phase 2 of IMPLEMENTATION_PLAN.md) these show the old ones.
+      { path: "book", name: "PortalBook", component: ClientAppointmentsView, meta: { portalTab: "book" } },
+      { path: "book/reschedule/:id", name: "PortalReschedule", component: ClientAppointmentsView, meta: { portalTab: "book" } },
+      { path: "bookings", name: "PortalBookings", component: ClientAppointmentsView },
+      { path: "bookings/:id", name: "PortalBooking", component: ClientAppointmentsView },
+      { path: "wallet", name: "PortalWallet", component: ClientMoreView },
+      { path: "wallet/pass", name: "PortalPass", component: ClientMoreView },
+      { path: "profile", name: "PortalProfile", component: ClientMoreView },
     ],
   },
   // Redirects για να μη σπάνε τα παλιά links - ΠΡΟΣΟΧΗ ΣΤΑ "/"
@@ -207,6 +219,20 @@ router.beforeEach((to, from, next) => {
     authStore.isAuthenticated
   ) {
     return next("/app/scheduler");
+  }
+
+  if (to.path.startsWith("/portal")) {
+    // "?portal=v2" / "?portal=v1" switches the redesigned portal on or off
+    // for this device; the link then opens without it.
+    const { portal, ...rest } = to.query;
+    if (portal === "v2" || portal === "v1") {
+      setPortalV2(portal === "v2");
+      return next({ path: to.path, query: rest, hash: to.hash, replace: true });
+    }
+    // A link of the other portal (an email, a notification) leads to the
+    // same place in this one.
+    const same = portalPathFor(to.path, to.query, portalV2.value);
+    if (same) return next({ ...same, replace: true });
   }
 
   next();

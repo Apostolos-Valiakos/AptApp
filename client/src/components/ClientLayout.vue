@@ -127,50 +127,7 @@
         </button>
       </div>
     </template>
-    <div v-if="loadingNotifications" class="text-center py-8">
-      <i class="pi pi-spin pi-spinner text-2xl text-gray-300"></i>
-    </div>
-    <div
-      v-else-if="notifications.length === 0"
-      class="flex flex-col items-center justify-center py-10 text-center"
-    >
-      <i class="pi pi-bell-slash text-3xl text-gray-300 mb-3"></i>
-      <p class="text-sm text-gray-400">
-        {{ t("portal.notificationHistory.empty") }}
-      </p>
-    </div>
-    <div v-else class="space-y-1 max-h-[60vh] overflow-y-auto -mx-2">
-      <button
-        v-for="n in notifications"
-        :key="n.id"
-        type="button"
-        class="w-full text-left px-3 py-3 rounded-xl flex items-start gap-3 transition-colors"
-        :class="
-          n.read_at
-            ? 'hover:bg-gray-50'
-            : 'bg-[var(--p-primary-50)] hover:bg-[var(--p-primary-100)]'
-        "
-        @click="openNotification(n)"
-      >
-        <i
-          :class="n.type === 'reminder' ? 'pi pi-calendar' : 'pi pi-megaphone'"
-          class="text-[var(--p-primary-600)] mt-0.5 flex-shrink-0"
-        ></i>
-        <div class="min-w-0 flex-1">
-          <p class="text-sm font-semibold text-gray-800 truncate">
-            {{ n.title }}
-          </p>
-          <p class="text-xs text-gray-500 mt-0.5">{{ n.body }}</p>
-          <p class="text-[11px] text-gray-400 mt-1">
-            {{ new Date(n.created_at).toLocaleString() }}
-          </p>
-        </div>
-        <span
-          v-if="!n.read_at"
-          class="w-2 h-2 rounded-full bg-[var(--p-primary-color)] mt-1.5 flex-shrink-0"
-        ></span>
-      </button>
-    </div>
+    <ActivityList :items="notifications" :loading="loadingNotifications" @open="openNotification" />
   </Dialog>
   <AiChatPanel v-if="aiEnabled" v-model:visible="showAiChat" />
 </template>
@@ -179,114 +136,44 @@
 import { useLocaleToggle } from "../composables/useLocaleToggle";
 import { api } from "../api/http";
 import { ref, onMounted } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { useRoute } from "vue-router";
 import { useI18n } from "vue-i18n";
 import Dialog from "primevue/dialog";
 import AiChatPanel from "./portal/AiChatPanel.vue";
+import ActivityList from "../portal/components/ActivityList.vue";
+import { usePortalNotifications } from "../portal/composables/usePortalNotifications";
+import { usePortalInstall, setShopManifest } from "../portal/composables/usePortalInstall";
+import { useAssistantStore } from "../portal/stores/assistant";
+import { storeToRefs } from "pinia";
 
 const route = useRoute();
-const router = useRouter();
 const { t, locale } = useI18n();
 
 const shopName = ref("Pure Spa & Massage Experience");
 const aiEnabled = ref(false);
-const showAiChat = ref(false);
-const unreadCount = ref(0);
-const notifications = ref<any[]>([]);
-const showNotifications = ref(false);
-const loadingNotifications = ref(false);
-
-const fetchNotifications = async () => {
-  try {
-    const data = await api.get("/api/v1/portal/notifications");
-    notifications.value = data.items || [];
-    unreadCount.value = data.unread_count || 0;
-  } catch {}
-};
-
-const openNotifications = async () => {
-  showNotifications.value = true;
-  loadingNotifications.value = true;
-  await fetchNotifications();
-  loadingNotifications.value = false;
-};
-
-const markAllRead = async () => {
-  try {
-    await api.put("/api/v1/portal/notifications/read-all");
-    notifications.value = notifications.value.map((n) => ({
-      ...n,
-      read_at: n.read_at || new Date().toISOString(),
-    }));
-    unreadCount.value = 0;
-  } catch {}
-};
-
-const openNotification = async (n: any) => {
-  if (!n.read_at) {
-    try {
-      await api.put(`/api/v1/portal/notifications/${n.id}/read`);
-      n.read_at = new Date().toISOString();
-      unreadCount.value = Math.max(0, unreadCount.value - 1);
-    } catch {}
-  }
-  if (n.url) {
-    showNotifications.value = false;
-    router.push(n.url);
-  }
-};
+const { visible: showAiChat } = storeToRefs(useAssistantStore());
+const {
+  items: notifications,
+  unreadCount,
+  visible: showNotifications,
+  loading: loadingNotifications,
+  open: openNotifications,
+  markAllRead,
+  openItem: openNotification,
+} = usePortalNotifications();
 
 const isActive = (path: string) => route.path.startsWith(path);
 
 const toggleLocale = useLocaleToggle();
 
-// Only ever active on client-portal pages (this component isn't mounted
-// anywhere else) — never touches admin/staff pages.
-const manifestLink = (): HTMLLinkElement => {
-  let link = document.querySelector(
-    'link[rel="manifest"]',
-  ) as HTMLLinkElement | null;
-  if (!link) {
-    link = document.createElement("link");
-    link.rel = "manifest";
-    document.head.appendChild(link);
-  }
-  return link;
-};
-
-// Points the manifest at this specific shop's name/color once known.
-const setShopManifest = (shopId: string) => {
-  manifestLink().href = `/manifest.webmanifest?shop_id=${encodeURIComponent(shopId)}`;
-};
+usePortalInstall();
 
 onMounted(async () => {
-  // Registered synchronously, before any network round-trip — Chrome/Brave's
-  // installability check can run and decide "not installable" before an
-  // awaited fetch resolves, and some builds never re-check afterward even
-  // though the manifest/SW show up correctly a moment later. A generic
-  // manifest now (swapped for the shop-specific one below once it's known)
-  // means the earliest possible check already sees a valid one.
-  manifestLink().href = "/manifest.webmanifest";
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker
-      .register("/sw.js", { scope: "/portal/" })
-      .catch(() => {});
-  }
-
   try {
     const data = await api.get("/api/v1/shop");
     if (data?.name) shopName.value = data.name;
     if (data?.id) setShopManifest(data.id);
     aiEnabled.value = !!data?.ai_assistant_enabled;
   } catch {}
-  fetchNotifications();
-
-  // The service worker posts this when a push actually arrives while a tab
-  // is open, so the bell updates immediately instead of only on next load.
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.addEventListener("message", (event) => {
-      if (event.data?.type === "push-received") fetchNotifications();
-    });
-  }
 });
 </script>
