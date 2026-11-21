@@ -7,6 +7,7 @@ const { asyncHandler } = require("../http");
 const pool = require("../db");
 const bcrypt = require("bcrypt");
 const { freeStartTimes } = require("../domain/availability");
+const { appointmentPaidSql } = require("../domain/moneySql");
 
 module.exports = function portalRouter({
   authenticateToken,
@@ -283,6 +284,44 @@ module.exports = function portalRouter({
       res.json({ success: true });
     }, { log: "Push subscription delete error:" }),
   );
+
+  // Every booking of the client's from the last 12 months and to come, for
+  // the redesigned portal's Home, Bookings and "Book again": each with its
+  // services (ids included, to book the same again), what it costs and what
+  // was paid. Blocks and the shop's notes are never part of it.
+  router.get("/portal/appointments", authenticateToken, onlyClients, asyncHandler(async (req, res) => {
+    const { rows } = await pool.query(
+      `SELECT a.id, a.status, a.payment_status, a.booking_notes,
+              ${appointmentPaidSql("a.id")}::float AS paid,
+              (COALESCE((SELECT SUM(price_override) FROM appointment_services WHERE appointment_id = a.id), 0)
+               + COALESCE((SELECT SUM(total_price) FROM product_sales WHERE appointment_id = a.id), 0))::float AS total,
+              x.start_time, x.end_time, x.services
+       FROM appointments a
+       CROSS JOIN LATERAL (
+         SELECT MIN(aps.start_time) AS start_time,
+                MAX(aps.start_time + (COALESCE(NULLIF(aps.duration_override, 0), s.duration_minutes, 60) || ' minutes')::interval) AS end_time,
+                json_agg(json_build_object(
+                  'service_id', aps.service_id,
+                  'service_name', s.name,
+                  'staff_id', aps.staff_id,
+                  'staff_name', st.name,
+                  'start_time', aps.start_time,
+                  'duration_minutes', COALESCE(NULLIF(aps.duration_override, 0), s.duration_minutes, 60),
+                  'price', COALESCE(aps.price_override, s.price, 0)::float
+                ) ORDER BY aps.start_time) AS services
+         FROM appointment_services aps
+         LEFT JOIN services s ON s.id = aps.service_id
+         LEFT JOIN staff st ON st.id = aps.staff_id
+         WHERE aps.appointment_id = a.id
+       ) x
+       WHERE a.client_id = $1 AND a.shop_id = $2
+         AND COALESCE(a.is_block, false) = false
+         AND x.start_time >= NOW() - INTERVAL '12 months'
+       ORDER BY x.start_time DESC`,
+      [req.user.clientId, req.shopId],
+    );
+    res.json(rows);
+  }, { log: "Portal appointments error:" }));
 
   // The client's own upcoming, still-active bookings, with the service and
   // staff ids the AI assistant needs to cancel or move them.

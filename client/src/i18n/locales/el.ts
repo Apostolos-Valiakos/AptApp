@@ -1,3 +1,5 @@
+import portalV2 from "./portal.el";
+
 export default {
   common: {
     // The password rule, under every field where a new password is typed.
@@ -1162,6 +1164,7 @@ export default {
     },
   },
   portal: {
+    v2: portalV2,
     contestLabel: "Διαγωνισμός",
     account: {
       firstName: "Όνομα",

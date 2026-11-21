@@ -24,7 +24,6 @@ const FinancialsView = sensitive(() => import("../components/FinancialsView.vue"
 const profileView = () => import("../views/profileView.vue");
 const PortalEntry = () => import("../portal/PortalEntry.vue");
 import { portalPathFor, portalV2, setPortalV2 } from "../portal/flag";
-const ClientHomeView = () => import("../views/portal/ClientHomeView.vue");
 const ClientAppointmentsView = () =>
   import("../views/portal/ClientAppointmentsView.vue");
 const ClientMoreView = () => import("../views/portal/ClientMoreView.vue");
@@ -131,7 +130,7 @@ const routes = [
     meta: { requiresAuth: true, role: "client" },
     children: [
       { path: "", redirect: "/portal/home" },
-      { path: "home", name: "ClientHome", component: ClientHomeView },
+      { path: "home", name: "ClientHome", component: () => import("../portal/routes").then((m) => m.Home) },
       // The portal before the redesign.
       {
         path: "appointments",

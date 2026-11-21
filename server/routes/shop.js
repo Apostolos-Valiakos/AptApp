@@ -33,6 +33,13 @@ module.exports = function shopRouter({
     return userRole === lockedBy;
   };
 
+  // What a client's portal may read about its shop (portal settings added by
+  // later migrations are listed here too, so they reach the portal).
+  const CLIENT_SHOP_FIELDS = [
+    "id", "name", "phone", "address", "website", "primary_color", "secondary_color",
+    "self_booking_enabled", "ai_assistant_enabled", "reminder_hours_before",
+    "portal_min_notice_minutes", "cancellation_note", "google_review_url",
+  ];
   router.get("/shop", authenticateToken, asyncHandler(async (req, res) => {
     // 2. Add the WHERE clause with the $1 placeholder
     const { rows } = await pool.query(
@@ -47,7 +54,12 @@ module.exports = function shopRouter({
       return res.status(404).json({ error: "Shop not found" });
     }
 
-    // 5. Send the first item (since ID is unique), not the whole array
+    // A client sees only what the portal shows: never the owner's details,
+    // the platform's notes, the plan or the cash-hiding switches.
+    if (req.user.role === "client") {
+      const shop = rows[0];
+      return res.json(Object.fromEntries(CLIENT_SHOP_FIELDS.filter((k) => k in shop).map((k) => [k, shop[k]])));
+    }
     res.json(rows[0]);
   }, { log: "Error fetching shop:" }));
 
