@@ -4,7 +4,7 @@
        desktop's side panel (portal/PortalShell.vue). -->
   <div class="flex flex-col h-full min-h-0" data-testid="assistant-chat">
     <div ref="listRef" class="flex-1 overflow-y-auto px-4 py-3 space-y-3">
-      <div class="text-sm text-gray-600 bg-gray-50 rounded-2xl rounded-tl-sm px-3 py-2 max-w-[85%]">
+      <div class="text-sm bg-[var(--p-surface-100)] text-[var(--p-text-color)] rounded-2xl rounded-tl-sm px-3 py-2 max-w-[85%]">
         {{ t("portal.ai.greeting") }}
       </div>
       <div v-if="!visibleMessages.length" class="flex flex-wrap gap-2">
@@ -26,7 +26,7 @@
           :class="
             m.role === 'user'
               ? 'ml-auto bg-[var(--p-primary-color)] text-white rounded-tr-sm'
-              : 'bg-gray-50 text-gray-800 rounded-tl-sm'
+              : 'bg-[var(--p-surface-100)] text-[var(--p-text-color)] rounded-tl-sm'
           "
         >
           {{ m.content }}
@@ -35,25 +35,25 @@
         <div
           v-for="(card, c) in m.actions || []"
           :key="`${i}-${c}`"
-          class="border border-gray-200 rounded-2xl p-3 max-w-[92%] bg-white shadow-sm"
+          class="border border-[var(--p-content-border-color)] rounded-2xl p-3 max-w-[92%] bg-[var(--p-content-background)] shadow-sm"
         >
-          <div class="text-xs font-bold uppercase tracking-wide text-gray-500 mb-1">
+          <div class="text-xs font-bold uppercase tracking-wide text-[var(--p-text-muted-color)] mb-1">
             {{ t(`portal.ai.card.${card.action.type}`) }}
           </div>
-          <div class="text-sm font-semibold text-gray-900">{{ card.action.service_name }}</div>
-          <div v-if="card.action.staff_name" class="text-xs text-gray-500">
+          <div class="text-sm font-semibold">{{ card.action.service_name }}</div>
+          <div v-if="card.action.staff_name" class="text-xs text-[var(--p-text-muted-color)]">
             {{ card.action.staff_name }}
           </div>
           <div
             v-if="card.action.type === 'reschedule'"
-            class="text-xs text-gray-400 line-through mt-1"
+            class="text-xs text-[var(--p-text-muted-color)] line-through mt-1"
           >
             {{ formatWhen(card.action.old_start_time) }}
           </div>
-          <div class="text-sm text-gray-800 mt-1">{{ formatWhen(card.action.start_time) }}</div>
+          <div class="text-sm mt-1">{{ formatWhen(card.action.start_time) }}</div>
           <div
             v-if="card.action.type === 'booking' && card.action.price != null"
-            class="text-xs text-gray-500 mt-1"
+            class="text-xs text-[var(--p-text-muted-color)] mt-1"
           >
             {{ formatDuration(card.action.duration_minutes || 0, t) }} · {{ formatMoney(card.action.price) }}
           </div>
@@ -79,7 +79,7 @@
             class="text-xs font-semibold mt-3"
             :class="{
               'text-green-600': card.status === 'done',
-              'text-gray-400': card.status === 'dismissed',
+              'text-[var(--p-text-muted-color)]': card.status === 'dismissed',
               'text-red-500': card.status === 'failed',
             }"
           >
@@ -96,14 +96,14 @@
         </div>
       </template>
 
-      <div v-if="busy" class="text-xs text-gray-400 flex items-center gap-2">
+      <div v-if="busy" class="text-xs text-[var(--p-text-muted-color)] flex items-center gap-2">
         <i class="pi pi-spin pi-spinner"></i>
         {{ statusText || t("portal.ai.thinking") }}
       </div>
       <div v-if="errorText" class="text-xs text-red-500">{{ errorText }}</div>
     </div>
 
-    <form class="border-t border-gray-100 p-3 flex gap-2" @submit.prevent="send()">
+    <form class="border-t border-[var(--p-content-border-color)] p-3 flex gap-2 pb-[calc(0.75rem+env(safe-area-inset-bottom))]" @submit.prevent="send()">
       <InputText
         v-model="input"
         class="flex-1"

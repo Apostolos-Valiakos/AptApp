@@ -121,3 +121,19 @@ describe("PS5 switching the redesign on and off", () => {
     expect(localStorage.getItem("portalV2")).toBeNull();
   });
 });
+
+describe("AIC5 the conversation stays while the client moves around", () => {
+  test("closing the assistant and changing tab keep it", async () => {
+    await open("/portal/home");
+    const assistant = useAssistantStore();
+    assistant.open();
+    assistant.messages.push({ role: "user", content: "Θέλω μασάζ αύριο" });
+    await settle();
+    assistant.close();
+    await router.push("/portal/bookings");
+    await settle();
+    byTestId("assistant-button")!.click();
+    await settle();
+    expect(document.querySelector('[data-testid="assistant-chat"]')!.textContent).toContain("Θέλω μασάζ αύριο");
+  });
+});
