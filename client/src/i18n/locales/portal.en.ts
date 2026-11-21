@@ -70,4 +70,10 @@ export default {
     cancelBooking: "Cancel booking",
     keep: "Keep it",
   },
+  wallet: {
+    openPass: "Tap for your check-in pass",
+    qrLabel: "Your QR code for reception",
+    noPass: "Your pass will appear once you are online.",
+    showAtReception: "Show this at reception",
+  },
 };
