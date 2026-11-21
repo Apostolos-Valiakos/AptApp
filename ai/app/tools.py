@@ -7,7 +7,7 @@ client pressing Confirm in the browser performs the change.
 
 import asyncio
 from dataclasses import dataclass, field
-from datetime import date as date_type, datetime, time as time_type
+from datetime import date as date_type, datetime, time as time_type, timedelta
 from typing import Awaitable, Callable
 from zoneinfo import ZoneInfo
 
@@ -146,22 +146,40 @@ class ToolContext:
     def label(self, iso: str) -> str:
         return self.local(iso).strftime("%A %d %B %Y, %H:%M")
 
-    async def slots(self, service_id: str, staff_id: str, day: date_type) -> list[str]:
-        """Free start times for one staff member, as UTC ISO strings."""
-        data = await self.backend.get(
-            "/api/v1/availability",
-            {"service_id": service_id, "staff_id": staff_id, "date": day.isoformat()},
-        )
-        return data.get("slots", [])
+    async def slots(
+        self, service_id: str, day: date_type, staff_id: str | None = None, exclude: str | None = None
+    ) -> list[dict]:
+        """Free start times on a day, from the same route as the portal's Book
+        screen: [{start_time (UTC ISO), staff_id, staff_name}]. With no staff_id,
+        every eligible therapist merged, each time given to the first one free
+        in the shop's order (as "Anyone" on the screen). `exclude` is a booking
+        being moved, whose own time counts as free."""
+        params = {"service_id": service_id, "date": day.isoformat()}
+        if staff_id:
+            params["staff_id"] = staff_id
+        if exclude:
+            params["exclude"] = exclude
+        return await self.backend.get("/api/v1/portal/availability/slots", params)
 
     async def matching_slot(
-        self, service_id: str, staff_id: str, day: date_type, at: time_type
+        self, service_id: str, staff_id: str, day: date_type, at: time_type, exclude: str | None = None
     ) -> str | None:
         wanted = datetime.combine(day, at, tzinfo=self.timezone)
-        for iso in await self.slots(service_id, staff_id, day):
-            if self.local(iso) == wanted:
-                return iso
+        for slot in await self.slots(service_id, day, staff_id, exclude):
+            if self.local(slot["start_time"]) == wanted:
+                return slot["start_time"]
         return None
+
+    def changeable(self, iso: str) -> bool:
+        """Whether a booking starting then can still be moved or cancelled online
+        (outside the shop's notice period)."""
+        return self.local(iso) > datetime.now(self.timezone) + timedelta(minutes=self.notice_minutes)
+
+
+TOO_LATE = (
+    "This appointment is too close to its start to be changed online (the spa's notice period). "
+    "Tell the client to call the spa."
+)
 
 
 # ---- tool implementations ---------------------------------------------------
@@ -198,23 +216,38 @@ async def check_availability(ctx: ToolContext, args: CheckAvailabilityArgs):
     if args.date < datetime.now(ctx.timezone).date():
         raise ToolError("That date is in the past.")
     if args.staff_id:
-        members = [await ctx.staff_member(args.service_id, args.staff_id)]
+        await ctx.staff_member(args.service_id, args.staff_id)
     else:
-        members = await ctx.staff_for(args.service_id)
-    all_slots = await asyncio.gather(
-        *(ctx.slots(args.service_id, m["id"], args.date) for m in members)
-    )
+        await ctx.service(args.service_id)
+    slots = await ctx.slots(args.service_id, args.date, args.staff_id)
     return {
         "date": args.date.isoformat(),
-        "staff": [
-            {
-                "staff_id": m["id"],
-                "name": m["name"],
-                "free_start_times": [ctx.local(iso).strftime("%H:%M") for iso in slots],
-            }
-            for m, slots in zip(members, all_slots)
+        "free_times": [
+            {"time": ctx.local(s["start_time"]).strftime("%H:%M"), "staff_id": s["staff_id"], "staff_name": s["staff_name"]}
+            for s in slots
         ],
     }
+
+
+async def list_recent_visits(ctx: ToolContext, args: NoArgs):
+    """The client's last distinct treatment + therapist pairs, newest first, for
+    "the same as last time" (as Book again on the portal's Home)."""
+    now = datetime.now(ctx.timezone)
+    seen, visits = set(), []
+    for appt in await ctx.backend.get("/api/v1/portal/appointments"):
+        if appt.get("status") == "cancelled" or ctx.local(appt["end_time"]) > now:
+            continue
+        for s in appt.get("services", []):
+            key = (s.get("service_id"), s.get("staff_id"))
+            if not s.get("service_id") or key in seen:
+                continue
+            seen.add(key)
+            visits.append({
+                "service_id": s["service_id"], "service_name": s.get("service_name"),
+                "staff_id": s.get("staff_id"), "staff_name": s.get("staff_name"),
+                "last_visit": ctx.label(appt["start_time"]),
+            })
+    return visits[:5]
 
 
 async def list_my_appointments(ctx: ToolContext, args: NoArgs):
@@ -256,6 +289,8 @@ async def propose_booking(ctx: ToolContext, args: ProposeBookingArgs):
 
 async def propose_cancellation(ctx: ToolContext, args: ProposeCancellationArgs):
     appt = await ctx.appointment(args.appointment_id)
+    if not ctx.changeable(appt["start_time"]):
+        raise ToolError(TOO_LATE)
     services = appt.get("services", [])
     ctx.actions.append(
         {
@@ -278,10 +313,13 @@ async def propose_reschedule(ctx: ToolContext, args: ProposeRescheduleArgs):
             "This appointment has several services and cannot be rescheduled here. "
             "Ask the client to contact the spa."
         )
+    if not ctx.changeable(appt["start_time"]):
+        raise ToolError(TOO_LATE)
     current = services[0]
     staff_id = args.staff_id or current["staff_id"]
     member = await ctx.staff_member(current["service_id"], staff_id)
-    iso = await ctx.matching_slot(current["service_id"], staff_id, args.date, args.time)
+    # Its own time counts as free: moving it 30 minutes later is fine.
+    iso = await ctx.matching_slot(current["service_id"], staff_id, args.date, args.time, exclude=appt["id"])
     if not iso:
         raise ToolError("That time is not free. Call check_availability and offer a free time.")
     ctx.actions.append(
@@ -346,11 +384,21 @@ TOOLS: list[Tool] = [
     ),
     Tool(
         "check_availability",
-        "Free start times for a service on one date. Pass staff_id for one staff member, or "
-        "null to see every eligible staff member. " + NEVER_GUESS,
+        "Free start times for a service on one date, each with the staff member who would do it. "
+        "Pass staff_id for one staff member, or null when the client has no preference "
+        "(each time then comes with the therapist the spa would give). " + NEVER_GUESS,
         _schema({"service_id": _STR, "date": _DATE, "staff_id": _OPTIONAL_STAFF}),
         CheckAvailabilityArgs,
         check_availability,
+        needs_self_booking=True,
+    ),
+    Tool(
+        "list_recent_visits",
+        "The client's recent treatments with the therapist who did them, newest first, with ids. "
+        "Use it when the client wants the same as last time, then check_availability.",
+        _schema({}),
+        NoArgs,
+        list_recent_visits,
         needs_self_booking=True,
     ),
     Tool(

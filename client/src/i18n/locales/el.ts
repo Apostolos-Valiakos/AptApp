@@ -1218,6 +1218,7 @@ export default {
         myAppointments: "Δείξε μου τα ραντεβού μου",
       },
       card: {
+        openBooking: "Άνοιγμα στις Κρατήσεις",
         booking: "Νέο ραντεβού",
         cancel: "Ακύρωση ραντεβού",
         reschedule: "Μετακίνηση ραντεβού",

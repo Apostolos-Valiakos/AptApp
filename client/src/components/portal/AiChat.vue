@@ -85,6 +85,14 @@
           >
             {{ (card.status === "failed" && card.error) || t(`portal.ai.card.${card.status}`) }}
           </div>
+          <!-- The booking in Bookings, where everything else can be done with it. -->
+          <router-link
+            v-if="portalV2 && bookingLink(card)"
+            :to="bookingLink(card)!"
+            class="inline-block text-xs font-semibold underline mt-2"
+            data-testid="card-open-booking"
+            @click="useAssistantStore().close()"
+          >{{ t("portal.ai.card.openBooking") }}</router-link>
         </div>
       </template>
 
@@ -247,6 +255,7 @@ const confirmCard = async (card: Card) => {
       a.idempotency_key ||= newIdempotencyKey();
       const done = await actions.book({ service_id: a.service_id, staff_id: a.staff_id, start_time: a.start_time }, { key: a.idempotency_key, quiet: true });
       // The same "done" sheet as booking from the screen (Add to calendar, Share).
+      a.booking_id = done.id;
       if (portalV2.value) success.show(done.id, "booked");
     } else if (a.type === "cancel") {
       await actions.cancel(a.appointment_id, { quiet: true });
@@ -262,6 +271,15 @@ const confirmCard = async (card: Card) => {
     const reason = err instanceof PortalActionError ? err.reason : "unknown";
     note(`[Portal note: the client pressed Confirm but the ${a.type} failed (${describe(a)}); the spa's system said: ${reason}. Nothing was changed.]`);
   }
+};
+
+// A booking card links to its booking once made; a move or cancel card to
+// the booking it's about. Not after a cancel: it's gone from Upcoming.
+const bookingLink = (card: Card) => {
+  const a = card.action;
+  if (a.type === "booking") return card.status === "done" && a.booking_id ? `/portal/bookings/${a.booking_id}` : null;
+  if (a.type === "cancel") return card.status === "done" ? null : `/portal/bookings/${a.appointment_id}`;
+  return `/portal/bookings/${a.appointment_id}`;
 };
 
 const dismissCard = (card: Card) => {

@@ -1187,6 +1187,7 @@ export default {
         myAppointments: 'Show my appointments',
       },
       card: {
+        openBooking: 'Open in Bookings',
         booking: 'New appointment',
         cancel: 'Cancel appointment',
         reschedule: 'Move appointment',

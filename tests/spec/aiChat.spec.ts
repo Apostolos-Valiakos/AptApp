@@ -117,3 +117,34 @@ describe("AIC3 moving and cancelling", () => {
     expect(server.called("POST", "/api/v1/portal/appointments/a8/cancel")).toHaveLength(1);
   });
 });
+
+describe("AIC4 in the redesigned portal, a booking from the chat ends like one from Book", () => {
+  test("the same done sheet (Add to calendar, Share) and a link to the booking", async () => {
+    const { setPortalV2 } = await import("../../client/src/portal/flag");
+    const { default: BookingSuccessSheet } = await import("../../client/src/portal/components/BookingSuccessSheet.vue");
+    const { useBookingSuccessStore } = await import("../../client/src/portal/stores/success");
+    setPortalV2(true);
+    try {
+      await open(
+        {
+          "POST /api/v1/appointments": { body: { id: "a1", success: true } },
+          "GET /api/v1/portal/appointments": {
+            body: [{ id: "a1", status: "new", payment_status: "unpaid", booking_notes: null, paid: 0, total: 45, start_time: BOOKING.start_time, end_time: "2026-11-25T09:00:00.000Z", services: [{ service_id: "svc1", service_name: "Μασάζ", staff_id: "st1", staff_name: "ΑΝΝΑ", start_time: BOOKING.start_time, duration_minutes: 60, price: 45 }] }],
+          },
+        },
+        [sse([["action", BOOKING], ["done", {}]])],
+      );
+      mountScreen(BookingSuccessSheet);
+      await ask("Θέλω μασάζ");
+      button(el.portal.ai.card.confirm).click();
+      await settle();
+      await settle();
+      expect(useBookingSuccessStore().bookingId).toBe("a1");
+      const sheet = document.querySelector('[data-testid="booking-success"]')!;
+      expect(sheet.textContent).toContain(el.portal.v2.actions.addToCalendar);
+      expect(document.querySelector('[data-testid="card-open-booking"]')!.getAttribute("href")).toBe("/portal/bookings/a1");
+    } finally {
+      setPortalV2(false);
+    }
+  });
+});
