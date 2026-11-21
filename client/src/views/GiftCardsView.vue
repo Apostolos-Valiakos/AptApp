@@ -1,19 +1,20 @@
 <template>
-  <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-    <!-- Page Header -->
-    <div class="flex justify-between items-center mb-6">
-      <div class="flex items-center gap-3">
+  <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
+    <!-- Page Header: on phones the button goes under the title. -->
+    <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-4 sm:mb-6">
+      <div class="flex items-center gap-3 min-w-0">
         <div class="w-10 h-10 rounded-xl bg-[var(--p-primary-50)] flex items-center justify-center">
           <i class="pi pi-ticket text-[var(--p-primary-600)]"></i>
         </div>
         <div>
-          <h1 class="text-2xl font-bold text-gray-900">{{ t('giftCards.title') }}</h1>
+          <h1 class="text-xl sm:text-2xl font-bold text-gray-900">{{ t('giftCards.title') }}</h1>
           <p class="text-sm text-gray-500 mt-0.5">{{ t('giftCards.subtitle') }}</p>
         </div>
       </div>
       <Button
         :label="t('giftCards.addNew')"
         icon="pi pi-plus"
+        class="w-full sm:w-auto whitespace-nowrap"
         @click="openNewDialog"
       />
     </div>
@@ -22,10 +23,12 @@
       :value="visibleGiftCards"
       :loading="loading"
       responsiveLayout="scroll"
-      class="p-datatable-sm"
+      class="p-datatable-sm table-cells-top"
       :rowHover="true"
       :paginator="true"
       :rows="15"
+      :paginatorTemplate="isPhone ? PHONE_PAGINATOR_TEMPLATE : undefined"
+      currentPageReportTemplate="{currentPage} / {totalPages}"
     >
       <template #empty>
         <div class="flex flex-col items-center justify-center py-16 text-center">
@@ -35,38 +38,57 @@
         </div>
       </template>
 
-      <Column field="card_number" :header="t('giftCards.table.cardNumber')" sortable></Column>
+      <!-- Phones: one column with what matters, instead of nine. -->
+      <Column v-if="isPhone" field="card_number" :header="t('giftCards.table.cardNumber')" sortable>
+        <template #body="{ data }">
+          <div class="min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="font-semibold text-gray-900">{{ data.card_number }}</span>
+              <Tag :value="t(`giftCards.status.${data.status}`)" :severity="statusSeverity(data.status)" />
+            </div>
+            <div class="text-sm text-gray-700 truncate">{{ data.customer_name }}</div>
+            <div class="text-sm text-gray-500">
+              <template v-if="!settingsStore.hideCashPaid">
+                {{ formatMoney(data.remaining_balance) }} / {{ formatMoney(data.initial_amount) }} ·
+              </template>
+              {{ t('giftCards.table.expires') }} {{ formatDate(data.expires_at) }}
+            </div>
+          </div>
+        </template>
+      </Column>
+      <Column v-if="!isPhone" field="card_number" :header="t('giftCards.table.cardNumber')" sortable></Column>
+      <Column v-if="!isPhone" field="customer_name" :header="t('giftCards.table.customer')" sortable></Column>
       <Column field="customer_name" :header="t('giftCards.table.customer')" sortable></Column>
 
-      <Column :header="t('giftCards.table.soldBy')" sortable field="sold_by_name">
+      <Column v-if="!isPhone" :header="t('giftCards.table.soldBy')" sortable field="sold_by_name">
         <template #body="slotProps">
           {{ slotProps.data.sold_by_name || t('giftCards.dialog.frontdesk') }}
         </template>
       </Column>
 
       <Column
-        v-if="!settingsStore.hideCashPaid"
+        v-if="!isPhone && !settingsStore.hideCashPaid"
         :header="t('giftCards.table.initialAmount')"
         sortable
         field="initial_amount"
       >
         <template #body="slotProps">
-          €{{ Number(slotProps.data.initial_amount).toFixed(2) }}
+          {{ formatMoney(slotProps.data.initial_amount) }}
         </template>
       </Column>
 
       <Column
-        v-if="!settingsStore.hideCashPaid"
+        v-if="!isPhone && !settingsStore.hideCashPaid"
         :header="t('giftCards.table.remainingBalance')"
         sortable
         field="remaining_balance"
       >
         <template #body="slotProps">
-          €{{ Number(slotProps.data.remaining_balance).toFixed(2) }}
+          {{ formatMoney(slotProps.data.remaining_balance) }}
         </template>
       </Column>
 
-      <Column :header="t('giftCards.table.status')">
+      <Column v-if="!isPhone" :header="t('giftCards.table.status')">
         <template #body="slotProps">
           <Tag
             :value="t(`giftCards.status.${slotProps.data.status}`)"
@@ -75,30 +97,31 @@
         </template>
       </Column>
 
-      <Column :header="t('giftCards.table.issued')" sortable field="issued_at">
+      <Column v-if="!isPhone" :header="t('giftCards.table.issued')" sortable field="issued_at">
         <template #body="slotProps">
           {{ formatDate(slotProps.data.issued_at) }}
         </template>
       </Column>
 
-      <Column :header="t('giftCards.table.expires')" sortable field="expires_at">
+      <Column v-if="!isPhone" :header="t('giftCards.table.expires')" sortable field="expires_at">
         <template #body="slotProps">
           {{ formatDate(slotProps.data.expires_at) }}
         </template>
       </Column>
 
-      <Column :header="t('giftCards.table.usedOn')" sortable field="last_used_at">
+      <Column v-if="!isPhone" :header="t('giftCards.table.usedOn')" sortable field="last_used_at">
         <template #body="slotProps">
           {{ slotProps.data.last_used_at ? formatDate(slotProps.data.last_used_at) : t('giftCards.table.neverUsed') }}
         </template>
       </Column>
 
-      <Column :header="t('common.actions')" headerClass="text-center">
+      <Column :header="isPhone ? '' : t('common.actions')" headerClass="text-center" bodyClass="!px-1 md:!px-3">
         <template #body="slotProps">
-          <div class="flex gap-2">
+          <div class="flex gap-1 md:gap-2 justify-end md:justify-start">
             <Button
               icon="pi pi-pencil"
               class="p-button-rounded p-button-text p-button-sm"
+              :aria-label="t('giftCards.tooltips.edit')"
               v-tooltip.top="t('giftCards.tooltips.edit')"
               @click="editCard(slotProps.data)"
             />
@@ -106,6 +129,7 @@
               icon="pi pi-trash"
               class="p-button-rounded p-button-text p-button-sm"
               severity="danger"
+              :aria-label="t('giftCards.tooltips.delete')"
               v-tooltip.top="t('giftCards.tooltips.delete')"
               @click="confirmDeleteCard(slotProps.data)"
             />
@@ -119,7 +143,7 @@
       v-model:visible="cardDialog"
       :header="isEdit ? t('giftCards.dialog.editCard') : t('giftCards.dialog.sellCard')"
       modal
-      :style="{ width: '30rem' }"
+      :style="{ width: '30rem', maxWidth: '95vw' }"
     >
       <div class="space-y-4">
         <div>
@@ -192,26 +216,33 @@
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../composables/useNotify";
+import { formatDate as dateText } from "../utils/format";
+import { api, withMessage } from "../api/http";
+import { formatMoney } from "../utils/format";
 import { ref, computed, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 import { useSettingsStore } from "../stores/settings";
 import ClientSelector from "../components/ClientSelector.vue";
+import { useIsPhone, PHONE_PAGINATOR_TEMPLATE } from "../composables/useIsPhone";
+import { useResource } from "../composables/useResource";
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const toast = useToast();
+const notify = useNotify();
 const confirm = useConfirm();
 const settingsStore = useSettingsStore();
+const isPhone = useIsPhone();
 
-const giftCards = ref<any[]>([]);
+const { items: giftCards, loading, reload: fetchGiftCards } = useResource<any[]>("/api/v1/gift-cards");
 
 const visibleGiftCards = computed(() =>
   settingsStore.hideCashPaid
     ? giftCards.value.filter((c) => c.purchase_payment_method !== "cash")
     : giftCards.value,
 );
-const loading = ref(true);
 const saving = ref(false);
 const cardDialog = ref(false);
 const isEdit = ref(false);
@@ -219,6 +250,7 @@ const editingId = ref<string | null>(null);
 
 const paymentMethodOptions = computed(() => [
   { label: t("common.paymentMethod.cash"), value: "cash" },
+  { label: "CASH", value: "CASH" },
   { label: t("common.paymentMethod.card"), value: "card" },
   { label: t("common.paymentMethod.bank-transfer"), value: "bank-transfer" },
 ]);
@@ -232,19 +264,7 @@ const form = ref<any>({
   sold_by_staff_id: null,
 });
 
-const token = () => localStorage.getItem("token");
 
-const fetchGiftCards = async () => {
-  loading.value = true;
-  try {
-    const res = await fetch("/api/v1/gift-cards", {
-      headers: { Authorization: `Bearer ${token()}` },
-    });
-    if (res.ok) giftCards.value = await res.json();
-  } finally {
-    loading.value = false;
-  }
-};
 
 // --- Staff list for the "Sold By" picker (small dataset — plain fetch is fine) ---
 const staffList = ref<any[]>([]);
@@ -255,13 +275,8 @@ const soldByOptions = computed(() => [
 
 const fetchStaff = async () => {
   try {
-    const res = await fetch("/api/v1/staff", {
-      headers: { Authorization: `Bearer ${token()}` },
-    });
-    if (res.ok) {
-      const data = await res.json();
-      staffList.value = data.filter((s: any) => s.is_active);
-    }
+    const data = await api.get("/api/v1/staff");
+    staffList.value = data.filter((s: any) => s.is_active);
   } catch {
     // non-critical — the dropdown just falls back to "Frontdesk" only
   }
@@ -325,36 +340,19 @@ const statusSeverity = (status: string) => {
   return "warn"; // depleted
 };
 
-const formatDate = (d: string) =>
-  new Date(d).toLocaleDateString("el-GR", { day: "2-digit", month: "2-digit", year: "numeric" });
+const formatDate = (d: string) => dateText(d, locale.value);
 
 const saveCard = async () => {
   saving.value = true;
   try {
     const url = isEdit.value ? `/api/v1/gift-cards/${editingId.value}` : "/api/v1/gift-cards";
     const method = isEdit.value ? "PUT" : "POST";
-    const res = await fetch(url, {
-      method,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token()}`,
-      },
-      body: JSON.stringify(form.value),
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || "Failed to save gift card");
-    }
-    toast.add({
-      severity: "success",
-      summary: t("common.success"),
-      detail: isEdit.value ? t("giftCards.toast.updated") : t("giftCards.toast.created"),
-      life: 3000,
-    });
+    await api.request(method, url, form.value).catch(withMessage("Failed to save gift card"));
+    notify.success(isEdit.value ? t("giftCards.toast.updated") : t("giftCards.toast.created"));
     cardDialog.value = false;
     await fetchGiftCards();
   } catch (e: any) {
-    toast.add({ severity: "error", summary: t("common.error"), detail: e.message, life: 4000 });
+    notify.error(e.message);
   } finally {
     saving.value = false;
   }
@@ -368,11 +366,7 @@ const confirmDeleteCard = (card: any) => {
     acceptClass: "p-button-danger",
     accept: async () => {
       try {
-        const res = await fetch(`/api/v1/gift-cards/${card.id}`, {
-          method: "DELETE",
-          headers: { Authorization: `Bearer ${token()}` },
-        });
-        if (!res.ok) throw new Error("Failed to delete");
+        await api.del(`/api/v1/gift-cards/${card.id}`);
         giftCards.value = giftCards.value.filter((c) => c.id !== card.id);
         toast.add({ severity: "success", summary: t("giftCards.toast.deleted"), life: 3000 });
       } catch {
@@ -383,9 +377,3 @@ const confirmDeleteCard = (card: any) => {
 };
 </script>
 
-<style scoped>
-:deep(.p-datatable .p-datatable-tbody > tr > td) {
-  padding: 1rem;
-  vertical-align: top;
-}
-</style>

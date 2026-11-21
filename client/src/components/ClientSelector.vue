@@ -7,11 +7,32 @@
       :placeholder="t('booking.searchClient')"
       :loading="searchingClients"
       forceSelection
+      data-testid="client-search"
       class="w-full"
       inputClass="w-full"
       @complete="searchClients"
       @update:modelValue="onPicked"
-    />
+    >
+      <!-- Same as the scheduler's client search: phone (or email) under the
+           name, so clients with the same name can be told apart. -->
+      <template #option="{ option }">
+        <div class="flex items-center gap-3 py-1 min-w-0">
+          <div
+            class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
+            :style="{ backgroundColor: avatarColor(option.full_name) }"
+          >
+            {{ initials(option.full_name) }}
+          </div>
+          <div class="min-w-0">
+            <div lang="el" class="font-semibold text-gray-900 truncate uppercase">{{ option.full_name }}</div>
+            <div class="text-xs text-gray-500 truncate">{{ option.phone || option.email || "" }}</div>
+            <div v-if="option.notes" class="text-xs text-amber-700 truncate" :title="option.notes" data-testid="client-option-notes">
+              <i class="pi pi-file-edit text-[10px] mr-1"></i>{{ option.notes }}
+            </div>
+          </div>
+        </div>
+      </template>
+    </AutoComplete>
     <Button
       v-if="allowWalkIn"
       icon="pi pi-user"
@@ -24,6 +45,7 @@
       icon="pi pi-plus"
       class="p-button-outlined"
       v-tooltip="t('booking.newClientBtn')"
+      data-testid="client-new"
       @click="showQuickAdd = true"
     />
 
@@ -38,24 +60,29 @@
           <label class="block text-sm font-medium text-gray-700 mb-1">{{
             t("booking.quickAdd.firstName")
           }}</label>
-          <InputText v-model="newClient.first_name" class="w-full" />
+          <InputText v-model="newClient.first_name" class="w-full" data-testid="client-new-first" />
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">{{
             t("booking.quickAdd.lastName")
           }}</label>
-          <InputText v-model="newClient.last_name" class="w-full" />
+          <InputText v-model="newClient.last_name" class="w-full" data-testid="client-new-last" />
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">{{
             t("booking.quickAdd.mobile")
           }}</label>
-          <InputText v-model="newClient.phone" class="w-full" />
+          <InputText v-model="newClient.phone" class="w-full" data-testid="client-new-phone" />
         </div>
+        <PhoneMatches :matches="phoneMatches" @use="useExistingClient" />
       </div>
       <template #footer>
+        <!-- A client with this phone exists: a new one is a deliberate second choice. -->
         <Button
-          :label="t('booking.quickAdd.saveClient')"
+          :label="phoneMatches.length ? t('clients.phoneMatch.createAnyway') : t('booking.quickAdd.saveClient')"
+          :severity="phoneMatches.length ? 'secondary' : undefined"
+          :outlined="phoneMatches.length > 0"
+          data-testid="client-new-save"
           @click="saveNewClient"
           :loading="savingNewClient"
           class="w-full"
@@ -66,9 +93,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { api, ApiError } from "../api/http";
+import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
+import { avatarColor, initials } from "../utils/avatar";
+import { fetchOrQueue, isOnline } from "../offline/queue";
+import { addCachedClient, searchCachedClients } from "../offline/localData";
+import { usePhoneMatches } from "../composables/usePhoneMatches";
+import PhoneMatches from "./PhoneMatches.vue";
 
 const props = defineProps({
   allowWalkIn: { type: Boolean, default: false },
@@ -94,12 +127,24 @@ const searchClients = (event: { query: string }) => {
   searchingClients.value = true;
   clientSearchTimeout = setTimeout(async () => {
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(
-        `/api/v1/clients?slim=true&search=${encodeURIComponent(q)}&limit=10`,
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
-      clientSuggestions.value = res.ok ? await res.json() : [];
+      // Offline (or the server doesn't answer): search the client list kept
+      // in the browser instead (see offline/localData.ts).
+      if (!isOnline.value) {
+        clientSuggestions.value = await searchCachedClients(q, 10);
+        return;
+      }
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 6000);
+      try {
+        clientSuggestions.value = await api.get(`/api/v1/clients?slim=true&search=${encodeURIComponent(q)}&limit=10`, {
+          signal: controller.signal,
+        });
+      } catch (err) {
+        // Refused by the server: no results. Not reached: the saved list.
+        clientSuggestions.value = err instanceof ApiError ? [] : await searchCachedClients(q, 10);
+      } finally {
+        clearTimeout(timer);
+      }
     } finally {
       searchingClients.value = false;
     }
@@ -118,12 +163,7 @@ const loadingWalkIn = ref(false);
 const pickWalkIn = async () => {
   loadingWalkIn.value = true;
   try {
-    const token = localStorage.getItem("token");
-    const res = await fetch("/api/v1/clients/walk-in", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error("Walk-in lookup failed");
-    const walkIn = await res.json();
+    const walkIn = await api.get("/api/v1/clients/walk-in");
     walkIn.full_name =
       walkIn.full_name || `${walkIn.first_name || ""} ${walkIn.last_name || ""}`.trim();
     emit("select", walkIn);
@@ -142,33 +182,73 @@ const pickWalkIn = async () => {
 const showQuickAdd = ref(false);
 const newClient = ref({ first_name: "", last_name: "", phone: "" });
 const savingNewClient = ref(false);
+// Clients who already have the phone being typed (see usePhoneMatches).
+const { matches: phoneMatches, checkedOnServer, showMatches, reset: resetPhoneMatches } = usePhoneMatches(
+  computed(() => newClient.value.phone),
+);
+const closeQuickAdd = () => {
+  showQuickAdd.value = false;
+  newClient.value = { first_name: "", last_name: "", phone: "" };
+  resetPhoneMatches();
+};
+// Closed any other way: the matches go with the dialog.
+watch(showQuickAdd, (open) => {
+  if (!open) resetPhoneMatches();
+});
+// One of them instead of a new client.
+const useExistingClient = (client: any) => {
+  emit("select", { ...client, full_name: client.full_name || `${client.first_name} ${client.last_name}` });
+  closeQuickAdd();
+};
 const saveNewClient = async () => {
+  // Checked here too: offline, a missing name would only be refused when it
+  // syncs (as a conflict), long after the client left.
+  if (!newClient.value.first_name.trim() || !newClient.value.last_name.trim()) {
+    toast.add({ severity: "error", summary: t("booking.toast.saveFailed"), detail: t("booking.quickAdd.nameRequired"), life: 4000 });
+    return;
+  }
   savingNewClient.value = true;
   try {
-    const token = localStorage.getItem("token");
-    const res = await fetch("/api/v1/clients", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(newClient.value),
+    // Offline the new client is queued with a temporary id: it can be booked
+    // (and paid for) straight away, and everything links up when it syncs.
+    // Same phone as an existing client: only after "create anyway" (or when
+    // offline, where this device's list was all that could be checked).
+    const allowSamePhone = phoneMatches.value.length > 0 || !checkedOnServer.value;
+    const result = await fetchOrQueue("/api/v1/clients", "POST", { ...newClient.value, allow_same_phone: allowSamePhone }, {
+      kind: "client",
+      label: `${t("booking.newClientBtn")} · ${newClient.value.first_name} ${newClient.value.last_name}`.trim(),
+      createsId: "client.id",
     });
-    const data = await res.json();
-
-    if (!res.ok || !(data.success || data.client)) {
-      throw new Error("Request failed");
+    let client: any;
+    if (result.queued) {
+      client = { id: result.tempId, ...newClient.value, outstanding_balance: 0, _offline: "pending" };
+      toast.add({
+        severity: "warn",
+        summary: t("booking.toast.savedOffline"),
+        detail: t("booking.toast.savedOfflineDetail"),
+        life: 4000,
+      });
+    } else {
+      const res = result.response;
+      const data = await res.json();
+      // Someone has this phone (found by the server as it saved): offer them.
+      if (res.status === 409 && data.error === "phone_exists") {
+        showMatches(data.matches);
+        return;
+      }
+      if (!res.ok || !(data.success || data.client)) {
+        throw new Error("Request failed");
+      }
+      client = data.client || data;
     }
-
-    const client = data.client || data;
+    addCachedClient(client).catch(() => {});
     client.full_name = `${client.first_name} ${client.last_name}`;
     client.eoppy_breakdown = { total: 0, services: {} };
     client.non_eoppy_breakdown = { total: 0, services: {} };
     client.outstanding_balance = 0;
 
     emit("select", client);
-    showQuickAdd.value = false;
-    newClient.value = { first_name: "", last_name: "", phone: "" };
+    closeQuickAdd();
   } catch (e) {
     console.error(e);
     toast.add({

@@ -1,6 +1,6 @@
 <template>
-  <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-    <div class="flex items-center gap-3 mb-6">
+  <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
+    <div class="flex items-start sm:items-center gap-2 sm:gap-3 mb-4 sm:mb-6">
       <Button
         icon="pi pi-arrow-left"
         text
@@ -8,18 +8,20 @@
         @click="router.push('/app/products')"
         :aria-label="t('common.back')"
       />
-      <div class="w-10 h-10 rounded-xl bg-[var(--p-primary-50)] flex items-center justify-center">
+      <!-- The icon steps aside on phones; the back arrow stays. -->
+      <div class="hidden sm:flex w-10 h-10 rounded-xl bg-[var(--p-primary-50)] items-center justify-center flex-shrink-0">
         <i class="pi pi-chart-line text-[var(--p-primary-600)]"></i>
       </div>
-      <div>
-        <h1 class="text-2xl font-bold text-gray-900">{{ t('productUsage.title') }}</h1>
+      <div class="min-w-0">
+        <h1 class="text-xl sm:text-2xl font-bold text-gray-900">{{ t('productUsage.title') }}</h1>
         <p class="text-sm text-gray-500 mt-0.5">{{ t('productUsage.subtitle') }}</p>
       </div>
     </div>
 
-    <TabView>
+    <!-- scrollable: on a narrow screen the tabs scroll instead of being cut. -->
+    <TabView scrollable>
       <!-- ===== Recipes tab ===== -->
-      <TabPanel :header="t('productUsage.tabs.recipes')">
+      <TabPanel :value="0" :header="t('productUsage.tabs.recipes')">
         <div class="max-w-xl mb-6">
           <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('productUsage.selectService') }}</label>
           <Dropdown
@@ -117,7 +119,7 @@
       </TabPanel>
 
       <!-- ===== Stocktakes tab ===== -->
-      <TabPanel :header="t('productUsage.tabs.stocktakes')">
+      <TabPanel :value="1" :header="t('productUsage.tabs.stocktakes')">
         <div class="max-w-xl mb-6">
           <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('productUsage.product') }}</label>
           <Dropdown
@@ -184,19 +186,19 @@
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../composables/useNotify";
+import { formatDate as dateText } from "../utils/format";
+import { api, ifRefused } from "../api/http";
 import { ref, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
-import { useToast } from "primevue/usetoast";
 import TabView from "primevue/tabview";
 import TabPanel from "primevue/tabpanel";
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const router = useRouter();
-const toast = useToast();
+const notify = useNotify();
 
-const token = () => localStorage.getItem("token");
-const authHeaders = () => ({ "Content-Type": "application/json", Authorization: `Bearer ${token()}` });
 
 interface RecipeRow {
   product_inventory_id: string | null;
@@ -236,16 +238,14 @@ const productVariationOptions = computed(() =>
   ),
 );
 
-const formatDate = (v: string) => new Date(v).toLocaleString();
+const formatDate = (v: string) => dateText(v, locale.value, "numericTime");
 
 const fetchServices = async () => {
-  const res = await fetch("/api/v1/services", { headers: authHeaders() });
-  services.value = res.ok ? await res.json() : [];
+  services.value = await api.get("/api/v1/services").catch(ifRefused([]));
 };
 
 const fetchProducts = async () => {
-  const res = await fetch("/api/v1/products", { headers: authHeaders() });
-  products.value = res.ok ? await res.json() : [];
+  products.value = await api.get("/api/v1/products").catch(ifRefused([]));
 };
 
 const addRecipeRow = () => {
@@ -260,8 +260,7 @@ const addRecipeRow = () => {
 
 const loadRecipesForService = async () => {
   if (!selectedServiceId.value) return;
-  const res = await fetch("/api/v1/product-usage/recipes", { headers: authHeaders() });
-  const all = res.ok ? await res.json() : [];
+  const all = await api.get("/api/v1/product-usage/recipes").catch(ifRefused([]));
   recipeRows.value = all
     .filter((r: any) => r.service_id === selectedServiceId.value)
     .map((r: any) => ({
@@ -277,25 +276,20 @@ const saveRecipes = async () => {
   if (!selectedServiceId.value) return;
   for (const r of recipeRows.value) {
     if (!r.product_inventory_id) {
-      toast.add({ severity: "error", summary: t("common.error"), detail: t("productUsage.toast.missingProduct"), life: 3000 });
+      notify.error(t("productUsage.toast.missingProduct"));
       return;
     }
     if (r.amount_type === "range" && !(Number(r.amount_min) < Number(r.amount_max))) {
-      toast.add({ severity: "error", summary: t("common.error"), detail: t("productUsage.toast.invalidRange"), life: 3000 });
+      notify.error(t("productUsage.toast.invalidRange"));
       return;
     }
   }
   savingRecipes.value = true;
   try {
-    const res = await fetch(`/api/v1/services/${selectedServiceId.value}/recipes`, {
-      method: "PUT",
-      headers: authHeaders(),
-      body: JSON.stringify({ recipes: recipeRows.value }),
-    });
-    if (!res.ok) throw new Error();
-    toast.add({ severity: "success", summary: t("common.success"), detail: t("productUsage.toast.saved"), life: 3000 });
+    await api.put(`/api/v1/services/${selectedServiceId.value}/recipes`, { recipes: recipeRows.value });
+    notify.success(t("productUsage.toast.saved"));
   } catch {
-    toast.add({ severity: "error", summary: t("common.error"), detail: t("productUsage.toast.saveFailed"), life: 3000 });
+    notify.error(t("productUsage.toast.saveFailed"));
   } finally {
     savingRecipes.value = false;
   }
@@ -303,25 +297,19 @@ const saveRecipes = async () => {
 
 const loadStocktakeHistory = async () => {
   if (!selectedInventoryId.value) return;
-  const res = await fetch(`/api/v1/product-inventory/${selectedInventoryId.value}/stocktakes`, { headers: authHeaders() });
-  stocktakeHistory.value = res.ok ? await res.json() : [];
+  stocktakeHistory.value = await api.get(`/api/v1/product-inventory/${selectedInventoryId.value}/stocktakes`).catch(ifRefused([]));
 };
 
 const submitStocktake = async () => {
   if (!selectedInventoryId.value || stocktakeForm.value.remaining_amount_ml === null) return;
   savingStocktake.value = true;
   try {
-    const res = await fetch(`/api/v1/product-inventory/${selectedInventoryId.value}/stocktake`, {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify(stocktakeForm.value),
-    });
-    if (!res.ok) throw new Error();
-    toast.add({ severity: "success", summary: t("common.success"), detail: t("productUsage.toast.stocktakeSaved"), life: 3000 });
+    await api.post(`/api/v1/product-inventory/${selectedInventoryId.value}/stocktake`, stocktakeForm.value);
+    notify.success(t("productUsage.toast.stocktakeSaved"));
     stocktakeForm.value = { remaining_amount_ml: null, restocked_amount_ml: 0, notes: "" };
     await loadStocktakeHistory();
   } catch {
-    toast.add({ severity: "error", summary: t("common.error"), detail: t("productUsage.toast.stocktakeFailed"), life: 3000 });
+    notify.error(t("productUsage.toast.stocktakeFailed"));
   } finally {
     savingStocktake.value = false;
   }

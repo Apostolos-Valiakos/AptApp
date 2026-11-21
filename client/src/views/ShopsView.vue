@@ -175,13 +175,20 @@
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('platform.shops.dialog.adminPassword') }}</label>
             <InputText v-model="editingShop.admin_password" type="password" class="w-full" />
+            <small class="block mt-1" :class="editingShop.admin_password && !passwordOk(editingShop.admin_password) ? 'text-red-500' : 'text-gray-500'" data-testid="password-rule">{{ t("common.passwordRule") }}</small>
           </div>
         </div>
       </div>
     </div>
     <template #footer>
       <Button :label="t('common.cancel')" icon="pi pi-times" text @click="showDialog = false" />
-      <Button :label="t('common.save')" icon="pi pi-check" @click="saveShop" :loading="loading" />
+      <Button
+        :label="t('common.save')"
+        icon="pi pi-check"
+        :disabled="createAdminNow && !!editingShop.admin_username && !passwordOk(editingShop.admin_password)"
+        @click="saveShop"
+        :loading="loading"
+      />
     </template>
   </Dialog>
 
@@ -202,8 +209,9 @@
           <div class="flex-1">
             <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('staff.loginDialog.password') }}</label>
             <InputText v-model="newAdminPassword" type="password" class="w-full" />
+            <small class="block mt-1" :class="newAdminPassword && !passwordOk(newAdminPassword) ? 'text-red-500' : 'text-gray-500'" data-testid="password-rule">{{ t("common.passwordRule") }}</small>
           </div>
-          <Button icon="pi pi-plus" :loading="loading" @click="createAdmin" />
+          <Button icon="pi pi-plus" :loading="loading" :disabled="!newAdminUsername || !passwordOk(newAdminPassword)" @click="createAdmin" />
         </div>
       </div>
 
@@ -260,6 +268,7 @@
     <div class="pt-2">
       <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('platform.admins.resetDialog.newPassword') }}</label>
       <InputText v-model="resetPasswordValue" type="password" class="w-full" />
+      <small class="block mt-1" :class="resetPasswordValue && !passwordOk(resetPasswordValue) ? 'text-red-500' : 'text-gray-500'" data-testid="password-rule">{{ t("common.passwordRule") }}</small>
     </div>
     <template #footer>
       <Button :label="t('common.cancel')" text @click="showResetPasswordDialog = false" />
@@ -271,15 +280,20 @@
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../composables/useNotify";
+import { formatDate as dateText } from "../utils/format";
+import { api, withMessage } from "../api/http";
 import { ref, onMounted, computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "../stores/auth";
+import { passwordOk } from "../utils/password";
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const toast = useToast();
+const notify = useNotify();
 const confirm = useConfirm();
 const router = useRouter();
 const authStore = useAuthStore();
@@ -309,32 +323,15 @@ const statusSeverity = (status: string) => {
   return "danger";
 };
 
-const formatDate = (d: string) =>
-  d
-    ? new Date(d).toLocaleDateString("el-GR", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-      })
-    : "—";
+const formatDate = (d: string) => dateText(d, locale.value, "numeric", "—");
 
 const fetchData = async () => {
   tableLoading.value = true;
   try {
-    const token = localStorage.getItem("token");
-    const res = await fetch("/api/v1/platform/shops", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error("Request failed");
-    shops.value = await res.json();
+    shops.value = await api.get("/api/v1/platform/shops");
   } catch (err) {
     console.error(err);
-    toast.add({
-      severity: "error",
-      summary: t("common.error"),
-      detail: t("platform.shops.toast.loadFailed"),
-      life: 4000,
-    });
+    notify.error(t("platform.shops.toast.loadFailed"));
   } finally {
     tableLoading.value = false;
   }
@@ -372,7 +369,6 @@ const saveShop = async () => {
   }
 
   loading.value = true;
-  const token = localStorage.getItem("token");
   const url = editingShop.value.id
     ? `/api/v1/platform/shops/${editingShop.value.id}`
     : "/api/v1/platform/shops";
@@ -385,32 +381,13 @@ const saveShop = async () => {
   }
 
   try {
-    const res = await fetch(url, {
-      method,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(body),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Failed");
+    await api.request(method, url, body).catch(withMessage("Failed"));
 
-    toast.add({
-      severity: "success",
-      summary: t("common.success"),
-      detail: t("platform.shops.toast.saved"),
-      life: 3000,
-    });
+    notify.success(t("platform.shops.toast.saved"));
     showDialog.value = false;
     fetchData();
   } catch (err: any) {
-    toast.add({
-      severity: "error",
-      summary: t("common.error"),
-      detail: err.message || t("platform.shops.toast.saveFailed"),
-      life: 4000,
-    });
+    notify.error(err.message || t("platform.shops.toast.saveFailed"));
   } finally {
     loading.value = false;
   }
@@ -431,12 +408,7 @@ const openAdminsDialog = async (shop: any) => {
   showAdminsDialog.value = true;
   adminsLoading.value = true;
   try {
-    const token = localStorage.getItem("token");
-    const res = await fetch(`/api/v1/platform/shops/${shop.id}/admins`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error("Failed");
-    shopAdmins.value = await res.json();
+    shopAdmins.value = await api.get(`/api/v1/platform/shops/${shop.id}/admins`);
   } catch (err) {
     console.error(err);
     shopAdmins.value = [];
@@ -446,41 +418,23 @@ const openAdminsDialog = async (shop: any) => {
 };
 
 const createAdmin = async () => {
-  if (!newAdminUsername.value || !newAdminPassword.value) return;
+  if (!newAdminUsername.value || !passwordOk(newAdminPassword.value)) return;
   loading.value = true;
-  const token = localStorage.getItem("token");
   try {
-    const res = await fetch(`/api/v1/platform/shops/${adminsTarget.value.id}/admins`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
+    await api
+      .post(`/api/v1/platform/shops/${adminsTarget.value.id}/admins`, {
         username: newAdminUsername.value,
         password: newAdminPassword.value,
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Failed");
+      })
+      .catch(withMessage("Failed"));
 
-    toast.add({
-      severity: "success",
-      summary: t("common.success"),
-      detail: t("platform.admins.toast.created"),
-      life: 3000,
-    });
+    notify.success(t("platform.admins.toast.created"));
     newAdminUsername.value = "";
     newAdminPassword.value = "";
     openAdminsDialog(adminsTarget.value);
     fetchData();
   } catch (err: any) {
-    toast.add({
-      severity: "error",
-      summary: t("common.error"),
-      detail: err.message || t("platform.admins.toast.failed"),
-      life: 4000,
-    });
+    notify.error(err.message || t("platform.admins.toast.failed"));
   } finally {
     loading.value = false;
   }
@@ -494,32 +448,13 @@ const toggleAdminActive = (admin: any) => {
     header: t("common.confirmDelete"),
     icon: "pi pi-exclamation-triangle",
     accept: async () => {
-      const token = localStorage.getItem("token");
       try {
-        const res = await fetch(`/api/v1/platform/admins/${admin.id}`, {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ is_active: !admin.is_active }),
-        });
-        if (!res.ok) throw new Error("Failed");
-        toast.add({
-          severity: "success",
-          summary: t("common.success"),
-          detail: t("platform.admins.toast.statusUpdated"),
-          life: 3000,
-        });
+        await api.put(`/api/v1/platform/admins/${admin.id}`, { is_active: !admin.is_active });
+        notify.success(t("platform.admins.toast.statusUpdated"));
         openAdminsDialog(adminsTarget.value);
         fetchData();
       } catch (err) {
-        toast.add({
-          severity: "error",
-          summary: t("common.error"),
-          detail: t("platform.admins.toast.failed"),
-          life: 4000,
-        });
+        notify.error(t("platform.admins.toast.failed"));
       }
     },
   });
@@ -537,7 +472,7 @@ const openResetPasswordDialog = (admin: any) => {
 };
 
 const confirmResetPassword = async () => {
-  if (!resetPasswordValue.value || resetPasswordValue.value.length < 6) {
+  if (!passwordOk(resetPasswordValue.value)) {
     toast.add({
       severity: "warn",
       summary: t("common.error"),
@@ -547,36 +482,17 @@ const confirmResetPassword = async () => {
     return;
   }
   loading.value = true;
-  const token = localStorage.getItem("token");
   try {
-    const res = await fetch(
-      `/api/v1/platform/admins/${resetPasswordTarget.value.id}/reset-password`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ newPassword: resetPasswordValue.value }),
-      },
-    );
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Failed");
+    await api
+      .post(`/api/v1/platform/admins/${resetPasswordTarget.value.id}/reset-password`, {
+        newPassword: resetPasswordValue.value,
+      })
+      .catch(withMessage("Failed"));
 
-    toast.add({
-      severity: "success",
-      summary: t("common.success"),
-      detail: t("platform.admins.toast.passwordReset"),
-      life: 3000,
-    });
+    notify.success(t("platform.admins.toast.passwordReset"));
     showResetPasswordDialog.value = false;
   } catch (err: any) {
-    toast.add({
-      severity: "error",
-      summary: t("common.error"),
-      detail: err.message || t("platform.admins.toast.failed"),
-      life: 4000,
-    });
+    notify.error(err.message || t("platform.admins.toast.failed"));
   } finally {
     loading.value = false;
   }
@@ -589,30 +505,14 @@ const confirmImpersonate = (shop: any) => {
     header: t("platform.shops.tooltips.viewAs"),
     icon: "pi pi-sign-in",
     accept: async () => {
-      const token = localStorage.getItem("token");
       try {
-        const res = await fetch(`/api/v1/platform/impersonate/${shop.id}`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Failed");
+        const data = await api.post(`/api/v1/platform/impersonate/${shop.id}`).catch(withMessage("Failed"));
 
         authStore.startImpersonation(data.token, data.user);
-        toast.add({
-          severity: "success",
-          summary: t("common.success"),
-          detail: t("platform.shops.toast.impersonating", { name: shop.name }),
-          life: 3000,
-        });
+        notify.success(t("platform.shops.toast.impersonating", { name: shop.name }));
         router.push("/app/scheduler");
       } catch (err: any) {
-        toast.add({
-          severity: "error",
-          summary: t("common.error"),
-          detail: err.message || t("platform.shops.toast.impersonateFailed"),
-          life: 4000,
-        });
+        notify.error(err.message || t("platform.shops.toast.impersonateFailed"));
       }
     },
   });

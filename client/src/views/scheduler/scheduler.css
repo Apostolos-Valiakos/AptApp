@@ -1,0 +1,365 @@
+/* The calendar's look: FullCalendar's grid, the cards, the overtime marks,
+   the phone layout. Global: FullCalendar draws outside the component. */
+/* Ctrl + drag: the appointment's other cards, which move along. */
+.fc-v-event.fc-move-together {
+  outline: 2px dashed var(--p-primary-color);
+  outline-offset: 1px;
+}
+
+/* Completed appointments keep their colour and gain a blue line on the left. */
+.fc-event.fc-completed {
+  border-left: 3px solid #2563eb !important;
+}
+/* Cancelled and no-show ones get a red line, and stay crossed out. */
+.fc-event.fc-did-not-happen {
+  border-left: 3px solid #dc2626 !important;
+}
+
+/* A shared place's cards get narrow side by side: the surname alone then. */
+.fc-place-card .fc-event-main {
+  container-type: inline-size;
+}
+.fc-place-card .fc-name-short {
+  display: none;
+}
+/* A long surname wraps onto another line rather than being cut. */
+.fc-place-card .fc-name-full,
+.fc-place-card .fc-name-short {
+  overflow-wrap: anywhere;
+}
+@container (max-width: 120px) {
+  .fc-place-card .fc-name-full {
+    display: none;
+  }
+  .fc-place-card .fc-name-short {
+    display: inline;
+  }
+}
+
+/* Docked date calendar: fills its column, no frame, no sideways scroll. */
+.docked-date-picker .p-datepicker,
+.docked-date-picker .p-datepicker-panel {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  box-shadow: none;
+}
+.docked-date-picker .p-datepicker-panel {
+  padding: 0 0.5rem 0.75rem;
+}
+.docked-date-picker .p-datepicker-day-view {
+  width: 100%;
+  table-layout: fixed;
+}
+/* The month header gives way too, so the narrowest width still shows all seven days. */
+.docked-date-picker .p-datepicker-calendar-container,
+.docked-date-picker .p-datepicker-calendar {
+  width: 100%;
+  min-width: 0;
+}
+.docked-date-picker .p-datepicker-header {
+  padding-inline: 0;
+  gap: 0;
+}
+.docked-date-picker .p-datepicker-title {
+  min-width: 0;
+  gap: 0.25rem;
+  white-space: nowrap;
+}
+.docked-date-picker .p-datepicker-title button {
+  padding-inline: 0.125rem;
+}
+/* Long Greek month names still fit beside the arrows when the column is narrow. */
+.docked-date-picker {
+  container-type: inline-size;
+}
+@container (max-width: 240px) {
+  .docked-date-picker .p-datepicker-title button {
+    font-size: 0.8125rem;
+  }
+}
+.docked-date-picker .p-datepicker-prev-button,
+.docked-date-picker .p-datepicker-next-button {
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+}
+.docked-date-picker .p-datepicker-day-cell,
+.docked-date-picker .p-datepicker-weekday-cell {
+  padding: 0.125rem;
+  min-width: 0;
+}
+/* The days grow and shrink with the column. */
+.docked-date-picker .p-datepicker-day {
+  width: 100%;
+  max-width: 3rem;
+  height: auto;
+  aspect-ratio: 1;
+  margin: 0 auto;
+}
+/* The line between the docked calendar and the schedule: thin to look at,
+   wider to grab, and it takes touch drags instead of scrolling the page. */
+.dock-resizer {
+  position: relative;
+  z-index: 20;
+  flex-shrink: 0;
+  width: 9px;
+  margin: 0 -4px;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+}
+.dock-resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 1px;
+  background: #f3f4f6;
+  transition:
+    background-color 0.15s,
+    box-shadow 0.15s;
+}
+.dock-resizer:hover::after,
+.dock-resizer:focus-visible::after,
+.dock-resizer.is-dragging::after {
+  background: var(--p-primary-color);
+  box-shadow: 0 0 0 1px var(--p-primary-color);
+}
+.fc {
+  --fc-border-color: #f3f4f6;
+  --fc-now-indicator-color: #ef4444;
+  --fc-today-bg-color: transparent;
+}
+
+/* A booking outside working hours: its outside part striped, and a line with
+   the time where the schedule starts or ends inside the card. */
+.fc-overtime-part {
+  position: absolute;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(135deg, rgba(15, 23, 42, 0.17) 0 4px, transparent 4px 9px);
+}
+.fc-hours-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 2px solid #0f172a;
+  pointer-events: none;
+  z-index: 2;
+}
+.fc-hours-line span {
+  position: absolute;
+  right: 2px;
+  top: 1px;
+  padding: 0 3px;
+  border-radius: 3px;
+  background: #0f172a;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 12px;
+}
+
+/* Staff working-hours off-hours shading (Day view) — a texture rather than a
+   third flat color, so it stays distinguishable from the red "leave" and
+   gray "break" time-off tints, including for colorblind users. !important is
+   needed because FullCalendar's own .fc-bg-event rule sets the `background`
+   shorthand (color + image together), which otherwise wins the cascade by
+   source order and silently resets background-image back to none. */
+.fc-off-hours-bg {
+  background-image: none !important;
+  background-color: rgba(100, 116, 139, 0.16) !important;
+  opacity: 1 !important;
+}
+
+.fc .fc-toolbar {
+  display: none;
+}
+
+.fc-col-header-cell {
+  background-color: #ffffff;
+  border-bottom: 1px solid #e5e7eb !important;
+  padding-bottom: 8px;
+}
+
+.fc-timegrid-axis {
+  border-right: 1px solid #e5e7eb;
+}
+
+/* Centre each hour number on its hour line instead of below it: anchor the
+   label to the top of its slot (where the line is) and lift it by half its
+   own height. */
+.fc .fc-timegrid-slot-label {
+  vertical-align: top;
+  overflow: visible;
+}
+.fc .fc-timegrid-slot-label-frame {
+  height: 0;
+  overflow: visible;
+}
+.fc .fc-timegrid-slot-label-cushion {
+  transform: translateY(-50%);
+}
+/* The first hour's line is the top edge of the grid; lifting its label would
+   hide half of it under the staff header. */
+.fc tr:first-child > .fc-timegrid-slot-label .fc-timegrid-slot-label-cushion {
+  transform: none;
+}
+
+/* Zoom: every row is 15 minutes; the zoom buttons set this height. The label
+   frame above has no height, so the hour number never forces a row taller. */
+.fc .fc-timegrid-slot {
+  height: var(--slot-row-height, 27px);
+  /* An empty cell still keeps a text line's height, which would stop small
+     rows at ~17px; the hour label sets its own font sizes. */
+  font-size: 0;
+  line-height: 0;
+}
+
+/* Reference-style time axis: quarter-hour rows get almost no line at all,
+   the half-hour row gets a light-but-visible divider, and the hour row
+   (where the big bold hour number sits) gets a clearly darker line — three
+   distinct weights instead of one flat "minor" shade for everything. */
+.fc-timegrid-slot {
+  border-top: 1px solid #f8fafc !important;
+}
+.fc-timegrid-slot-minor {
+  border-color: #f8fafc !important;
+}
+.fc-slot-half-hour {
+  border-top: 1px solid #e7e8eb !important;
+}
+/* Same 2px weight as the true hour line, one shade lighter — distinct at a
+   glance from :00 while still clearly bolder than the 1px quarter marks
+   above. Sits roughly halfway between fc-slot-hour's #cbd5e1 and
+   fc-slot-half-hour's #e7e8eb; nudge this value alone to tune how close it
+   reads to one or the other. */
+.fc-slot-half-hour-bold {
+  border-top: 2px solid #dde3e9 !important;
+}
+/* The hour gridline marks the START of the hour (e.g. exactly 10:00), which
+   is the TOP edge of the row carrying the "10:00" label — not its bottom
+   edge, which would mark 10:15 instead. */
+.fc-slot-hour {
+  border-top: 2px solid #cbd5e1 !important;
+}
+
+.fc-v-event {
+  border: 1px solid rgba(100, 116, 139, 0.3);
+  background-color: transparent;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  border-radius: 0;
+}
+.fc-v-event .fc-event-main {
+  padding: 0;
+  color: inherit;
+}
+/* Offline: changes waiting to sync (dashed) and refused ones (red). */
+.fc-v-event.fc-offline-pending {
+  outline: 2px dashed #b45309;
+  outline-offset: -2px;
+}
+.fc-v-event.fc-offline-pending .fc-event-main::after {
+  content: "\e944"; /* pi-cloud-upload */
+  font-family: "primeicons";
+  position: absolute;
+  right: 3px;
+  bottom: 2px;
+  font-size: 10px;
+  color: #b45309;
+}
+.fc-v-event.fc-offline-conflict {
+  outline: 2px solid #dc2626;
+  outline-offset: -2px;
+}
+/* Matches the hovered box's own hover:brightness-95 on its inner content. */
+.fc-linked-hover .fc-event-main > div {
+  filter: brightness(0.95);
+}
+/* Same client, same calendar day, any staff — a colored highlight (not just
+   a brightness tweak) so it reads as a distinct grouping from the
+   same-moment .fc-linked-hover above. Inset so it composes with
+   .fc-v-event's own border/box-shadow instead of drawing a second,
+   concentric rectangle the way an outline would. Can coexist with
+   fc-linked-hover on the same box. */
+.fc-day-client-hover {
+  box-shadow: 0 0 0 2px var(--p-primary-color) inset !important;
+}
+
+/* Minimum visual height floor: a 5-10 min appointment renders at only a
+   handful of pixels at this app's normal zoom — nowhere near enough for a
+   legible line of text no matter how the content inside is formatted. This
+   floor is purely visual (FullCalendar still positions the box at the
+   correct start time; only its rendered height is bumped up), so a very
+   short appointment can appear to touch whatever's booked immediately after
+   it even though nothing actually conflicts — an accepted trade-off in
+   favor of always being able to read who/what at a glance. Targets both the
+   positioned harness (which carries the real inline height) and the event
+   box itself, since either can be the actual sizing constraint depending on
+   FullCalendar's internal DOM for a given view. */
+.fc-timegrid-event-harness,
+.fc-v-event {
+  min-height: 20px;
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Phone: current time as a pill on the time axis (see nowIndicatorContent) */
+.fc-now-pill {
+  position: absolute;
+  left: 2px;
+  top: 0;
+  transform: translateY(-50%);
+  background: #111827;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 3px 5px;
+  border-radius: 9999px;
+  white-space: nowrap;
+}
+.fc .fc-timegrid-now-indicator-arrow:has(.fc-now-pill) {
+  border-color: transparent !important;
+}
+
+/* Drag/resize preview: exact new time, sitting just above the box so a short
+   (or zoomed-out) appointment doesn't clip it (see eventContent isMirror) */
+.fc .fc-event-mirror,
+.fc .fc-event-mirror .fc-event-main {
+  overflow: visible !important;
+  z-index: 50 !important;
+}
+.fc-drag-time-pill {
+  position: absolute;
+  left: 2px;
+  bottom: calc(100% + 2px);
+  background: #111827;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 9999px;
+  white-space: nowrap;
+  pointer-events: none;
+}

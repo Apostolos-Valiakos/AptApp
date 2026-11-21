@@ -1,3 +1,4 @@
+import { api, ApiError, withMessage } from "../api/http";
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { io, Socket } from "socket.io-client";
@@ -37,12 +38,6 @@ interface Channel {
   updated_at: string;
 }
 
-interface TypingUser {
-  channelId: string;
-  userId: string;
-  username: string;
-}
-
 export const useChatStore = defineStore("chat", () => {
   const authStore = useAuthStore(); // Initialize Auth Store
 
@@ -58,7 +53,6 @@ export const useChatStore = defineStore("chat", () => {
   const cashLocked = ref(false);
   const remoteHideCard = ref(false);
   const cardLocked = ref(false);
-  // const notificationSound = ref<HTMLAudioElement | null>(null);
 
   const totalUnreadCount = computed(() => {
     if (!channels.value || !Array.isArray(channels.value)) {
@@ -158,13 +152,7 @@ export const useChatStore = defineStore("chat", () => {
         // AND I don't have that specific chat window open
         if (!isFromMe && !isChatOpen) {
           channel.unread_count = (channel.unread_count || 0) + 1;
-          // playNotificationSound();
         }
-      }
-
-      // Auto-scroll to bottom if the user is looking at this channel
-      if (message.channel_id === activeChannelId.value) {
-        setTimeout(() => scrollToBottom(), 100);
       }
     });
 
@@ -183,7 +171,7 @@ export const useChatStore = defineStore("chat", () => {
 
     socket.value.on("message:read:update", ({ messageId, userId }: any) => {
       // Update read receipts for the message
-      for (const [channelId, msgs] of messages.value.entries()) {
+      for (const msgs of messages.value.values()) {
         const msg = msgs.find((m) => m.id === messageId);
         if (msg) {
           if (!msg.read_by) msg.read_by = [];
@@ -252,14 +240,21 @@ export const useChatStore = defineStore("chat", () => {
       useSettingsStore().setCashLockedByShop(false);
     });
 
+    // Another screen changed bookings or payments: the scheduler reloads.
+    socket.value.on("appointments:changed", () => {
+      window.dispatchEvent(new CustomEvent("appointments-changed"));
+    });
+
+    // The waitlist changed on another screen: the calendar's waitlist reloads.
+    socket.value.on("waitlist:changed", () => {
+      window.dispatchEvent(new CustomEvent("waitlist-changed"));
+    });
+
     socket.value.on("card:filter:set", ({ hidden }: { hidden: boolean }) => {
       remoteHideCard.value = hidden;
       cardLocked.value = hidden;
       localStorage.setItem("hideCardPaid", String(hidden));
     });
-
-    // Initialize notification sound
-    // notificationSound.value = new Audio("/notification.mp3");
   };
 
   const disconnect = () => {
@@ -268,38 +263,32 @@ export const useChatStore = defineStore("chat", () => {
     isConnected.value = false;
   };
 
-  const fetchChannels = async () => {
+  // The shop's users who can chat (names for "… is typing" and new channels).
+  const shopUsers = ref<any[]>([]);
+
+  // A list from the server; empty when it can't be loaded.
+  const loadList = async (url: string, target: { value: any[] }) => {
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch("/api/v1/chat/channels", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      channels.value = Array.isArray(data) ? data : [];
+      const data = await api.get(url);
+      target.value = Array.isArray(data) ? data : [];
     } catch (err) {
-      console.error("Error fetching channels:", err);
-      channels.value = [];
+      console.error(`Error fetching ${url}:`, err);
+      target.value = [];
     }
   };
+  const fetchChannels = () => loadList("/api/v1/chat/channels", channels);
+  const fetchShopUsers = () => loadList("/api/v1/chat/shop-users", shopUsers);
 
   // Fetch messages for a channel
   const fetchMessages = async (channelId: string) => {
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(
-        `/api/v1/chat/channels/${channelId}/messages?limit=50`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-
       // SAFETY CHECK 1: If server errors, stop here.
-      if (!res.ok) {
-        console.error("Failed to fetch messages:", res.statusText);
-        return;
-      }
-
-      const data = await res.json();
+      const data = await api.get(`/api/v1/chat/channels/${channelId}/messages?limit=50`).catch((e) => {
+        if (!(e instanceof ApiError)) throw e;
+        console.error("Failed to fetch messages:", e.status);
+        return undefined;
+      });
+      if (data === undefined) return;
 
       // SAFETY CHECK 2: Ensure data is actually an array before filtering
       if (Array.isArray(data)) {
@@ -368,9 +357,6 @@ export const useChatStore = defineStore("chat", () => {
 
       // Join channel room
       socket.value?.emit("channel:join", { channelId });
-
-      // Scroll to bottom
-      setTimeout(() => scrollToBottom(), 100);
     }
   };
 
@@ -413,6 +399,14 @@ export const useChatStore = defineStore("chat", () => {
     }
   };
 
+  // Called on every keystroke: "typing" now, "stopped" after a second without one.
+  let idleTimer: ReturnType<typeof setTimeout> | null = null;
+  const noteTyping = () => {
+    sendTyping(true);
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => sendTyping(false), 1000);
+  };
+
   const addMessageLocally = (channelId: string, message: Message) => {
     const existing = messages.value.get(channelId) || [];
     messages.value.set(channelId, [...existing, message]);
@@ -424,21 +418,7 @@ export const useChatStore = defineStore("chat", () => {
       const formData = new FormData();
       formData.append("file", file);
 
-      const token = localStorage.getItem("token");
-      const res = await fetch("/api/v1/chat/upload", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        body: formData,
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || "Upload failed");
-      }
-
-      return await res.json();
+      return await api.upload("/api/v1/chat/upload", formData).catch(withMessage("Upload failed"));
     } catch (err) {
       console.error("Error uploading file:", err);
       throw err;
@@ -451,30 +431,12 @@ export const useChatStore = defineStore("chat", () => {
     memberIds: string[]
   ) => {
     try {
-      const token = localStorage.getItem("token");
-
       // Safety check: Ensure all IDs are strings and not numbers/objects
       const cleanMemberIds = memberIds.map((id) => String(id));
 
-      const res = await fetch("/api/v1/chat/channels", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          name,
-          description,
-          memberIds: cleanMemberIds,
-        }),
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || "Failed to create channel");
-      }
-
-      const newChannel = await res.json();
+      const newChannel = await api
+        .post("/api/v1/chat/channels", { name, description, memberIds: cleanMemberIds })
+        .catch(withMessage("Failed to create channel"));
       channels.value.unshift(newChannel);
       return newChannel;
     } catch (err) {
@@ -482,28 +444,6 @@ export const useChatStore = defineStore("chat", () => {
       throw err;
     }
   };
-
-  // Helper functions
-  const scrollToBottom = () => {
-    const messagesContainer = document.querySelector(
-      ".chat-messages-container"
-    );
-    if (messagesContainer) {
-      messagesContainer.scrollTop = messagesContainer.scrollHeight;
-    }
-  };
-
-  // const playNotificationSound = () => {
-  //   if (!isMinimized.value) return;
-
-  //   try {
-  //     notificationSound.value?.play().catch((err) => {
-  //       console.log("Could not play notification sound:", err);
-  //     });
-  //   } catch (err) {
-  //     console.log("Notification sound error:", err);
-  //   }
-  // };
 
   const toggleMinimized = () => {
     isMinimized.value = !isMinimized.value;
@@ -528,6 +468,9 @@ export const useChatStore = defineStore("chat", () => {
     connect,
     disconnect,
     fetchChannels,
+    shopUsers,
+    fetchShopUsers,
+    noteTyping,
     fetchMessages,
     setActiveChannel,
     sendMessage,

@@ -54,7 +54,7 @@
                 : 'text-green-600'
             "
           >
-            €{{ Number(clientData.outstanding_balance || 0).toFixed(2) }}
+            {{ formatMoney(clientData.outstanding_balance || 0) }}
           </div>
         </div>
       </div>
@@ -77,6 +77,15 @@
 
       <div class="flex-grow overflow-y-auto pr-2 pb-4">
         <div v-if="activeTab === 'Info'" class="space-y-4">
+          <!-- The walk-in client stands for "no specific client"; its name
+               and contact details are locked (the server refuses changes). -->
+          <div
+            v-if="clientData.is_walk_in"
+            class="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-800"
+          >
+            <i class="pi pi-lock text-xs mt-1"></i>
+            <span>{{ t("clientProfile.walkInLocked") }}</span>
+          </div>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label
@@ -84,7 +93,7 @@
               >
                 {{ t('clientProfile.info.firstName') }}
               </label>
-              <InputText v-model="editForm.first_name" class="w-full" />
+              <InputText v-model="editForm.first_name" class="w-full" :disabled="clientData.is_walk_in" />
             </div>
             <div>
               <label
@@ -92,7 +101,7 @@
               >
                 {{ t('clientProfile.info.lastName') }}
               </label>
-              <InputText v-model="editForm.last_name" class="w-full" />
+              <InputText v-model="editForm.last_name" class="w-full" :disabled="clientData.is_walk_in" />
             </div>
           </div>
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -102,7 +111,7 @@
               >
                 {{ t('clientProfile.info.email') }}
               </label>
-              <InputText v-model="editForm.email" class="w-full" />
+              <InputText v-model="editForm.email" class="w-full" :disabled="clientData.is_walk_in" />
             </div>
             <div>
               <label
@@ -110,7 +119,7 @@
               >
                 {{ t('clientProfile.info.phone') }}
               </label>
-              <InputText v-model="editForm.phone" class="w-full" />
+              <InputText v-model="editForm.phone" class="w-full" :disabled="clientData.is_walk_in" />
             </div>
             <div>
               <label
@@ -224,18 +233,12 @@
             >
               <span
                 class="text-xs px-2 py-0.5 rounded uppercase font-bold mr-2"
-                :class="getStatusColor(appt.status)"
+                :class="historyBadge(appt.status)"
               >
                 {{ t(`common.status.${statusKey(appt.status)}`) }}
               </span>
-              <span class="font-bold">
-                €{{
-                  (
-                    Number(appt.total_service_price || 0) +
-                    Number(appt.total_product_price || 0)
-                  ).toFixed(2)
-                }}
-              </span>
+              <AppointmentNotesTip :appointment="appt" class="mr-1 align-middle" />
+              <PaidAmount v-if="!authStore.isStaff" :paid="appt.paid" :total="appt.total" onlyPaid />
             </div>
           </div>
         </div>
@@ -315,15 +318,15 @@
               />
               <Dropdown
                 v-model="assignForm.payment_method"
-                :options="['cash', 'card', 'bank-transfer']"
+                :options="MONEY_METHODS"
                 :placeholder="t('clientProfile.membership.paymentMethod')"
                 class="w-full"
               >
                 <template #value="slotProps">
-                  {{ slotProps.value ? t(`common.paymentMethod.${slotProps.value}`) : "" }}
+                  {{ slotProps.value ? methodChoiceLabel(t, slotProps.value) : "" }}
                 </template>
                 <template #option="slotProps">
-                  {{ t(`common.paymentMethod.${slotProps.option}`) }}
+                  {{ methodChoiceLabel(t, slotProps.option) }}
                 </template>
               </Dropdown>
               <div class="flex gap-2">
@@ -342,7 +345,7 @@
         <div v-if="activeTab === 'Files'" class="space-y-4">
           <div
             class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:bg-gray-50 transition-colors cursor-pointer"
-            @click="$refs.fileInput.click()"
+            @click="fileInput?.click()"
           >
             <input
               type="file"
@@ -387,14 +390,13 @@
                 </div>
               </div>
               <div class="flex gap-1">
-                <a
+                <Button
                   v-if="isShopAdmin"
-                  :href="`/api/v1/clients/files/${file.id}?token=${token}`"
-                  target="_blank"
-                  class="p-button p-component p-button-icon-only p-button-text p-button-rounded p-button-secondary"
-                >
-                  <span class="pi pi-download"></span>
-                </a>
+                  icon="pi pi-download"
+                  class="p-button-text p-button-secondary p-button-rounded"
+                  :loading="downloadingFileId === file.id"
+                  @click="downloadFile(file)"
+                />
                 <Button
                   icon="pi pi-eye"
                   class="p-button-text p-button-secondary p-button-rounded"
@@ -419,32 +421,34 @@
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../composables/useNotify";
+import { historyBadge, statusKey } from "../utils/appointmentStatus";
+import { MONEY_METHODS, methodChoiceLabel } from "../utils/paymentMethods";
+import { api, ApiError, ifRefused, saveBlob, withMessage } from "../api/http";
+import { formatMoney } from "../utils/format";
 import { ref, watch, computed } from "vue";
-import Exercises from "./Exercises.vue";
 import ClientPackagesPanel from "./ClientPackagesPanel.vue";
 import { useAuthStore } from "../stores/auth";
 import { useSettingsStore } from "../stores/settings";
-import { storeToRefs } from "pinia";
+import { fullyHidden, hiddenAmount, shownMoney } from "../utils/paymentFilters";
+import PaidAmount from "./PaidAmount.vue";
+import AppointmentNotesTip from "./AppointmentNotesTip.vue";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 import { useI18n } from "vue-i18n";
 const { t } = useI18n();
 const authStore = useAuthStore();
 const toast = useToast();
+const notify = useNotify();
 const confirm = useConfirm();
 const isShopAdmin = authStore.isShopAdmin;
 const settingsStore = useSettingsStore();
-const { shopSettings } = storeToRefs(settingsStore);
 
-const props = defineProps(["visible", "clientId", "initialTab"]);
-const emit = defineEmits(["update:visible", "refresh"]);
+const props = defineProps(["clientId", "initialTab"]);
+const emit = defineEmits(["refresh"]);
 
-const isVisible = computed({
-  get: () => props.visible,
-  set: (val) => emit("update:visible", val),
-});
+const isVisible = defineModel<boolean>("visible", { default: false });
 
-const token = localStorage.getItem("token");
 const activeTab = ref("Info");
 const loading = ref(false);
 const saving = ref(false);
@@ -453,73 +457,37 @@ const clientData = ref<any>(null);
 const history = ref<any[]>([]);
 const files = ref<any[]>([]);
 const editForm = ref<any>({});
-const fileInput = ref<any>(null);
+const fileInput = ref<HTMLInputElement | null>(null);
 const viewingFileId = ref<number | null>(null); // Track which file is loading
 
-// Computed property for the Avatar initials
-const initials = computed(() => {
-  if (!clientData.value) return "";
-  const f = clientData.value.first_name?.[0] || "";
-  const l = clientData.value.last_name?.[0] || "";
-  return `${f}${l}`.toUpperCase();
-});
-
-const visibleHistory = computed(() => {
-  return history.value.filter((a) => {
-    const isCashEquivalent =
-      a.payment_method === "cash" ||
-      (a.payment_method === "gift-card" && a.gift_card_source_method === "cash");
-    if (settingsStore.hideCashPaid && a.payment_status === "paid" && isCashEquivalent) return false;
-    if (settingsStore.hideCardPaid && a.payment_status === "paid" && a.payment_method === "card") return false;
-    return true;
-  });
-});
-
-const attendanceRate = computed(() => {
-  if (!history.value || history.value.length === 0) return 0;
-
-  // Calculate the end of the current day (23:59:59)
-  const endOfToday = new Date();
-  endOfToday.setHours(23, 59, 59, 999);
-
-  // Filter appointments up to the end of today
-  const relevantAppointments = history.value.filter((appt) => {
-    return new Date(appt.start_time) <= endOfToday;
-  });
-
-  if (relevantAppointments.length === 0) return 0;
-
-  // Calculate Numerator: (Completed + New)
-  const successCount = relevantAppointments.filter((appt) =>
-    ["completed", "new"].includes(appt.status?.toLowerCase()),
-  ).length;
-
-  // Calculate Denominator: (Completed + No-Show + New + Confirmed + Cancelled)
-  const validStatuses = [
-    "completed",
-    "no-show",
-    "new",
-    "confirmed",
-    "cancelled",
-  ];
-  const totalCount = relevantAppointments.filter((appt) =>
-    validStatuses.includes(appt.status?.toLowerCase()),
-  ).length;
-
-  if (totalCount === 0) return 0;
-
-  // Return as a whole percentage
-  return Math.round((successCount / totalCount) * 100);
-});
+// The cash and card filters hide the services paid that way, or part of one;
+// a visit left with none is hidden, and its money shown leaves that out.
+const visibleHistory = computed(() =>
+  history.value
+    .map((a) => {
+      const services = a.services_paid || [];
+      const hiddenCost = services.reduce((n: number, x: any) => n + hiddenAmount(x.hidden, settingsStore), 0);
+      const money = shownMoney(Number(a.total_service_price || 0) + Number(a.total_product_price || 0), a.paid, services, settingsStore);
+      if (!hiddenCost) return { ...a, ...money };
+      const shown = services.filter((x: any) => !fullyHidden(x.charged, x.hidden, settingsStore));
+      if (!shown.length) return null;
+      return {
+        ...a,
+        ...money,
+        service_names: shown.map((x: any) => x.name).join(", "),
+        staff_names: [...new Set(shown.map((x: any) => x.staff).filter(Boolean))].join(", "),
+        total_service_price: Number(a.total_service_price || 0) - hiddenCost,
+        deposit_amount: Math.max(0, Number(a.deposit_amount || 0) - hiddenCost),
+      };
+    })
+    .filter(Boolean),
+);
 
 const fetchClientData = async () => {
   if (!props.clientId) return;
   loading.value = true;
   try {
-    const res = await fetch(`/api/v1/clients/${props.clientId}/full`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const data = await res.json();
+    const data = await api.get(`/api/v1/clients/${props.clientId}/full`);
     clientData.value = data.client;
     history.value = data.history;
     files.value = data.files;
@@ -554,10 +522,7 @@ const fetchMembership = async () => {
   if (!props.clientId) return;
   membershipLoading.value = true;
   try {
-    const res = await fetch(`/api/v1/clients/${props.clientId}/membership`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const data = await res.json();
+    const data = await api.get(`/api/v1/clients/${props.clientId}/membership`);
     membership.value = data.membership;
     membershipUsage.value = data.usage || [];
     showAssignMembership.value = false;
@@ -567,26 +532,21 @@ const fetchMembership = async () => {
 };
 
 const fetchAllTiers = async () => {
-  const res = await fetch("/api/v1/membership-tiers", {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (res.ok) allTiers.value = (await res.json()).filter((t: any) => t.is_active);
+  const tiers = await api.get("/api/v1/membership-tiers").catch(ifRefused(null));
+  if (tiers) allTiers.value = tiers.filter((t: any) => t.is_active);
 };
 
 const assignMembership = async () => {
   if (!assignForm.value.tier_id) return;
   membershipActionLoading.value = true;
   try {
-    const res = await fetch(`/api/v1/clients/${props.clientId}/membership`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify(assignForm.value),
-    });
-    if (!res.ok) throw new Error((await res.json()).error || t('clientProfile.membership.toasts.assignFailed'));
+    await api
+      .post(`/api/v1/clients/${props.clientId}/membership`, assignForm.value)
+      .catch(withMessage(t('clientProfile.membership.toasts.assignFailed')));
     toast.add({ severity: "success", summary: t('clientProfile.membership.toasts.assigned'), life: 3000 });
     await fetchMembership();
   } catch (e: any) {
-    toast.add({ severity: "error", summary: t('common.error'), detail: e.message, life: 4000 });
+    notify.error(e.message);
   } finally {
     membershipActionLoading.value = false;
   }
@@ -595,16 +555,13 @@ const assignMembership = async () => {
 const renewMembership = async () => {
   membershipActionLoading.value = true;
   try {
-    const res = await fetch(`/api/v1/clients/${props.clientId}/membership/renew`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ payment_method: "cash" }),
-    });
-    if (!res.ok) throw new Error((await res.json()).error || t('clientProfile.membership.toasts.renewFailed'));
+    await api
+      .post(`/api/v1/clients/${props.clientId}/membership/renew`, { payment_method: "cash" })
+      .catch(withMessage(t('clientProfile.membership.toasts.renewFailed')));
     toast.add({ severity: "success", summary: t('clientProfile.membership.toasts.renewed'), life: 3000 });
     await fetchMembership();
   } catch (e: any) {
-    toast.add({ severity: "error", summary: t('common.error'), detail: e.message, life: 4000 });
+    notify.error(e.message);
   } finally {
     membershipActionLoading.value = false;
   }
@@ -618,22 +575,20 @@ const confirmCancelMembership = () => {
     acceptClass: "p-button-danger",
     accept: async () => {
       try {
-        const res = await fetch(`/api/v1/clients/${props.clientId}/membership`, {
-          method: "DELETE",
-          headers: { Authorization: `Bearer ${token}` },
+        await api.del(`/api/v1/clients/${props.clientId}/membership`).catch((e) => {
+          throw e instanceof ApiError ? new Error(t('clientProfile.membership.toasts.cancelFailed')) : e;
         });
-        if (!res.ok) throw new Error(t('clientProfile.membership.toasts.cancelFailed'));
         toast.add({ severity: "success", summary: t('clientProfile.membership.toasts.cancelled'), life: 3000 });
         await fetchMembership();
       } catch (e: any) {
-        toast.add({ severity: "error", summary: t('common.error'), detail: e.message, life: 4000 });
+        notify.error(e.message);
       }
     },
   });
 };
 
 watch(
-  () => props.visible,
+  () => isVisible.value,
   (val) => {
     if (val && props.clientId) {
       activeTab.value = props.initialTab || "Info";
@@ -659,15 +614,15 @@ const saveClientInfo = async () => {
       payload.date_of_birth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     }
 
-    const res = await fetch(`/api/v1/clients/${props.clientId}`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(payload),
-    });
-    if (res.ok) {
+    const saved = await api
+      .put(`/api/v1/clients/${props.clientId}`, payload)
+      .then(() => true)
+      .catch((e) => {
+        if (!(e instanceof ApiError)) throw e;
+        if (e.status === 409) toast.add({ severity: "warn", summary: t("clientProfile.walkInLocked"), life: 6000 });
+        return false;
+      });
+    if (saved) {
       clientData.value = { ...clientData.value, ...payload };
       emit("refresh");
     }
@@ -685,12 +640,11 @@ const handleFileUpload = async (event: any) => {
   formData.append("file", file);
 
   try {
-    const res = await fetch(`/api/v1/clients/${props.clientId}/files`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-      body: formData,
-    });
-    if (res.ok) {
+    const uploaded = await api
+      .upload(`/api/v1/clients/${props.clientId}/files`, formData)
+      .then(() => true)
+      .catch(ifRefused(false));
+    if (uploaded) {
       await fetchClientData();
     } else {
       toast.add({
@@ -715,11 +669,7 @@ const deleteFile = (fileId: number) => {
     acceptClass: "p-button-danger",
     accept: async () => {
       try {
-        const res = await fetch(`/api/v1/clients/files/${fileId}`, {
-          method: "DELETE",
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) throw new Error("Request failed");
+        await api.del(`/api/v1/clients/files/${fileId}`);
         files.value = files.value.filter((f: any) => f.id !== fileId);
       } catch (e) {
         toast.add({
@@ -745,33 +695,30 @@ const getFileIcon = (type: string) => {
   return "pi-file";
 };
 
-const STATUS_KEYS: Record<string, string> = {
-  new: "new", confirmed: "confirmed", started: "started", arrived: "arrived",
-  completed: "completed", cancelled: "cancelled", "no-show": "noShow", "no-response": "noResponse",
-};
-const statusKey = (s: string) => STATUS_KEYS[s] || s;
 
-const getStatusColor = (s: string) => {
-  const map: any = {
-    new: "bg-blue-100 text-blue-800",
-    confirmed: "bg-purple-100 text-purple-800",
-    completed: "bg-green-100 text-green-800",
-    cancelled: "bg-red-100 text-red-800",
-    "no-show": "bg-red-200 text-red-900",
-    "no-response": "bg-amber-100 text-amber-800",
-  };
-  return map[s] || "bg-gray-100";
+// Downloads a file under its own name, with the login in the request header
+// (not ?token= in a link).
+const downloadingFileId = ref<any>(null);
+const downloadFile = async (file: any) => {
+  downloadingFileId.value = file.id;
+  try {
+    saveBlob(await api.blob(`/api/v1/clients/files/${file.id}`), file.file_name || "file");
+  } catch {
+    toast.add({
+      severity: "error",
+      summary: t('clientProfile.files.previewFailedSummary'),
+      detail: t('clientProfile.files.previewFailedDetail'),
+      life: 3000,
+    });
+  } finally {
+    downloadingFileId.value = null;
+  }
 };
+
 const viewFile = async (file: any) => {
   viewingFileId.value = file.id;
   try {
-    const response = await fetch(`/api/v1/clients/files/${file.id}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    if (!response.ok) throw new Error("Failed to fetch file");
-
-    const blob = await response.blob();
+    const blob = await api.blob(`/api/v1/clients/files/${file.id}`);
     const fileType = file.file_type || "application/pdf";
     const newBlob = new Blob([blob], { type: fileType });
 
@@ -780,9 +727,10 @@ const viewFile = async (file: any) => {
     // Open the tab
     window.open(blobUrl, "_blank");
 
+    // Kept a minute: freed after 100 ms, a slow tab could find it gone.
     setTimeout(() => {
       window.URL.revokeObjectURL(blobUrl);
-    }, 100);
+    }, 60000);
   } catch (err) {
     toast.add({
       severity: "error",

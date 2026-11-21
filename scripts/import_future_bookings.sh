@@ -117,15 +117,17 @@ WHERE a.shop_id = :'target'
   AND aps.start_time >= NOW()
   AND NOT EXISTS (SELECT 1 FROM transactions t WHERE t.appointment_id = a.id)
   AND NOT EXISTS (SELECT 1 FROM product_sales ps WHERE ps.appointment_id = a.id)
-  AND NOT EXISTS (SELECT 1 FROM membership_usage mu WHERE mu.appointment_id = a.id);
+  AND NOT EXISTS (SELECT 1 FROM membership_usage mu WHERE mu.appointment_id = a.id)
+  AND a.updated_at IS NULL;
 
-SELECT COUNT(*) AS preserved_with_payment_data
+SELECT COUNT(*) AS preserved_paid_or_edited_in_app
 FROM appointments a
 JOIN appointment_services aps ON aps.appointment_id = a.id
 WHERE a.shop_id = :'target'
   AND aps.start_time >= NOW()
   AND (
-    EXISTS (SELECT 1 FROM transactions t WHERE t.appointment_id = a.id)
+    a.updated_at IS NOT NULL
+    OR EXISTS (SELECT 1 FROM transactions t WHERE t.appointment_id = a.id)
     OR EXISTS (SELECT 1 FROM product_sales ps WHERE ps.appointment_id = a.id)
     OR EXISTS (SELECT 1 FROM membership_usage mu WHERE mu.appointment_id = a.id)
   );

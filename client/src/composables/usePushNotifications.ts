@@ -1,4 +1,6 @@
 import { ref } from "vue";
+import { useI18n } from "vue-i18n";
+import { useToast } from "primevue/usetoast";
 import { useAuthStore } from "../stores/auth";
 
 const isSupported =
@@ -16,6 +18,16 @@ const urlBase64ToUint8Array = (base64String: string) => {
   const rawData = window.atob(base64);
   return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
 };
+
+// iOS only allows push subscriptions once the site has been added to the home
+// screen (from Safari's share menu); in a regular Safari tab asking would
+// just fail, so it isn't offered there. Newer iPads say they're a Mac; a "Mac"
+// with a touch screen is one.
+const isIPadAsMac = navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+const isIOS = (/iphone|ipad|ipod/i.test(navigator.userAgent) || isIPadAsMac) && !(window as any).MSStream;
+const isStandalone =
+  window.matchMedia?.("(display-mode: standalone)").matches || (window.navigator as any).standalone === true;
+const availableHere = !isIOS || isStandalone;
 
 export type SubscribeResult =
   | "subscribed"
@@ -79,5 +91,17 @@ export function usePushNotifications() {
     }
   };
 
-  return { isSupported, permission, subscribe };
+  // Subscribes and tells the client how it went.
+  const toast = useToast();
+  const { t } = useI18n();
+  const enable = async () => {
+    const result = await subscribe();
+    if (result === "subscribed") {
+      toast.add({ severity: "success", detail: t("portal.notifications.enabledToast"), life: 3000 });
+    } else if (typeof result === "object" && result.error) {
+      toast.add({ severity: "error", detail: t("portal.notifications.errorToast", { reason: result.error }), life: 6000 });
+    }
+  };
+
+  return { isSupported, availableHere, permission, subscribe, enable };
 }

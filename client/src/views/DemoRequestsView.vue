@@ -83,34 +83,26 @@
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../composables/useNotify";
+import { formatDate as dateText } from "../utils/format";
+import { api } from "../api/http";
 import { ref, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
-import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 
-const { t } = useI18n();
-const toast = useToast();
+const { t, locale } = useI18n();
+const notify = useNotify();
 const confirm = useConfirm();
 
 const requests = ref<any[]>([]);
 const loading = ref(false);
 
-const formatDate = (d: string) =>
-  new Date(d).toLocaleDateString("el-GR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
+const formatDate = (d: string) => dateText(d, locale.value);
 
 const fetchData = async () => {
   loading.value = true;
   try {
-    const token = localStorage.getItem("token");
-    const res = await fetch("/api/v1/platform/demo-requests", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error("Failed");
-    requests.value = await res.json();
+    requests.value = await api.get("/api/v1/platform/demo-requests");
   } catch (err) {
     console.error(err);
     requests.value = [];
@@ -121,31 +113,12 @@ const fetchData = async () => {
 
 const toggleStatus = async (request: any) => {
   const newStatus = request.status === "contacted" ? "new" : "contacted";
-  const token = localStorage.getItem("token");
   try {
-    const res = await fetch(`/api/v1/platform/demo-requests/${request.id}`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ status: newStatus }),
-    });
-    if (!res.ok) throw new Error("Failed");
+    await api.put(`/api/v1/platform/demo-requests/${request.id}`, { status: newStatus });
     request.status = newStatus;
-    toast.add({
-      severity: "success",
-      summary: t("common.success"),
-      detail: t("demoRequests.toast.statusUpdated"),
-      life: 3000,
-    });
+    notify.success(t("demoRequests.toast.statusUpdated"));
   } catch (err) {
-    toast.add({
-      severity: "error",
-      summary: t("common.error"),
-      detail: t("demoRequests.toast.failed"),
-      life: 4000,
-    });
+    notify.error(t("demoRequests.toast.failed"));
   }
 };
 
@@ -156,27 +129,12 @@ const confirmDelete = (request: any) => {
     icon: "pi pi-exclamation-triangle",
     acceptClass: "p-button-danger",
     accept: async () => {
-      const token = localStorage.getItem("token");
       try {
-        const res = await fetch(`/api/v1/platform/demo-requests/${request.id}`, {
-          method: "DELETE",
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) throw new Error("Failed");
+        await api.del(`/api/v1/platform/demo-requests/${request.id}`);
         requests.value = requests.value.filter((r) => r.id !== request.id);
-        toast.add({
-          severity: "success",
-          summary: t("common.success"),
-          detail: t("demoRequests.toast.deleted"),
-          life: 3000,
-        });
+        notify.success(t("demoRequests.toast.deleted"));
       } catch (err) {
-        toast.add({
-          severity: "error",
-          summary: t("common.error"),
-          detail: t("demoRequests.toast.failed"),
-          life: 4000,
-        });
+        notify.error(t("demoRequests.toast.failed"));
       }
     },
   });

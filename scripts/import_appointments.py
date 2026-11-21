@@ -13,28 +13,19 @@ Usage:
     python import_appointments.py appointments.xlsx --commit  # actually insert
 """
 
-import sys
-import os
 import uuid
 import argparse
-import unicodedata
 from datetime import datetime
 
 import psycopg2
 import psycopg2.extras
 import pandas as pd
-from rapidfuzz import process, fuzz
-from dotenv import load_dotenv
+
+from import_common import SHOP_ID, FUZZY_THRESHOLD, best_match, cell_text, db_uri, normalize
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 
-load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
-DB_URI = os.environ.get("POSTGRES_URI")
-if not DB_URI:
-    sys.exit("ERROR: POSTGRES_URI not found in .env")
-
-SHOP_ID         = "00000000-0000-0000-0000-000000000001"
-FUZZY_THRESHOLD = 80
+DB_URI = db_uri()
 
 STATUS_MAP = {
     "επιβεβαιωθηκε": ("confirmed", "unpaid"),
@@ -63,16 +54,6 @@ SAMPLE_PRICES = {
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
-def normalize(s) -> str:
-    """Lowercase + strip Greek diacritics for robust matching."""
-    if not pd.notna(s):
-        return ""
-    s = str(s).strip().lower()
-    s = unicodedata.normalize("NFD", s)
-    s = "".join(c for c in s if unicodedata.category(c) != "Mn")
-    return s
-
-
 def sample_price(name: str) -> float:
     low = normalize(name)
     for kw, price in SAMPLE_PRICES.items():
@@ -82,14 +63,11 @@ def sample_price(name: str) -> float:
 
 
 def fuzzy_match(query: str, norm_to_id: dict, norm_to_display: dict, threshold=FUZZY_THRESHOLD):
-    """Return (id, display_name, score) or (None, None, 0)."""
-    if not query or not norm_to_id:
-        return None, None, 0
-    result = process.extractOne(query, list(norm_to_id.keys()), scorer=fuzz.token_sort_ratio)
-    if result and result[1] >= threshold:
-        key = result[0]
-        return norm_to_id[key], norm_to_display.get(key, key), result[1]
-    return None, None, result[1] if result else 0
+    """Return (id, display_name, score) or (None, None, score)."""
+    key, score = best_match(query, norm_to_id.keys(), threshold)
+    if key is None:
+        return None, None, score
+    return norm_to_id[key], norm_to_display.get(key, key), score
 
 
 def load_lookups(cur):
@@ -148,6 +126,13 @@ def main():
             rows_resolved.append({"row": i, "error": f"Cannot parse date: {raw_date!r}"})
             continue
 
+        # A row without a client name can't be booked for anyone: it's listed,
+        # never turned into a client called "nan".
+        cli_raw = cell_text(row.get("Πελάτης"))
+        if not cli_raw:
+            rows_resolved.append({"row": i, "error": "No client name"})
+            continue
+
         # Staff
         staff_raw  = str(row.get("Υπάλληλος", "")).strip()
         sid, s_disp, s_score = fuzzy_match(normalize(staff_raw), staff_id, staff_display)
@@ -169,8 +154,7 @@ def main():
             except ValueError:
                 pass
 
-        # Client — entire cell is full name
-        cli_raw  = str(row.get("Πελάτης", "")).strip()
+        # Client — entire cell is full name (read above)
         cid, c_disp, c_score = fuzzy_match(normalize(cli_raw), cli_id, cli_display)
         cli_new  = cid is None
         cli_name_out = c_disp if cid else cli_raw

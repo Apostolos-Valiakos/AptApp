@@ -4,6 +4,7 @@
     :class="{
       minimized: chatStore.isMinimized,
       expanded: !chatStore.isMinimized,
+      tucked: tucked && chatStore.isMinimized,
     }"
   >
     <div
@@ -128,7 +129,7 @@
                 <Avatar
                   v-if="message.user_id !== currentUserId"
                   :label="
-                    getInitials(
+                    initials(
                       message.user.staff_name || message.user.username,
                     )
                   "
@@ -186,8 +187,8 @@
 
                     <div v-else-if="message.message_type === 'file'">
                       <a
-                        :href="resolveImageUrl(message)"
-                        target="_blank"
+                        href="#"
+                        @click.prevent="downloadChatFile(message)"
                         class="flex items-center gap-3 p-2 bg-black/5 rounded hover:bg-black/10 transition text-inherit no-underline"
                       >
                         <i class="pi pi-file text-xl"></i>
@@ -267,7 +268,7 @@
               text
               rounded
               class="text-gray-500 hover:text-gray-700"
-              @click="$refs.fileInput.click()"
+              @click="fileInput?.click()"
             />
 
             <textarea
@@ -317,7 +318,7 @@
           >
           <MultiSelect
             v-model="newChannel.memberIds"
-            :options="shopUsers"
+            :options="chatStore.shopUsers"
             optionLabel="staff_name"
             optionValue="id"
             :placeholder="t('chat.selectMembers')"
@@ -348,7 +349,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch, nextTick } from "vue";
+import { useNotify } from "../composables/useNotify";
+import { useIsPhone } from "../composables/useIsPhone";
+import { initials } from "../utils/avatar";
+import { api, saveBlob } from "../api/http";
+import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from "vue";
 import { useChatStore } from "../stores/chat";
 import { useAuthStore } from "../stores/auth";
 import { useToast } from "primevue/usetoast";
@@ -357,15 +362,15 @@ import { useI18n } from "vue-i18n";
 const chatStore = useChatStore();
 const authStore = useAuthStore();
 const toast = useToast();
+const notify = useNotify();
 const { t } = useI18n();
 
 // UI State
-const isMobile = ref(window.innerWidth < 768);
+const isMobile = useIsPhone();
 const messageText = ref("");
 const selectedFile = ref<File | null>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
 const showCreateChannel = ref(false);
-const shopUsers = ref<any[]>([]);
 
 const newChannel = ref({
   name: "",
@@ -373,11 +378,28 @@ const newChannel = ref({
   memberIds: [] as string[],
 });
 
-// Update mobile state on resize
-const checkMobile = () => {
-  isMobile.value = window.innerWidth < 768;
+
+// Phones: the round button slides away while the page scrolls down (it would
+// cover row buttons) and comes back on scrolling up or when scrolling stops.
+const tucked = ref(false);
+let lastScrollY = 0;
+let showAgain: ReturnType<typeof setTimeout> | undefined;
+const onAnyScroll = (e: Event) => {
+  if (!isMobile.value || !chatStore.isMinimized) return;
+  const el = e.target === document ? document.scrollingElement : (e.target as HTMLElement);
+  const y = el?.scrollTop ?? 0;
+  if (y > lastScrollY + 4) tucked.value = true;
+  else if (y < lastScrollY - 4) tucked.value = false;
+  lastScrollY = y;
+  clearTimeout(showAgain);
+  showAgain = setTimeout(() => (tucked.value = false), 900);
 };
-window.addEventListener("resize", checkMobile);
+// Capture: scrolling inside a page's own scroll area counts too.
+window.addEventListener("scroll", onAnyScroll, { capture: true, passive: true });
+onUnmounted(() => {
+  window.removeEventListener("scroll", onAnyScroll, { capture: true });
+  clearTimeout(showAgain);
+});
 
 const currentUserId = computed(
   () => authStore.user?.id || localStorage.getItem("userId"),
@@ -387,39 +409,24 @@ const typingUsers = computed(() => {
   return chatStore.typingInActiveChannel
     .filter((userId: string) => userId !== currentUserId.value)
     .map((userId: string) => {
-      const user = shopUsers.value.find((u) => u.id === userId);
+      const user = chatStore.shopUsers.find((u: any) => u.id === userId);
       return user?.staff_name || user?.username || "Someone";
     });
 });
 
 // Initialize
 onMounted(async () => {
-  const token = localStorage.getItem("token");
+  const token = authStore.token;
   if (token) {
     chatStore.connect(token);
     await chatStore.fetchChannels();
-    await fetchShopUsers();
+    await chatStore.fetchShopUsers();
   }
 });
 
 onUnmounted(() => {
   chatStore.disconnect();
-  window.removeEventListener("resize", checkMobile);
 });
-
-const fetchShopUsers = async () => {
-  try {
-    const token = localStorage.getItem("token");
-    const res = await fetch("/api/v1/chat/shop-users", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const data = await res.json();
-    shopUsers.value = Array.isArray(data) ? data : [];
-  } catch (err) {
-    console.error("Error fetching shop users:", err);
-    shopUsers.value = [];
-  }
-};
 
 const sendMessage = async () => {
   if (!chatStore.activeChannelId) return;
@@ -499,14 +506,7 @@ const scrollToBottom = () => {
   });
 };
 
-let typingTimer: NodeJS.Timeout | null = null;
-const handleTyping = () => {
-  chatStore.sendTyping(true);
-  if (typingTimer) clearTimeout(typingTimer);
-  typingTimer = setTimeout(() => {
-    chatStore.sendTyping(false);
-  }, 1000);
-};
+const handleTyping = () => chatStore.noteTyping();
 
 const handleFileSelect = (event: Event) => {
   const target = event.target as HTMLInputElement;
@@ -525,19 +525,10 @@ const createChannel = async () => {
     showCreateChannel.value = false;
     newChannel.value = { name: "", description: "", memberIds: [] };
   } catch (err) {
-    toast.add({ severity: "error", summary: t('common.error'), detail: t('chat.createChannelFailed'), life: 3000 });
+    notify.error(t('chat.createChannelFailed'));
   }
 };
 
-const getInitials = (name: string) => {
-  if (!name) return "?";
-  return name
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
-};
 
 const formatTime = (timestamp: string) => {
   const date = new Date(timestamp);
@@ -548,7 +539,7 @@ const formatTime = (timestamp: string) => {
   return date.toLocaleDateString("en-GB");
 };
 
-const formatFileSize = (bytes: number | undefined) => {
+const formatFileSize = (bytes: number | null | undefined) => {
   if (!bytes) return "0 B";
   const k = 1024;
   const sizes = ["B", "KB", "MB", "GB"];
@@ -570,15 +561,41 @@ const resolveImageUrl = (message: any) => {
     return message.file_url;
   }
   if (message.id && !String(message.id).startsWith("temp-")) {
-    const token = localStorage.getItem("token");
-
-    const baseUrl =
-      (import.meta.env.VITE_API_BASE_URL as string) || window.location.origin;
-
-    return `${baseUrl}/api/v1/chat/file/${message.id}?token=${token}`;
+    const id = String(message.id);
+    const local = chatFileUrls.get(id);
+    if (local) return local;
+    if (!chatFilesAsked.has(id)) {
+      chatFilesAsked.add(id);
+      api
+        .blob(chatFileUrl(id))
+        .then((data) => chatFileUrls.set(id, URL.createObjectURL(data)))
+        .catch(() => {});
+    }
   }
   return "";
 };
+
+// Chat files come with the login in the request header (never ?token= in a
+// link): an image is fetched once and shown from a local copy; a file is
+// fetched when clicked and saved under its own name.
+const chatFileUrl = (id: string) =>
+  `${(import.meta.env.VITE_API_BASE_URL as string) || window.location.origin}/api/v1/chat/file/${id}`;
+const chatFileUrls = reactive(new Map<string, string>());
+const chatFilesAsked = new Set<string>();
+const downloadChatFile = async (message: any) => {
+  if (!message) return;
+  if (message.file_url && /^(blob|data):/.test(message.file_url)) {
+    window.open(message.file_url, "_blank");
+    return;
+  }
+  if (!message.id || String(message.id).startsWith("temp-")) return;
+  try {
+    saveBlob(await api.blob(chatFileUrl(String(message.id))), message.file_name || "file");
+  } catch {
+    toast.add({ severity: "error", summary: t("common.error"), life: 3000 });
+  }
+};
+onUnmounted(() => chatFileUrls.forEach((url) => URL.revokeObjectURL(url)));
 
 watch(
   () => chatStore.activeMessages,
@@ -603,6 +620,11 @@ watch(
 .floating-chat.minimized {
   bottom: 20px;
   right: 20px;
+}
+.floating-chat.minimized.tucked {
+  transform: translateY(150%);
+  opacity: 0;
+  pointer-events: none;
 }
 
 .chat-minimized {

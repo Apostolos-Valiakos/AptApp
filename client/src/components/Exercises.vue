@@ -151,6 +151,7 @@
 </template>
 
 <script setup lang="ts">
+import { api, ifRefused } from "../api/http";
 import { ref, onMounted, computed, watch } from "vue";
 import Button from "primevue/button";
 import Dialog from "primevue/dialog";
@@ -178,19 +179,9 @@ const newExercise = ref({ name: "", category: "", description: "" });
 const loadData = async () => {
   if (!props.clientId) return;
   loading.value = true;
-  const token = localStorage.getItem("token");
-
   try {
-    const resList = await fetch("/api/v1/exercises", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    exercises.value = await resList.json();
-
-    const resStatus = await fetch(
-      `/api/v1/clients/${props.clientId}/exercises`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    const ids = await resStatus.json();
+    exercises.value = await api.get("/api/v1/exercises");
+    const ids = await api.get(`/api/v1/clients/${props.clientId}/exercises`);
     completedIds.value = new Set(ids);
   } catch (e) {
     console.error(e);
@@ -231,15 +222,8 @@ const toggleExercise = async (exerciseId: string) => {
   else completedIds.value.delete(exerciseId);
 
   try {
-    const token = localStorage.getItem("token");
-    await fetch(`/api/v1/clients/${props.clientId}/exercises/toggle`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ exerciseId, completed: newState }),
-    });
+    // A refusal now undoes the tick too (it used to stay ticked).
+    await api.post(`/api/v1/clients/${props.clientId}/exercises/toggle`, { exerciseId, completed: newState });
   } catch (e) {
     console.error("Failed to toggle", e);
     if (newState) completedIds.value.delete(exerciseId);
@@ -257,23 +241,14 @@ const toggleExpand = (id: string) => {
 };
 
 const createExercise = async () => {
-  const token = localStorage.getItem("token");
   const payload = {
     ...newExercise.value,
     category: newExercise.value.category || "General",
   };
 
   try {
-    const res = await fetch("/api/v1/exercises", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(payload),
-    });
-    if (res.ok) {
-      const added = await res.json();
+    const added = await api.post("/api/v1/exercises", payload).catch(ifRefused(null));
+    if (added) {
       exercises.value.push(added);
       showAddDialog.value = false;
       newExercise.value = { name: "", category: "", description: "" };
@@ -288,14 +263,10 @@ const deleteExercise = async (id: string) => {
     return;
   }
 
-  const token = localStorage.getItem("token");
   try {
-    const res = await fetch(`/api/v1/exercises/${id}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const deleted = await api.del(`/api/v1/exercises/${id}`).then(() => true).catch(ifRefused(false));
 
-    if (res.ok) {
+    if (deleted) {
       exercises.value = exercises.value.filter((ex) => ex.id !== id);
       completedIds.value.delete(id);
     } else {

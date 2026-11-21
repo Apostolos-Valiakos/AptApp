@@ -1,32 +1,32 @@
 <template>
   <div class="space-y-6">
-    <!-- Page Header -->
-    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-      <div class="flex justify-between items-center">
-        <div class="flex items-center gap-3">
+    <!-- Page Header: on phones the button goes under the title. -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
+      <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+        <div class="flex items-center gap-3 min-w-0">
           <div class="w-10 h-10 rounded-xl bg-[var(--p-primary-50)] flex items-center justify-center">
             <i class="pi pi-list-check text-[var(--p-primary-600)]"></i>
           </div>
           <div>
-            <h1 class="text-2xl font-bold text-gray-900">{{ t('services.title') }}</h1>
+            <h1 class="text-xl sm:text-2xl font-bold text-gray-900">{{ t('services.title') }}</h1>
             <p class="text-sm text-gray-500">{{ t('services.subtitle', { count: services.length }) }}</p>
           </div>
         </div>
         <Button
           :label="t('services.addNew')"
           icon="pi pi-plus"
+          class="w-full sm:w-auto whitespace-nowrap"
           @click="openNew"
         />
       </div>
-      <div class="mt-4">
-        <span class="p-input-icon-left">
-          <i class="pi pi-search mr-3" />
-          <InputText
-            v-model="search"
-            :placeholder="t('services.search')"
-            class="w-64"
-          />
-        </span>
+      <div class="mt-4 relative w-full sm:w-64">
+        <i class="pi pi-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+        <InputText
+          v-model="search"
+          type="search"
+          :placeholder="t('services.search')"
+          class="w-full !pl-10"
+        />
       </div>
     </div>
 
@@ -49,7 +49,7 @@
       <div
         v-for="service in searchResults"
         :key="service.id"
-        class="flex items-center gap-3 px-5 py-3 border-b border-gray-50 last:border-b-0 hover:bg-gray-50"
+        class="flex items-center gap-2 sm:gap-3 px-3 sm:px-5 py-3 border-b border-gray-50 last:border-b-0 hover:bg-gray-50"
       >
         <ServiceRowBody :service="service" @edit="editService(service)" @delete="confirmDelete(service)" />
       </div>
@@ -72,10 +72,19 @@
       >
         <template #item="{ element: group }">
           <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-            <div class="flex items-center gap-3 px-5 py-4 border-b border-gray-100 bg-gray-50/60">
+            <div class="flex items-center gap-2 sm:gap-3 px-3 sm:px-5 py-3 sm:py-4 border-b border-gray-100 bg-gray-50/60">
               <i class="pi pi-bars category-drag-handle cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500"></i>
-              <h3 class="font-bold text-gray-900">{{ group.label }}</h3>
+              <h3 class="font-bold text-gray-900 min-w-0 truncate">{{ group.label }}</h3>
               <span class="text-xs text-gray-400">({{ group.items.length }})</span>
+              <button
+                type="button"
+                class="w-8 h-8 -m-1.5 flex-shrink-0 flex items-center justify-center text-gray-400 hover:text-gray-700"
+                v-tooltip="t('services.renameCategory.button')"
+                data-testid="rename-category"
+                @click="openRenameCategory(group.label)"
+              >
+                <i class="pi pi-pencil text-xs"></i>
+              </button>
               <div class="ml-auto flex items-center gap-2">
                 <ColorPicker
                   :modelValue="resolveServiceColor(null, group.items[0]?.category_color_code).replace('#', '')"
@@ -102,7 +111,7 @@
               @end="onServiceDragEnd(group)"
             >
               <template #item="{ element: service }">
-                <div class="flex items-center gap-3 px-5 py-3 border-b border-gray-50 last:border-b-0 hover:bg-gray-50">
+                <div class="flex items-center gap-2 sm:gap-3 px-3 sm:px-5 py-3 border-b border-gray-50 last:border-b-0 hover:bg-gray-50">
                   <i class="pi pi-bars service-drag-handle cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 text-sm"></i>
                   <ServiceRowBody :service="service" @edit="editService(service)" @delete="confirmDelete(service)" />
                 </div>
@@ -114,7 +123,7 @@
 
       <!-- Uncategorized — always last, service-level drag only (no category to reposition) -->
       <div v-if="uncategorizedGroup.items.length" class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mt-4">
-        <div class="flex items-center gap-3 px-5 py-4 border-b border-gray-100 bg-gray-50/60">
+        <div class="flex items-center gap-2 sm:gap-3 px-3 sm:px-5 py-3 sm:py-4 border-b border-gray-100 bg-gray-50/60">
           <h3 class="font-bold text-gray-900">{{ uncategorizedGroup.label }}</h3>
           <span class="text-xs text-gray-400">({{ uncategorizedGroup.items.length }})</span>
         </div>
@@ -126,7 +135,7 @@
           @end="onServiceDragEnd(uncategorizedGroup)"
         >
           <template #item="{ element: service }">
-            <div class="flex items-center gap-3 px-5 py-3 border-b border-gray-50 last:border-b-0 hover:bg-gray-50">
+            <div class="flex items-center gap-2 sm:gap-3 px-3 sm:px-5 py-3 border-b border-gray-50 last:border-b-0 hover:bg-gray-50">
               <i class="pi pi-bars service-drag-handle cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 text-sm"></i>
               <ServiceRowBody :service="service" @edit="editService(service)" @delete="confirmDelete(service)" />
             </div>
@@ -134,6 +143,36 @@
         </draggable>
       </div>
     </template>
+
+    <!-- Rename a category (and it on all its services) -->
+    <Dialog
+      v-model:visible="renameCategory.visible"
+      :header="t('services.renameCategory.title')"
+      modal
+      :style="{ width: '24rem', maxWidth: '95vw' }"
+    >
+      <label class="block text-sm font-medium text-gray-700 mb-1">{{ t("services.renameCategory.newName") }}</label>
+      <InputText
+        v-model="renameCategory.to"
+        class="w-full"
+        autofocus
+        maxlength="100"
+        data-testid="rename-category-input"
+        @keydown.enter="saveRenameCategory"
+      />
+      <p class="text-xs text-gray-400 mt-2">{{ t("services.renameCategory.note") }}</p>
+      <template #footer>
+        <Button :label="t('common.cancel')" text @click="renameCategory.visible = false" />
+        <Button
+          :label="t('common.save')"
+          icon="pi pi-check"
+          :loading="renameCategory.saving"
+          :disabled="!renameCategory.to.trim() || renameCategory.to.trim() === renameCategory.from"
+          data-testid="rename-category-save"
+          @click="saveRenameCategory"
+        />
+      </template>
+    </Dialog>
 
     <!-- Edit / Add Dialog -->
     <Dialog
@@ -182,8 +221,27 @@
               mode="decimal"
               :minFractionDigits="2"
               :maxFractionDigits="2"
+              :disabled="comboPriced"
               class="w-full"
             />
+            <p v-if="comboPriced" class="text-xs text-gray-400 mt-1">{{ t('services.dialog.comboPriceFromParts') }}</p>
+          </div>
+
+          <!-- A redemption is booked at €0; for the staff bonus it counts as another service. -->
+          <div v-if="isRedemption" class="md:col-span-2" data-testid="service-bonus-link">
+            <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('services.dialog.bonusService') }}</label>
+            <Dropdown
+              v-model="editingService.bonus_service_id"
+              :options="bonusServiceOptions"
+              optionLabel="label"
+              optionValue="id"
+              showClear
+              filter
+              :placeholder="t('services.dialog.bonusServicePlaceholder')"
+              class="w-full"
+              data-testid="service-bonus-service"
+            />
+            <p class="text-xs text-gray-400 mt-1">{{ t('services.dialog.bonusServiceNote') }}</p>
           </div>
 
           <!-- Color picker — full width with light gray background -->
@@ -283,6 +341,25 @@
                 :placeholder="t('services.dialog.comboComponentsPlaceholder')"
                 class="w-full"
               />
+              <!-- The price of each part inside this combination (optional, all or none). -->
+              <div v-if="comboParts.length" class="mt-3 space-y-2" data-testid="combo-part-prices">
+                <p class="text-xs text-gray-500">{{ t('services.dialog.comboPartPricesNote') }}</p>
+                <div v-for="part in comboParts" :key="part.id" class="flex items-center gap-3">
+                  <span class="flex-1 min-w-0 text-sm text-gray-700 truncate">{{ part.name }}</span>
+                  <span class="text-xs text-gray-400 whitespace-nowrap">{{ formatMoney(part.price) }}</span>
+                  <InputNumber
+                    v-model="editingService.combo_part_prices[part.id]"
+                    mode="decimal"
+                    :min="0"
+                    :minFractionDigits="2"
+                    :maxFractionDigits="2"
+                    :placeholder="t('services.dialog.comboPartPrice')"
+                    :inputId="`combo-price-${part.id}`"
+                    inputClass="w-28"
+                  />
+                </div>
+                <p v-if="comboPricesPartial" class="text-xs text-amber-600">{{ t('services.dialog.comboPricesIncomplete') }}</p>
+              </div>
               <p class="text-xs text-gray-400 mt-2" v-if="comboSummary">{{ comboSummary }}</p>
             </div>
           </div>
@@ -363,6 +440,10 @@
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../composables/useNotify";
+import { formatDuration } from "../utils/format";
+import { round2 } from "../utils/money";
+import { formatMoney } from "../utils/format";
 import { ref, onMounted, computed, watch, h } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
@@ -372,6 +453,7 @@ import MultiSelect from "primevue/multiselect";
 import draggable from "vuedraggable";
 import { groupServicesByCategory } from "../utils/serviceGroups";
 import { resolveServiceColor } from "../utils/serviceColors";
+import { api, ApiError } from "../api/http";
 
 const { t } = useI18n();
 
@@ -412,27 +494,37 @@ const ServiceRowBody = (props: { service: any }, { emit }: any) =>
             )
           : null,
       ]),
+      // Phones: duration · price · bookable online, under the name.
+      h("div", { class: "md:hidden flex items-center gap-3 mt-1 text-sm text-gray-600" }, [
+        h("span", { class: "inline-flex items-center gap-1" }, [
+          h("i", { class: "pi pi-clock text-gray-400 text-xs" }),
+          formatDurationLabel(props.service.duration_minutes),
+        ]),
+        h("span", { class: "font-medium text-gray-800" }, formatMoney(props.service.price)),
+        props.service.bookable_online
+          ? h("i", { class: "pi pi-check-circle text-green-600 text-xs", title: t("services.dialog.bookableOnline") })
+          : null,
+      ]),
     ]),
-    h("span", { class: "inline-flex items-center gap-1.5 text-sm text-gray-700 flex-shrink-0 w-24" }, [
+    h("span", { class: "hidden md:inline-flex items-center gap-1.5 text-sm text-gray-700 flex-shrink-0 w-24" }, [
       h("i", { class: "pi pi-clock text-gray-400 text-xs" }),
       formatDurationLabel(props.service.duration_minutes),
     ]),
-    h("span", { class: "inline-flex items-center gap-1 text-sm font-medium text-gray-800 flex-shrink-0 w-20" }, [
-      h("i", { class: "pi pi-euro text-gray-400 text-xs" }),
-      Number(props.service.price).toFixed(2),
+    h("span", { class: "hidden md:inline-flex items-center gap-1 text-sm font-medium text-gray-800 flex-shrink-0 w-20" }, [
+      formatMoney(props.service.price),
     ]),
     h("i", {
       class: props.service.bookable_online
-        ? "pi pi-check-circle text-green-600 flex-shrink-0"
-        : "pi pi-minus text-gray-300 flex-shrink-0",
+        ? "hidden md:inline pi pi-check-circle text-green-600 flex-shrink-0"
+        : "hidden md:inline pi pi-minus text-gray-300 flex-shrink-0",
       title: t("services.dialog.bookableOnline"),
     }),
-    h("div", { class: "flex gap-1 items-center flex-shrink-0" }, [
+    h("div", { class: "flex gap-0.5 sm:gap-1 items-center flex-shrink-0" }, [
       h(
         "button",
         {
           type: "button",
-          class: "p-2 rounded-full hover:bg-gray-100 text-gray-500",
+          class: "w-10 h-10 sm:w-auto sm:h-auto sm:p-2 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500",
           title: t("common.edit"),
           onClick: () => emit("edit"),
         },
@@ -442,7 +534,7 @@ const ServiceRowBody = (props: { service: any }, { emit }: any) =>
         "button",
         {
           type: "button",
-          class: "p-2 rounded-full hover:bg-red-50 text-red-500",
+          class: "w-10 h-10 sm:w-auto sm:h-auto sm:p-2 flex items-center justify-center rounded-full hover:bg-red-50 text-red-500",
           title: t("common.delete"),
           onClick: () => emit("delete"),
         },
@@ -459,9 +551,12 @@ onMounted(() => {
 });
 
 const toast = useToast();
+const notify = useNotify();
 const confirm = useConfirm();
 
 const services = ref<any[]>([]);
+// Services in this category are redemptions (see migration 0020).
+const REDEMPTION_CATEGORY = "Εξαργύρωση";
 const staffList = ref<any[]>([]);
 const loading = ref(true);
 const dialogVisible = ref(false);
@@ -518,8 +613,36 @@ const comboComponentOptions = computed(() =>
   services.value.filter((s: any) => s.id !== editingService.value.id),
 );
 
+// The parts in the order picked, each with its own price inside the combination.
+const comboParts = computed(() =>
+  isCombo.value
+    ? (editingService.value.combo_component_ids || [])
+        .map((id: string) => services.value.find((s: any) => s.id === id))
+        .filter(Boolean)
+    : [],
+);
+const partPrice = (id: string) => editingService.value.combo_part_prices?.[id];
+const isSet = (v: any) => v != null && v !== "";
+// Every part has a price: the combination costs their sum.
+const comboPriced = computed(
+  () => comboParts.value.length > 0 && comboParts.value.every((p: any) => isSet(partPrice(p.id))),
+);
+const comboPricesPartial = computed(
+  () => !comboPriced.value && comboParts.value.some((p: any) => isSet(partPrice(p.id))),
+);
+watch(
+  () => comboParts.value.map((p: any) => partPrice(p.id)),
+  () => {
+    if (comboPriced.value) {
+      const sum = comboParts.value.reduce((total: number, p: any) => total + Number(partPrice(p.id)), 0);
+      editingService.value.price = round2(sum);
+    }
+  },
+);
+
 const comboSummary = computed(() => {
   if (!isCombo.value || !editingService.value.combo_component_ids?.length) return "";
+  if (comboPriced.value) return t("services.dialog.comboPricedSummary", { price: formatMoney(editingService.value.price) });
   const picked = comboComponentOptions.value.filter((s: any) =>
     editingService.value.combo_component_ids.includes(s.id),
   );
@@ -527,7 +650,7 @@ const comboSummary = computed(() => {
   const price = picked.reduce((sum: number, s: any) => sum + Number(s.price || 0), 0);
   return t("services.dialog.comboComponentsSummary", {
     minutes,
-    price: price.toFixed(2),
+    price: formatMoney(price),
   });
 });
 
@@ -543,12 +666,8 @@ watch(hasVariations, (val) => {
 });
 
 const fetchStaff = async () => {
-  const token = localStorage.getItem("token");
   try {
-    const res = await fetch("/api/v1/staff", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (res.ok) staffList.value = await res.json();
+    staffList.value = await api.get("/api/v1/staff");
   } catch (err) {
     // Non-critical — the default-staff dropdown and eligibility grid just stay empty.
   }
@@ -571,74 +690,70 @@ const categoryOptions = computed(() =>
 );
 
 const fetchServices = async () => {
-  const token = localStorage.getItem("token");
   try {
-    const res = await fetch("/api/v1/services", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (res.ok) {
-      services.value = await res.json();
-      rebuildGroups();
-    } else if (res.status === 401) {
-      console.error("Unauthorized");
-    }
-    loading.value = false;
+    services.value = await api.get("/api/v1/services");
+    rebuildGroups();
   } catch (err) {
-    toast.add({
-      severity: "error",
-      summary: t('common.error'),
-      detail: t('services.toast.loadFailed'),
-      life: 3000,
-    });
+    notify.error(t('services.toast.loadFailed'));
+  } finally {
+    // Also when it fails (the spinner used to stay on).
+    loading.value = false;
   }
 };
-
-const token = () => localStorage.getItem("token");
 
 const saveCategoryColor = async (name: string, color: string | null) => {
   try {
-    const res = await fetch("/api/v1/service-categories/color", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
-      body: JSON.stringify({
-        name,
-        color_code: color ? `#${color.replace(/^#/, "")}` : null,
-      }),
+    await api.put("/api/v1/service-categories/color", {
+      name,
+      color_code: color ? `#${color.replace(/^#/, "")}` : null,
     });
-    if (!res.ok) throw new Error();
     fetchServices();
   } catch {
-    toast.add({ severity: "error", summary: t("common.error"), detail: t("services.toast.saveFailed"), life: 3000 });
+    notify.error(t("services.toast.saveFailed"));
   }
 };
 
-const onCategoryDragEnd = async () => {
+const renameCategory = ref({ visible: false, from: "", to: "", saving: false });
+const openRenameCategory = (name: string) => {
+  renameCategory.value = { visible: true, from: name, to: name, saving: false };
+};
+const saveRenameCategory = async () => {
+  const { from } = renameCategory.value;
+  const to = renameCategory.value.to.trim();
+  if (!to || to === from) return;
+  renameCategory.value.saving = true;
   try {
-    const res = await fetch("/api/v1/service-categories/reorder", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
-      body: JSON.stringify({ order: groupedServices.value.map((g) => g.label) }),
-    });
-    if (!res.ok) throw new Error();
-  } catch (err) {
-    toast.add({ severity: "error", summary: t("common.error"), detail: t("services.toast.reorderFailed"), life: 3000 });
+    await api.put("/api/v1/service-categories/rename", { from, to });
+    renameCategory.value.visible = false;
+    toast.add({ severity: "success", summary: t("services.renameCategory.done", { name: to }), life: 3000 });
     fetchServices();
+  } catch (e) {
+    const exists = e instanceof ApiError && e.data?.error === "category_exists";
+    notify.error(t(exists ? "services.renameCategory.exists" : "services.toast.saveFailed"));
+  } finally {
+    renameCategory.value.saving = false;
   }
 };
 
-const onServiceDragEnd = async (group: { items: any[] }) => {
+// Saves a new order after a drag; if it fails, says so and reloads the real order.
+const saveOrder = async (url: string, order: any[]) => {
   try {
-    const res = await fetch("/api/v1/services/reorder", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
-      body: JSON.stringify({ order: group.items.map((s) => s.id) }),
-    });
-    if (!res.ok) throw new Error();
+    await api.put(url, { order });
   } catch (err) {
-    toast.add({ severity: "error", summary: t("common.error"), detail: t("services.toast.reorderFailed"), life: 3000 });
+    notify.error(t("services.toast.reorderFailed"));
     fetchServices();
   }
 };
+const onCategoryDragEnd = () => saveOrder("/api/v1/service-categories/reorder", groupedServices.value.map((g) => g.label));
+const onServiceDragEnd = (group: { items: any[] }) => saveOrder("/api/v1/services/reorder", group.items.map((s) => s.id));
+
+const isRedemption = computed(() => String(editingService.value.category || "").trim() === REDEMPTION_CATEGORY);
+// What a redemption can count as: the shop's other services, not redemptions themselves.
+const bonusServiceOptions = computed(() =>
+  services.value
+    .filter((s: any) => s.id !== editingService.value.id && String(s.category || "").trim() !== REDEMPTION_CATEGORY && (s.is_active !== false || s.id === editingService.value.bonus_service_id))
+    .map((s: any) => ({ id: s.id, label: `${s.name} · ${formatMoney(s.price)}` })),
+);
 
 const openNew = () => {
   editingService.value = {
@@ -649,7 +764,9 @@ const openNew = () => {
     color_code: "var(--p-primary-100)",
     bookable_online: false,
     default_staff_id: null,
+    bonus_service_id: null,
     combo_component_ids: [],
+    combo_part_prices: {},
     variations: [],
     staff_ids: staffList.value.map((s: any) => s.id),
   };
@@ -662,6 +779,9 @@ const editService = (service: any) => {
   editingService.value = {
     ...service,
     combo_component_ids: (service.combo_components || []).map((c: any) => c.id),
+    combo_part_prices: Object.fromEntries(
+      (service.combo_components || []).map((c: any) => [c.id, c.combo_price == null ? null : Number(c.combo_price)]),
+    ),
     variations: (service.variations || []).map((v: any) => ({ ...v, price: Number(v.price) })),
     staff_ids: [...(service.eligible_staff_ids || [])],
   };
@@ -681,10 +801,25 @@ const saveService = async () => {
     return;
   }
 
+  if (comboPricesPartial.value) {
+    toast.add({
+      severity: "warn",
+      summary: t('common.required'),
+      detail: t('services.dialog.comboPricesIncomplete'),
+      life: 4000,
+    });
+    return;
+  }
+
   const payload = { ...editingService.value };
+  // Each part with its price inside the combination (null: not set).
+  payload.combo_parts = isCombo.value
+    ? (payload.combo_component_ids || []).map((id: string) => ({ id, price: isSet(partPrice(id)) ? Number(partPrice(id)) : null }))
+    : [];
+  delete payload.combo_component_ids;
+  delete payload.combo_part_prices;
   delete payload.combo_components;
   delete payload.eligible_staff_ids;
-  if (!isCombo.value) payload.combo_component_ids = [];
   if (!hasVariations.value) payload.variations = [];
 
   if (payload.color_code && !payload.color_code.startsWith("#")) {
@@ -698,29 +833,13 @@ const saveService = async () => {
   const method = editingService.value.id ? "PUT" : "POST";
 
   try {
-    await fetch(url, {
-      method,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token()}`,
-      },
-      body: JSON.stringify(payload),
-    });
-    toast.add({
-      severity: "success",
-      summary: t('common.success'),
-      detail: t('services.toast.saved'),
-      life: 3000,
-    });
+    // A refusal now shows as an error (it used to say "saved" regardless).
+    await api.request(method, url, payload);
+    notify.success(t('services.toast.saved'));
     dialogVisible.value = false;
     fetchServices();
   } catch (err) {
-    toast.add({
-      severity: "error",
-      summary: t('common.error'),
-      detail: t('services.toast.saveFailed'),
-      life: 3000,
-    });
+    notify.error(t('services.toast.saveFailed'));
   }
 };
 
@@ -736,38 +855,17 @@ const confirmDelete = (service: any) => {
 
 const deleteService = async (service: any) => {
   try {
-    const res = await fetch(`/api/v1/services/${service.id}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${token()}` },
-    });
-    if (!res.ok) throw new Error("Delete failed");
-    const { archived } = await res.json();
-    toast.add({
-      severity: "success",
-      summary: t('common.success'),
-      detail: archived
+    const { archived } = await api.del(`/api/v1/services/${service.id}`);
+    notify.success(archived
         ? t('services.toast.archived', { name: service.name })
-        : t('services.toast.deleted', { name: service.name }),
-      life: 4000,
-    });
+        : t('services.toast.deleted', { name: service.name }));
     fetchServices();
   } catch (err) {
-    toast.add({
-      severity: "error",
-      summary: t('common.error'),
-      detail: t('services.toast.deleteFailed'),
-      life: 3000,
-    });
+    notify.error(t('services.toast.deleteFailed'));
   }
 };
 
-const formatDurationLabel = (minutes: number) => {
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return h > 0
-    ? t('services.duration.hoursMinutes', { h, m })
-    : t('services.duration.minutes', { m });
-};
+const formatDurationLabel = (minutes: number) => formatDuration(minutes, t);
 </script>
 
 <style scoped>

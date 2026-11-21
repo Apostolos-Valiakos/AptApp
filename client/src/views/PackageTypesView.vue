@@ -1,16 +1,17 @@
 <template>
-  <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-    <div class="flex justify-between items-center mb-6">
-      <div class="flex items-center gap-3">
+  <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
+    <!-- Page Header: on phones the button goes under the title. -->
+    <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-4 sm:mb-6">
+      <div class="flex items-center gap-3 min-w-0">
         <div class="w-10 h-10 rounded-xl bg-[var(--p-primary-50)] flex items-center justify-center">
           <i class="pi pi-clone text-[var(--p-primary-600)]"></i>
         </div>
         <div>
-          <h1 class="text-2xl font-bold text-gray-900">{{ t("packages.title") }}</h1>
+          <h1 class="text-xl sm:text-2xl font-bold text-gray-900">{{ t("packages.title") }}</h1>
           <p class="text-sm text-gray-500 mt-0.5">{{ t("packages.subtitle") }}</p>
         </div>
       </div>
-      <Button :label="t('packages.addNew')" icon="pi pi-plus" @click="openNew" />
+      <Button :label="t('packages.addNew')" icon="pi pi-plus" class="w-full sm:w-auto whitespace-nowrap" @click="openNew" />
     </div>
 
     <DataTable :value="types" :loading="loading" class="p-datatable-sm" :rowHover="true" responsiveLayout="scroll">
@@ -21,16 +22,20 @@
         <template #body="{ data }">
           <span class="font-semibold">{{ data.name }}</span>
           <Tag v-if="!data.is_active" :value="t('packages.inactive')" severity="secondary" class="ml-2" />
+          <!-- Phones: the other columns, under the name. -->
+          <div class="md:hidden text-sm text-gray-500 mt-0.5">
+            {{ data.service_name }} · {{ data.visits }} {{ t('packages.visits').toLowerCase() }} · {{ formatMoney(data.price) }}
+          </div>
         </template>
       </Column>
-      <Column field="service_name" :header="t('packages.service')" />
-      <Column :header="t('packages.visits')">
+      <Column headerClass="hidden md:table-cell" bodyClass="hidden md:table-cell" field="service_name" :header="t('packages.service')" />
+      <Column :header="t('packages.visits')" headerClass="hidden md:table-cell" bodyClass="hidden md:table-cell">
         <template #body="{ data }">{{ data.visits }}</template>
       </Column>
-      <Column :header="t('packages.price')">
-        <template #body="{ data }">€{{ Number(data.price).toFixed(2) }}</template>
+      <Column :header="t('packages.price')" headerClass="hidden md:table-cell" bodyClass="hidden md:table-cell">
+        <template #body="{ data }">{{ formatMoney(data.price) }}</template>
       </Column>
-      <Column :header="t('packages.validity')">
+      <Column :header="t('packages.validity')" headerClass="hidden md:table-cell" bodyClass="hidden md:table-cell">
         <template #body="{ data }">
           {{ data.validity_days ? t("packages.validFor", { n: data.validity_days }) : t("packages.neverExpires") }}
         </template>
@@ -50,7 +55,7 @@
       </Column>
     </DataTable>
 
-    <Dialog v-model:visible="showDialog" modal :header="form.id ? t('packages.edit') : t('packages.addNew')" :style="{ width: '28rem' }">
+    <Dialog v-model:visible="showDialog" modal :header="form.id ? t('packages.edit') : t('packages.addNew')" :style="{ width: '28rem', maxWidth: '95vw' }">
       <div class="space-y-4">
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">{{ t("packages.name") }}</label>
@@ -93,14 +98,16 @@
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../composables/useNotify";
+import { useAdminActions } from "../composables/useResource";
+import { formatMoney } from "../utils/format";
 import { ref, reactive, computed, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
-import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 import { groupServicesByCategory } from "../utils/serviceGroups";
 
 const { t } = useI18n();
-const toast = useToast();
+const notify = useNotify();
 const confirm = useConfirm();
 
 const types = ref<any[]>([]);
@@ -112,16 +119,7 @@ const form = reactive<any>({ id: null, name: "", service_id: null, visits: 5, pr
 
 const canSave = computed(() => form.name.trim() && form.service_id && form.visits > 0 && form.price >= 0);
 
-const api = async (url: string, method = "GET", body?: any) => {
-  const res = await fetch(url, {
-    method,
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("token")}` },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || t("packages.failed"));
-  return data;
-};
+const { call: api, run } = useAdminActions(() => t("packages.failed"), () => load());
 
 const load = async () => {
   loading.value = true;
@@ -130,7 +128,7 @@ const load = async () => {
     types.value = pt;
     services.value = groupServicesByCategory(sv.filter((s: any) => s.is_active !== false), t("services.table.uncategorized"));
   } catch (e: any) {
-    toast.add({ severity: "error", summary: t("common.error"), detail: e.message, life: 3500 });
+    notify.error(e.message);
   } finally {
     loading.value = false;
   }
@@ -145,14 +143,6 @@ const openEdit = (p: any) => {
   showDialog.value = true;
 };
 
-const run = async (fn: () => Promise<any>) => {
-  try {
-    await fn();
-    await load();
-  } catch (e: any) {
-    toast.add({ severity: "error", summary: t("common.error"), detail: e.message, life: 3500 });
-  }
-};
 
 const save = async () => {
   saving.value = true;

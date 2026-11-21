@@ -3,6 +3,13 @@
 // pre-sorted by each category's and service's own drag-configured position)
 // rather than re-sorting alphabetically, so admin-configured ordering carries
 // through to every screen that groups services this way.
+// A staff member's services, in their own order (ids are that order). Ids with
+// no matching service, such as an archived one, are left out.
+export const servicesInStaffOrder = (services: any[], ids: string[]) => {
+  const byId = new Map((services || []).map((s) => [s.id, s]));
+  return ids.map((id) => byId.get(id)).filter(Boolean);
+};
+
 export const groupServicesByCategory = (services: any[], uncategorizedLabel: string) => {
   const groups = new Map<string, any[]>();
   let uncategorized: any[] | null = null;

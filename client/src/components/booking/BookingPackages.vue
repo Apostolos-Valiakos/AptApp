@@ -1,22 +1,10 @@
 <template>
-  <div v-if="clientId" class="bg-white border border-gray-200 rounded-xl p-4 mb-6">
-    <div class="flex items-center justify-between mb-3">
-      <h4 class="text-xs font-bold text-gray-500 uppercase tracking-wider">
-        {{ t("packages.title") }}
-      </h4>
-      <Button
-        v-if="canSell"
-        size="small"
-        text
-        icon="pi pi-plus"
-        :label="t('packages.card.sell')"
-        @click="showSell = true"
-      />
-    </div>
-
-    <p v-if="!packages.length" class="text-sm text-gray-400">
-      {{ t("packages.card.none") }}
-    </p>
+  <div v-if="clientId">
+  <!-- The client's packages, to use a visit -->
+  <div v-if="view === 'use' && packages.length" class="bg-white border border-gray-200 rounded-xl p-4 mb-6">
+    <h4 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">
+      {{ t("packages.title") }}
+    </h4>
 
     <div v-for="p in packages" :key="p.id" class="py-3 border-t border-gray-100 first:border-0 first:pt-0">
       <div class="flex items-center justify-between gap-2">
@@ -58,6 +46,10 @@
       </div>
     </div>
 
+  </div>
+
+  <!-- Packages being sold with this payment -->
+  <template v-if="view === 'sell'">
     <div
       v-for="(p, idx) in pendingPackages"
       :key="'pending-' + idx"
@@ -68,7 +60,7 @@
         <div class="text-xs text-amber-700">{{ t("packages.pending.label") }}</div>
       </div>
       <div class="flex items-center gap-2 flex-shrink-0">
-        <span class="font-bold text-amber-900">€{{ Number(p.price).toFixed(2) }}</span>
+        <span class="font-bold text-amber-900">{{ formatMoney(p.price) }}</span>
         <button type="button" class="text-amber-500 hover:text-amber-700" @click="removePending(idx)">
           <i class="pi pi-times"></i>
         </button>
@@ -81,21 +73,26 @@
       :immediate="false"
       @picked="onPicked"
     />
+  </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from "vue";
+import { useNotify } from "../../composables/useNotify";
+import { formatDate as dateText } from "../../utils/format";
+import { api, ApiError } from "../../api/http";
+import { formatMoney } from "../../utils/format";
+import { ref, watch, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
-import { useAuthStore } from "../../stores/auth";
 import SellPackageDialog from "./SellPackageDialog.vue";
 
 const { t, locale } = useI18n();
 const toast = useToast();
-const authStore = useAuthStore();
+const notify = useNotify();
 
 const props = defineProps<{
+  view: "use" | "sell";
   clientId: string | null;
   appointmentId: string | null;
   servicesList: any[];
@@ -117,26 +114,19 @@ const removePending = (idx: number) => {
   emit("update:pendingPackages", list);
 };
 
-const role = computed(() => authStore.user?.role);
-const canSell = computed(() => ["admin", "super_admin", "frontdesk"].includes(role.value));
-
 const packages = ref<any[]>([]);
 const showSell = ref(false);
 const busyId = ref<string | null>(null);
 
-const headers = () => ({
-  "Content-Type": "application/json",
-  Authorization: `Bearer ${localStorage.getItem("token")}`,
-});
 
 const load = async () => {
+  if (props.view === "sell") return;
   if (!props.clientId) {
     packages.value = [];
     return;
   }
   try {
-    const res = await fetch(`/api/v1/clients/${props.clientId}/packages`, { headers: headers() });
-    packages.value = res.ok ? await res.json() : [];
+    packages.value = await api.get(`/api/v1/clients/${props.clientId}/packages`);
   } catch {
     packages.value = [];
   }
@@ -146,8 +136,7 @@ const load = async () => {
 watch(() => [props.clientId, props.appointmentId], load);
 onMounted(load);
 
-const fmtDate = (d: string) =>
-  new Date(d).toLocaleDateString(locale.value, { day: "2-digit", month: "short", year: "numeric" });
+const fmtDate = (d: string) => dateText(d, locale.value, "short");
 
 const lineCount = (serviceId: string) =>
   props.servicesList.filter((s) => s.service_id === serviceId).length;
@@ -168,18 +157,16 @@ const redeem = async (p: any) => {
   try {
     const apptId = await props.ensureSaved();
     if (!apptId) return;
-    const res = await fetch(`/api/v1/appointments/${apptId}/package-redemptions`, {
-      method: "POST",
-      headers: headers(),
-      body: JSON.stringify({ client_package_id: p.id }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || t("packages.failed"));
+    const data = await api
+      .post(`/api/v1/appointments/${apptId}/package-redemptions`, { client_package_id: p.id })
+      .catch((e: ApiError) => {
+        throw new Error(e.data?.error || t("packages.failed"));
+      });
     toast.add({ severity: "success", summary: t("packages.card.redeemed"), life: 2500 });
     emit("changed", data);
     await load();
   } catch (e: any) {
-    toast.add({ severity: "error", summary: t("common.error"), detail: e.message, life: 3500 });
+    notify.error(e.message);
   } finally {
     busyId.value = null;
   }
@@ -187,15 +174,15 @@ const redeem = async (p: any) => {
 
 const undo = async (u: any) => {
   try {
-    const res = await fetch(`/api/v1/package-usage/${u.id}`, { method: "DELETE", headers: headers() });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || t("packages.failed"));
+    const data = await api.del(`/api/v1/package-usage/${u.id}`).catch((e: ApiError) => {
+      throw new Error(e.data?.error || t("packages.failed"));
+    });
     emit("changed", { ...data, amount: -Number(u.amount || 0), undo: true } as any);
     await load();
   } catch (e: any) {
-    toast.add({ severity: "error", summary: t("common.error"), detail: e.message, life: 3500 });
+    notify.error(e.message);
   }
 };
 
-defineExpose({ load });
+defineExpose({ load, openSell: () => (showSell.value = true) });
 </script>

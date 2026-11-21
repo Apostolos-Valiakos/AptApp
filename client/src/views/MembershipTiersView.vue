@@ -1,16 +1,17 @@
 <template>
-  <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-    <div class="flex justify-between items-center mb-6">
-      <div class="flex items-center gap-3">
+  <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
+    <!-- Page Header: on phones the button goes under the title. -->
+    <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-4 sm:mb-6">
+      <div class="flex items-center gap-3 min-w-0">
         <div class="w-10 h-10 rounded-xl bg-[var(--p-primary-50)] flex items-center justify-center">
           <i class="pi pi-id-card text-[var(--p-primary-600)]"></i>
         </div>
         <div>
-          <h1 class="text-2xl font-bold text-gray-900">{{ t('membershipTiers.title') }}</h1>
+          <h1 class="text-xl sm:text-2xl font-bold text-gray-900">{{ t('membershipTiers.title') }}</h1>
           <p class="text-sm text-gray-500 mt-0.5">{{ t('membershipTiers.subtitle') }}</p>
         </div>
       </div>
-      <Button :label="t('membershipTiers.addNew')" icon="pi pi-plus" @click="openNewDialog" />
+      <Button :label="t('membershipTiers.addNew')" icon="pi pi-plus" class="w-full sm:w-auto whitespace-nowrap" @click="openNewDialog" />
     </div>
 
     <DataTable
@@ -42,11 +43,11 @@
       </Column>
 
       <Column :header="t('membershipTiers.table.monthlyPrice')">
-        <template #body="slotProps">€{{ Number(slotProps.data.monthly_price).toFixed(2) }}</template>
+        <template #body="slotProps">{{ formatMoney(slotProps.data.monthly_price) }}</template>
       </Column>
 
       <Column :header="t('membershipTiers.table.yearlyPrice')">
-        <template #body="slotProps">€{{ Number(slotProps.data.yearly_price).toFixed(2) }}</template>
+        <template #body="slotProps">{{ formatMoney(slotProps.data.yearly_price) }}</template>
       </Column>
 
       <Column :header="t('membershipTiers.table.gracePeriod')">
@@ -92,21 +93,21 @@
       v-model:visible="tierDialog"
       :header="isEdit ? t('membershipTiers.dialog.editTier') : t('membershipTiers.dialog.newTier')"
       modal
-      :style="{ width: '38rem' }"
+      :style="{ width: '38rem', maxWidth: '95vw' }"
     >
       <div class="space-y-4">
-        <div class="grid grid-cols-2 gap-4">
-          <div class="col-span-2">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div class="sm:col-span-2">
             <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('membershipTiers.dialog.name') }}</label>
             <InputText v-model="form.name" class="w-full" />
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('membershipTiers.dialog.monthlyPrice') }}</label>
-            <InputNumber v-model="form.monthly_price" mode="decimal" :minFractionDigits="2" class="w-full" />
+            <InputNumber v-model="form.monthly_price" mode="decimal" :minFractionDigits="2" class="w-full" inputClass="w-full" />
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('membershipTiers.dialog.yearlyPrice') }}</label>
-            <InputNumber v-model="form.yearly_price" mode="decimal" :minFractionDigits="2" class="w-full" />
+            <InputNumber v-model="form.yearly_price" mode="decimal" :minFractionDigits="2" class="w-full" inputClass="w-full" />
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('membershipTiers.dialog.color') }}</label>
@@ -114,7 +115,7 @@
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('membershipTiers.dialog.gracePeriod') }}</label>
-            <InputNumber v-model="form.grace_period_days" class="w-full" suffix=" days" :min="0" />
+            <InputNumber v-model="form.grace_period_days" class="w-full" inputClass="w-full" suffix=" days" :min="0" />
             <small class="text-gray-400">{{ t('membershipTiers.dialog.gracePeriodNote') }}</small>
           </div>
         </div>
@@ -177,24 +178,27 @@
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../composables/useNotify";
+import { api, ifRefused, withMessage } from "../api/http";
+import { formatMoney } from "../utils/format";
 import { ref, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
+import { useResource } from "../composables/useResource";
 
 const { t } = useI18n();
 const toast = useToast();
+const notify = useNotify();
 const confirm = useConfirm();
 
-const tiers = ref<any[]>([]);
+const { items: tiers, loading, reload: fetchTiers } = useResource<any[]>("/api/v1/membership-tiers");
 const allServices = ref<any[]>([]);
-const loading = ref(true);
 const saving = ref(false);
 const tierDialog = ref(false);
 const isEdit = ref(false);
 const editingId = ref<string | null>(null);
 
-const token = () => localStorage.getItem("token");
 
 const emptyForm = () => ({
   name: "",
@@ -208,23 +212,9 @@ const emptyForm = () => ({
 
 const form = ref<any>(emptyForm());
 
-const fetchTiers = async () => {
-  loading.value = true;
-  try {
-    const res = await fetch("/api/v1/membership-tiers", {
-      headers: { Authorization: `Bearer ${token()}` },
-    });
-    if (res.ok) tiers.value = await res.json();
-  } finally {
-    loading.value = false;
-  }
-};
 
 const fetchServices = async () => {
-  const res = await fetch("/api/v1/services", {
-    headers: { Authorization: `Bearer ${token()}` },
-  });
-  if (res.ok) allServices.value = await res.json();
+  allServices.value = await api.get("/api/v1/services").catch(ifRefused(allServices.value));
 };
 
 onMounted(() => {
@@ -271,25 +261,12 @@ const saveTier = async () => {
       color: `#${form.value.color}`,
       services: form.value.services.filter((s: any) => s.service_id),
     };
-    const res = await fetch(url, {
-      method,
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || "Failed to save tier");
-    }
-    toast.add({
-      severity: "success",
-      summary: t("common.success"),
-      detail: isEdit.value ? t("membershipTiers.toast.updated") : t("membershipTiers.toast.created"),
-      life: 3000,
-    });
+    await api.request(method, url, payload).catch(withMessage("Failed to save tier"));
+    notify.success(isEdit.value ? t("membershipTiers.toast.updated") : t("membershipTiers.toast.created"));
     tierDialog.value = false;
     await fetchTiers();
   } catch (e: any) {
-    toast.add({ severity: "error", summary: t("common.error"), detail: e.message, life: 4000 });
+    notify.error(e.message);
   } finally {
     saving.value = false;
   }
@@ -303,18 +280,11 @@ const confirmDeleteTier = (tier: any) => {
     acceptClass: "p-button-danger",
     accept: async () => {
       try {
-        const res = await fetch(`/api/v1/membership-tiers/${tier.id}`, {
-          method: "DELETE",
-          headers: { Authorization: `Bearer ${token()}` },
-        });
-        if (!res.ok) {
-          const err = await res.json();
-          throw new Error(err.error || "Failed to delete");
-        }
+        await api.del(`/api/v1/membership-tiers/${tier.id}`).catch(withMessage("Failed to delete"));
         tiers.value = tiers.value.filter((t) => t.id !== tier.id);
         toast.add({ severity: "success", summary: t("membershipTiers.toast.deleted"), life: 3000 });
       } catch (e: any) {
-        toast.add({ severity: "error", summary: t("common.error"), detail: e.message, life: 4000 });
+        notify.error(e.message);
       }
     },
   });

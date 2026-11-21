@@ -1,8 +1,10 @@
 import { defineStore } from "pinia";
+import { api } from "../api/http";
+import { readSavedJson } from "../utils/savedLogin";
 import { ref, watch } from "vue";
 
 export const useSettingsStore = defineStore("settings", () => {
-  const user = JSON.parse(localStorage.getItem("user") || "null");
+  const user = readSavedJson("user");
   const isStaff = user?.role === "staff";
 
   // "me" is currently only ever a deliberate choice for the "staff" role —
@@ -80,11 +82,8 @@ export const useSettingsStore = defineStore("settings", () => {
     if (shopSettings.value && !force) return shopSettings.value;
     if (shopSettingsPromise) return shopSettingsPromise;
 
-    const token = localStorage.getItem("token");
-    shopSettingsPromise = fetch("/api/v1/shop", {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((res) => res.json())
+    shopSettingsPromise = api
+      .get("/api/v1/shop")
       .then((data) => {
         shopSettings.value = data;
         return data;

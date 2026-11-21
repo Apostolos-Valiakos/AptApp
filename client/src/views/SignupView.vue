@@ -22,6 +22,7 @@
               class="w-full mt-1"
               inputClass="w-full"
             />
+            <small class="block mt-1" :class="password && !passwordOk(password) ? 'text-red-500' : 'text-gray-500'" data-testid="password-rule">{{ t("common.passwordRule") }}</small>
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700"
@@ -62,16 +63,19 @@
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../composables/useNotify";
 import { ref, computed, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useToast } from "primevue/usetoast";
 import { useI18n } from "vue-i18n";
 import Password from "primevue/password";
+import { passwordOk } from "../utils/password";
 import Button from "primevue/button";
 
 const route = useRoute();
 const router = useRouter();
 const toast = useToast();
+const notify = useNotify();
 const { t } = useI18n();
 
 const password = ref("");
@@ -81,7 +85,7 @@ const tokenError = ref(false);
 const token = route.query.token as string;
 
 const isFormValid = computed(
-  () => password.value.length >= 6 && password.value === confirmPassword.value,
+  () => passwordOk(password.value) && password.value === confirmPassword.value,
 );
 
 onMounted(() => {
@@ -108,12 +112,7 @@ const handleSignup = async () => {
     });
     router.push("/login");
   } catch (err: any) {
-    toast.add({
-      severity: "error",
-      summary: t('common.error'),
-      detail: err.message,
-      life: 3000,
-    });
+    notify.error(err.message);
   } finally {
     loading.value = false;
   }

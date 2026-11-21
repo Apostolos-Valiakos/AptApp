@@ -1,9 +1,11 @@
 import { createRouter, createWebHistory } from "vue-router";
+import { defineAsyncComponent, defineComponent, h } from "vue";
 import { useAuthStore } from "../stores/auth";
 
 // Views — landing/login stay eager (first paint), the rest are lazy-loaded chunks
 import Layout from "../components/Layout.vue";
 import IndexView from "../views/IndexView.vue";
+import SensitiveGate from "../components/SensitiveGate.vue";
 import LoginView from "../views/LoginView.vue";
 const SchedulerView = () => import("../views/SchedulerView.vue");
 const StaffView = () => import("../views/StaffView.vue");
@@ -12,7 +14,13 @@ const ClientsView = () => import("../views/ClientsView.vue");
 const ServicesView = () => import("../views/ServicesView.vue");
 const ProductsView = () => import("../views/ProductsView.vue");
 const GiftCardsView = () => import("../views/GiftCardsView.vue");
-const FinancialsView = () => import("../components/FinancialsView.vue");
+// Opens only after the password is retyped, every time; the page itself (and
+// its requests) doesn't start before that.
+const sensitive = (load: () => Promise<any>) => {
+  const Page = defineAsyncComponent(load);
+  return defineComponent({ render: () => h(SensitiveGate, null, { default: () => h(Page) }) });
+};
+const FinancialsView = sensitive(() => import("../components/FinancialsView.vue"));
 const profileView = () => import("../views/profileView.vue");
 const ClientLayout = () => import("../components/ClientLayout.vue");
 const ClientHomeView = () => import("../views/portal/ClientHomeView.vue");
@@ -24,10 +32,12 @@ const ShopsView = () => import("../views/ShopsView.vue");
 const MembershipTiersView = () => import("../views/MembershipTiersView.vue");
 const DailyReportView = () => import("../views/DailyReportView.vue");
 const PackageTypesView = () => import("../views/PackageTypesView.vue");
-const MembershipReportView = () => import("../views/MembershipReportView.vue");
+const ExpensesView = () => import("../views/ExpensesView.vue");
+const MembershipReportView = sensitive(() => import("../views/MembershipReportView.vue"));
 const QrScannerView = () => import("../views/QrScannerView.vue");
 const DemoRequestsView = () => import("../views/DemoRequestsView.vue");
-const ProductUsageView = () => import("../views/ProductUsageView.vue");
+const ProductUsageView = sensitive(() => import("../views/ProductUsageView.vue"));
+const BonusReportView = sensitive(() => import("../views/BonusReportView.vue"));
 
 const routes = [
   {
@@ -43,6 +53,7 @@ const routes = [
         path: "login", // Αυτό είναι το "/login"
         name: "login",
         component: LoginView,
+        meta: { bare: true },
       },
       {
         path: "/signup",
@@ -77,6 +88,11 @@ const routes = [
           },
           { path: "daily-report", component: DailyReportView },
           {
+            path: "expenses",
+            component: ExpensesView,
+            meta: { requiresShopAdmin: true },
+          },
+          {
             path: "packages",
             component: PackageTypesView,
             meta: { requiresShopAdmin: true },
@@ -84,6 +100,11 @@ const routes = [
           {
             path: "membership-report",
             component: MembershipReportView,
+            meta: { requiresAnalytics: true },
+          },
+          {
+            path: "bonus-report",
+            component: BonusReportView,
             meta: { requiresAnalytics: true },
           },
           { path: "qr-scanner", component: QrScannerView },
@@ -127,6 +148,9 @@ const routes = [
   { path: "/profile", redirect: "/app/profile" },
 ];
 
+// The only pages of the staff app a plain "staff" login may open.
+const STAFF_PAGES = ["/app/scheduler", "/app/profile"];
+
 const router = createRouter({
   history: createWebHistory(),
   routes,
@@ -135,16 +159,34 @@ const router = createRouter({
 router.beforeEach((to, from, next) => {
   const authStore = useAuthStore();
 
+  // The public home page at "/" is a separate static site (landing/, served
+  // by the server), so going there from inside the app (logo, logout) is a
+  // full page load. Only for in-app navigation: when the server itself hands
+  // "/" to the app (landing not built, or the Vite dev server), IndexView
+  // shows instead, with no reload loop.
+  // In development the page runs on its own server (VITE_LANDING_URL, see
+  // client/.env.development), so "/" always goes there.
+  const landingUrl = import.meta.env.VITE_LANDING_URL as string | undefined;
+  if (to.path === "/" && (landingUrl || from.matched.length > 0)) {
+    window.location.assign(landingUrl || "/");
+    return next(false);
+  }
+
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
     return next("/login");
   }
 
   if (to.path === "/login" && authStore.isAuthenticated) {
-    return authStore.isClient ? next("/portal/home") : next("/app/scheduler");
+    if (authStore.isClient) return next("/portal/home");
+    return next(authStore.isOwner ? "/app/platform/shops" : "/app/scheduler");
   }
 
   if (to.path.startsWith("/app") && authStore.isClient) {
     return next("/portal/home");
+  }
+
+  if (authStore.isStaff && to.path.startsWith("/app") && !STAFF_PAGES.includes(to.path)) {
+    return next("/app/scheduler");
   }
 
   if (to.meta.requiresAnalytics && !authStore.isAnalyticsAllowed) {

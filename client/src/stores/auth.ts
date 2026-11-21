@@ -1,9 +1,16 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { useSettingsStore } from "./settings";
+import { onLoggedIn } from "../offline/queue";
+import { SAVED_LOGIN_KEYS, readSavedJson } from "../utils/savedLogin";
 
 export const useAuthStore = defineStore("auth", () => {
-  const user = ref(JSON.parse(localStorage.getItem("user") || "null"));
+  // Damaged saved data: start logged out rather than half logged in.
+  if (readSavedJson("user") === undefined || readSavedJson("originalUser") === undefined) {
+    SAVED_LOGIN_KEYS.forEach((key) => localStorage.removeItem(key));
+  }
+
+  const user = ref(readSavedJson("user"));
   const token = ref(localStorage.getItem("token") || "");
 
   const isAuthenticated = computed(() => !!token.value);
@@ -30,12 +37,13 @@ export const useAuthStore = defineStore("auth", () => {
 
   const isClient = computed(() => user.value?.role === "client");
 
+  // A plain staff member: sees only the calendar and their profile, and changes nothing.
+  const isStaff = computed(() => user.value?.role === "staff");
+
   // While the owner is "viewing as" a shop, the real owner session is stashed here
   // so it can be restored exactly on exit, without ever losing it mid-impersonation.
   const originalToken = ref(localStorage.getItem("originalToken") || "");
-  const originalUser = ref(
-    JSON.parse(localStorage.getItem("originalUser") || "null"),
-  );
+  const originalUser = ref(readSavedJson("originalUser"));
   const isImpersonating = computed(() => !!originalToken.value);
 
   const login = async (username: string, password: string) => {
@@ -61,13 +69,16 @@ export const useAuthStore = defineStore("auth", () => {
           data.user?.shop_force_hide_cash_locked_by || null,
         );
 
+        // Changes saved offline while the session was expired can sync now.
+        onLoggedIn();
+
         return { success: true };
       } else {
-        return { success: false, error: data.error };
+        return { success: false, error: data.error, code: data.code };
       }
     } catch (e) {
       console.error(e);
-      return { success: false, error: "Network error" };
+      return { success: false, error: "Network error", code: "network" };
     }
   };
 
@@ -80,6 +91,9 @@ export const useAuthStore = defineStore("auth", () => {
   };
 
   const logout = () => {
+    // Viewing a shop: logging out only leaves the shop, the owner stays logged in.
+    if (originalToken.value) return exitImpersonation();
+
     token.value = "";
     user.value = null;
     localStorage.removeItem("token");
@@ -104,6 +118,7 @@ export const useAuthStore = defineStore("auth", () => {
     localStorage.setItem("token", newToken);
     user.value = newUser;
     localStorage.setItem("user", JSON.stringify(newUser));
+    onLoggedIn();
   };
 
   const exitImpersonation = () => {
@@ -118,6 +133,7 @@ export const useAuthStore = defineStore("auth", () => {
     originalUser.value = null;
     localStorage.removeItem("originalToken");
     localStorage.removeItem("originalUser");
+    onLoggedIn();
   };
 
   return {
@@ -128,6 +144,7 @@ export const useAuthStore = defineStore("auth", () => {
     isShopAdmin,
     isAnalyticsAllowed,
     isClient,
+    isStaff,
     isImpersonating,
     clientId,
     login,

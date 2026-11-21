@@ -70,6 +70,11 @@
           <div class="text-sm text-gray-700 flex items-center gap-1">
             <i class="pi pi-user text-gray-500 text-xs"></i>
             {{ t('appointmentSwap.client') }}: {{ appt.first_name }} {{ appt.last_name }}
+            <AppointmentNotesTip :appointment="appt" />
+            <PaidAmount v-if="!authStore.isStaff" class="ml-auto text-xs" v-bind="moneyOf(appt)" />
+          </div>
+          <div v-if="appt.client_notes" class="text-xs text-amber-700 truncate mt-0.5" :title="appt.client_notes" data-testid="swap-client-notes">
+            <i class="pi pi-file-edit text-[10px] mr-1"></i>{{ appt.client_notes }}
           </div>
 
           <!-- Staff + Services -->
@@ -147,6 +152,11 @@
           <div class="text-sm text-gray-700 flex items-center gap-1">
             <i class="pi pi-user text-gray-500 text-xs"></i>
             {{ t('appointmentSwap.client') }}: {{ appt.first_name }} {{ appt.last_name }}
+            <AppointmentNotesTip :appointment="appt" />
+            <PaidAmount v-if="!authStore.isStaff" class="ml-auto text-xs" v-bind="moneyOf(appt)" />
+          </div>
+          <div v-if="appt.client_notes" class="text-xs text-amber-700 truncate mt-0.5" :title="appt.client_notes" data-testid="swap-client-notes">
+            <i class="pi pi-file-edit text-[10px] mr-1"></i>{{ appt.client_notes }}
           </div>
 
           <!-- Staff + Services -->
@@ -203,13 +213,24 @@
 </template>
 
 <script setup lang="ts">
+import { formatDate as dateText } from "../utils/format";
 import { ref, computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import Dialog from "primevue/dialog";
 import InputText from "primevue/inputtext";
 import Button from "primevue/button";
+import PaidAmount from "./PaidAmount.vue";
+import AppointmentNotesTip from "./AppointmentNotesTip.vue";
+import { useAuthStore } from "../stores/auth";
+import { useSettingsStore } from "../stores/settings";
+import { shownMoney } from "../utils/paymentFilters";
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
+const authStore = useAuthStore();
+// What was paid and the total, with what the cash/card filters hide left out.
+const filterSettings = useSettingsStore();
+const moneyOf = (appt: Appointment) =>
+  shownMoney(appt.current_appt_total, appt.deposit_amount, appt.services as any[], filterSettings);
 
 interface Appointment {
   id: string;
@@ -226,6 +247,10 @@ interface Appointment {
     staff_name?: string;
   }>;
   staff_id?: string;
+  internal_notes?: string | null;
+  client_notes?: string | null;
+  current_appt_total?: number;
+  deposit_amount?: number;
 }
 
 interface Staff {
@@ -245,17 +270,13 @@ const reset = () => {
 };
 
 const props = defineProps({
-  visible: Boolean,
   appointments: { type: Array as () => Appointment[], default: () => [] },
   staff: { type: Array as () => Staff[], default: () => [] },
 });
 
-const emit = defineEmits(["update:visible", "swap"]);
+const emit = defineEmits(["swap"]);
 
-const visible = computed({
-  get: () => props.visible,
-  set: (v) => emit("update:visible", v),
-});
+const visible = defineModel<boolean>("visible", { default: false });
 
 // Normalize
 const normalizedAppointments = computed(() =>
@@ -316,23 +337,12 @@ const confirmSwap = () => {
   visible.value = false;
 };
 
-const staffColor = (staffId: number | undefined) => {
+const staffColor = (staffId: string | number | undefined) => {
   const s = normalizedStaff.value.find((st) => st.id === staffId);
   return s?.color || "#888";
 };
 
-const formatDate = (dt: string | null) => {
-  if (!dt) return t('appointmentSwap.noTime');
-
-  const d = new Date(dt);
-  const day = String(d.getDate()).padStart(2, "0");
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const year = d.getFullYear();
-  const hours = String(d.getHours()).padStart(2, "0");
-  const minutes = String(d.getMinutes()).padStart(2, "0");
-
-  return `${day}/${month}/${year} - ${hours}:${minutes}`;
-};
+const formatDate = (dt: string | null) => (dt ? dateText(dt, locale.value, "numericTime") : t("appointmentSwap.noTime"));
 watch(visible, (newVal) => {
   if (!newVal) {
     // Dialog was closed

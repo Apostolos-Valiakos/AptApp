@@ -13,6 +13,11 @@
 -- the sync script's own idempotency check matches by client+staff+service+
 -- start_time and won't re-insert a duplicate for a booking that's still present.
 --
+-- Appointments created or edited in the app are also kept: the app stamps
+-- updated_at on both, while imported rows never have one. So a variation,
+-- duration or staff member set in the app survives a re-import, and the sync
+-- skips re-adding them (same client, staff and start time already booked).
+--
 -- Run as: psql "$POSTGRES_URI" -f scripts/clear_future_window_for_reimport.sql
 -- Then re-run sync_bookings.py --commit against the fresh future export.
 
@@ -29,7 +34,8 @@ WHERE a.shop_id = :'target'
   AND aps.start_time >= NOW()
   AND NOT EXISTS (SELECT 1 FROM transactions t WHERE t.appointment_id = a.id)
   AND NOT EXISTS (SELECT 1 FROM product_sales ps WHERE ps.appointment_id = a.id)
-  AND NOT EXISTS (SELECT 1 FROM membership_usage mu WHERE mu.appointment_id = a.id);
+  AND NOT EXISTS (SELECT 1 FROM membership_usage mu WHERE mu.appointment_id = a.id)
+  AND a.updated_at IS NULL;
 
 SELECT COUNT(*) AS appointments_to_clear FROM clear_plan;
 

@@ -73,7 +73,10 @@
                 >{{ t("portal.upcoming.cancelled") }}</span
               >
             </div>
-            <div class="text-sm font-medium mt-1">{{ appt.service_names }}</div>
+            <div class="text-sm font-medium mt-1 flex justify-between gap-2">
+              <span>{{ appt.service_names }}</span>
+              <PaidAmount v-if="appt.status !== 'cancelled'" :paid="appt.paid" :total="totalOf(appt)" class="text-xs" />
+            </div>
             <div
               v-if="appt.staff_names"
               class="text-xs text-gray-500 flex items-center gap-1 mt-1"
@@ -129,9 +132,12 @@
                 >{{ appt.status }}</span
               >
             </div>
-            <div class="text-xs text-gray-400 mt-1">
-              {{ new Date(appt.start_time).toLocaleDateString("en-GB") }}
-              <span v-if="appt.staff_names"> · {{ appt.staff_names }}</span>
+            <div class="text-xs text-gray-400 mt-1 flex justify-between gap-2">
+              <span>
+                {{ new Date(appt.start_time).toLocaleDateString("en-GB") }}
+                <span v-if="appt.staff_names"> · {{ appt.staff_names }}</span>
+              </span>
+              <PaidAmount v-if="appt.status !== 'cancelled' || Number(appt.paid) > 0" :paid="appt.paid" :total="totalOf(appt)" />
             </div>
           </div>
         </div>
@@ -194,7 +200,7 @@
                 <div class="min-w-0">
                   <div class="font-semibold text-gray-900 truncate">{{ svc.name }}</div>
                   <div class="text-xs text-gray-400">
-                    {{ svc.duration_minutes }} min · €{{ Number(svc.price).toFixed(2) }}
+                    {{ svc.duration_minutes }} min · {{ formatMoney(svc.price) }}
                   </div>
                 </div>
               </div>
@@ -327,7 +333,7 @@
             </div>
             <div class="flex justify-between">
               <span class="text-gray-500">{{ t("portal.book.summaryPrice") }}</span>
-              <span class="font-medium">€{{ Number(selectedService?.price).toFixed(2) }}</span>
+              <span class="font-medium">{{ formatMoney(selectedService?.price) }}</span>
             </div>
           </div>
           <div>
@@ -360,6 +366,10 @@
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../../composables/useNotify";
+import { toLocalDateStr } from "../../utils/staffAvailability";
+import { api, ApiError, withMessage } from "../../api/http";
+import { formatMoney } from "../../utils/format";
 import { ref, computed, watch, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
@@ -371,11 +381,15 @@ import DatePicker from "primevue/datepicker";
 import Textarea from "primevue/textarea";
 import ConfirmDialog from "primevue/confirmdialog";
 import { useAuthStore } from "../../stores/auth";
+import PaidAmount from "../../components/PaidAmount.vue";
 
 const { t } = useI18n();
+// A visit's total: its services and products (what was paid is `paid`).
+const totalOf = (appt: any) => Number(appt.total_service_price || 0) + Number(appt.total_product_price || 0);
 const route = useRoute();
 const router = useRouter();
 const toast = useToast();
+const notify = useNotify();
 const confirm = useConfirm();
 const authStore = useAuthStore();
 
@@ -415,13 +429,8 @@ const pastAppointments = computed(() => {
 const fetchHistory = async () => {
   loadingHistory.value = true;
   try {
-    const res = await fetch(`/api/v1/clients/${authStore.clientId}/full`, {
-      headers: { Authorization: `Bearer ${authStore.token}` },
-    });
-    if (res.ok) {
-      const data = await res.json();
-      history.value = data.history || [];
-    }
+    const data = await api.get(`/api/v1/clients/${authStore.clientId}/full`);
+    history.value = data.history || [];
   } catch {
   } finally {
     loadingHistory.value = false;
@@ -439,33 +448,25 @@ const confirmCancel = (appt: any) => {
 
 const cancelAppointment = async (appt: any) => {
   try {
-    const res = await fetch(`/api/v1/portal/appointments/${appt.id}/cancel`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${authStore.token}` },
-    });
-    if (!res.ok) throw new Error((await res.json()).error || "Failed to cancel");
+    await api.post(`/api/v1/portal/appointments/${appt.id}/cancel`).catch(withMessage(t("portal.toast.cancelFailed")));
     history.value = history.value.map((a: any) =>
       a.id === appt.id ? { ...a, status: "cancelled" } : a,
     );
-    toast.add({ severity: "success", summary: "Cancelled", detail: "Appointment cancelled.", life: 3000 });
+    toast.add({ severity: "success", summary: t("portal.toast.cancelled"), detail: t("portal.toast.appointmentCancelled"), life: 3000 });
   } catch (e: any) {
-    toast.add({ severity: "error", summary: "Error", detail: e.message, life: 3000 });
+    notify.error(e.message);
   }
 };
 
 const confirmAppointment = async (appt: any) => {
   try {
-    const res = await fetch(`/api/v1/portal/appointments/${appt.id}/confirm`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${authStore.token}` },
-    });
-    if (!res.ok) throw new Error((await res.json()).error || "Failed to confirm");
+    await api.post(`/api/v1/portal/appointments/${appt.id}/confirm`).catch(withMessage(t("portal.toast.confirmFailed")));
     history.value = history.value.map((a: any) =>
       a.id === appt.id ? { ...a, status: "confirmed" } : a,
     );
-    toast.add({ severity: "success", summary: "Confirmed", detail: "Appointment confirmed.", life: 3000 });
+    toast.add({ severity: "success", summary: t("portal.toast.confirmed"), detail: t("portal.toast.appointmentConfirmed"), life: 3000 });
   } catch (e: any) {
-    toast.add({ severity: "error", summary: "Error", detail: e.message, life: 3000 });
+    notify.error(e.message);
   }
 };
 
@@ -528,17 +529,13 @@ const formattedSelectedSlot = computed(() => {
 const fetchServices = async () => {
   loadingServices.value = true;
   try {
-    const res = await fetch("/api/v1/portal/services", {
-      headers: { Authorization: `Bearer ${authStore.token}` },
+    // 404: the shop has self-booking off.
+    const list = await api.get("/api/v1/portal/services").catch((e) => {
+      if (e instanceof ApiError && e.status === 404) selfBookingAvailable.value = false;
+      throw e;
     });
-    if (res.status === 404) {
-      selfBookingAvailable.value = false;
-      return;
-    }
-    if (res.ok) {
-      services.value = await res.json();
-      selfBookingAvailable.value = true;
-    }
+    services.value = list;
+    selfBookingAvailable.value = true;
   } catch {
   } finally {
     loadingServices.value = false;
@@ -551,11 +548,7 @@ const selectService = async (svc: any) => {
   step.value = 2;
   loadingStaff.value = true;
   try {
-    const res = await fetch(
-      `/api/v1/portal/staff?service_id=${encodeURIComponent(svc.id)}`,
-      { headers: { Authorization: `Bearer ${authStore.token}` } },
-    );
-    if (res.ok) staffOptions.value = await res.json();
+    staffOptions.value = await api.get(`/api/v1/portal/staff?service_id=${encodeURIComponent(svc.id)}`);
   } catch {
   } finally {
     loadingStaff.value = false;
@@ -574,16 +567,10 @@ const fetchSlots = async () => {
   selectedSlot.value = null;
   try {
     const dateStr = toDateInputValue(selectedDate.value);
-    const res = await fetch(
+    const data = await api.get(
       `/api/v1/availability?service_id=${encodeURIComponent(selectedService.value.id)}&staff_id=${encodeURIComponent(selectedStaff.value.id)}&date=${dateStr}`,
-      { headers: { Authorization: `Bearer ${authStore.token}` } },
     );
-    if (res.ok) {
-      const data = await res.json();
-      slots.value = data.slots || [];
-    } else {
-      slots.value = [];
-    }
+    slots.value = data.slots || [];
   } catch {
     slots.value = [];
   } finally {
@@ -591,12 +578,7 @@ const fetchSlots = async () => {
   }
 };
 
-const toDateInputValue = (d: Date) => {
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
-};
+const toDateInputValue = toLocalDateStr;
 
 watch(selectedDate, () => {
   if (step.value === 3) fetchSlots();
@@ -621,25 +603,22 @@ const submitBooking = async () => {
       typeof crypto.randomUUID === "function"
         ? crypto.randomUUID()
         : `${Date.now()}-${Math.random()}`;
-    const res = await fetch("/api/v1/appointments", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${authStore.token}`,
-        "Idempotency-Key": idempotencyKey,
-      },
-      body: JSON.stringify({
-        booking_notes: bookingNotes.value,
-        services: [
-          {
-            service_id: selectedService.value.id,
-            staff_id: selectedStaff.value.id,
-            start_time: selectedSlot.value,
-          },
-        ],
-      }),
-    });
-    if (!res.ok) throw new Error((await res.json()).error || "Failed");
+    await api
+      .post(
+        "/api/v1/appointments",
+        {
+          booking_notes: bookingNotes.value,
+          services: [
+            {
+              service_id: selectedService.value.id,
+              staff_id: selectedStaff.value.id,
+              start_time: selectedSlot.value,
+            },
+          ],
+        },
+        { headers: { "Idempotency-Key": idempotencyKey } },
+      )
+      .catch(withMessage(t("portal.toast.failed")));
     toast.add({ severity: "success", summary: t("portal.book.success"), life: 3000 });
     resetBooking();
     activeTab.value = "myAppointments";

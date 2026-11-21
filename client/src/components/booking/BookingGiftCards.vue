@@ -1,22 +1,5 @@
 <template>
-  <div v-if="canSell" class="bg-white border border-gray-200 rounded-xl p-4 mb-6">
-    <div class="flex items-center justify-between mb-3">
-      <h4 class="text-xs font-bold text-gray-500 uppercase tracking-wider">
-        {{ t("giftCards.quickSell.cardTitle") }}
-      </h4>
-      <Button
-        size="small"
-        text
-        icon="pi pi-plus"
-        :label="t('giftCards.quickSell.sell')"
-        @click="showSell = true"
-      />
-    </div>
-
-    <p v-if="!pendingGiftCards.length" class="text-sm text-gray-400">
-      {{ t("giftCards.quickSell.none") }}
-    </p>
-
+  <div v-if="canSell">
     <div
       v-for="(g, idx) in pendingGiftCards"
       :key="idx"
@@ -27,7 +10,7 @@
         <div class="text-xs text-amber-700 truncate">{{ g.customer_name }}</div>
       </div>
       <div class="flex items-center gap-2 flex-shrink-0">
-        <span class="font-bold text-amber-900">€{{ Number(g.initial_amount).toFixed(2) }}</span>
+        <span class="font-bold text-amber-900">{{ formatMoney(g.initial_amount) }}</span>
         <button type="button" class="text-amber-500 hover:text-amber-700" @click="removePending(idx)">
           <i class="pi pi-times"></i>
         </button>
@@ -43,12 +26,11 @@
 </template>
 
 <script setup lang="ts">
+import { formatMoney } from "../../utils/format";
 import { ref, computed } from "vue";
-import { useI18n } from "vue-i18n";
 import { useAuthStore } from "../../stores/auth";
 import SellGiftCardDialog from "./SellGiftCardDialog.vue";
 
-const { t } = useI18n();
 const authStore = useAuthStore();
 
 const props = defineProps<{
@@ -73,4 +55,6 @@ const removePending = (idx: number) => {
   list.splice(idx, 1);
   emit("update:pendingGiftCards", list);
 };
+
+defineExpose({ openSell: () => (showSell.value = true) });
 </script>

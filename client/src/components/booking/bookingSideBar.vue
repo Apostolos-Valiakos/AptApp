@@ -1,5 +1,5 @@
 <template>
-  <div class="flex flex-col h-full border-l border-gray-200 overflow-hidden">
+  <div class="flex flex-col h-full border-l border-gray-200 overflow-y-auto overflow-x-hidden">
     <div v-if="client" class="p-8 text-center">
       <!-- Avatar -->
       <div
@@ -14,13 +14,38 @@
         {{ client.phone }}
       </p>
 
+      <!-- The client's own notes (the shop's, never shown to the client).
+           Edited here, they are saved with the booking's Save; staff only
+           read them. -->
+      <div class="text-left mt-3 mb-3" data-testid="client-notes">
+        <div class="text-xs font-bold text-gray-400 uppercase mb-1 border-l-2 border-amber-400 pl-2">
+          {{ t("common.clientNotes") }}
+        </div>
+        <p
+          v-if="authStore.isStaff"
+          class="text-sm text-gray-800 whitespace-pre-line break-words"
+          :class="{ 'text-gray-400': !clientNotes }"
+          data-testid="client-notes-text"
+        >{{ clientNotes || t("common.noClientNotes") }}</p>
+        <Textarea
+          v-else
+          :modelValue="clientNotes"
+          @update:modelValue="emit('update:clientNotes', $event)"
+          autoResize
+          rows="2"
+          class="w-full text-sm bg-amber-50"
+          :placeholder="t('common.clientNotesPlaceholder')"
+          data-testid="client-notes-input"
+        />
+      </div>
+
       <!-- Balance badge -->
       <div
         v-if="calculatedBalance > 0 && authStore.isShopAdmin"
         class="inline-flex items-center bg-red-100 text-red-800 text-xs font-bold px-3 py-1 rounded-full mb-6"
       >
         <i class="pi pi-exclamation-circle mr-1"></i>
-        {{ t("bookingSidebar.balance") }}: €{{ calculatedBalance.toFixed(2) }}
+        {{ t("bookingSidebar.balance") }}: {{ formatMoney(calculatedBalance) }}
       </div>
 
       <!-- ΕΟΠΠΥ breakdown card -->
@@ -96,7 +121,7 @@
 
       <!-- Past appointments card -->
       <div
-        v-if="pastAppointments.length"
+        v-if="hasHistory"
         class="text-left bg-white p-4 rounded-xl shadow-sm border border-gray-100 mt-3"
       >
         <h4
@@ -104,16 +129,60 @@
         >
           {{ t("bookingSidebar.pastAppointments") }}
         </h4>
-        <div
-          v-for="appt in pastAppointments"
-          :key="appt.id"
-          class="flex justify-between items-start gap-2 text-sm mb-2 border-b border-gray-50 pb-1.5 last:border-0 last:mb-0"
-        >
-          <span
-            class="text-gray-500 whitespace-nowrap"
-            :class="{ 'line-through opacity-60': isVoided(appt.status) }"
+        <div class="flex flex-wrap gap-1.5 mb-3">
+          <button
+            v-for="f in historyFilters"
+            :key="f.value"
+            type="button"
+            class="px-2.5 py-1 rounded-full text-xs font-medium border transition-colors"
+            :class="
+              historyFilter === f.value
+                ? 'bg-[var(--p-primary-color)] border-transparent text-white'
+                : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+            "
+            @click="historyFilter = f.value"
           >
-            {{ formatApptDate(appt.start_time) }}
+            {{ f.label }}
+          </button>
+        </div>
+        <p v-if="!loadingHistory && !shownPast.length" class="text-xs text-gray-400 py-2">
+          {{ t("bookingSidebar.noMatchingAppointments") }}
+        </p>
+        <div
+          v-for="appt in shownPast"
+          :key="appt.id"
+          class="flex justify-between items-start gap-2 text-sm mb-2 border-b border-gray-50 pb-1.5 last:border-0 last:mb-0 -mx-1.5 px-1.5 pt-1 rounded transition-colors"
+          :class="
+            loadingId === appt.id
+              ? 'bg-[var(--p-primary-50)] cursor-wait'
+              : loadingId
+                ? 'opacity-50 cursor-wait'
+                : 'cursor-pointer hover:bg-gray-50'
+          "
+          role="button"
+          tabindex="0"
+          :aria-busy="loadingId === appt.id"
+          data-testid="past-appointment"
+          @click="openPast(appt)"
+          @keydown.enter.self="openPast(appt)"
+        >
+          <span class="flex flex-col items-start gap-0.5 whitespace-nowrap">
+            <span class="text-gray-500 inline-flex items-center gap-1.5" :class="{ 'line-through opacity-60': isVoided(appt.status) }">
+              <!-- This visit is being opened. -->
+              <i
+                v-if="loadingId === appt.id"
+                class="pi pi-spin pi-spinner text-[var(--p-primary-600)] text-xs"
+                data-testid="past-appointment-loading"
+              ></i>
+              {{ formatApptDate(appt.start_time) }}
+            </span>
+            <span class="inline-flex items-center gap-1">
+              <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded" :class="statusLabel(appt).cls">
+                {{ statusLabel(appt).text }}
+              </span>
+              <AppointmentNotesTip :appointment="appt" />
+            </span>
+            <PaidAmount v-if="!authStore.isStaff" :paid="appt.paid" :total="appt.total" onlyPaid class="text-xs" />
           </span>
           <span
             class="text-right truncate"
@@ -122,8 +191,57 @@
           >
             <span class="font-medium">{{ appt.service_names || "—" }}</span>
             <span v-if="appt.staff_names" class="block text-xs text-gray-400 truncate">{{ appt.staff_names }}</span>
+            <button
+              v-if="canManageDebt && appt.status !== 'cancelled' && Number(appt.owed) > 0"
+              type="button"
+              class="mt-1 text-xs font-semibold text-[var(--p-primary-700)] hover:underline"
+              data-testid="past-appointment-resolve"
+              @click.stop="openResolve({ kind: 'appointment', id: appt.id, amount: Number(appt.owed), label: `${formatApptDate(appt.start_time)} · ${appt.service_names || ''}` })"
+            >
+              {{ t("bookingSidebar.debt.resolve") }}
+            </button>
           </span>
         </div>
+      </div>
+
+      <!-- Manual debts (admin, super admin, frontdesk) -->
+      <div
+        v-if="canManageDebt"
+        class="text-left bg-white p-4 rounded-xl shadow-sm border border-gray-100 mt-3"
+      >
+        <h4 class="text-xs font-bold text-gray-400 uppercase border-l-2 border-[var(--p-primary-300)] pl-2 mb-2">
+          {{ t("bookingSidebar.debt.manualTitle") }}
+        </h4>
+        <p v-if="!openDebts.length" class="text-xs text-gray-400">{{ t("bookingSidebar.debt.none") }}</p>
+        <div
+          v-for="d in openDebts"
+          :key="d.id"
+          class="flex justify-between items-start gap-2 text-sm py-1.5 border-b border-gray-50 last:border-0"
+        >
+          <span class="min-w-0">
+            <span class="block text-gray-900 break-words">{{ d.note }}</span>
+            <span class="block text-xs text-gray-400">{{ formatApptDate(d.debt_date) }}</span>
+          </span>
+          <span class="flex flex-col items-end flex-shrink-0">
+            <span class="font-semibold text-amber-800 tabular-nums">{{ formatMoney(d.remaining) }}</span>
+            <button
+              type="button"
+              class="text-xs font-semibold text-[var(--p-primary-700)] hover:underline"
+              @click="openResolve({ kind: 'debt', id: d.id, amount: Number(d.remaining), label: d.note })"
+            >
+              {{ t("bookingSidebar.debt.resolve") }}
+            </button>
+          </span>
+        </div>
+        <Button
+          :label="t('bookingSidebar.debt.add')"
+          icon="pi pi-plus"
+          severity="warn"
+          outlined
+          class="w-full mt-3 !py-2.5 !font-semibold !border-2"
+          data-testid="sidebar-add-debt"
+          @click="openAddDebt"
+        />
       </div>
     </div>
 
@@ -144,13 +262,119 @@
         {{ t("bookingSidebar.noClientSub") }}
       </p>
     </div>
+
+    <!-- Resolve a debt: payment or write-off -->
+    <Dialog v-model:visible="resolveVisible" modal :header="t('bookingSidebar.debt.resolveTitle')" :style="{ width: '24rem', maxWidth: '95vw' }">
+      <div v-if="resolveTarget" class="space-y-4">
+        <div class="text-sm text-gray-600">
+          <div class="truncate">{{ resolveTarget.label }}</div>
+          <!-- The amount: all that's owed, or click it to settle part of it. -->
+          <InputNumber
+            v-if="editingAmount"
+            v-model="resolveAmount"
+            mode="currency"
+            currency="EUR"
+            locale="el-GR"
+            :min="0"
+            :max="resolveTarget.amount"
+            autofocus
+            class="w-full mt-1"
+            inputClass="w-full text-lg font-bold"
+            data-testid="debt-amount-input"
+            @blur="editingAmount = false"
+            @keydown.enter="editingAmount = false"
+          />
+          <button
+            v-else
+            type="button"
+            class="mt-1 inline-flex items-center gap-2 text-lg font-bold text-gray-900 tabular-nums rounded-md px-1 -mx-1 hover:bg-gray-100"
+            :title="t('bookingSidebar.debt.editAmount')"
+            data-testid="debt-amount"
+            @click="editingAmount = true"
+          >
+            {{ formatMoney(resolveAmount || 0) }}
+            <i class="pi pi-pencil text-xs text-gray-400"></i>
+          </button>
+          <div v-if="isPartial" class="text-xs text-gray-500 mt-1">
+            {{ t("bookingSidebar.debt.ofOwed", { amount: formatMoney(resolveTarget.amount) }) }} ·
+            <span class="text-amber-700 font-semibold">{{ t("bookingSidebar.debt.remainingAfter", { amount: formatMoney(resolveTarget.amount - (resolveAmount || 0)) }) }}</span>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <button
+            v-for="m in RESOLVE_MODES"
+            :key="m"
+            type="button"
+            class="px-3 py-2 rounded-lg border text-sm font-medium"
+            :class="resolveMode === m ? 'bg-[var(--p-primary-color)] border-transparent text-white' : 'bg-white border-gray-200 text-gray-700'"
+            @click="resolveMode = m"
+          >
+            {{ t(m === "payment" ? "bookingSidebar.debt.modePayment" : "bookingSidebar.debt.modeWriteOff") }}
+          </button>
+        </div>
+        <div v-if="resolveMode === 'payment'">
+          <label class="block text-xs font-medium text-gray-500 mb-1">{{ t("payment.paymentMethod") }}</label>
+          <Dropdown v-model="resolveMethod" :options="methodOptions" optionLabel="label" optionValue="value" class="w-full" />
+        </div>
+        <p v-else class="text-xs text-gray-500">{{ t("bookingSidebar.debt.writeOffNote") }}</p>
+      </div>
+      <template #footer>
+        <Button :label="t('common.cancel')" text @click="resolveVisible = false" />
+        <Button
+          :label="t('bookingSidebar.debt.confirm')"
+          icon="pi pi-check"
+          :loading="debtSaving"
+          :disabled="!(Number(resolveAmount) > 0)"
+          @click="confirmResolve"
+        />
+      </template>
+    </Dialog>
+
+    <!-- Add a manual debt -->
+    <Dialog v-model:visible="addDebtVisible" modal :header="t('bookingSidebar.debt.addTitle')" :style="{ width: '24rem', maxWidth: '95vw' }">
+      <div class="space-y-4">
+        <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
+          <div class="min-w-0">
+            <label class="block text-xs font-medium text-gray-500 mb-1">{{ t("expenses.amount") }}</label>
+            <InputNumber v-model="newDebt.amount" mode="currency" currency="EUR" locale="el-GR" :min="0" class="w-full" inputClass="w-full" />
+          </div>
+          <div class="min-w-0">
+            <label class="block text-xs font-medium text-gray-500 mb-1">{{ t("expenses.date") }}</label>
+            <Calendar v-model="newDebt.date" dateFormat="dd/mm/yy" class="w-full" inputClass="w-full" />
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-500 mb-1">{{ t("bookingSidebar.debt.note") }}</label>
+          <Textarea v-model="newDebt.note" rows="2" maxlength="500" class="w-full" :placeholder="t('bookingSidebar.debt.notePlaceholder')" />
+        </div>
+      </div>
+      <template #footer>
+        <Button :label="t('common.cancel')" text @click="addDebtVisible = false" />
+        <Button
+          :label="t('common.save')"
+          icon="pi pi-check"
+          :loading="debtSaving"
+          :disabled="!newDebt.amount || newDebt.amount <= 0 || !newDebt.date || !newDebt.note.trim()"
+          @click="saveDebt"
+        />
+      </template>
+    </Dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { useNotify } from "../../composables/useNotify";
+import { fullyHidden, shownMoney } from "../../utils/paymentFilters";
+import { useSettingsStore } from "../../stores/settings";
+import { MONEY_METHODS, methodChoiceLabel } from "../../utils/paymentMethods";
+import { api, ApiError } from "../../api/http";
+import { ref, computed, watch, type PropType } from "vue";
 import { useI18n } from "vue-i18n";
 import { useAuthStore } from "../../stores/auth";
+import { useToast } from "primevue/usetoast";
+import { formatMoney } from "../../utils/format";
+import PaidAmount from "../PaidAmount.vue";
+import AppointmentNotesTip from "../AppointmentNotesTip.vue";
 const { t } = useI18n();
 const authStore = useAuthStore();
 
@@ -167,11 +391,189 @@ const props = defineProps({
     type: String,
     default: "",
   },
+  // The draft of the client's notes, held by the booking dialog.
+  clientNotes: {
+    type: String,
+    default: "",
+  },
+  // The past visit being opened (its row shows a spinner).
+  loadingId: {
+    type: String as PropType<string | null>,
+    default: null,
+  },
 });
-const emit = defineEmits(["update:bookingNotes"]);
+const emit = defineEmits(["update:bookingNotes", "update:clientNotes", "debt-changed", "open-appointment"]);
+// While one past visit is being opened, the others wait.
+const openPast = (appt: any) => {
+  if (props.loadingId) return;
+  emit("open-appointment", appt);
+};
+const toast = useToast();
+const notify = useNotify();
+
+// --- Debt: resolve (payment / write-off) and manual debts ---
+const canManageDebt = computed(() => authStore.isShopAdmin);
+const manualDebts = ref<any[]>([]);
+const openDebts = computed(() => manualDebts.value.filter((d) => Number(d.remaining) > 0));
+const debtSaving = ref(false);
+const methodOptions = computed(() =>
+  MONEY_METHODS.map((m) => ({ value: m, label: methodChoiceLabel(t, m) })),
+);
+
+type ResolveTarget = { kind: "appointment" | "debt"; id: string; amount: number; label: string };
+const resolveVisible = ref(false);
+const resolveTarget = ref<ResolveTarget | null>(null);
+const RESOLVE_MODES = ["payment", "write_off"] as const;
+const resolveMode = ref<"payment" | "write_off">("payment");
+const resolveMethod = ref("cash");
+// What's settled now: all that's owed unless changed (never more).
+const resolveAmount = ref<number | null>(null);
+const editingAmount = ref(false);
+const isPartial = computed(
+  () => !!resolveTarget.value && Number(resolveAmount.value) > 0 && Number(resolveAmount.value) < resolveTarget.value.amount - 0.001,
+);
+
+const addDebtVisible = ref(false);
+const newDebt = ref<{ amount: number | null; date: Date | null; note: string }>({ amount: null, date: new Date(), note: "" });
+
+
+const loadDebts = async (clientId: string) => {
+  if (!canManageDebt.value) return;
+  try {
+    const debts = await api.get(`/api/v1/clients/${clientId}/debts`);
+    if (props.client?.id === clientId) manualDebts.value = debts;
+  } catch {
+    // sidebar extra — fail silently
+  }
+};
+
+const openResolve = (target: ResolveTarget) => {
+  resolveTarget.value = target;
+  resolveMode.value = "payment";
+  resolveMethod.value = "cash";
+  resolveAmount.value = target.amount;
+  editingAmount.value = false;
+  resolveVisible.value = true;
+};
+
+const openAddDebt = () => {
+  newDebt.value = { amount: null, date: new Date(), note: "" };
+  addDebtVisible.value = true;
+};
+
+const afterDebtChange = async (data: any, appointmentId?: string) => {
+  emit("debt-changed", {
+    appointmentId,
+    amount: Number(data.amount || 0),
+    remaining: Number(data.remaining || 0),
+    newBalance: Number(data.new_balance || 0),
+  });
+  if (props.client?.id) await Promise.all([loadHistory(props.client.id), loadDebts(props.client.id)]);
+};
+
+const failDebt = (e: any) =>
+  notify.error(e?.message || t("bookingSidebar.debt.failed"));
+
+const confirmResolve = async () => {
+  const target = resolveTarget.value;
+  if (!target) return;
+  debtSaving.value = true;
+  try {
+    const url =
+      target.kind === "appointment"
+        ? `/api/v1/appointments/${target.id}/resolve-debt`
+        : `/api/v1/client-debts/${target.id}/resolve`;
+    const data = await api
+      .post(url, {
+        mode: resolveMode.value,
+        payment_method: resolveMethod.value,
+        amount: Math.min(Number(resolveAmount.value) || 0, target.amount),
+      })
+      .catch((e: ApiError) => {
+        if (e.data?.error === "nothing_owed") throw new Error(t("bookingSidebar.debt.nothingOwed"));
+        if (e.data?.error === "exceeds_owed") throw new Error(t("bookingSidebar.debt.exceedsOwed", { amount: formatMoney(e.data.owed) }));
+        throw new Error(t("bookingSidebar.debt.failed"));
+      });
+    resolveVisible.value = false;
+    toast.add(
+      resolveMode.value === "write_off"
+        ? { severity: "success", summary: t("bookingSidebar.debt.writtenOffToast"), detail: formatMoney(data.amount), life: 4000 }
+        : {
+            severity: "success",
+            summary: t("bookingSidebar.debt.paidToast"),
+            detail: t("bookingSidebar.debt.paidToastDetail", {
+              amount: formatMoney(data.amount),
+              method: t(`payment.methodLabels.${resolveMethod.value}`),
+            }),
+            life: 4000,
+          },
+    );
+    await afterDebtChange(data, target.kind === "appointment" ? target.id : undefined);
+  } catch (e: any) {
+    failDebt(e);
+  } finally {
+    debtSaving.value = false;
+  }
+};
+
+const saveDebt = async () => {
+  if (!props.client?.id || !newDebt.value.date) return;
+  debtSaving.value = true;
+  try {
+    const d = newDebt.value.date;
+    const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const data = await api
+      .post(`/api/v1/clients/${props.client.id}/debts`, { amount: newDebt.value.amount, debt_date: date, note: newDebt.value.note.trim() })
+      .catch(() => {
+        throw new Error(t("bookingSidebar.debt.failed"));
+      });
+    addDebtVisible.value = false;
+    await afterDebtChange(data);
+  } catch (e: any) {
+    failDebt(e);
+  } finally {
+    debtSaving.value = false;
+  }
+};
 
 // --- Past appointments ---
 const pastAppointments = ref<any[]>([]);
+const historyFilter = ref<"all" | "completed" | "cancelled" | "no-show" | "unpaid">("all");
+const hasHistory = ref(false);
+const loadingHistory = ref(false);
+
+const historyFilters = computed(() => [
+  { value: "all", label: t("bookingSidebar.filters.all") },
+  { value: "completed", label: t("common.status.completed") },
+  { value: "cancelled", label: t("common.status.cancelled") },
+  { value: "no-show", label: t("common.status.noShow") },
+  { value: "unpaid", label: t("bookingSidebar.filters.unpaid") },
+] as const);
+
+const STATUS_STYLE: Record<string, { key: string; cls: string }> = {
+  completed: { key: "completed", cls: "bg-green-50 text-green-700" },
+  new: { key: "completed", cls: "bg-green-50 text-green-700" },
+  confirmed: { key: "completed", cls: "bg-green-50 text-green-700" },
+  arrived: { key: "completed", cls: "bg-green-50 text-green-700" },
+  started: { key: "completed", cls: "bg-green-50 text-green-700" },
+  cancelled: { key: "cancelled", cls: "bg-red-50 text-red-600" },
+  "no-show": { key: "noShow", cls: "bg-red-100 text-red-800" },
+  "no-response": { key: "noResponse", cls: "bg-amber-50 text-amber-700" },
+};
+
+// Past visits count as completed even if never marked so; a visit that still
+// owes money says so with the amount.
+const statusLabel = (appt: any) => {
+  const style = STATUS_STYLE[appt.status] || { key: "", cls: "bg-gray-100 text-gray-600" };
+  const base = style.key ? t(`common.status.${style.key}`) : appt.status;
+  if (appt.status !== "cancelled" && Number(appt.owed) > 0) {
+    return {
+      text: `${base} · ${t("bookingSidebar.owes", { amount: formatMoney(appt.owed) })}`,
+      cls: "bg-amber-50 text-amber-800",
+    };
+  }
+  return { text: base, cls: style.cls };
+};
 
 const isVoided = (status: string) =>
   status === "cancelled" || status === "no-show";
@@ -183,21 +585,56 @@ const formatApptDate = (d: string) =>
     year: "2-digit",
   });
 
+// The cash and card filters hide the services paid that way (in whole); a visit left
+// with none isn't listed.
+const filterSettings = useSettingsStore();
+const shownPast = computed(() =>
+  pastAppointments.value
+    .map((a: any) => {
+      const services = a.services_paid || [];
+      const shown = services.filter((x: any) => !fullyHidden(x.charged, x.hidden, filterSettings));
+      if (!shown.length && services.length) return null;
+      const money = shownMoney(a.total, a.paid, services, filterSettings);
+      if (shown.length === services.length) return { ...a, ...money };
+      return {
+        ...a,
+        ...money,
+        service_names: shown.map((x: any) => x.name).join(", "),
+        staff_names: [...new Set(shown.map((x: any) => x.staff).filter(Boolean))].join(", "),
+      };
+    })
+    .filter(Boolean),
+);
+
+const loadHistory = async (clientId: string) => {
+  const filter = historyFilter.value;
+  loadingHistory.value = true;
+  try {
+    const rows = await api.get(`/api/v1/clients/${clientId}/past-appointments?limit=10&status=${encodeURIComponent(filter)}`);
+    // Ignore a reply for a client or filter the user has already moved on from.
+    if (props.client?.id !== clientId || historyFilter.value !== filter) return;
+    pastAppointments.value = rows;
+    if (filter === "all") hasHistory.value = pastAppointments.value.length > 0;
+  } catch {
+    // sidebar extra — fail silently
+  } finally {
+    loadingHistory.value = false;
+  }
+};
+
+watch(historyFilter, () => {
+  if (props.client?.id) loadHistory(props.client.id);
+});
+
 watch(
   () => props.client?.id,
   async (clientId) => {
     pastAppointments.value = [];
+    manualDebts.value = [];
+    hasHistory.value = false;
+    historyFilter.value = "all";
     if (!clientId) return;
-    try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(
-        `/api/v1/clients/${clientId}/past-appointments?limit=5`,
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
-      if (res.ok) pastAppointments.value = await res.json();
-    } catch {
-      // sidebar extra — fail silently
-    }
+    await Promise.all([loadHistory(clientId), loadDebts(clientId)]);
   },
   { immediate: true },
 );

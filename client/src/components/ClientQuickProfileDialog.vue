@@ -20,7 +20,7 @@
             v-if="isShopAdmin && Number(client.outstanding_balance) > 0"
             class="text-xs font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded-full inline-block mt-0.5"
           >
-            {{ t("clientQuickProfile.balanceDue", { amount: Number(client.outstanding_balance).toFixed(2) }) }}
+            {{ t("clientQuickProfile.balanceDue", { amount: formatMoney(client.outstanding_balance) }) }}
           </span>
         </div>
       </div>
@@ -57,14 +57,14 @@
         <div v-if="!editingNotes">
           <div v-if="client.notes" class="border border-gray-100 rounded-xl p-3 text-sm text-gray-700 whitespace-pre-line">
             {{ client.notes }}
-            <button class="block mt-2 text-xs font-semibold text-[var(--p-primary-color)]" @click="startEditNotes">
+            <button v-if="!authStore.isStaff" class="block mt-2 text-xs font-semibold text-[var(--p-primary-color)]" @click="startEditNotes">
               {{ t("clientQuickProfile.editNote") }}
             </button>
           </div>
           <div v-else class="text-center py-4 border border-dashed border-gray-200 rounded-xl">
             <i class="pi pi-file-edit text-xl text-gray-300"></i>
             <p class="text-sm text-gray-400 mt-1">{{ t("clientQuickProfile.noNotes") }}</p>
-            <button class="text-xs font-semibold text-[var(--p-primary-color)] mt-1" @click="startEditNotes">
+            <button v-if="!authStore.isStaff" class="text-xs font-semibold text-[var(--p-primary-color)] mt-1" @click="startEditNotes">
               + {{ t("clientQuickProfile.addNote") }}
             </button>
           </div>
@@ -81,20 +81,33 @@
       <div>
         <div class="flex items-center justify-between mb-2">
           <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wide">
-            {{ t("clientQuickProfile.appointments") }} ({{ history.length }})
+            {{ t("clientQuickProfile.appointments") }} ({{ shownHistory.length }})
           </h3>
           <button class="text-xs font-semibold text-[var(--p-primary-color)]" @click="openFull('History')">
             {{ t("clientQuickProfile.viewAll") }}
           </button>
         </div>
-        <p v-if="!history.length" class="text-sm text-gray-400 text-center py-4">
+        <p v-if="!shownHistory.length" class="text-sm text-gray-400 text-center py-4">
           {{ t("clientQuickProfile.noAppointments") }}
         </p>
         <div v-else class="space-y-2">
           <div
-            v-for="a in history.slice(0, 5)"
+            v-for="a in shownHistory.slice(0, 5)"
             :key="a.id"
-            class="flex items-start justify-between gap-2 border border-gray-100 rounded-xl p-3 text-sm"
+            class="flex items-start justify-between gap-2 border border-gray-100 rounded-xl p-3 text-sm transition-colors"
+            :class="
+              openingId === a.id
+                ? 'bg-[var(--p-primary-50)] cursor-wait'
+                : openingId
+                  ? 'opacity-50 cursor-wait'
+                  : 'cursor-pointer hover:bg-gray-50'
+            "
+            role="button"
+            tabindex="0"
+            :aria-busy="openingId === a.id"
+            data-testid="quick-profile-appointment"
+            @click="openAppointment(a)"
+            @keydown.enter.self="openAppointment(a)"
           >
             <div class="min-w-0">
               <div class="font-semibold text-gray-900">
@@ -106,8 +119,14 @@
               <div class="text-gray-600 truncate">{{ a.service_names || "—" }}</div>
               <div v-if="a.staff_names" class="text-xs text-gray-400 truncate">{{ t("clientQuickProfile.with") }} {{ a.staff_names }}</div>
             </div>
-            <span class="text-[10px] px-2 py-0.5 rounded uppercase font-bold flex-shrink-0" :class="statusClass(a.status)">
-              {{ t(`common.status.${statusKey(a.status)}`) }}
+            <span class="flex flex-col items-end gap-1 flex-shrink-0">
+              <span class="inline-flex items-center gap-1">
+                <AppointmentNotesTip :appointment="a" />
+                <span class="text-[10px] px-2 py-0.5 rounded uppercase font-bold" :class="historyBadge(a.status)">
+                  {{ t(`common.status.${statusKey(a.status)}`) }}
+                </span>
+              </span>
+              <PaidAmount v-if="!authStore.isStaff" :paid="a.paid" :total="a.total" onlyPaid class="text-xs" />
             </span>
           </div>
         </div>
@@ -137,6 +156,10 @@
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../composables/useNotify";
+import { historyBadge, statusKey } from "../utils/appointmentStatus";
+import { api } from "../api/http";
+import { formatMoney } from "../utils/format";
 import { ref, computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
@@ -144,25 +167,30 @@ import { useConfirm } from "primevue/useconfirm";
 import { useAuthStore } from "../stores/auth";
 import { avatarColor, initials } from "../utils/avatar";
 import Menu from "primevue/menu";
+import { toLocalDateStr } from "../utils/staffAvailability";
+import PaidAmount from "./PaidAmount.vue";
+import AppointmentNotesTip from "./AppointmentNotesTip.vue";
+import { useSettingsStore } from "../stores/settings";
+import { fullyHidden, shownMoney } from "../utils/paymentFilters";
 
 const { t, locale } = useI18n();
 const toast = useToast();
+const notify = useNotify();
 const confirm = useConfirm();
 const authStore = useAuthStore();
 const isShopAdmin = authStore.isShopAdmin;
 
-const props = defineProps<{ visible: boolean; clientId: string | null }>();
+// reloadKey: bumped by the calendar after a booking opened from here closes,
+// so the visits and amounts shown are current.
+const props = defineProps<{ clientId: string | null; reloadKey?: number }>();
 const emit = defineEmits<{
-  "update:visible": [boolean];
   book: [any];
   openFull: [{ clientId: string; tab: string }];
   changed: [void];
+  openAppointment: [any];
 }>();
 
-const visibleModel = computed({
-  get: () => props.visible,
-  set: (v) => emit("update:visible", v),
-});
+const visibleModel = defineModel<boolean>("visible", { default: false });
 
 const loading = ref(false);
 const client = ref<any>(null);
@@ -176,25 +204,19 @@ const fullName = computed(() =>
   client.value ? `${client.value.first_name || ""} ${client.value.last_name || ""}`.trim() : "",
 );
 
-const headers = () => ({
-  "Content-Type": "application/json",
-  Authorization: `Bearer ${localStorage.getItem("token")}`,
-});
 
 const load = async () => {
   if (!props.clientId) return;
   loading.value = true;
   editingNotes.value = false;
   try {
-    const res = await fetch(`/api/v1/clients/${props.clientId}/full`, { headers: headers() });
-    if (!res.ok) throw new Error();
-    const data = await res.json();
+    const data = await api.get(`/api/v1/clients/${props.clientId}/full`);
     client.value = data.client;
     history.value = (data.history || []).slice().sort(
       (a: any, b: any) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime(),
     );
   } catch {
-    toast.add({ severity: "error", summary: t("common.error"), detail: t("clientQuickProfile.loadFailed"), life: 3500 });
+    notify.error(t("clientQuickProfile.loadFailed"));
     visibleModel.value = false;
   } finally {
     loading.value = false;
@@ -202,9 +224,16 @@ const load = async () => {
 };
 
 watch(
-  () => [props.visible, props.clientId],
+  () => [visibleModel.value, props.clientId],
   ([v]) => {
     if (v) load();
+  },
+);
+
+watch(
+  () => props.reloadKey,
+  () => {
+    if (visibleModel.value) load();
   },
 );
 
@@ -217,47 +246,49 @@ const saveNotes = async () => {
   savingNotes.value = true;
   try {
     const c = client.value;
-    const res = await fetch(`/api/v1/clients/${props.clientId}`, {
-      method: "PUT",
-      headers: headers(),
-      body: JSON.stringify({
-        first_name: c.first_name,
-        last_name: c.last_name,
-        email: c.email,
-        phone: c.phone,
-        notes: notesDraft.value,
-        custom_fields: c.custom_fields || [],
-        ergotherapia: c.ergotherapia,
-        physiotherapia: c.physiotherapia,
-        logotherapia: c.logotherapia,
-        date_of_birth: c.date_of_birth,
-      }),
-    });
-    if (!res.ok) throw new Error();
-    client.value.notes = notesDraft.value;
+    const saved = await api.put(`/api/v1/clients/${props.clientId}/notes`, { notes: notesDraft.value });
+    c.notes = saved?.notes ?? notesDraft.value.trim();
+    emit("changed");
     editingNotes.value = false;
   } catch {
-    toast.add({ severity: "error", summary: t("common.error"), detail: t("clientQuickProfile.saveFailed"), life: 3500 });
+    notify.error(t("clientQuickProfile.saveFailed"));
   } finally {
     savingNotes.value = false;
   }
 };
 
-const STATUS_KEYS: Record<string, string> = {
-  new: "new", confirmed: "confirmed", started: "started", arrived: "arrived",
-  completed: "completed", cancelled: "cancelled", "no-show": "noShow", "no-response": "noResponse",
-};
-const statusKey = (s: string) => STATUS_KEYS[s] || s;
-const statusClass = (s: string) => {
-  const map: Record<string, string> = {
-    new: "bg-blue-100 text-blue-800",
-    confirmed: "bg-purple-100 text-purple-800",
-    completed: "bg-green-100 text-green-800",
-    cancelled: "bg-red-100 text-red-800",
-    "no-show": "bg-red-200 text-red-900",
-    "no-response": "bg-amber-100 text-amber-800",
-  };
-  return map[s] || "bg-gray-100 text-gray-700";
+
+// The cash and card filters hide the visits paid that way and that money,
+// as in the other lists of visits.
+const filterSettings = useSettingsStore();
+const shownHistory = computed(() =>
+  history.value
+    .map((a: any) => {
+      const services = a.services_paid || [];
+      if (services.length && services.every((x: any) => fullyHidden(x.charged, x.hidden, filterSettings))) return null;
+      const total = Number(a.total_service_price || 0) + Number(a.total_product_price || 0);
+      return { ...a, ...shownMoney(total, a.paid, services, filterSettings) };
+    })
+    .filter(Boolean) as any[],
+);
+
+// A visit clicked opens in the booking dialog, over this one. There is no
+// route for one appointment: it comes from its day's list, the same shape the
+// calendar gets (as the booking dialog's own list of past visits does).
+const openingId = ref<string | null>(null);
+const openAppointment = async (appt: any) => {
+  if (openingId.value) return;
+  openingId.value = appt.id;
+  try {
+    const dayRows = await api.get(`/api/v1/appointments?date=${toLocalDateStr(new Date(appt.start_time))}`);
+    const found = dayRows.find((a: any) => a.id === appt.id);
+    if (!found) throw new Error("not in the day's list");
+    emit("openAppointment", found);
+  } catch {
+    notify.error(t("booking.openPast.failed"));
+  } finally {
+    openingId.value = null;
+  }
 };
 
 const upcoming = computed(() =>
@@ -317,13 +348,12 @@ const cancelNextAppointment = () => {
     acceptClass: "p-button-danger",
     accept: async () => {
       try {
-        const res = await fetch(`/api/v1/appointments/${appt.id}/cancel`, { method: "POST", headers: headers() });
-        if (!res.ok) throw new Error();
+        await api.post(`/api/v1/appointments/${appt.id}/cancel`);
         toast.add({ severity: "success", summary: t("clientQuickProfile.cancelled"), life: 2500 });
         emit("changed");
         await load();
       } catch {
-        toast.add({ severity: "error", summary: t("common.error"), detail: t("clientQuickProfile.saveFailed"), life: 3500 });
+        notify.error(t("clientQuickProfile.saveFailed"));
       }
     },
   });

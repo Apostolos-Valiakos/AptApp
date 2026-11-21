@@ -1,0 +1,24 @@
+{
+  "_about": "One table of cases for the shared places (sauna, hammam) rules, run against the screens' copy (tests/booking/capacityCases.test.ts) and the server's (tests/server/capacityCases.test.mjs) so the two can't drift apart.",
+  "persons": [
+    { "row": {}, "expected": 1, "why": "no persons given: one person" },
+    { "row": { "persons": null }, "expected": 1 },
+    { "row": { "persons": 1 }, "expected": 1 },
+    { "row": { "persons": 3 }, "expected": 3 },
+    { "row": { "persons": "4" }, "expected": 4, "why": "as text" },
+    { "row": { "persons": 0 }, "expected": 1, "why": "never fewer than one" },
+    { "row": { "persons": -2 }, "expected": 1 },
+    { "row": { "persons": 2.9 }, "expected": 2, "why": "whole persons, rounded down" },
+    { "row": { "persons": "2e1" }, "expected": 20, "why": "a number however written" },
+    { "row": { "persons": "3 people" }, "expected": 1, "why": "not a number: one person" },
+    { "row": { "persons": "abc" }, "expected": 1 }
+  ],
+  "places": [
+    { "staff": {}, "expected": 1, "why": "an ordinary staff member: one at a time" },
+    { "staff": { "capacity": null }, "expected": 1 },
+    { "staff": { "capacity": 1 }, "expected": 1 },
+    { "staff": { "capacity": 5 }, "expected": 5, "why": "the sauna" },
+    { "staff": { "capacity": "5" }, "expected": 5 },
+    { "staff": { "capacity": 0 }, "expected": 1 }
+  ]
+}

@@ -30,7 +30,7 @@
         }}</label>
         <InputNumber
           v-model="form.percentage"
-          suffix=" %"
+          suffix="%"
           :min="0.01"
           :max="100"
           :maxFractionDigits="2"
@@ -81,35 +81,38 @@
       <p v-if="!usage.length" class="text-sm text-gray-500">
         {{ t("discount.admin.usageEmpty") }}
       </p>
-      <div v-else class="overflow-x-auto max-h-80 overflow-y-auto border border-gray-100 rounded-xl">
-        <table class="w-full text-sm">
-          <thead class="bg-gray-50 text-xs text-gray-500 uppercase sticky top-0">
-            <tr>
-              <th class="text-left px-3 py-2">{{ t("discount.admin.date") }}</th>
-              <th class="text-left px-3 py-2">{{ t("discount.admin.client") }}</th>
-              <th class="text-left px-3 py-2">{{ t("discount.admin.type") }}</th>
-              <th class="text-right px-3 py-2">{{ t("discount.admin.amount") }}</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-gray-100">
-            <tr v-for="u in usage" :key="u.id">
-              <td class="px-3 py-2 whitespace-nowrap">{{ fmtDate(u.start_time) }}</td>
-              <td class="px-3 py-2">
-                {{ [u.first_name, u.last_name].filter(Boolean).join(" ") || "—" }}
-              </td>
-              <td class="px-3 py-2">{{ describe(u) }}</td>
-              <td class="px-3 py-2 text-right font-semibold">
-                €{{ Number(u.discount_amount).toFixed(2) }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        v-else
+        :value="usage"
+        dataKey="id"
+        scrollable
+        scrollHeight="20rem"
+        size="small"
+        class="text-sm border border-gray-100 rounded-xl overflow-hidden"
+        data-testid="discount-usage"
+      >
+        <Column :header="t('discount.admin.date')" bodyClass="whitespace-nowrap">
+          <template #body="{ data }">{{ fmtDate(data.start_time) }}</template>
+        </Column>
+        <Column :header="t('discount.admin.client')">
+          <template #body="{ data }">{{ [data.first_name, data.last_name].filter(Boolean).join(" ") || "—" }}</template>
+        </Column>
+        <Column :header="t('discount.admin.type')">
+          <template #body="{ data }">{{ describe(data) }}</template>
+        </Column>
+        <Column :header="t('discount.admin.amount')" headerClass="text-right" bodyClass="text-right font-semibold">
+          <template #body="{ data }">{{ formatMoney(data.discount_amount) }}</template>
+        </Column>
+      </DataTable>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../composables/useNotify";
+import { formatDate as dateText } from "../utils/format";
+import { useAdminActions } from "../composables/useResource";
+import { formatMoney } from "../utils/format";
 import { ref, reactive, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
@@ -117,6 +120,7 @@ import { useConfirm } from "primevue/useconfirm";
 
 const { t, locale } = useI18n();
 const toast = useToast();
+const notify = useNotify();
 const confirm = useConfirm();
 
 const codes = ref<any[]>([]);
@@ -127,19 +131,7 @@ const form = reactive<{ name: string; percentage: number | null }>({
   percentage: null,
 });
 
-const api = async (url: string, method = "GET", body?: any) => {
-  const res = await fetch(url, {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${localStorage.getItem("token")}`,
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || t("discount.admin.failed"));
-  return data;
-};
+const { call: api, run } = useAdminActions(() => t("discount.admin.failed"), () => load());
 
 const load = async () => {
   try {
@@ -148,18 +140,10 @@ const load = async () => {
       api("/api/v1/discounts/usage"),
     ]);
   } catch (e: any) {
-    toast.add({ severity: "error", summary: t("common.error"), detail: e.message, life: 3000 });
+    notify.error(e.message);
   }
 };
 
-const run = async (fn: () => Promise<any>) => {
-  try {
-    await fn();
-    await load();
-  } catch (e: any) {
-    toast.add({ severity: "error", summary: t("common.error"), detail: e.message, life: 3500 });
-  }
-};
 
 const createCode = async () => {
   saving.value = true;
@@ -187,22 +171,13 @@ const remove = (c: any) =>
     accept: () => run(() => api(`/api/v1/discount-codes/${c.id}`, "DELETE")),
   });
 
-const fmtDate = (d: string | null) =>
-  d
-    ? new Date(d).toLocaleString(locale.value, {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    : "—";
+const fmtDate = (d: string | null) => dateText(d, locale.value, "shortTime", "—");
 
 const describe = (u: any) => {
   const v = Number(u.discount_value);
   if (u.discount_type === "code") return `${u.discount_code_name || t("discount.code")} (${v}%)`;
   if (u.discount_type === "percent") return `${v}%`;
-  return `€${v.toFixed(2)}`;
+  return formatMoney(v);
 };
 
 onMounted(load);

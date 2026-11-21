@@ -7,6 +7,9 @@
 node_modules
 dist
 client/dist
+landing/node_modules
+landing/.next
+landing/out
 android
 capacitor.config.json
 *.sql

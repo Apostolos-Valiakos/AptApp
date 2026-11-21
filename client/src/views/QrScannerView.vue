@@ -37,6 +37,11 @@
         </div>
       </div>
 
+      <div v-if="result.client.notes" class="border-l-4 border-l-amber-400 bg-amber-50 rounded-r-lg px-3 py-2" data-testid="qr-client-notes">
+        <div class="text-[11px] font-bold text-amber-700 uppercase tracking-wide">{{ t("common.clientNotes") }}</div>
+        <p class="text-sm text-gray-800 whitespace-pre-line break-words">{{ result.client.notes }}</p>
+      </div>
+
       <div v-if="result.membership" class="p-3 bg-gray-50 rounded-lg flex justify-between items-center">
         <span class="text-sm text-gray-600">{{ t('qrScanner.membership') }}</span>
         <Tag :value="`${result.membership.tier_name} (${result.membership.status})`" severity="info" />
@@ -62,7 +67,7 @@
           class="font-bold"
           :class="result.outstanding_balance > 0 ? 'text-red-600' : 'text-emerald-600'"
         >
-          €{{ Number(result.outstanding_balance).toFixed(2) }}
+          {{ formatMoney(result.outstanding_balance) }}
         </span>
       </div>
 
@@ -103,8 +108,14 @@
             :key="a.id"
             class="text-sm flex justify-between items-center bg-gray-50 rounded-lg px-3 py-2"
           >
-            <span class="text-gray-700">{{ formatServices(a.services) }}</span>
-            <span class="text-gray-500 whitespace-nowrap">{{ formatDateTime(a.start_time) }}</span>
+            <span class="text-gray-700 inline-flex items-center gap-1 min-w-0">
+              {{ formatServices(a.services) }}
+              <AppointmentNotesTip :appointment="a" />
+            </span>
+            <span class="flex flex-col items-end">
+              <span class="text-gray-500 whitespace-nowrap">{{ formatDateTime(a.start_time) }}</span>
+              <PaidAmount v-if="a.total !== undefined" :paid="a.paid" :total="a.total" class="text-xs" />
+            </span>
           </div>
         </div>
       </div>
@@ -119,8 +130,14 @@
             :key="a.id"
             class="text-sm flex justify-between items-center px-3"
           >
-            <span class="text-gray-600">{{ formatServices(a.services) }}</span>
-            <span class="text-gray-400 whitespace-nowrap">{{ formatDate(a.start_time) }}</span>
+            <span class="text-gray-600 inline-flex items-center gap-1 min-w-0">
+              {{ formatServices(a.services) }}
+              <AppointmentNotesTip :appointment="a" />
+            </span>
+            <span class="flex flex-col items-end">
+              <span class="text-gray-400 whitespace-nowrap">{{ formatDate(a.start_time) }}</span>
+              <PaidAmount v-if="a.total !== undefined" :paid="a.paid" :total="a.total" class="text-xs" />
+            </span>
           </div>
         </div>
       </div>
@@ -140,10 +157,15 @@
 </template>
 
 <script setup lang="ts">
+import { formatDate as dateText } from "../utils/format";
+import { api, ApiError } from "../api/http";
+import { formatMoney } from "../utils/format";
 import { ref, onUnmounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import { Html5Qrcode } from "html5-qrcode";
+import PaidAmount from "../components/PaidAmount.vue";
+import AppointmentNotesTip from "../components/AppointmentNotesTip.vue";
 
 const { t, locale } = useI18n();
 const router = useRouter();
@@ -153,24 +175,13 @@ const scanError = ref("");
 const result = ref<any>(null);
 let html5QrCode: Html5Qrcode | null = null;
 
-const token = () => localStorage.getItem("token");
 
 const handleDecoded = async (decodedText: string) => {
   await stopScanning();
   try {
-    const res = await fetch("/api/v1/qr/scan", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
-      body: JSON.stringify({ token: decodedText }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      scanError.value = data.error || t("qrScanner.notFound");
-      return;
-    }
-    result.value = data;
-  } catch {
-    scanError.value = t("qrScanner.scanFailed");
+    result.value = await api.post("/api/v1/qr/scan", { token: decodedText });
+  } catch (e) {
+    scanError.value = e instanceof ApiError ? e.data?.error || t("qrScanner.notFound") : t("qrScanner.scanFailed");
   }
 };
 
@@ -214,10 +225,8 @@ const openProfile = () => {
   router.push({ path: "/app/clients", query: { open: result.value.client.id } });
 };
 
-const formatDateTime = (d: string) =>
-  new Date(d).toLocaleString(locale.value, { weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
-const formatDate = (d: string) =>
-  new Date(d).toLocaleDateString(locale.value, { day: "2-digit", month: "short", year: "numeric" });
+const formatDateTime = (d: string) => dateText(d, locale.value, "weekdayTime");
+const formatDate = (d: string) => dateText(d, locale.value, "short");
 const formatServices = (services: any[]) =>
   (services || []).map((s) => s.name).filter(Boolean).join(", ") || "—";
 

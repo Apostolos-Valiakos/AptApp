@@ -1,54 +1,55 @@
 <template>
   <div class="space-y-6">
-    <!-- Page Header -->
-    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-      <div class="flex justify-between items-center">
-        <div class="flex items-center gap-3">
+    <!-- Page Header: on phones the buttons go under the title. -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
+      <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+        <div class="flex items-center gap-3 min-w-0">
           <div
             class="w-10 h-10 rounded-xl bg-[var(--p-primary-50)] flex items-center justify-center"
           >
             <i class="pi pi-id-card text-[var(--p-primary-600)]"></i>
           </div>
           <div>
-            <h1 class="text-2xl font-bold text-gray-900">
+            <h1 class="text-xl sm:text-2xl font-bold text-gray-900">
               {{ t("staff.title") }}
             </h1>
-            <p class="text-sm text-gray-500">{{ t("staff.addNew") }}</p>
+            <p class="text-sm text-gray-500">{{ t("staff.subtitle", { count: staff.length }) }}</p>
           </div>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex flex-col-reverse sm:flex-row sm:items-center gap-2 w-full sm:w-auto">
           <Button
             :label="t('staffSchedule.title')"
             icon="pi pi-calendar-clock"
-            class="p-button-outlined"
+            class="p-button-outlined flex-1 sm:flex-none whitespace-nowrap"
             @click="router.push('/app/staff-schedule')"
           />
-          <Button :label="t('staff.addNew')" icon="pi pi-plus" @click="openNew" />
+          <Button :label="t('staff.addNew')" icon="pi pi-plus" class="flex-1 sm:flex-none whitespace-nowrap" @click="openNew" />
         </div>
       </div>
     </div>
 
     <!-- Data Table Card -->
-    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-3 sm:p-6">
       <DataTable
         :value="filteredStaff"
         :rows="10"
         paginator
-        :rowsPerPageOptions="[10, 20, 50]"
+        :rowsPerPageOptions="isPhone ? undefined : [10, 20, 50]"
+        :paginatorTemplate="isPhone ? PHONE_PAGINATOR_TEMPLATE : undefined"
+        currentPageReportTemplate="{currentPage} / {totalPages}"
         responsiveLayout="scroll"
         class="p-datatable-sm"
         :loading="tableLoading"
       >
         <template #header>
-          <div class="flex justify-between items-center">
-            <span class="p-input-icon-left">
-              <i class="pi pi-search mr-3" />
-              <InputText
-                v-model="search"
-                :placeholder="t('staff.search')"
-                class="w-80"
-              />
-            </span>
+          <div class="relative w-full sm:w-80">
+            <i class="pi pi-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+            <InputText
+              v-model="search"
+              type="search"
+              :placeholder="t('staff.search')"
+              class="w-full !pl-10"
+            />
           </div>
         </template>
 
@@ -82,12 +83,24 @@
                 <div class="text-xs text-gray-400 truncate">
                   {{ slotProps.data.email || "—" }}
                 </div>
+                <a
+                  v-if="slotProps.data.phone"
+                  :href="'tel:' + slotProps.data.phone"
+                  class="md:hidden inline-block mt-0.5 text-sm text-green-600"
+                >
+                  {{ slotProps.data.phone }}
+                </a>
               </div>
             </div>
           </template>
         </Column>
 
-        <Column field="phone" :header="t('staff.table.phone')">
+        <Column
+          field="phone"
+          :header="t('staff.table.phone')"
+          headerClass="hidden md:table-cell"
+          bodyClass="hidden md:table-cell"
+        >
           <template #body="slotProps">
             <span class="text-sm text-gray-700">{{
               slotProps.data.phone || "—"
@@ -95,7 +108,12 @@
           </template>
         </Column>
 
-        <Column field="specialty" :header="t('staff.table.specialty')">
+        <Column
+          field="specialty"
+          :header="t('staff.table.specialty')"
+          headerClass="hidden md:table-cell"
+          bodyClass="hidden md:table-cell"
+        >
           <template #body="slotProps">
             <Tag
               v-if="slotProps.data.specialty"
@@ -106,9 +124,20 @@
           </template>
         </Column>
 
-        <Column :header="t('common.actions')" style="width: 130px">
+        <Column :header="isPhone ? '' : t('common.actions')" bodyClass="!px-1 md:!px-3 md:w-[130px]">
           <template #body="slotProps">
-            <div class="flex gap-1.5 items-center">
+            <!-- Phones: the four actions behind one ⋯ button. -->
+            <div v-if="isPhone" class="flex justify-end">
+              <Button
+                icon="pi pi-ellipsis-v"
+                class="p-button-rounded p-button-text"
+                severity="secondary"
+                :aria-label="t('booking.moreActions')"
+                data-testid="staff-row-menu"
+                @click="openRowMenu($event, slotProps.data)"
+              />
+            </div>
+            <div v-else class="flex gap-1.5 items-center">
               <Button
                 icon="pi pi-pencil"
                 class="p-button-rounded p-button-text p-button-sm"
@@ -142,6 +171,7 @@
           </template>
         </Column>
       </DataTable>
+      <Menu ref="rowMenu" :model="rowMenuItems" :popup="true" />
     </div>
   </div>
 
@@ -197,6 +227,22 @@
             class="w-full"
           />
         </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">{{
+            t("staff.dialog.capacity")
+          }}</label>
+          <InputNumber
+            v-model="editingStaff.capacity"
+            :min="1"
+            :max="50"
+            showButtons
+            class="w-full"
+            data-testid="staff-capacity"
+          />
+          <div class="text-xs text-gray-400 mt-1">
+            {{ t("staff.dialog.capacityNote") }}
+          </div>
+        </div>
         <div class="md:col-span-2">
           <label class="block text-sm font-medium text-gray-700 mb-1">{{
             t("staff.dialog.servicesProvided")
@@ -211,6 +257,11 @@
             class="w-full"
             filter
           />
+          <StaffServiceOrder
+            v-if="editingStaff.service_ids?.length > 1"
+            v-model="editingStaff.service_ids"
+            :services="services"
+          />
         </div>
         <div class="md:col-span-2 flex items-center gap-3">
           <ToggleSwitch v-model="editingStaff.visible_in_calendar" />
@@ -224,6 +275,10 @@
           </div>
         </div>
       </div>
+      <!-- Admins only. Rules added here are saved by the dialog's Save, after the staff member. -->
+      <template v-if="isAdmin">
+        <StaffBonusSettings ref="bonusSettings" :key="`bonus-${formKey}`" :staffId="editingStaff.id" />
+      </template>
     </div>
     <template #footer>
       <Button
@@ -273,7 +328,9 @@
           class="w-full"
           type="password"
           placeholder="••••••••"
+          data-testid="new-login-password"
         />
+        <small class="block mt-1" :class="newLogin.password && !passwordOk(newLogin.password) ? 'text-red-500' : 'text-gray-500'" data-testid="password-rule">{{ t("common.passwordRule") }}</small>
       </div>
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1">{{
@@ -299,6 +356,8 @@
         :label="t('staff.loginDialog.createAccount')"
         icon="pi pi-user-plus"
         class="p-button-success"
+        :disabled="!newLogin.username || !passwordOk(newLogin.password)"
+        data-testid="new-login-save"
         @click="createLogin"
         :loading="loading"
       />
@@ -496,18 +555,34 @@
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../composables/useNotify";
+import { toLocalDateStr } from "../utils/staffAvailability";
+import { passwordOk } from "../utils/password";
+import { clockTime } from "../utils/format";
+import { formatDate as dateText } from "../utils/format";
+import { api, ApiError, ifRefused, withMessage } from "../api/http";
 import { ref, onMounted, computed } from "vue";
 import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 import { useCalendarStore } from "../stores/calendar";
+import StaffServiceOrder from "../components/StaffServiceOrder.vue";
+import StaffBonusSettings from "../components/staff/StaffBonusSettings.vue";
+import { useIsPhone, PHONE_PAGINATOR_TEMPLATE } from "../composables/useIsPhone";
+import { useAuthStore } from "../stores/auth";
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
+const isAdmin = computed(() => useAuthStore().isAnalyticsAllowed);
+// A fresh rules form each time the dialog opens; a new staff member getting
+// their id on Save keeps it, with any rules still to send.
+const formKey = ref(0);
+const bonusSettings = ref<InstanceType<typeof StaffBonusSettings> | null>(null);
 
 // ... (imports remain same) ...
 
 const toast = useToast();
+const notify = useNotify();
 const confirm = useConfirm();
 const calendarStore = useCalendarStore();
 const router = useRouter();
@@ -548,23 +623,10 @@ const newTimeOff = ref<any>({
 const fetchData = async () => {
   tableLoading.value = true;
   try {
-    const token = localStorage.getItem("token");
-    const headers = { Authorization: `Bearer ${token}` };
-    const [staffRes, servicesRes] = await Promise.all([
-      fetch("/api/v1/staff", { headers }),
-      fetch("/api/v1/services", { headers }),
-    ]);
-    if (!staffRes.ok || !servicesRes.ok) throw new Error("Request failed");
-    staff.value = await staffRes.json();
-    services.value = await servicesRes.json();
+    [staff.value, services.value] = await Promise.all([api.get("/api/v1/staff"), api.get("/api/v1/services")]);
   } catch (err) {
     console.error(err);
-    toast.add({
-      severity: "error",
-      summary: t("common.error"),
-      detail: t("staff.toast.loadFailed"),
-      life: 4000,
-    });
+    notify.error(t("staff.toast.loadFailed"));
   } finally {
     tableLoading.value = false;
   }
@@ -577,7 +639,9 @@ const openNew = () => {
     last_name: "",
     service_ids: [],
     visible_in_calendar: true,
+    capacity: 1,
   };
+  formKey.value++;
   showDialog.value = true;
 };
 
@@ -588,47 +652,48 @@ const editStaff = (data: any) => {
     first_name: nameParts[0],
     last_name: nameParts.slice(1).join(" "),
     service_ids: data.service_ids || [],
+    capacity: data.capacity || 1,
   };
+  formKey.value++;
   showDialog.value = true;
 };
 
 const saveStaff = async () => {
-  // ... (Keep existing save logic, ensure you add Authorization header) ...
+  // A bonus rule changed but left incomplete: nothing is saved until it's
+  // finished or put back (its section is shown).
+  if (bonusSettings.value?.showIncomplete()) {
+    notify.error(t("bonus.rules.incomplete"));
+    return;
+  }
   loading.value = true;
-  const token = localStorage.getItem("token");
   const url = editingStaff.value.id
     ? `/api/v1/staff/${editingStaff.value.id}`
     : "/api/v1/staff";
   const method = editingStaff.value.id ? "PUT" : "POST";
 
   try {
-    const res = await fetch(url, {
-      method,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(editingStaff.value),
-    });
-    if (!res.ok) throw new Error("Failed");
-    toast.add({
-      severity: "success",
-      summary: t("common.success"),
-      detail: t("staff.toast.saved"),
-      life: 3000,
-    });
-    showDialog.value = false;
-    fetchData();
+    const answer = await api.request(method, url, editingStaff.value);
+    // A new staff member keeps their id, so pressing Save again after a
+    // failed rule doesn't create them twice.
+    if (!editingStaff.value.id && answer?.id) editingStaff.value.id = answer.id;
   } catch (err) {
-    toast.add({
-      severity: "error",
-      summary: t("common.error"),
-      detail: t("staff.toast.saveFailed"),
-      life: 3000,
-    });
-  } finally {
+    notify.error(t("staff.toast.saveFailed"));
     loading.value = false;
+    return;
   }
+  try {
+    await bonusSettings.value?.commit(editingStaff.value.id);
+  } catch {
+    // The dialog stays open with the rules not yet sent still marked.
+    notify.error(t("bonus.rules.saveFailed"));
+    loading.value = false;
+    fetchData();
+    return;
+  }
+  notify.success(t("staff.toast.saved"));
+  showDialog.value = false;
+  loading.value = false;
+  fetchData();
 };
 
 // NEW: Login Handlers
@@ -641,27 +706,12 @@ const openLoginDialog = (staffMember: any) => {
 };
 
 const createLogin = async () => {
-  if (!newLogin.value.username || !newLogin.value.password) return;
+  if (!newLogin.value.username || !passwordOk(newLogin.value.password)) return;
 
   loading.value = true;
-  const token = localStorage.getItem("token");
 
   try {
-    const res = await fetch(
-      `/api/v1/staff/${loginStaffTarget.value.id}/login`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(newLogin.value),
-      },
-    );
-
-    const data = await res.json();
-
-    if (!res.ok) throw new Error(data.error || "Failed");
+    await api.post(`/api/v1/staff/${loginStaffTarget.value.id}/login`, newLogin.value).catch(withMessage("Failed"));
 
     toast.add({
       severity: "success",
@@ -673,12 +723,7 @@ const createLogin = async () => {
     });
     showLoginDialog.value = false;
   } catch (e: any) {
-    toast.add({
-      severity: "error",
-      summary: t("common.error"),
-      detail: e.message,
-      life: 4000,
-    });
+    notify.error(e.message);
   } finally {
     loading.value = false;
   }
@@ -686,25 +731,11 @@ const createLogin = async () => {
 
 // Add confirmDelete and deleteStaff functions
 // --- Time Off (Leave / Break) Handlers ---
-const formatDate = (d: string) =>
-  new Date(d).toLocaleDateString("el-GR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
+const formatDate = (d: string) => dateText(d, locale.value);
 
-const toDateStr = (d: Date) => {
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
-};
+const toDateStr = toLocalDateStr;
 
-const toTimeStr = (d: Date) => {
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mm = String(d.getMinutes()).padStart(2, "0");
-  return `${hh}:${mm}`;
-};
+const toTimeStr = clockTime;
 
 const openTimeOffDialog = async (staffMember: any) => {
   timeOffTarget.value = staffMember;
@@ -715,15 +746,8 @@ const openTimeOffDialog = async (staffMember: any) => {
 
 const fetchTimeOffEntries = async () => {
   timeOffLoading.value = true;
-  const token = localStorage.getItem("token");
   try {
-    const res = await fetch(
-      `/api/v1/staff/${timeOffTarget.value.id}/time-off`,
-      {
-        headers: { Authorization: `Bearer ${token}` },
-      },
-    );
-    timeOffEntries.value = res.ok ? await res.json() : [];
+    timeOffEntries.value = await api.get(`/api/v1/staff/${timeOffTarget.value.id}/time-off`).catch(ifRefused([]));
   } finally {
     timeOffLoading.value = false;
   }
@@ -761,7 +785,6 @@ const cancelAddTimeOff = () => {
 
 const saveTimeOff = async (force = false) => {
   timeOffSaving.value = true;
-  const token = localStorage.getItem("token");
   const isLeave = addMode.value === "leave";
 
   const payload: any = {
@@ -779,20 +802,17 @@ const saveTimeOff = async (force = false) => {
   }
 
   try {
-    const res = await fetch(
-      `/api/v1/staff/${timeOffTarget.value.id}/time-off`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(payload),
-      },
-    );
+    // Overlapping bookings: 409 with the list, asked about before forcing.
+    const conflict = await api
+      .post(`/api/v1/staff/${timeOffTarget.value.id}/time-off`, payload)
+      .then(() => null)
+      .catch((e) => {
+        if (e instanceof ApiError && e.status === 409) return e.data || {};
+        throw e;
+      });
 
-    if (res.status === 409) {
-      const data = await res.json();
+    if (conflict) {
+      const data = conflict;
       const list = (data.conflicts || [])
         .map(
           (c: any) =>
@@ -801,7 +821,7 @@ const saveTimeOff = async (force = false) => {
         .join("\n");
       confirm.require({
         message: t("staff.timeOff.conflictMessage", {
-          count: data.conflicts.length,
+          count: (data.conflicts || []).length,
           list,
         }),
         header: t("staff.timeOff.conflictHeader"),
@@ -812,40 +832,20 @@ const saveTimeOff = async (force = false) => {
       return;
     }
 
-    if (!res.ok) throw new Error("Failed");
-
-    toast.add({
-      severity: "success",
-      summary: t("common.success"),
-      detail: t("staff.timeOff.saved"),
-      life: 3000,
-    });
+    notify.success(t("staff.timeOff.saved"));
     addMode.value = null;
     await fetchTimeOffEntries();
     await calendarStore.refreshTimeOff();
   } catch (err) {
-    toast.add({
-      severity: "error",
-      summary: t("common.error"),
-      detail: t("staff.timeOff.saveFailed"),
-      life: 4000,
-    });
+    notify.error(t("staff.timeOff.saveFailed"));
   } finally {
     timeOffSaving.value = false;
   }
 };
 
 const deleteTimeOffEntry = async (entryId: string) => {
-  const token = localStorage.getItem("token");
   try {
-    const res = await fetch(
-      `/api/v1/staff/${timeOffTarget.value.id}/time-off/${entryId}`,
-      {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      },
-    );
-    if (!res.ok) throw new Error("Failed");
+    await api.del(`/api/v1/staff/${timeOffTarget.value.id}/time-off/${entryId}`);
     timeOffEntries.value = timeOffEntries.value.filter((e) => e.id !== entryId);
     toast.add({
       severity: "success",
@@ -854,12 +854,7 @@ const deleteTimeOffEntry = async (entryId: string) => {
     });
     await calendarStore.refreshTimeOff();
   } catch {
-    toast.add({
-      severity: "error",
-      summary: t("common.error"),
-      detail: t("staff.timeOff.deleteFailed"),
-      life: 4000,
-    });
+    notify.error(t("staff.timeOff.deleteFailed"));
   }
 };
 
@@ -875,30 +870,29 @@ const confirmDelete = (staff: any) => {
 };
 
 const deleteStaff = async (staff: any) => {
-  const token = localStorage.getItem("token");
   try {
-    const res = await fetch(`/api/v1/staff/${staff.id}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    await api.del(`/api/v1/staff/${staff.id}`);
 
-    if (!res.ok) throw new Error("Failed to delete");
-
-    toast.add({
-      severity: "success",
-      summary: t("common.success"),
-      detail: t("staff.toast.deleted"),
-      life: 3000,
-    });
+    notify.success(t("staff.toast.deleted"));
     fetchData();
   } catch (err) {
-    toast.add({
-      severity: "error",
-      summary: t("common.error"),
-      detail: t("staff.toast.deleteFailed"),
-      life: 4000,
-    });
+    notify.error(t("staff.toast.deleteFailed"));
   }
+};
+
+// Phones: a lighter table (phone under the name, actions behind ⋯) and a
+// paginator that fits.
+const isPhone = useIsPhone();
+const rowMenu = ref<any>(null);
+const rowMenuItems = ref<any[]>([]);
+const openRowMenu = (event: Event, member: any) => {
+  rowMenuItems.value = [
+    { label: t("staff.tooltips.edit"), icon: "pi pi-pencil", command: () => editStaff(member) },
+    { label: t("staff.tooltips.createLogin"), icon: "pi pi-key", command: () => openLoginDialog(member) },
+    { label: t("staff.tooltips.timeOff"), icon: "pi pi-calendar-times", command: () => openTimeOffDialog(member) },
+    { label: t("staff.tooltips.delete"), icon: "pi pi-trash", class: "menu-danger", command: () => confirmDelete(member) },
+  ];
+  rowMenu.value?.toggle(event);
 };
 
 const filteredStaff = computed(() => {

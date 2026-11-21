@@ -56,7 +56,7 @@
           <span>{{ t("packages.card.bought") }}: {{ fmtDate(p.purchased_at) }}</span>
           <span v-if="p.expires_at">{{ t("packages.card.expires") }}: {{ fmtDate(p.expires_at) }}</span>
           <span v-else>{{ t("packages.neverExpires") }}</span>
-          <span>€{{ Number(p.price_paid).toFixed(2) }}</span>
+          <span>{{ formatMoney(p.price_paid) }}</span>
         </div>
         <p v-if="p.note && !portal" class="text-xs text-gray-500 mt-1 italic">{{ p.note }}</p>
 
@@ -114,20 +114,23 @@
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../composables/useNotify";
+import { formatDate as dateText } from "../utils/format";
+import { api, withMessage } from "../api/http";
+import { formatMoney } from "../utils/format";
 import { ref, reactive, computed, onMounted, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { useToast } from "primevue/usetoast";
 import { useAuthStore } from "../stores/auth";
 import SellPackageDialog from "./booking/SellPackageDialog.vue";
 
 const { t, locale } = useI18n();
-const toast = useToast();
+const notify = useNotify();
 const authStore = useAuthStore();
 
 const props = defineProps<{ clientId: string | null; portal?: boolean }>();
 
 const role = computed(() => authStore.user?.role);
-const isAdmin = computed(() => role.value === "admin" || role.value === "super_admin");
+const isAdmin = computed(() => authStore.isAnalyticsAllowed);
 const canSell = computed(
   () => !props.portal && (isAdmin.value || role.value === "frontdesk"),
 );
@@ -144,17 +147,12 @@ const adjustForm = reactive<{ total_visits: number; expires_at: Date | null; not
   note: "",
 });
 
-const headers = () => ({
-  "Content-Type": "application/json",
-  Authorization: `Bearer ${localStorage.getItem("token")}`,
-});
 
 const load = async () => {
   if (!props.clientId) return;
   loading.value = true;
   try {
-    const res = await fetch(`/api/v1/clients/${props.clientId}/packages`, { headers: headers() });
-    packages.value = res.ok ? await res.json() : [];
+    packages.value = await api.get(`/api/v1/clients/${props.clientId}/packages`);
   } catch {
     packages.value = [];
   } finally {
@@ -162,13 +160,7 @@ const load = async () => {
   }
 };
 
-const fmtDate = (d: string, withTime = false) =>
-  new Date(d).toLocaleString(
-    locale.value,
-    withTime
-      ? { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }
-      : { day: "2-digit", month: "short", year: "numeric" },
-  );
+const fmtDate = (d: string, withTime = false) => dateText(d, locale.value, withTime ? "shortTime" : "short");
 
 const stateClass = (s: string) =>
   ({
@@ -189,17 +181,11 @@ const openAdjust = (p: any) => {
 const patch = async (body: any) => {
   saving.value = true;
   try {
-    const res = await fetch(`/api/v1/client-packages/${adjusting.value.id}`, {
-      method: "PUT",
-      headers: headers(),
-      body: JSON.stringify(body),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || t("packages.failed"));
+    await api.put(`/api/v1/client-packages/${adjusting.value.id}`, body).catch(withMessage(t("packages.failed")));
     showAdjust.value = false;
     await load();
   } catch (e: any) {
-    toast.add({ severity: "error", summary: t("common.error"), detail: e.message, life: 3500 });
+    notify.error(e.message);
   } finally {
     saving.value = false;
   }

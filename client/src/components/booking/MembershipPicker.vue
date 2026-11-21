@@ -37,7 +37,7 @@
             </div>
           </div>
         </div>
-        <span class="text-sm font-semibold text-gray-700">€{{ line.price.toFixed(2) }}</span>
+        <span class="text-sm font-semibold text-gray-700">{{ formatMoney(line.price) }}</span>
       </div>
 
       <!-- Warn but allow — client can still pay the rest via cash/card/etc. -->
@@ -50,6 +50,8 @@
 </template>
 
 <script setup lang="ts">
+import { api } from "../../api/http";
+import { formatMoney } from "../../utils/format";
 import { ref, computed, watch, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 const { t } = useI18n();
@@ -67,7 +69,6 @@ const membership = ref<any>(null);
 const usage = ref<any[]>([]);
 const checkedServiceIds = ref<any[]>([]);
 
-const token = () => localStorage.getItem("token");
 
 const fetchMembership = async () => {
   if (!props.clientId) {
@@ -77,10 +78,9 @@ const fetchMembership = async () => {
   }
   loading.value = true;
   try {
-    const res = await fetch(`/api/v1/clients/${props.clientId}/membership`, {
-      headers: { Authorization: `Bearer ${token()}` },
-    });
-    const data = res.ok ? await res.json() : { membership: null, usage: [] };
+    const data = await api
+      .get(`/api/v1/clients/${props.clientId}/membership`)
+      .catch(() => ({ membership: null, usage: [] }));
     membership.value = data.membership;
     usage.value = data.usage || [];
   } finally {

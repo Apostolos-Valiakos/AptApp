@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pure: Test Report</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f1ea; --card: #fffdf9; --line: #eadfd2; --ink: #2a211b; --muted: #75604f;
+    --pass: #1f6f43; --pass-bg: #e2f2e8; --fail: #a4301f; --fail-bg: #fae6e1; --mixed: #8a5a00; --mixed-bg: #f8edd2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1713; --card: #26201b; --line: #3b322a; --ink: #f2e9df; --muted: #b5a493;
+      --pass: #7fd3a2; --pass-bg: #1d3327; --fail: #f19c8c; --fail-bg: #3d211b; --mixed: #e6c06f; --mixed-bg: #38301a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 62rem; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+  h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 .25rem; }
+  h2 { font-size: 1.35rem; margin: 2.75rem 0 .75rem; }
+  h3 { font-size: 1rem; margin: 1.5rem 0 .5rem; }
+  p { margin: .5rem 0; }
+  .sub { color: var(--muted); margin: 0 0 1.5rem; }
+  code { font: .88em ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: .75rem; margin: 1.25rem 0; }
+  .tile { background: var(--card); border: 1px solid var(--line); border-radius: .75rem; padding: .85rem 1rem; }
+  .tile b { display: block; font-size: 1.75rem; line-height: 1.2; font-variant-numeric: tabular-nums; }
+  .tile span { color: var(--muted); font-size: .85rem; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: .75rem; padding: .25rem 1rem; margin: .75rem 0; }
+  .scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: .93rem; }
+  th { text-align: left; color: var(--muted); font-weight: 600; font-size: .8rem; }
+  th, td { padding: .55rem .6rem .55rem 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; padding-right: .9rem; }
+  td.id { white-space: nowrap; font-weight: 600; }
+  .tag { display: inline-block; padding: .05rem .5rem; border-radius: 999px; font-size: .78rem; font-weight: 600; white-space: nowrap; }
+  .pass { color: var(--pass); background: var(--pass-bg); }
+  .fail { color: var(--fail); background: var(--fail-bg); }
+  .mixed { color: var(--mixed); background: var(--mixed-bg); }
+  ul, ol { padding-left: 1.25rem; margin: .5rem 0; }
+  li { margin: .35rem 0; }
+  pre { background: var(--card); border: 1px solid var(--line); border-radius: .5rem; padding: .75rem 1rem; overflow-x: auto; margin: .5rem 0; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Test Report</h1>
+<p class="sub">Pure Massage &amp; Spa app. Results from 31 October 2026, on the uncommitted <code>pure_changes</code> working tree.</p>
+
+<div class="tiles">
+  <div class="tile"><b>13 of 13</b><span>app fixes made</span></div>
+  <div class="tile"><b style="color:var(--pass)">236 of 236</b><span>new tests pass</span></div>
+  <div class="tile"><b style="color:var(--pass)">0</b><span>failures in <code>npm test</code></span></div>
+  <div class="tile"><b>32 of 32</b><span>planted bugs caught</span></div>
+  <div class="tile"><b>63.65%</b><span>StrykerJS mutation score</span></div>
+</div>
+
+<p>Tests were written from the agreed requirements, not from what the code did. They first exposed 40 failures, and all of those now pass after the app fixes below. <strong>Nothing is committed or deployed yet.</strong> The mutation score shows the tests are still weak in some areas, listed under Step 4.</p>
+
+<h2>What was fixed in the app</h2>
+
+<h3>Priority 1: access and data safety</h3>
+<div class="card scroll"><table><thead><tr><th>#</th><th>Problem and fix</th><th>Where</th><th>Tests</th><th>Status</th></tr></thead><tbody>
+<tr><td class="id">1</td><td><strong>The server let staff change data.</strong><br>It now refuses staff changes to appointments, payments, time off and client records (including files, exercises and invites). Viewing and column reordering still work.</td><td><code>server/middleware/auth.js</code><br><code>server/routes/appointments.js</code><br><code>server/routes/transactions.js</code><br><code>server/routes/staff.js</code><br><code>server/routes/clients.js</code></td><td>U6</td><td><span class="tag pass">Fixed</span></td></tr>
+<tr><td class="id">2</td><td><strong>Staff could open pages they shouldn't.</strong><br>They now reach only the scheduler and their profile, and the QR scanner is gone from their menu.</td><td><code>client/src/router/index.ts</code><br><code>client/src/components/Layout.vue</code></td><td>U4</td><td><span class="tag pass">Fixed</span></td></tr>
+<tr><td class="id">3</td><td><strong>The scheduler allowed staff to make changes.</strong><br>Dragging, resizing, selecting and starting bookings are off for staff. Client search and swap are hidden. Reordering stays.</td><td><code>client/src/views/SchedulerView.vue</code><br><code>client/src/components/PlaceGroupDialog.vue</code></td><td>C9</td><td><span class="tag pass">Fixed</span></td></tr>
+<tr><td class="id">4</td><td><strong>The booking dialog was editable for staff.</strong><br>It's now read-only for staff, without save, delete, repeat or payment.</td><td><code>client/src/components/BookingDialog.vue</code></td><td>C9</td><td><span class="tag pass">Fixed</span></td></tr>
+<tr><td class="id">5</td><td><strong>Unsynced changes could be sent under another user's login.</strong><br>Each change now records who made it. Only that user sees or sends it, and another user's logout doesn't delete it.</td><td><code>client/src/offline/db.ts</code><br><code>client/src/offline/queue.ts</code><br><code>client/src/offline/sync.ts</code></td><td>U5</td><td><span class="tag pass">Fixed</span></td></tr>
+<tr><td class="id">6</td><td><strong>The previous user's data could return after logout.</strong><br>All calendar data is cleared whenever the user changes, including an expired session, and late answers are dropped. A refreshed token for the same user keeps the calendar.</td><td><code>client/src/stores/calendar.ts</code></td><td>S14, S15</td><td><span class="tag pass">Fixed</span></td></tr>
+</tbody></table></div>
+
+<h3>Priority 2: money and reliability</h3>
+<div class="card scroll"><table><thead><tr><th>#</th><th>Problem and fix</th><th>Where</th><th>Tests</th><th>Status</th></tr></thead><tbody>
+<tr><td class="id">7</td><td><strong>Client credit disappeared on edited bookings.</strong><br>Credit is now kept and can show as negative, such as -20€, and the payment panel has a credit line. The calculation uses the saved amount, so an unsaved extra on a past booking doesn't look like credit.</td><td><code>client/src/composables/useBookingTotals.ts</code><br><code>client/src/components/BookingDialog.vue</code><br><code>client/src/components/booking/bookingPayments.vue</code></td><td>B5, B10</td><td><span class="tag pass">Fixed</span></td></tr>
+<tr><td class="id">8</td><td><strong>A failed staff order save reported success.</strong><br>The previous order now comes back and an error appears.</td><td><code>client/src/stores/calendar.ts</code><br><code>client/src/views/SchedulerView.vue</code></td><td>S13, C8</td><td><span class="tag pass">Fixed</span></td></tr>
+<tr><td class="id">9</td><td><strong>Old appointments stayed on screen when a day failed to load.</strong><br>The calendar now empties and shows an error. An expired session keeps its own message.</td><td><code>client/src/stores/calendar.ts</code><br><code>client/src/views/SchedulerView.vue</code></td><td>S11, C17</td><td><span class="tag pass">Fixed</span></td></tr>
+<tr><td class="id">10</td><td><strong>Damaged saved login data crashed the app.</strong><br>It now counts as logged out, and the app starts normally.</td><td><code>client/src/utils/savedLogin.ts</code><br><code>client/src/stores/auth.ts</code><br><code>client/src/stores/settings.ts</code></td><td>S4</td><td><span class="tag pass">Fixed</span></td></tr>
+</tbody></table></div>
+
+<h3>Priority 3: agreed behavior changes</h3>
+<div class="card scroll"><table><thead><tr><th>#</th><th>Problem and fix</th><th>Where</th><th>Tests</th><th>Status</th></tr></thead><tbody>
+<tr><td class="id">11</td><td><strong>Logging out of "view as" ended the owner's session.</strong><br>It now returns to the owner's session, on the platform shops page.</td><td><code>client/src/stores/auth.ts</code><br><code>client/src/composables/useLogout.ts</code></td><td>S6</td><td><span class="tag pass">Fixed</span></td></tr>
+<tr><td class="id">12</td><td><strong>The owner started on the scheduler.</strong><br>The owner now starts on the platform shops page, both after login and when opening the login page.</td><td><code>client/src/views/LoginView.vue</code><br><code>client/src/router/index.ts</code></td><td>C3, U1</td><td><span class="tag pass">Fixed</span></td></tr>
+<tr><td class="id">13</td><td><strong>Login errors appeared in English in the Greek app.</strong><br>The server now sends a code with each refusal, and the app shows its own message in Greek or English.</td><td><code>server/routes/account.js</code><br><code>server/server.js</code><br><code>client/src/stores/auth.ts</code><br><code>client/src/views/LoginView.vue</code><br><code>client/src/i18n/locales/el.ts, en.ts</code></td><td>C4</td><td><span class="tag pass">Fixed</span></td></tr>
+<tr><td class="id">+</td><td><strong>A product quantity of 0 was charged as 1.</strong><br>The server now refuses a quantity below 1 with a 400 error, as you decided.</td><td><code>server/domain/bookings.js</code></td><td>U6</td><td><span class="tag pass">Fixed</span></td></tr>
+</tbody></table></div>
+
+<h3>Still open</h3>
+<ul>
+  <li><strong>Owner on shop-only pages (your decision, deferred):</strong> the page guard still sends an owner to the scheduler (<code>client/src/router/index.ts</code>).</li>
+  <li><strong>Look of the read-only dialog:</strong> for staff it's still titled "Edit Appointment", and its fields and "Add service" look usable even though nothing responds. It works, but could confuse people.</li>
+  <li><strong>Payment panel with credit:</strong> when a client's credit covers the bill, the panel behaves as "nothing to pay" and shows the negative amount. Please check this on a real client.</li>
+  <li><strong>Changes already waiting on devices:</strong> offline changes saved before this update have no user recorded, so any login from that shop can still send them. Waiting changes made by staff will now be refused by the server and show as conflicts.</li>
+</ul>
+
+<h2>Your decisions</h2>
+<div class="card scroll">
+<table>
+<thead><tr><th>Question</th><th>Decision</th></tr></thead>
+<tbody>
+<tr><td>Client credit on a booking</td><td>Always subtract it, on new and edited bookings.</td></tr>
+<tr><td>Credit larger than the bill</td><td>Show the negative amount, e.g. -20€.</td></tr>
+<tr><td>Owner logs out while viewing a shop</td><td>Return to the owner's session.</td></tr>
+<tr><td>Owner's start page</td><td>Platform shops page.</td></tr>
+<tr><td>Different user logs in after a session expires</td><td>Unsynced changes wait for the original user. Nobody else sees or sends them.</td></tr>
+<tr><td>Pages staff may open</td><td>Scheduler and their own profile only.</td></tr>
+<tr><td>What staff can do with appointments</td><td>View only. Clicking one shows read-only details, without save, payment or delete.</td></tr>
+<tr><td>Other scheduler actions for staff</td><td>They keep column reordering, but can't add their own time off.</td></tr>
+<tr><td>A calendar day fails to load</td><td>Empty calendar and an error.</td></tr>
+<tr><td>Language of login errors</td><td>The app's current language.</td></tr>
+<tr><td>Product quantity of 0</td><td>Impossible to enter.</td></tr>
+<tr><td>Server checks for staff</td><td>Included in this work.</td></tr>
+<tr><td>How failing tests run</td><td>Separate commands, so <code>npm test</code> stays as it is until the fixes are made.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2>Results by requirement</h2>
+
+<h3>Components</h3>
+<div class="card scroll">
+<table>
+<thead><tr><th>ID</th><th>Requirement</th><th class="num">Pass</th><th class="num">Fail</th><th>Status</th></tr></thead>
+<tbody>
+<tr><td class="id">C1–C3</td><td>A login leads to the right page: clients to the portal, shop roles to the scheduler, the owner to platform shops.</td><td class="num">8</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">C4</td><td>A refused login gives its own message in the app's language, including too many attempts and unknown errors.</td><td class="num">8</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">C5</td><td>The sign-in button is disabled during an attempt and works again after a failure.</td><td class="num">2</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">C6</td><td>The eye button shows and hides the password without sending the form.</td><td class="num">1</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">C7</td><td>The expired-session warning and <code>?lang=</code> work, and the address is cleaned.</td><td class="num">5</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">C8</td><td>A failed staff order save shows an error, never success.</td><td class="num">2</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">C9</td><td>Staff can look but not change: no selecting, dragging or resizing, no client search or swap, a read-only booking dialog, and reordering still works.</td><td class="num">10</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">C10</td><td>Staff can't go before today, while other shop roles can.</td><td class="num">3</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">C11</td><td>Admin, super admin and front desk can book outside working hours after confirming.</td><td class="num">6</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">C12</td><td>Nobody can book over breaks. Leave uses the same check but has no test of its own yet.</td><td class="num">4</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">C13–C16</td><td>Moving an appointment: confirmation, server refusal, over capacity, changed on another device, and offline.</td><td class="num">7</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">C17</td><td>A day that can't load shows an empty calendar and an error.</td><td class="num">2</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Pinia stores</h3>
+<div class="card scroll">
+<table>
+<thead><tr><th>ID</th><th>Requirement</th><th class="num">Pass</th><th class="num">Fail</th><th>Status</th></tr></thead>
+<tbody>
+<tr><td class="id">S1</td><td>A login is saved, sent correctly and survives a reload.</td><td class="num">3</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">S2</td><td>A refused login leaves the user logged out with nothing saved.</td><td class="num">4</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">S3</td><td>All six roles get the correct permissions.</td><td class="num">8</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">S4</td><td>Damaged saved login data means logged out, not a crash.</td><td class="num">2</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">S5</td><td>"View as" restores the exact owner session, including after a reload or a second shop.</td><td class="num">4</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">S6</td><td>Logging out during "view as" returns to the owner.</td><td class="num">3</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">S7</td><td>A normal logout removes all saved login data.</td><td class="num">1</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">S8</td><td>Staff columns skip hidden staff and follow the saved order. All base data loads, and nothing is requested without a login.</td><td class="num">3</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">S9</td><td>A slow answer for an earlier day can't replace the day now open.</td><td class="num">1</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">S10</td><td>With no connection, the saved copy is shown and marked as saved.</td><td class="num">4</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">S11</td><td>A refusal or server failure clears the old appointments.</td><td class="num">2</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">S12</td><td>Changes waiting to sync show on the calendar. Only offline deletion is tested so far.</td><td class="num">1</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">S13</td><td>A failed staff order save returns to the previous order.</td><td class="num">2</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">S14, S15</td><td>When the user changes, their data is gone and a late answer can't bring it back. A refreshed token keeps the calendar.</td><td class="num">4</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Composables</h3>
+<div class="card scroll">
+<table>
+<thead><tr><th>ID</th><th>Requirement</th><th class="num">Pass</th><th class="num">Fail</th><th>Status</th></tr></thead>
+<tbody>
+<tr><td class="id">B1</td><td>Services and products add up, including quantities and missing prices.</td><td class="num">3</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">B2</td><td>Discounts use the right scope and limit, are rounded to the cent, and match the server's calculation.</td><td class="num">18</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">B3</td><td>Payments lower what's due, and overpaying leaves that booking at 0.</td><td class="num">4</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">B4</td><td>A booking that has already happened isn't counted twice in the debt.</td><td class="num">5</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">B5, B10</td><td>Credit is always subtracted, a larger credit shows as negative, and unsaved edits don't look like credit.</td><td class="num">8</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">B6</td><td>The stored balance covers bookings from 1 March 2026 up to now.</td><td class="num">6</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">B7</td><td>Selected same-day bookings are counted exactly once.</td><td class="num">4</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">B8</td><td>Packages and gift cards add to what's due now, not to the booking's total.</td><td class="num">1</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">B9</td><td>The suggested payment is what's unpaid first, then everything due.</td><td class="num">2</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">B11</td><td>A product quantity of 0 can't be entered in the booking screen.</td><td class="num">1</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">B12</td><td>Logout sends waiting changes first, and the user can stay if some can't be sent.</td><td class="num">4</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">B13</td><td>Logging out offline goes to the login page.</td><td class="num">1</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Utilities and services</h3>
+<div class="card scroll">
+<table>
+<thead><tr><th>ID</th><th>Requirement</th><th class="num">Pass</th><th class="num">Fail</th><th>Status</th></tr></thead>
+<tbody>
+<tr><td class="id">U1</td><td>Logged-out users go to login, and logged-in users go to their start page.</td><td class="num">9</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">U2</td><td>The client portal and the staff app are kept apart.</td><td class="num">8</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">U3</td><td>Analytics, shop-admin and platform pages allow only the right roles.</td><td class="num">33</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">U4</td><td>Staff can open only the scheduler and their profile.</td><td class="num">18</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">U5</td><td>Unsynced changes belong to the user who made them, including when another user logs out.</td><td class="num">4</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+<tr><td class="id">U6</td><td>The server refuses staff changes to appointments, payments, time off and clients, and refuses quantities below 1. Viewing, reordering and front desk access keep working.</td><td class="num">7</td><td class="num">0</td><td><span class="tag pass">Pass</span></td></tr>
+</tbody>
+</table>
+</div>
+
+<h2>Existing checks changed to match your decisions</h2>
+<ul>
+  <li><code>tests/booking/totals.test.ts:38</code> now expects -20, the client's credit, where it expected 0.</li>
+  <li><code>tests/server/roles.test.mjs:104</code> now expects staff adding time off to be refused.</li>
+</ul>
+
+<h2>How the fixes were verified</h2>
+<div class="card scroll"><table>
+<thead><tr><th>Check</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td>Full <code>npm test</code>: type check, 106 unit tests, 229 requirement tests and 90 server tests</td><td><span class="tag pass">All pass</span></td></tr>
+<tr><td>Browser offline test in real Chrome, logged in as admin</td><td><span class="tag pass">20 of 20</span></td></tr>
+<tr><td>One-off staff check in real Chrome: blocked pages, menu, dragging, read-only dialog, scrolling, and no changes sent. It isn't part of the test suite.</td><td><span class="tag pass">13 of 13</span></td></tr>
+</tbody></table></div>
+
+<h3>What this doesn't cover</h3>
+<ul>
+  <li><strong>Real dragging for shop roles:</strong> the scheduler tests replace FullCalendar, and the browser test doesn't cover the new staff rules, so the staff check above was a single run.</li>
+  <li><strong>Phones and the staff side panel:</strong> scrolling in the read-only form was checked on a desktop-size window. The side panel fit on screen, so its scrolling wasn't tried, and touch wasn't tried at all.</li>
+  <li><strong>Other screens that write as staff:</strong> I covered the routes you decided on. Staff are also still allowed other writes, such as their own profile, chat and column order.</li>
+  <li><strong>Greek wording:</strong> the new messages are my translations, so please read them over.</li>
+  <li><strong>Other shop roles in production:</strong> nothing has been run against the live server.</li>
+</ul>
+
+<h2>Step 3: manual mutants</h2>
+<p>I planted one bug at a time in a throwaway copy of the project and ran the matching tests. A test passing despite a planted bug would mean that test is flawed. <strong>All 32 were caught.</strong> These ran before the app fixes. The final Stryker run below covers the code as it stands now. To repeat one by hand, make the same change in the listed file: the listed requirement's tests should turn red. Then undo it.</p>
+<div class="card scroll"><table>
+<thead><tr><th>#</th><th>Planted bug</th><th>File</th><th>Caught by</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td class="id">M01</td><td>Overpaying a booking creates credit on it</td><td><code>useBookingTotals.ts</code></td><td>B3</td><td><span class="tag pass">Caught</span></td></tr>
+<tr><td class="id">M02</td><td>A booking exactly on the balance start date stops counting</td><td><code>useBookingTotals.ts</code></td><td>B6</td><td><span class="tag pass">Caught</span></td></tr>
+<tr><td class="id">M03</td><td>A booking's unpaid part is counted twice</td><td><code>useBookingTotals.ts</code></td><td>B4</td><td><span class="tag pass">Caught</span></td></tr>
+<tr><td class="id">M04</td><td>Selected same-day bookings are left out</td><td><code>useBookingTotals.ts</code></td><td>B7</td><td><span class="tag pass">Caught</span></td></tr>
+<tr><td class="id">M05</td><td>Gift cards aren't added to what's due</td><td><code>useBookingTotals.ts</code></td><td>B8</td><td><span class="tag pass">Caught</span></td></tr>
+<tr><td class="id">M06</td><td>A discount can exceed the amount</td><td><code>discount.ts</code></td><td>B2</td><td><span class="tag pass">Caught</span></td></tr>
+<tr><td class="id">M07</td><td>A products-only discount also hits services</td><td><code>discount.ts</code></td><td>B2</td><td><span class="tag pass">Caught</span></td></tr>
+<tr><td class="id">M08</td><td>Front desk loses shop-admin rights</td><td><code>auth.ts</code></td><td>S3</td><td><span class="tag pass">Caught</span></td></tr>
+<tr><td class="id">M09</td><td>Front desk gets analytics</td><td><code>auth.ts</code></td><td>S3</td><td><span class="tag pass">Caught</span></td></tr>
+<tr><td class="id">M10</td><td>A second "view as" overwrites the owner's session</td><td><code>auth.ts</code></td><td>S5</td><td><span class="tag pass">Caught</span></td></tr>
+<tr><td class="id">M11</td><td>An answer with no token counts as a login</td><td><code>auth.ts</code></td><td>S2</td><td><span class="tag pass">Caught</span></td></tr>
+<tr><td class="id">M12</td><td>Logout leaves the token saved</td><td><code>auth.ts</code></td><td>S7</td><td><span class="tag pass">Caught</span></td></tr>
+<tr><td class="id">M13</td><td>A slow answer replaces the open day</td><td><code>calendar.ts</code></td><td>S9</td><td><span class="tag pass">Caught</span></td></tr>
+<tr><td class="id">M14</td><td>Hidden staff appear on the calendar</td><td><code>calendar.ts</code></td><td>S8</td><td><span class="tag pass">Caught</span></td></tr>
+<tr><td class="id">M15</td><td>Offline data isn't marked as saved</td><td><code>calendar.ts</code></td><td>S10</td><td><span class="tag pass">Caught</span></td></tr>
+<tr><td class="id">M16</td><td>Staff order is saved reversed</td><td><code>calendar.ts</code></td><td>S13</td><td><span class="tag pass">Caught</span></td></tr>
+<tr><td class="id">M17</td><td>Analytics pages open to front desk</td><td><code>router/index.ts</code></td><td>U3</td><td><span class="tag pass">Caught</span></td></tr>
+<tr><td class="id">M18</td><td>Clients can open the staff app</td><td><code>router/index.ts</code></td><td>U2</td><td><span class="tag pass">Caught</span></td></tr>
+<tr><td class="id">M19</td><td>Logged-out users can open private pages</td><td><code>router/index.ts</code></td><td>U1</td><td><span class="tag pass">Caught</span></td></tr>
+<tr><td class="id">M20</td><td>Platform pages open to everyone</td><td><code>router/index.ts</code></td><td>U3</td><td><span class="tag pass">Caught</span></td></tr>
+<tr><td class="id">M21</td><td>Clients go to the scheduler after login</td><td><code>LoginView.vue</code></td><td>C1</td><td><span class="tag pass">Caught</span></td></tr>
+<tr><td class="id">M22</td><td>Sign-in stays clickable during an attempt</td><td><code>LoginView.vue</code></td><td>C5</td><td><span class="tag pass">Caught</span></td></tr>
+<tr><td class="id">M23</td><td>The address isn't cleaned</td><td><code>LoginView.vue</code></td><td>C7</td><td><span class="tag pass">Caught</span></td></tr>
+<tr><td class="id">M24</td><td>The expired-session warning isn't shown</td><td><code>LoginView.vue</code></td><td>C7</td><td><span class="tag pass">Caught</span></td></tr>
+<tr><td class="id">M25</td><td>A refused move stays where it was dropped</td><td><code>SchedulerView.vue</code></td><td>C13, C14, C15</td><td><span class="tag pass">Caught</span></td></tr>
+<tr><td class="id">M26</td><td>Accepting over capacity doesn't send the override</td><td><code>SchedulerView.vue</code></td><td>C14</td><td><span class="tag pass">Caught</span></td></tr>
+<tr><td class="id">M27</td><td>Front desk can't book outside hours</td><td><code>SchedulerView.vue</code></td><td>C11</td><td><span class="tag pass">Caught</span></td></tr>
+<tr><td class="id">M28</td><td>Breaks can be booked over</td><td><code>SchedulerView.vue</code></td><td>C12</td><td><span class="tag pass">Caught</span></td></tr>
+<tr><td class="id">M29</td><td>Staff can go back to past days</td><td><code>SchedulerView.vue</code></td><td>C10</td><td><span class="tag pass">Caught</span></td></tr>
+<tr><td class="id">M30</td><td>Logging out offline goes to the home page</td><td><code>useLogout.ts</code></td><td>B13</td><td><span class="tag pass">Caught</span></td></tr>
+<tr><td class="id">M31</td><td>Unsent changes are deleted without asking</td><td><code>useLogout.ts</code></td><td>B12</td><td><span class="tag pass">Caught</span></td></tr>
+<tr><td class="id">M32</td><td>Staff are blocked from reordering columns</td><td><code>server/routes/staff.js</code></td><td>U6</td><td><span class="tag pass">Caught</span></td></tr>
+</tbody></table></div>
+
+<h2>Step 4: StrykerJS</h2>
+<p>StrykerJS plants hundreds of small code changes automatically. After the fixes the overall score is <strong>63.65%</strong>, between the config's 60% and 80% thresholds, with 576 of 905 changes caught. All tests now take part in the run. Scores can move slightly between runs.</p>
+<div class="card scroll"><table>
+<thead><tr><th>File</th><th class="num">Score</th><th class="num">Caught</th><th class="num">Survived</th><th class="num">No test ran it</th><th>Status</th></tr></thead>
+<tbody>
+<tr><td><code>useBookingTotals.ts</code></td><td class="num">92.55%</td><td class="num">87</td><td class="num">7</td><td class="num">0</td><td><span class="tag pass">Strong</span></td></tr>
+<tr><td><code>auth.ts</code></td><td class="num">86.43%</td><td class="num">121</td><td class="num">19</td><td class="num">0</td><td><span class="tag pass">Strong</span></td></tr>
+<tr><td><code>router/index.ts</code> (guard only)</td><td class="num">78.82%</td><td class="num">67</td><td class="num">5</td><td class="num">13</td><td><span class="tag mixed">Fair</span></td></tr>
+<tr><td><code>LoginView.vue</code></td><td class="num">77.22%</td><td class="num">61</td><td class="num">17</td><td class="num">1</td><td><span class="tag mixed">Fair</span></td></tr>
+<tr><td><code>useLogout.ts</code></td><td class="num">73.91%</td><td class="num">17</td><td class="num">5</td><td class="num">1</td><td><span class="tag mixed">Fair</span></td></tr>
+<tr><td><code>discount.ts</code></td><td class="num">47.76%</td><td class="num">32</td><td class="num">8</td><td class="num">27</td><td><span class="tag fail">Weak</span></td></tr>
+<tr><td><code>calendar.ts</code></td><td class="num">47.21%</td><td class="num">93</td><td class="num">85</td><td class="num">19</td><td><span class="tag fail">Weak</span></td></tr>
+<tr><td><code>SchedulerView.vue</code> (move logic only)</td><td class="num">44.55%</td><td class="num">98</td><td class="num">78</td><td class="num">44</td><td><span class="tag fail">Weak</span></td></tr>
+</tbody></table></div>
+
+<h3>Where the tests are weak</h3>
+<p>Many survivors are harmless, such as console messages or icon names. These are the ones that matter, most important first:</p>
+<ul>
+  <li><strong>Resizing an appointment as a shop role has no test</strong> (<code>resizeCard</code> in <code>SchedulerView.vue</code>), including going back after a refusal.</li>
+  <li><strong>A dragged appointment's other fields are barely checked:</strong> its new duration, new staff member and overtime flag, plus Ctrl + drag moving all its parts, and the "appointment deleted elsewhere" conflict (<code>dropCard</code> and <code>updateAppointment</code>).</li>
+  <li><strong>Saving and loading discounts has no test:</strong> <code>discountFromAppointment</code> and <code>discountPayload</code> in <code>discount.ts</code>, which decide what is sent to the server.</li>
+  <li><strong>The calendar's background work is untested:</strong> downloading ahead for offline use (<code>prefetchAround</code>), refreshing time off and working hours, reloading after a sync, and offline fallback for staff and working hours.</li>
+  <li><strong>The shop-wide cash lock at login isn't checked</strong> (<code>login</code> in <code>auth.ts</code>).</li>
+  <li><strong>The in-app redirect to the home page isn't tested</strong> (the first check in the page guard).</li>
+</ul>
+
+<h3>Running it</h3>
+<pre><code>npm run test:mutation
+# takes about 8 to 11 minutes; open reports/mutation/mutation.html for every result</code></pre>
+<ul>
+  <li><code>stryker.config.json</code> lists the files and line ranges to test.</li>
+  <li>For <code>.vue</code> files, Stryker counts line ranges from the start of the script block, not the start of the file. In <code>SchedulerView.vue</code>, subtract the line number of <code>&lt;script setup&gt;</code> from the file's line number. These ranges need updating when the file changes a lot.</li>
+  <li>The report folder and Stryker's temporary folder are in <code>.gitignore</code>. Server code isn't covered by Stryker.</li>
+</ul>
+
+<h2>Running the tests</h2>
+<pre><code>npm test                   # everything, now including the new tests
+npm run test:spec          # only the app tests in tests/spec/
+npm run test:spec:server   # only the new server tests; needs PostgreSQL and .env
+npm run test:offline:e2e   # the browser offline test; builds the app first</code></pre>
+<p>The server commands copy the dev database into a temporary test database and delete that copy afterwards.</p>
+
+<h3>Test files</h3>
+<div class="card scroll"><table>
+<thead><tr><th>File</th><th>Covers</th><th class="num">Pass</th><th class="num">Fail</th></tr></thead>
+<tbody>
+<tr><td><code>tests/spec/loginView.spec.ts</code></td><td>C1–C7</td><td class="num">24</td><td class="num">0</td></tr>
+<tr><td><code>tests/spec/schedulerView.spec.ts</code></td><td>C8–C17</td><td class="num">34</td><td class="num">0</td></tr>
+<tr><td><code>tests/spec/authStore.spec.ts</code></td><td>S1–S7</td><td class="num">23</td><td class="num">0</td></tr>
+<tr><td><code>tests/spec/calendarStore.spec.ts</code></td><td>S8–S15</td><td class="num">17</td><td class="num">0</td></tr>
+<tr><td><code>tests/spec/useBookingTotals.spec.ts</code></td><td>B1–B11</td><td class="num">52</td><td class="num">0</td></tr>
+<tr><td><code>tests/spec/logoutAndOffline.spec.ts</code></td><td>B12, B13, S6, U5</td><td class="num">11</td><td class="num">0</td></tr>
+<tr><td><code>tests/spec/router.spec.ts</code></td><td>U1–U4</td><td class="num">68</td><td class="num">0</td></tr>
+<tr><td><code>tests/server/staffReadOnly.test.mjs</code></td><td>U6</td><td class="num">7</td><td class="num">0</td></tr>
+</tbody></table></div>
+
+<h2>Progress</h2>
+<div class="card">
+<table>
+<tbody>
+<tr><td>Step 1: Test Report</td><td><span class="tag pass">Done</span></td></tr>
+<tr><td>Step 2: Spec-driven tests</td><td><span class="tag pass">Done</span></td></tr>
+<tr><td>Step 3: Manual mutants</td><td><span class="tag pass">Done: 32 of 32 caught</span></td></tr>
+<tr><td>Step 4: StrykerJS setup</td><td><span class="tag pass">Done: 63.65%</span></td></tr>
+<tr><td>App fixes</td><td><span class="tag pass">13 of 13 made, not committed</span></td></tr>
+</tbody>
+</table>
+</div>
+
+</main>
+</body>
+</html>

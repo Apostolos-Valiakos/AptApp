@@ -19,7 +19,7 @@
           :max="maxRefundable"
         />
         <p class="text-xs text-gray-400 mt-1">
-          {{ t("refund.maxNote", { max: Number(maxRefundable).toFixed(2) }) }}
+          {{ t("refund.maxNote", { max: formatMoney(maxRefundable) }) }}
         </p>
       </div>
       <div>
@@ -28,14 +28,14 @@
         }}</label>
         <Dropdown
           v-model="method"
-          :options="['cash', 'card', 'bank-transfer']"
+          :options="MONEY_METHODS"
           class="w-full"
         >
           <template #value="slotProps">
-            {{ slotProps.value ? t(`common.paymentMethod.${slotProps.value}`) : "" }}
+            {{ slotProps.value ? methodChoiceLabel(t, slotProps.value) : "" }}
           </template>
           <template #option="slotProps">
-            {{ t(`common.paymentMethod.${slotProps.option}`) }}
+            {{ methodChoiceLabel(t, slotProps.option) }}
           </template>
         </Dropdown>
       </div>
@@ -66,29 +66,29 @@
 </template>
 
 <script setup lang="ts">
+import { useNotify } from "../../composables/useNotify";
+import { MONEY_METHODS, methodChoiceLabel } from "../../utils/paymentMethods";
+import { api, ApiError } from "../../api/http";
+import { formatMoney } from "../../utils/format";
 import { ref, computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
 
 const { t } = useI18n();
 const toast = useToast();
+const notify = useNotify();
 
 const props = defineProps<{
-  visible: boolean;
   appointmentId: string | null;
   maxRefundable: number;
   ensureSaved?: () => Promise<string | null>;
 }>();
 
 const emit = defineEmits<{
-  "update:visible": [boolean];
   refunded: [any];
 }>();
 
-const visibleModel = computed({
-  get: () => props.visible,
-  set: (v) => emit("update:visible", v),
-});
+const visibleModel = defineModel<boolean>("visible", { default: false });
 
 const amount = ref<number | null>(0);
 const method = ref("cash");
@@ -96,7 +96,7 @@ const reason = ref("");
 const saving = ref(false);
 
 watch(
-  () => props.visible,
+  () => visibleModel.value,
   (v) => {
     if (!v) return;
     amount.value = Number(props.maxRefundable) || 0;
@@ -113,10 +113,6 @@ const canSubmit = computed(
     reason.value.trim().length > 0,
 );
 
-const headers = () => ({
-  "Content-Type": "application/json",
-  Authorization: `Bearer ${localStorage.getItem("token")}`,
-});
 
 const confirm = async () => {
   let apptId = props.appointmentId;
@@ -125,23 +121,19 @@ const confirm = async () => {
 
   saving.value = true;
   try {
-    const res = await fetch(`/api/v1/appointments/${apptId}/refund`, {
-      method: "POST",
-      headers: headers(),
-      body: JSON.stringify({
+    const data = await api
+      .post(`/api/v1/appointments/${apptId}/refund`, {
         amount: amount.value,
         payment_method: method.value,
         reason: reason.value.trim(),
-      }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(
-        data.error === "exceeds_amount_paid"
-          ? t("refund.exceedsPaid")
-          : data.error || t("refund.failed"),
-      );
-    }
+      })
+      .catch((e: ApiError) => {
+        throw new Error(
+          e.data?.error === "exceeds_amount_paid"
+            ? t("refund.exceedsPaid")
+            : e.data?.error || t("refund.failed"),
+        );
+      });
     toast.add({ severity: "success", summary: t("refund.success"), life: 2500 });
     visibleModel.value = false;
     emit("refunded", {
@@ -151,12 +143,7 @@ const confirm = async () => {
       reason: reason.value,
     });
   } catch (e: any) {
-    toast.add({
-      severity: "error",
-      summary: t("common.error"),
-      detail: e.message,
-      life: 3500,
-    });
+    notify.error(e.message);
   } finally {
     saving.value = false;
   }
