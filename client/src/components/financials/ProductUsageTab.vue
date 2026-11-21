@@ -66,7 +66,7 @@
 import { useFinancialsPage } from "./context";
 
 const {
-  router, analytics, productUsageReport, t,
+  productUsageReport, t,
 } = useFinancialsPage();
 
 const formatUsageRange = (min: number, max: number) => (min === max ? `${min}` : `${min} - ${max}`);

@@ -43,7 +43,7 @@ import BookingSidebar from "../bookingSideBar.vue";
 import { useBookingDialog } from "./context";
 
 const {
-  t, form, isReadOnly, selectedClient, clientNotesDraft, sidebarBalance, loading, loadingPastId,
+  t, form, isReadOnly, selectedClient, clientNotesDraft, sidebarBalance, loadingPastId,
   showMobileSidebar, isMobile, onDebtChanged, openPastAppointment,
 } = useBookingDialog();
 </script>

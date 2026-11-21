@@ -94,3 +94,25 @@ test("analytics only for the roles that see analytics", async () => {
   const r = await api(PORT, token(staff, "staff"))("GET", `/api/v1/reports/insights?${range}`);
   assert.equal(r.status, 403);
 });
+
+// The sales report by service (GET /api/v1/reports/sales) leaves out bookings
+// kept off the receipts, except for a super admin (getVisibilityClause).
+test("the sales report counts bookings off the receipts for a super admin only", async () => {
+  const day = "2027-06-19";
+  const client = sql(DB, `INSERT INTO clients (first_name, last_name, shop_id) VALUES ('Sales', 'Visibility', '${SHOP}') RETURNING id`).split("\n")[0];
+  for (const [hhmm, price, onReceipt] of [["10:00", 40, true], ["12:00", 25, false]]) {
+    const r = await call("POST", "/api/v1/appointments", {
+      client_id: client, status: "completed", save_receipt: onReceipt, allow_unavailable: true,
+      services: [{ service_id: ids.service, staff_id: ids.staff, start_time: `${day}T${hhmm}:00+03:00`, duration_override: 60, price_override: price }],
+    });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+  }
+  const range = `from=${day}T00:00:00%2B03:00&to=${day}T23:59:59%2B03:00`;
+  const superAdmin = sql(DB, `SELECT id FROM users WHERE shop_id = '${SHOP}' AND role = 'super_admin' LIMIT 1`);
+  const asAdmin = (await call("GET", `/api/v1/reports/sales?${range}`)).data;
+  const asSuper = (await api(PORT, token(superAdmin, "super_admin"))("GET", `/api/v1/reports/sales?${range}`)).data;
+  assert.equal(asAdmin.summary.total_revenue, 40, "the admin sees only the booking on the receipts");
+  assert.equal(Number(asAdmin.details[0].count), 1);
+  assert.equal(asSuper.summary.total_revenue, 65, "the super admin sees both");
+  assert.equal(Number(asSuper.details[0].count), 2);
+});

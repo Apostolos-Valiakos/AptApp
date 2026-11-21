@@ -167,6 +167,7 @@
             class="w-full"
             inputClass="w-full"
           />
+          <small class="block mt-1" :class="passwordForm.newPass && !passwordOk(passwordForm.newPass) ? 'text-red-500' : 'text-gray-500'" data-testid="password-rule">{{ t("common.passwordRule") }}</small>
         </div>
         <div>
           <label class="block text-xs font-medium text-gray-500 mb-1"
@@ -194,7 +195,7 @@
             :loading="isSavingPassword"
             :disabled="
               !passwordForm.current ||
-              !passwordForm.newPass ||
+              !passwordOk(passwordForm.newPass) ||
               passwordForm.newPass !== passwordForm.confirm
             "
             @click="changePassword"
@@ -277,6 +278,7 @@ import { useAuthStore } from "../../stores/auth";
 import ClientPackagesPanel from "../../components/ClientPackagesPanel.vue";
 import InputText from "primevue/inputtext";
 import Password from "primevue/password";
+import { passwordOk } from "../../utils/password";
 import Button from "primevue/button";
 import Dialog from "primevue/dialog";
 import ToggleSwitch from "primevue/toggleswitch";

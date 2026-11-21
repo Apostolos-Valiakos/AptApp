@@ -21,7 +21,7 @@ import psycopg2
 import psycopg2.extras
 import pandas as pd
 
-from import_common import SHOP_ID, FUZZY_THRESHOLD, best_match, db_uri, normalize
+from import_common import SHOP_ID, FUZZY_THRESHOLD, best_match, cell_text, db_uri, normalize
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 
@@ -126,6 +126,13 @@ def main():
             rows_resolved.append({"row": i, "error": f"Cannot parse date: {raw_date!r}"})
             continue
 
+        # A row without a client name can't be booked for anyone: it's listed,
+        # never turned into a client called "nan".
+        cli_raw = cell_text(row.get("Πελάτης"))
+        if not cli_raw:
+            rows_resolved.append({"row": i, "error": "No client name"})
+            continue
+
         # Staff
         staff_raw  = str(row.get("Υπάλληλος", "")).strip()
         sid, s_disp, s_score = fuzzy_match(normalize(staff_raw), staff_id, staff_display)
@@ -147,8 +154,7 @@ def main():
             except ValueError:
                 pass
 
-        # Client — entire cell is full name
-        cli_raw  = str(row.get("Πελάτης", "")).strip()
+        # Client — entire cell is full name (read above)
         cid, c_disp, c_score = fuzzy_match(normalize(cli_raw), cli_id, cli_display)
         cli_new  = cid is None
         cli_name_out = c_disp if cid else cli_raw

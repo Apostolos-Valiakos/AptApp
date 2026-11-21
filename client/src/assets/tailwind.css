@@ -19,6 +19,12 @@
   }
 }
 
+/* A list page's table whose rows grow (several lines in a cell): each cell
+   starts at the top of its row (gift cards, products). */
+.p-datatable.table-cells-top .p-datatable-tbody > tr > td {
+  vertical-align: top;
+}
+
 /* A destructive item in a ⋯ menu (delete): red. */
 .menu-danger .p-menu-item-label,
 .menu-danger .p-menu-item-icon {

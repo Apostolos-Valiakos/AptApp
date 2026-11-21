@@ -89,9 +89,8 @@ module.exports = function financesRouter({
     });
   }, { log: "Finance details report error:" }));
   router.get("/reports/finances", authenticateToken, requireAnalyticsAccess, asyncHandler(async (req, res) => {
-    const { from, to, excludeCash, excludeCard } = req.query;
+    const { excludeCash, excludeCard } = req.query;
     const shopId = req.shopId;
-    const isSuperAdmin = req.user.role === "super_admin";
     const cashApptClause = buildRevenueExclusionClause(excludeCash, excludeCard, "a2");
     const cashTxnClause = buildTxnMethodExclusionClause(excludeCash, excludeCard);
 

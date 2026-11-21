@@ -23,7 +23,7 @@ const { checkIdempotency, saveIdempotency } = require("./domain/idempotency");
 const { releasePackageUsage, loadClientPackages } = require("./domain/packages");
 const { parseDebtResolution, settleAmount } = require("./domain/debts");
 const { StaffUnavailableError, MissingStaffError, RepeatedServiceError, getGroupDetails, DiscountError, createAppointmentSeries, performSingleUpdate, SelfBookingNotAllowedError, sanitizeClientBookingPayload, OfflineConflictError, assertCapacity, assertNoNewOverlaps, assertBaseVersion } = require("./domain/bookings");
-const { forceLogoutCache, userRevokedCache, revokeUserSessions, isSessionToken, authenticateToken, requireAnalyticsAccess, notForClients, notForStaff, requireShopAdminAccess, onlyRoles, notRoles, onlyAdmins, onlySuperAdmins, onlyOwner, onlyClients, ownClientOnly, isAdminRole, canSellExtras, isReauthed, requireReauth, requireSensitiveAccess, signReauth } = require("./middleware/auth");
+const { forceLogoutCache, userRevokedCache, revokeUserSessions, isSessionToken, authenticateToken, requireAnalyticsAccess, notForClients, notForStaff, requireShopAdminAccess, onlyRoles, notRoles, onlyAdmins, onlySuperAdmins, onlyOwner, onlyClients, ownClientOnly, isAdminRole, canSellExtras, isReauthed, requireSensitiveAccess, signReauth } = require("./middleware/auth");
 const path = require("path");
 const cors = require("cors");
 const helmet = require("helmet");
@@ -350,7 +350,10 @@ const atStartup = async () => {
       userRevokedCache.set(u.id, new Date(u.sessions_revoked_at).getTime());
     }
   } catch (err) {
+    // Not started without them: without the revoked-session cache a restart
+    // would let revoked logins back in.
     console.error("Failed to run the startup steps:", err);
+    throw err;
   }
 };
 
@@ -643,15 +646,14 @@ app.get(/(.*)/, (req, res) => {
   res.sendFile(path.join(distPath, "index.html"));
 });
 
-// Migrations first (server/migrate.js): if one fails, the server doesn't
-// start. Then the startup tasks above, and the server listens.
-const migrated = runMigrations();
-migrated
-  .then(atStartup)
-  .catch(() => {});
+// Migrations first (server/migrate.js), then the startup steps above, then
+// the server listens. If either fails, the server doesn't start (and a
+// deploy rolls back, see DEPLOY.md).
+const ready = runMigrations().then(atStartup);
+ready.catch(() => {}); // reported below when this file runs as the server
 
 if (require.main === module) {
-  migrated
+  ready
     .then(() => {
       server.listen(PORT, "0.0.0.0", () => {
         console.log(`🚀 Server running on port ${PORT}`);

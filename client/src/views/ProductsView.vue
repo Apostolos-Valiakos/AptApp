@@ -110,7 +110,7 @@
       v-else
       :value="shownProducts"
       responsiveLayout="scroll"
-      class="p-datatable-sm"
+      class="p-datatable-sm table-cells-top"
       :rowHover="true"
     >
       <template #empty>
@@ -367,7 +367,6 @@ import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { useProductStore } from "../stores/products";
 import { useAuthStore } from "../stores/auth";
-import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 
 const { t } = useI18n();
@@ -405,7 +404,6 @@ interface Product {
 }
 
 const productStore = useProductStore();
-const toast = useToast();
 const notify = useNotify();
 const confirm = useConfirm();
 
@@ -523,9 +521,3 @@ const confirmDeleteProduct = (product: Product) => {
 };
 </script>
 
-<style scoped>
-:deep(.p-datatable .p-datatable-tbody > tr > td) {
-  padding: 1rem;
-  vertical-align: top;
-}
-</style>

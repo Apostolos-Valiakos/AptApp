@@ -171,7 +171,7 @@ import { computed } from "vue";
 import { useFinancialsPage } from "./context";
 
 const {
-  analytics, paymentsReport, priceAdjustmentsReport, chartOptions, t,
+  paymentsReport, priceAdjustmentsReport, chartOptions, t,
 } = useFinancialsPage();
 
 // ── Chart computed data ──────────────────────────────────────────────────────

@@ -1,6 +1,5 @@
 // Making and changing bookings: series, edits, and the checks around them
 // (staff availability, discounts, self-booking, overlaps, places, versions).
-const crypto = require("crypto");
 const { applyDiscount } = require("../discounts");
 const { HttpError } = require("../http");
 const { safeUUID } = require("./common");

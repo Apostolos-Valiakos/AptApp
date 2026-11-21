@@ -447,7 +447,7 @@
 <script setup lang="ts">
 import { useNotify } from "../composables/useNotify";
 import { exportXlsx } from "../utils/exportXlsx";
-import { api, ApiError, ifRefused, withMessage } from "../api/http";
+import { api, ApiError, withMessage } from "../api/http";
 import { usePhoneMatches } from "../composables/usePhoneMatches";
 import PhoneMatches from "../components/PhoneMatches.vue";
 import { ref, onMounted, computed, watch } from "vue";
@@ -740,8 +740,3 @@ const formatPhone = (phone: string) => {
 };
 </script>
 
-<style scoped>
-:deep(.p-datatable .p-datatable-tbody > tr > td) {
-  padding: 1rem;
-}
-</style>

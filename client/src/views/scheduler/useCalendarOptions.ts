@@ -21,7 +21,7 @@ export const useCalendarOptions = (ctx: ReturnType<typeof useSchedulerCore> & Re
   const {
     flags, authStore, calendarStore, isStaffRole, todayDateStr, dialogVisible, selectedAppointment, fullCalendar,
     currentTitle, currentView, currentStart, currentEnd, isFetching, shopSlotMinTime, shopSlotMaxTime, getDayMinWidth,
-    fitStaff, calendarApi, t, locale, PHONE_MAX_WIDTH, isPhone, dockedDate, calendarResources,
+    fitStaff, calendarApi, t, PHONE_MAX_WIDTH, isPhone, dockedDate, calendarResources,
     DID_NOT_HAPPEN, calendarEvents, timeOffBackgroundEvents, breakBlockEvents, workingHoursBackgroundEvents, hideHoverCard, highlightLinkedEvents, clearLinkedHighlight,
     dayServices, showHoverCard, SLOT_MINUTES, fitRowsToScreen, setSnapMinutes, roundRangeToSlots, isRangeAllowedForResource, openNewBooking,
     dropCard, resizeCard, startMoveTogetherHint, stopMoveTogetherHint,

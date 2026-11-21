@@ -1,5 +1,6 @@
 // Inviting a client to the portal by email.
 const express = require("express");
+const { createMailTransport } = require("../../domain/mailer");
 const { asyncHandler } = require("../../http");
 const jwt = require("jsonwebtoken");
 const path = require("path");
@@ -56,20 +57,7 @@ module.exports = function inviteRouter({
     );
 
     const signupUrl = `${process.env.FRONTEND_URL}/signup?token=${inviteToken}`;
-    const nodemailer = require("nodemailer");
-
-    const transporter = nodemailer.createTransport({
-      host: process.env.EMAIL_HOST,
-      port: process.env.EMAIL_PORT,
-      secure: process.env.EMAIL_PORT == 465,
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
-      family: 4,
-      connectionTimeout: 10000,
-      greetingTimeout: 10000,
-    });
+    const transporter = createMailTransport();
 
     await transporter.sendMail({
       from: `"${shopName}" <${process.env.EMAIL_USER}>`,

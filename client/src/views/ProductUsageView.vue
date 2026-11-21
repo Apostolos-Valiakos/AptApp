@@ -192,13 +192,11 @@ import { api, ifRefused } from "../api/http";
 import { ref, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
-import { useToast } from "primevue/usetoast";
 import TabView from "primevue/tabview";
 import TabPanel from "primevue/tabpanel";
 
 const { t, locale } = useI18n();
 const router = useRouter();
-const toast = useToast();
 const notify = useNotify();
 
 

@@ -74,7 +74,6 @@
           {{ t("payment.membership.label") }}
         </label>
         <MembershipPicker
-          ref="membershipPickerRef"
           :clientId="clientId"
           :catalogServices="catalogServices"
           :appointmentServices="appointmentServices"
@@ -312,7 +311,6 @@ const emit = defineEmits([
   "pay",
 ]);
 
-const membershipPickerRef = ref<any>(null);
 const membershipPicker2Ref = ref<any>(null);
 const membershipRedemptions2 = ref<any[]>([]);
 const membershipAmount2 = ref(0);

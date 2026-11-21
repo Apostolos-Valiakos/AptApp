@@ -44,7 +44,7 @@ module.exports = function shopRouter({
 
     // 3. Handle case where shop isn't found
     if (rows.length === 0) {
-      return res.status(404).json({ message: "Shop not found" });
+      return res.status(404).json({ error: "Shop not found" });
     }
 
     // 5. Send the first item (since ID is unique), not the whole array
@@ -67,7 +67,7 @@ module.exports = function shopRouter({
     );
 
     if (rowCount === 0) {
-      return res.status(404).json({ message: "Shop not found" });
+      return res.status(404).json({ error: "Shop not found" });
     }
 
     res.json({ message: "Theme updated successfully", primaryColor });
@@ -231,7 +231,7 @@ module.exports = function shopRouter({
     );
 
     if (rowCount === 0) {
-      return res.status(404).json({ message: "Shop not found" });
+      return res.status(404).json({ error: "Shop not found" });
     }
 
     res.json({

@@ -3,6 +3,7 @@ const express = require("express");
 const { asyncHandler } = require("../../http");
 const pool = require("../../db");
 const { buildRevenueExclusionClause, buildTxnMethodExclusionClause } = require("../../domain/reportSql");
+const { getVisibilityClause } = require("../../domain/common");
 
 module.exports = function logsRouter({
   authenticateToken,
@@ -52,7 +53,7 @@ module.exports = function logsRouter({
        FROM appointments a
        WHERE a.shop_id = $1 AND a.is_block = false ${apptExclusion}
          AND EXISTS (SELECT 1 FROM appointment_services x WHERE x.appointment_id = a.id AND x.start_time::date = COALESCE($2::date, CURRENT_DATE))
-         ${role === "super_admin" ? "" : "AND a.save_receipt = true"}`,
+         ${getVisibilityClause(req.user, "a")}`,
       [req.shopId, day],
     );
 

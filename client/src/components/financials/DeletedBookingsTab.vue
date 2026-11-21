@@ -59,7 +59,7 @@ import { ref, computed } from "vue";
 import { useFinancialsPage } from "./context";
 
 const {
-  numericSort, analytics, deletedReport, t, te, locale,
+  numericSort, deletedReport, t, te, locale,
 } = useFinancialsPage();
 
 const deletedSearch = ref("");

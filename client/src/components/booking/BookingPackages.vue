@@ -82,7 +82,7 @@ import { useNotify } from "../../composables/useNotify";
 import { formatDate as dateText } from "../../utils/format";
 import { api, ApiError } from "../../api/http";
 import { formatMoney } from "../../utils/format";
-import { ref, computed, watch, onMounted } from "vue";
+import { ref, watch, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useToast } from "primevue/usetoast";
 import SellPackageDialog from "./SellPackageDialog.vue";

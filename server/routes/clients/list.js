@@ -1,7 +1,7 @@
 // The client list (search, pages, export), the walk-in client, and creating, changing and deleting a client.
 const express = require("express");
 const { HttpError, asyncHandler, withTransaction } = require("../../http");
-const { upperName } = require("../../domain/common");
+const { upperName, getVisibilityClause } = require("../../domain/common");
 const { clientsWithPhone } = require("../../domain/phones");
 
 module.exports = function listRouter({
@@ -150,7 +150,7 @@ module.exports = function listRouter({
   // stored no_show_count and total_sales are never updated). The shop's walk-in
   // placeholder isn't a real client, so it stays out.
   router.get("/export", authenticateToken, requireShopAdminAccess, asyncHandler(async (req, res) => {
-    const visibility = req.user.role === "super_admin" ? "" : "AND a.save_receipt = true";
+    const visibility = getVisibilityClause(req.user, "a");
     const { rows } = await pool.query(
       `SELECT c.first_name, c.last_name, c.email, c.phone,
               to_char(c.date_of_birth, 'YYYY-MM-DD') AS date_of_birth,

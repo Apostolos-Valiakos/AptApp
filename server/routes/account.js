@@ -5,6 +5,7 @@ const express = require("express");
 const { asyncHandler, withTransaction } = require("../http");
 const pool = require("../db");
 const bcrypt = require("bcrypt");
+const { passwordProblem } = require("../domain/common");
 const jwt = require("jsonwebtoken");
 const rateLimit = require("express-rate-limit");
 
@@ -163,9 +164,7 @@ module.exports = function accountRouter({
 
   router.put("/profile/password", authenticateToken, notForClients, asyncHandler(async (req, res) => {
     const { currentPassword, newPassword } = req.body;
-    if (!newPassword || newPassword.length < 4) {
-      return res.status(400).json({ error: "New password is too short" });
-    }
+    if (passwordProblem(newPassword)) return res.status(400).json({ error: passwordProblem(newPassword) });
     // 1. Fetch current hashed password
     const { rows } = await pool.query(
       "SELECT password FROM users WHERE id = $1",
@@ -196,6 +195,7 @@ module.exports = function accountRouter({
   // Signup Endpoint
   router.post("/signup", signupLimiter, asyncHandler(async (req, res) => {
     const { token, password } = req.body;
+    if (passwordProblem(password)) return res.status(400).json({ error: passwordProblem(password) });
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     // Only an invite link signs up (a login token has a role, not an email).
     if (isSessionToken(decoded) || !decoded.email || !decoded.clientId) {

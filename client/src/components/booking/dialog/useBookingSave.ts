@@ -92,6 +92,8 @@ export const useBookingSave = (state: BookingState, later: Later) => {
           start_time: toTimeStr(start),
           end_time: toTimeStr(end),
           reason: form.value.internal_notes || null,
+          // Editing a block: the server saves the new one and removes this one together.
+          replaces_id: form.value.time_off_id || null,
           force,
         })
         .then(() => null)
@@ -122,15 +124,6 @@ export const useBookingSave = (state: BookingState, later: Later) => {
             onHide: () => resolve(false),
           });
         });
-      }
-
-      // Editing an existing block: the replacement above is already safely
-      // created (and conflict-checked only against real appointments, never
-      // against this old row), so it's now safe to remove the original —
-      // using its original staff id, which may differ if the block was moved
-      // to another staff member in this edit.
-      if (form.value.time_off_id && form.value.time_off_staff_id) {
-        await api.del(`/api/v1/staff/${form.value.time_off_staff_id}/time-off/${form.value.time_off_id}`).catch(() => {});
       }
 
       notify.success(t("staff.timeOff.saved"));

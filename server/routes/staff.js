@@ -5,6 +5,7 @@ const express = require("express");
 const { HttpError, asyncHandler, withTransaction } = require("../http");
 const pool = require("../db");
 const bcrypt = require("bcrypt");
+const { passwordProblem, safeUUID } = require("../domain/common");
 const { DATE_YYYYMMDD, rangesProblem, bookingsOutsideWeek, bookingsOutsideDate } = require("../domain/staffSchedule");
 
 module.exports = function staffRouter({
@@ -56,12 +57,13 @@ module.exports = function staffRouter({
       email,
       phone,
       role,
-      color,
       username,
       password,
       visible_in_calendar,
       capacity,
     } = req.body;
+    // Checked before anything is saved: a refused password leaves no staff member behind.
+    if (username && password && passwordProblem(password)) return res.status(400).json({ error: passwordProblem(password) });
     const name = first_name + " " + last_name;
     const answer = await withTransaction(async (client) => {
       const staffRes = await client.query(
@@ -184,10 +186,15 @@ module.exports = function staffRouter({
     res.json(rows);
   }));
 
-  // Create a leave or break — warns about conflicting appointments unless force=true
+  // Create a leave or break — warns about conflicting appointments unless force=true.
+  // `replaces_id`: the block being edited (moved, or given to another staff
+  // member). The new one is saved and the old one removed together, so an
+  // edit never leaves both behind, nor neither.
   router.post("/staff/:id/time-off", authenticateToken, notForClients, notForStaff, asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { type, start_date, end_date, start_time, end_time, reason, force } = req.body;
+    const replacesId = req.body.replaces_id == null ? null : safeUUID(req.body.replaces_id);
+    if (req.body.replaces_id != null && !replacesId) return res.status(400).json({ error: "Invalid replaces_id" });
 
     if (!type || !["leave", "break"].includes(type)) {
       return res.status(400).json({ error: "type must be 'leave' or 'break'" });
@@ -246,23 +253,28 @@ module.exports = function staffRouter({
       });
     }
 
-    const { rows } = await pool.query(
-      `INSERT INTO staff_time_off
-         (staff_id, shop_id, type, start_date, end_date, start_time, end_time, reason)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING *`,
-      [
-        id,
-        req.shopId,
-        type,
-        start_date,
-        end_date,
-        type === "break" ? start_time : null,
-        type === "break" ? end_time : null,
-        reason || null,
-      ],
-    );
-    res.json(rows[0]);
+    const saved = await withTransaction(async (client) => {
+      const { rows } = await client.query(
+        `INSERT INTO staff_time_off
+           (staff_id, shop_id, type, start_date, end_date, start_time, end_time, reason)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         RETURNING *`,
+        [
+          id,
+          req.shopId,
+          type,
+          start_date,
+          end_date,
+          type === "break" ? start_time : null,
+          type === "break" ? end_time : null,
+          reason || null,
+        ],
+      );
+      // Already removed meanwhile (another screen): the edit still saves.
+      if (replacesId) await client.query("DELETE FROM staff_time_off WHERE id = $1 AND shop_id = $2", [replacesId, req.shopId]);
+      return rows[0];
+    });
+    res.json(saved);
   }));
 
   router.delete("/staff/:id/time-off/:timeOffId", authenticateToken, notForClients, notForStaff, asyncHandler(async (req, res) => {
@@ -472,6 +484,7 @@ module.exports = function staffRouter({
 
     if (!username || !password)
       return res.status(400).json({ error: "Username and password required" });
+    if (passwordProblem(password)) return res.status(400).json({ error: passwordProblem(password) });
 
     if (role && !STAFF_LOGIN_ROLES.includes(role)) {
       return res.status(400).json({ error: "Invalid role" });

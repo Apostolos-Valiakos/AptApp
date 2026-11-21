@@ -22,6 +22,7 @@
               class="w-full mt-1"
               inputClass="w-full"
             />
+            <small class="block mt-1" :class="password && !passwordOk(password) ? 'text-red-500' : 'text-gray-500'" data-testid="password-rule">{{ t("common.passwordRule") }}</small>
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700"
@@ -68,6 +69,7 @@ import { useRoute, useRouter } from "vue-router";
 import { useToast } from "primevue/usetoast";
 import { useI18n } from "vue-i18n";
 import Password from "primevue/password";
+import { passwordOk } from "../utils/password";
 import Button from "primevue/button";
 
 const route = useRoute();
@@ -83,7 +85,7 @@ const tokenError = ref(false);
 const token = route.query.token as string;
 
 const isFormValid = computed(
-  () => password.value.length >= 6 && password.value === confirmPassword.value,
+  () => passwordOk(password.value) && password.value === confirmPassword.value,
 );
 
 onMounted(() => {

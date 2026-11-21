@@ -908,6 +908,39 @@ describe("LV staff on leave aren't shown on the calendar", () => {
     },
   });
   afterEach(() => localStorage.removeItem("scheduler.showAllStaff"));
+  const shownColumns = () => {
+    const calls = calendarApi.setOption.mock.calls.filter((c: any[]) => c[0] === "resources");
+    return calls[calls.length - 1][1];
+  };
+
+  test("everyone on leave the same day: nobody is hidden, rather than an empty calendar", async () => {
+    const { options } = await open("admin", {
+      "GET /api/v1/staff": { body: [staff[0], bella] },
+      "GET /api/v1/time-off": {
+        body: ["st1", "st2"].map((id) => ({ staff_id: id, type: "leave", start_date: MONDAY, end_date: MONDAY })),
+      },
+    });
+    await show(options, "resourceTimeGridDay", MONDAY, "2026-11-03");
+    expect(shownStaff()).toEqual(["st1", "st2"]);
+  });
+
+  test("the month view hides nobody, even on leave all month", async () => {
+    const { options } = await open("admin", leave("2026-11-01", "2026-11-30"));
+    await show(options, "dayGridMonth", "2026-11-01", "2026-12-01");
+    expect(shownStaff()).toEqual(["st1", "st2"]);
+  });
+
+  test("a day off kept only for its booking is greyed in the day view, never in the week view", async () => {
+    // Anna works Mondays only; on Tuesday she's shown for her booking, greyed.
+    const annaBooked = {
+      "GET /api/v1/appointments": { body: [{ ...appointment(), services: [{ ...appointment().services[0], start_time: "2026-11-03T10:00:00" }] }] },
+    };
+    const { options } = await open("admin", { "GET /api/v1/staff": { body: [staff[0], bella] }, ...annaBooked });
+    await show(options, "resourceTimeGridDay", "2026-11-03", "2026-11-04");
+    expect(shownColumns().map((r: any) => [r.id, r.notWorking])).toEqual([["st1", true], ["st2", false]]);
+    await show(options, "resourceTimeGridWeek", MONDAY, "2026-11-09");
+    expect(shownColumns().every((r: any) => r.notWorking === false)).toBe(true);
+  });
 
   test("a computer's day view leaves out who's on leave that day", async () => {
     const { options } = await open("admin", leave(MONDAY, MONDAY));
@@ -1229,5 +1262,270 @@ describe("WS6 the waitlist on the calendar", () => {
     window.dispatchEvent(new CustomEvent("appointments-changed"));
     await afterReload();
     expect(count()).toBe("2");
+  });
+});
+
+// How bookings become the calendar's cards (useCalendarData's calendarEvents),
+// from what the calendar must show. CE1–CE10. (Whether "Active" hides
+// no-shows waits on SO-22: the filter checks "no_show", the data says
+// "no-show".)
+describe("CE how bookings become calendar cards", () => {
+  const line = (extra: any = {}) => ({
+    service_id: "svc", service_name: "Massage", staff_id: "st1", start_time: `${MONDAY}T10:00:00`, duration_minutes: 60, price: 30, charged: 30, ...extra,
+  });
+  const booking = (id: string, extra: any = {}, services: any[] = [line()]) => ({
+    ...appointment(), id, client_id: `c-${id}`, first_name: "Eleni", last_name: "Papa", services, ...extra,
+  });
+  const lastCards = () => {
+    const calls = calendarApi.setOption.mock.calls.filter((c: any[]) => c[0] === "events");
+    return calls[calls.length - 1][1].filter((e: any) => e.extendedProps?.appointmentId);
+  };
+  const cardsFor = async (rows: any[], routes: Record<string, Handler> = {}) => {
+    const opened = await open("admin", { "GET /api/v1/appointments": { body: rows }, ...routes });
+    await showDay(opened.options, `${MONDAY}T00:00:00`, "2026-11-03T00:00:00");
+    await settle();
+    return { ...opened, cards: lastCards() };
+  };
+  const byId = (cards: any[]) => Object.fromEntries(cards.map((c: any) => [c.id, c]));
+  afterEach(() => {
+    const settings = useSettingsStore();
+    settings.setHideCashPaid(false);
+  });
+
+  test("CE1 one card per service, in its staff member's column, from its start for its length", async () => {
+    const { cards } = await cardsFor([booking("a1", {}, [line(), line({ start_time: `${MONDAY}T11:00:00`, duration_minutes: 30 })])]);
+    expect(cards.map((c: any) => [c.id, c.resourceId, c.title])).toEqual([
+      ["a1_0", "st1", "Eleni - Massage"],
+      ["a1_1", "st1", "Eleni - Massage"],
+    ]);
+    expect(new Date(cards[0].start).getTime()).toBe(new Date(`${MONDAY}T10:00:00`).getTime());
+    expect(new Date(cards[0].end).getTime()).toBe(new Date(`${MONDAY}T11:00:00`).getTime());
+    expect(new Date(cards[1].end).getTime()).toBe(new Date(`${MONDAY}T11:30:00`).getTime());
+    expect(cards[1].extendedProps.serviceIndex).toBe(1);
+  });
+
+  test("CE2 a variation is named after its service; several people say how many", async () => {
+    const { cards } = await cardsFor([
+      booking("a1", {}, [line({ variation_name: "90 λεπτά" })]),
+      booking("a2", {}, [line({ start_time: `${MONDAY}T12:00:00`, persons: 3 })]),
+    ]);
+    const c = byId(cards);
+    expect(c.a1_0.extendedProps.service_name).toBe("Massage — 90 λεπτά");
+    expect(c.a2_0.extendedProps.service_name).toBe("Massage ×3");
+    expect(c.a2_0.extendedProps.persons).toBe(3);
+  });
+
+  test("CE3 the status filter: all, the active ones, or the cancelled ones", async () => {
+    const rows = [
+      booking("a1", { status: "confirmed" }),
+      booking("a2", { status: "cancelled" }, [line({ start_time: `${MONDAY}T12:00:00` })]),
+      booking("a3", { status: "completed" }, [line({ start_time: `${MONDAY}T14:00:00` })]),
+    ];
+    const { cards } = await cardsFor(rows);
+    expect(cards.map((c: any) => c.extendedProps.appointmentId).sort()).toEqual(["a1", "a2", "a3"]);
+    const pick = async (label: string) => {
+      [...document.querySelectorAll<HTMLElement>("button")].find((b) => b.textContent?.trim() === label)!.click();
+      await settle();
+      return lastCards().map((c: any) => c.extendedProps.appointmentId).sort();
+    };
+    expect(await pick(el.scheduler.filter.active)).toEqual(["a1", "a3"]);
+    expect(await pick(el.scheduler.filter.cancelled)).toEqual(["a2"]);
+    expect(await pick(el.scheduler.filter.all)).toEqual(["a1", "a2", "a3"]);
+  });
+
+  test("CE4 completed, cancelled, no-show and waiting-to-sync bookings are marked; others aren't", async () => {
+    const at = (h: string) => [line({ start_time: `${MONDAY}T${h}:00` })];
+    const { cards } = await cardsFor([
+      booking("ok", { status: "confirmed" }, at("09:00")),
+      booking("done", { status: "completed" }, at("10:00")),
+      booking("off", { status: "cancelled" }, at("11:00")),
+      booking("away", { status: "no-show" }, at("12:00")),
+      booking("wait", { _offline: "pending" }, at("13:00")),
+      booking("clash", { _offline: "conflict" }, at("14:00")),
+    ]);
+    const marks = Object.fromEntries(cards.map((c: any) => [c.extendedProps.appointmentId, c.classNames.filter((n: string) => n !== "fresha-event").sort()]));
+    expect(marks).toEqual({
+      ok: [],
+      done: ["fc-completed"],
+      off: ["fc-did-not-happen"],
+      away: ["fc-did-not-happen"],
+      wait: ["fc-offline-pending"],
+      clash: ["fc-offline-conflict"],
+    });
+  });
+
+  test("CE5 a booking without services has no card", async () => {
+    const { cards } = await cardsFor([booking("empty", {}, []), booking("a1")]);
+    expect(cards.map((c: any) => c.extendedProps.appointmentId)).toEqual(["a1"]);
+  });
+
+  test("CE6 Ctrl+1 hides a service paid in cash and takes it off the money shown; the rest stays", async () => {
+    const rows = [
+      booking("a1", { current_appt_total: 50, deposit_amount: 50 }, [
+        line({ charged: 30, price: 30, hidden: { cash: 30 }, paid_with: "cash" }),
+        line({ start_time: `${MONDAY}T11:00:00`, charged: 20, price: 20, hidden: null, paid_with: "card" }),
+      ]),
+    ];
+    const plain = (await cardsFor(rows)).cards;
+    expect(plain.map((c: any) => [c.id, c.extendedProps.paidInCash])).toEqual([["a1_0", true], ["a1_1", false]]);
+    expect(plain[0].extendedProps.shownMoney).toEqual({ current_appt_total: 50, deposit_amount: 50 });
+    useSettingsStore().setHideCashPaid(true);
+    await settle();
+    const filtered = lastCards();
+    expect(filtered.map((c: any) => c.id)).toEqual(["a1_1"]);
+    expect(filtered[0].extendedProps.shownMoney).toEqual({ current_appt_total: 20, deposit_amount: 20 });
+  });
+
+  test("CE7 the client's name: surname first, and the surname alone for short cards", async () => {
+    const { cards } = await cardsFor([
+      booking("a1"),
+      booking("a2", { last_name: null }, [line({ start_time: `${MONDAY}T12:00:00` })]),
+    ]);
+    const c = byId(cards);
+    expect([c.a1_0.extendedProps.client_name, c.a1_0.extendedProps.client_surname]).toEqual(["Papa Eleni", "Papa"]);
+    expect([c.a2_0.extendedProps.client_name, c.a2_0.extendedProps.client_surname]).toEqual(["Eleni", "Eleni"]);
+  });
+
+  test("CE8 one booking split across staff is linked; a client's active bookings that day are grouped, not walk-ins or cancelled ones", async () => {
+    const { cards } = await cardsFor([
+      booking("split", {}, [line(), line({ staff_id: "st2" })]),
+      booking("later", { client_id: "c-split" }, [line({ start_time: `${MONDAY}T15:00:00` })]),
+      booking("walk", { first_name: "Walk-in", last_name: "" }, [line({ start_time: `${MONDAY}T16:00:00` })]),
+      booking("gone", { client_id: "c-split", status: "cancelled" }, [line({ start_time: `${MONDAY}T17:00:00` })]),
+    ]);
+    const c = byId(cards);
+    expect(c.split_0.extendedProps.linkKey).toBe(c.split_1.extendedProps.linkKey);
+    expect(c.later_0.extendedProps.linkKey).not.toBe(c.split_0.extendedProps.linkKey);
+    expect(c.split_0.extendedProps.dayClientKey).toBe(`c-split|${MONDAY}`);
+    expect(c.later_0.extendedProps.dayClientKey).toBe(`c-split|${MONDAY}`);
+    expect(c.walk_0.extendedProps.dayClientKey).toBeUndefined();
+    expect(c.gone_0.extendedProps.dayClientKey).toBeUndefined();
+  });
+
+  test("CE9 bookings overlapping in one column get different colours; one on its own keeps its own", async () => {
+    const { cards } = await cardsFor([
+      booking("first"),
+      booking("second", {}, [line({ start_time: `${MONDAY}T10:30:00` })]),
+      booking("alone", {}, [line({ start_time: `${MONDAY}T13:00:00` })]),
+    ]);
+    const c = byId(cards);
+    expect(c.second_0.backgroundColor).not.toBe(c.first_0.backgroundColor);
+    expect(c.alone_0.backgroundColor).toBe(c.first_0.backgroundColor);
+  });
+
+  test("CE10 what's outside the staff member's hours is flagged; nothing for a booking inside them or one that didn't happen", async () => {
+    // Anna works 09:00–17:00 on Mondays.
+    const { cards } = await cardsFor([
+      booking("inside"),
+      booking("late", {}, [line({ start_time: `${MONDAY}T16:30:00` })]),
+      booking("gone", { status: "cancelled" }, [line({ start_time: `${MONDAY}T16:30:00` })]),
+    ]);
+    const c = byId(cards);
+    expect(c.inside_0.extendedProps.overtime).toBeNull();
+    expect(c.late_0.extendedProps.overtime).not.toBeNull();
+    expect(c.gone_0.extendedProps.overtime).toBeNull();
+  });
+});
+
+// Moving, stretching and starting bookings on the grid (useCalendarMoves):
+// exactly what is sent, Ctrl moving all of a booking's cards, and overtime
+// asked about and sent as such. MV1–MV6.
+describe("MV moving and stretching bookings on the grid", () => {
+  const twoCards = () => ({
+    ...appointment(),
+    services: [
+      { service_id: "svc", staff_id: "st1", start_time: `${MONDAY}T10:00:00`, duration_minutes: 60, price: 30 },
+      { service_id: "svc", staff_id: "st1", start_time: `${MONDAY}T11:00:00`, duration_minutes: 30, price: 20 },
+    ],
+  });
+  const dropInfo = (full: any, index: number, from: string, to: string, extra: any = {}) => ({
+    event: {
+      start: new Date(`${MONDAY}T${from}:00`),
+      end: new Date(`${MONDAY}T${to}:00`),
+      extendedProps: { appointmentId: "a1", serviceIndex: index, fullAppointment: full },
+      getResources: () => [{ id: extra.newResource?.id || "st1" }],
+    },
+    oldEvent: { start: new Date(full.services[index].start_time) },
+    revert: vi.fn(),
+    jsEvent: extra.jsEvent || {},
+    ...(extra.newResource ? { newResource: extra.newResource } : {}),
+  });
+  const run = async (pending: Promise<unknown>, accept = true) => {
+    await answerConfirm(accept);
+    await pending;
+    await settle();
+  };
+  const sentServices = (server: any) => server.called("PUT", "/api/v1/appointments/a1")[0]?.body;
+  const at = (iso: string) => new Date(iso).getTime();
+
+  test("MV1 one card dropped at a new time and column: only that service changes, and the booking's version is sent", async () => {
+    const { server, options } = await open("admin", { "PUT /api/v1/appointments/a1": { body: {} } });
+    const full = twoCards();
+    await run(options.eventDrop(dropInfo(full, 1, "13:00", "13:30", { newResource: { id: "st2" } })));
+    const body = sentServices(server);
+    expect(body.base_version).toBe(2);
+    expect(body.version).toBeUndefined();
+    expect(body.allow_overtime).toBe(false);
+    expect(at(body.services[0].start_time)).toBe(at(`${MONDAY}T10:00:00`));
+    expect(body.services[0]).toMatchObject({ staff_id: "st1", duration_override: 60, price_override: 30 });
+    expect(at(body.services[1].start_time)).toBe(at(`${MONDAY}T13:00:00`));
+    expect(body.services[1]).toMatchObject({ staff_id: "st2", duration_override: 30, price_override: 20 });
+  });
+
+  test("MV2 with Ctrl, all of the booking's cards move by the same time, to the column dropped in", async () => {
+    const { server, options } = await open("admin", { "PUT /api/v1/appointments/a1": { body: {} } });
+    const full = twoCards();
+    await run(options.eventDrop(dropInfo(full, 0, "12:00", "13:00", { jsEvent: { ctrlKey: true }, newResource: { id: "st2" } })));
+    const body = sentServices(server);
+    expect(body.services.map((s: any) => [at(s.start_time), s.staff_id])).toEqual([
+      [at(`${MONDAY}T12:00:00`), "st2"],
+      [at(`${MONDAY}T13:00:00`), "st2"],
+    ]);
+  });
+
+  test("MV3 dropped past the staff member's hours: asked as overtime, and sent as overtime when accepted", async () => {
+    const { server, options } = await open("admin", { "PUT /api/v1/appointments/a1": { body: {} } });
+    const full = { ...appointment() };
+    const info = dropInfo(full, 0, "16:30", "17:30");
+    const dropping = options.eventDrop(info);
+    await settle();
+    expect(document.querySelector(".p-confirmdialog")?.textContent).toContain(el.booking.overtime.header);
+    await run(dropping);
+    expect(sentServices(server).allow_overtime).toBe(true);
+    expect(info.revert).not.toHaveBeenCalled();
+  });
+
+  test("MV4 overtime declined: nothing is sent and the card goes back", async () => {
+    const { server, options } = await open("admin", { "PUT /api/v1/appointments/a1": { body: {} } });
+    const info = dropInfo({ ...appointment() }, 0, "16:30", "17:30");
+    await run(options.eventDrop(info), false);
+    expect(server.called("PUT", "/api/v1/appointments/a1")).toHaveLength(0);
+    expect(info.revert).toHaveBeenCalled();
+  });
+
+  test("MV5 stretched: the new length is sent for that service only; past the hours it's overtime", async () => {
+    const { server, options } = await open("admin", { "PUT /api/v1/appointments/a1": { body: {} } });
+    const full = twoCards();
+    await run(options.eventResize(dropInfo(full, 0, "10:00", "10:45")));
+    let body = sentServices(server);
+    expect(body.services.map((s: any) => s.duration_override)).toEqual([45, 30]);
+    expect(body.allow_overtime).toBe(false);
+    const late = { ...appointment(), services: [{ ...appointment().services[0], start_time: `${MONDAY}T16:00:00` }] };
+    await run(options.eventResize(dropInfo(late, 0, "16:00", "17:30")));
+    body = server.called("PUT", "/api/v1/appointments/a1")[1].body;
+    expect(body.services[0].duration_override).toBe(90);
+    expect(body.allow_overtime).toBe(true);
+  });
+
+  test("MV6 a new booking from an empty slot opens with its staff member and time; past the hours, with the overtime already agreed", async () => {
+    const { wrapper, options } = await open("admin");
+    await options.select(selectSlot("10:00", "11:00"));
+    await settle();
+    expect(bookingDialog(wrapper).props("appointment")).toMatchObject({ staff_id: "st1", staff_name: "Anna", overtime_confirmed_staff_id: null });
+    const selecting = options.select(selectSlot("18:00", "19:00"));
+    await answerConfirm(true);
+    await selecting;
+    await settle();
+    expect(bookingDialog(wrapper).props("appointment")).toMatchObject({ staff_id: "st1", overtime_confirmed_staff_id: "st1" });
   });
 });

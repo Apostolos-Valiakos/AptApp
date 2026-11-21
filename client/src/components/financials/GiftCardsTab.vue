@@ -64,6 +64,6 @@ import { formatMoney } from "../../utils/format";
 import { useFinancialsPage } from "./context";
 
 const {
-  analytics, giftCardsReport, giftCardsSummary, t,
+  giftCardsReport, giftCardsSummary, t,
 } = useFinancialsPage();
 </script>

@@ -248,6 +248,6 @@ import Skeleton from "primevue/skeleton";
 import { useFinancialsPage } from "./context";
 
 const {
-  loading, today, filters, finances, analytics, openDetails, formatDate, t,
+  loading, filters, finances, analytics, openDetails, formatDate, t,
 } = useFinancialsPage();
 </script>

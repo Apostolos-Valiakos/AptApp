@@ -5,6 +5,7 @@ const express = require("express");
 const { HttpError, asyncHandler, withTransaction } = require("../http");
 const pool = require("../db");
 const bcrypt = require("bcrypt");
+const { passwordProblem } = require("../domain/common");
 const jwt = require("jsonwebtoken");
 
 module.exports = function platformRouter({
@@ -91,6 +92,10 @@ module.exports = function platformRouter({
       } = req.body;
 
       if (!name) return res.status(400).json({ error: "Shop name is required" });
+      // Checked before anything is saved: a refused password leaves no shop behind.
+      if (admin_username && admin_password && passwordProblem(admin_password)) {
+        return res.status(400).json({ error: passwordProblem(admin_password) });
+      }
 
       const answer = await withTransaction(async (client) => {
       const shopRes = await client.query(
@@ -233,6 +238,7 @@ module.exports = function platformRouter({
       if (!username || !password) {
         return res.status(400).json({ error: "Username and password required" });
       }
+      if (passwordProblem(password)) return res.status(400).json({ error: passwordProblem(password) });
 
       const answer = await withTransaction(async (client) => {
       const checkUser = await client.query(
@@ -301,9 +307,7 @@ module.exports = function platformRouter({
     requireOwner,
     asyncHandler(async (req, res) => {
       const { newPassword } = req.body;
-      if (!newPassword || newPassword.length < 6) {
-        return res.status(400).json({ error: "Password must be at least 6 characters" });
-      }
+      if (passwordProblem(newPassword)) return res.status(400).json({ error: passwordProblem(newPassword) });
       const hashedPassword = await bcrypt.hash(newPassword, 12);
       const { rows } = await pool.query(
         `UPDATE users SET password = $1 WHERE id = $2 AND role = 'admin' RETURNING shop_id, username`,

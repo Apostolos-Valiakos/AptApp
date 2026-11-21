@@ -1,5 +1,7 @@
 export default {
   common: {
+    // The password rule, under every field where a new password is typed.
+    passwordRule: 'At least 8 characters, including at least one number.',
     save: 'Save',
     cancel: 'Cancel',
     delete: 'Delete',
@@ -543,7 +545,7 @@ export default {
         title: 'Reset Password',
         newPassword: 'New Password',
         confirm: 'Reset Password',
-        tooShort: 'Password must be at least 6 characters',
+        tooShort: 'Password must be at least 8 characters and include a number',
       },
       toast: {
         created: 'Admin login created',
@@ -2131,6 +2133,7 @@ export default {
       day: "Day",
       week: "Week",
       month: "Month",
+      label: "View",
     },
     zoom: "Zoom",
     showAllStaff: "All staff, including those off or on leave",
@@ -2143,6 +2146,7 @@ export default {
     reorder: {
       title: "Reorder Staff",
       save: "Save Order",
+      hint: "Drag and drop to change the column order.",
     },
     mySchedule: "My Schedule",
     nav: {

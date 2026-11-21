@@ -236,8 +236,8 @@ const {
   selectedSiblingsTotal, discount, discountCodes, pendingPackages, pendingPackagesTotal, pendingGiftCards, pendingGiftCardsTotal, hiddenServicesTotal,
   shownPaidMethod, paymentStep, paymentLoading, amountToPayNow, selectedPaymentMethod, selectedGiftCardId, selectedMembershipRedemptions, saleChoicesOpen,
   priceChangeVisible, refundVisible, bookingPaymentsRef, bookingPackagesRef, packageSaleRef, giftCardSaleRef, canChangePriceOrRefund, canChangePrice,
-  canSellExtras, isPaymentSettled, canReachCharge, currentTab, loading, selectedSiblingsOwedTotal, selectedSiblingsDepositTotal, servicesTotal,
-  productsTotal, discountAmount, currentApptTotal, previousDebt, totalDueNow, combinedTotalDueNow, ensureSavedForPackage, openSale,
+  canSellExtras, isPaymentSettled, canReachCharge, currentTab, selectedSiblingsOwedTotal, selectedSiblingsDepositTotal, servicesTotal,
+  productsTotal, discountAmount, currentApptTotal, previousDebt, combinedTotalDueNow, ensureSavedForPackage, openSale,
   onPackageChanged, onRefunded, onPriceChangedInPayment, recordPayment,
 } = useBookingDialog();
 </script>

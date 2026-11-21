@@ -81,30 +81,29 @@
       <p v-if="!usage.length" class="text-sm text-gray-500">
         {{ t("discount.admin.usageEmpty") }}
       </p>
-      <div v-else class="overflow-x-auto max-h-80 overflow-y-auto border border-gray-100 rounded-xl">
-        <table class="w-full text-sm">
-          <thead class="bg-gray-50 text-xs text-gray-500 uppercase sticky top-0">
-            <tr>
-              <th class="text-left px-3 py-2">{{ t("discount.admin.date") }}</th>
-              <th class="text-left px-3 py-2">{{ t("discount.admin.client") }}</th>
-              <th class="text-left px-3 py-2">{{ t("discount.admin.type") }}</th>
-              <th class="text-right px-3 py-2">{{ t("discount.admin.amount") }}</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-gray-100">
-            <tr v-for="u in usage" :key="u.id">
-              <td class="px-3 py-2 whitespace-nowrap">{{ fmtDate(u.start_time) }}</td>
-              <td class="px-3 py-2">
-                {{ [u.first_name, u.last_name].filter(Boolean).join(" ") || "—" }}
-              </td>
-              <td class="px-3 py-2">{{ describe(u) }}</td>
-              <td class="px-3 py-2 text-right font-semibold">
-                {{ formatMoney(u.discount_amount) }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        v-else
+        :value="usage"
+        dataKey="id"
+        scrollable
+        scrollHeight="20rem"
+        size="small"
+        class="text-sm border border-gray-100 rounded-xl overflow-hidden"
+        data-testid="discount-usage"
+      >
+        <Column :header="t('discount.admin.date')" bodyClass="whitespace-nowrap">
+          <template #body="{ data }">{{ fmtDate(data.start_time) }}</template>
+        </Column>
+        <Column :header="t('discount.admin.client')">
+          <template #body="{ data }">{{ [data.first_name, data.last_name].filter(Boolean).join(" ") || "—" }}</template>
+        </Column>
+        <Column :header="t('discount.admin.type')">
+          <template #body="{ data }">{{ describe(data) }}</template>
+        </Column>
+        <Column :header="t('discount.admin.amount')" headerClass="text-right" bodyClass="text-right font-semibold">
+          <template #body="{ data }">{{ formatMoney(data.discount_amount) }}</template>
+        </Column>
+      </DataTable>
     </div>
   </div>
 </template>

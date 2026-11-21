@@ -328,7 +328,9 @@
           class="w-full"
           type="password"
           placeholder="••••••••"
+          data-testid="new-login-password"
         />
+        <small class="block mt-1" :class="newLogin.password && !passwordOk(newLogin.password) ? 'text-red-500' : 'text-gray-500'" data-testid="password-rule">{{ t("common.passwordRule") }}</small>
       </div>
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1">{{
@@ -354,6 +356,8 @@
         :label="t('staff.loginDialog.createAccount')"
         icon="pi pi-user-plus"
         class="p-button-success"
+        :disabled="!newLogin.username || !passwordOk(newLogin.password)"
+        data-testid="new-login-save"
         @click="createLogin"
         :loading="loading"
       />
@@ -553,6 +557,7 @@
 <script setup lang="ts">
 import { useNotify } from "../composables/useNotify";
 import { toLocalDateStr } from "../utils/staffAvailability";
+import { passwordOk } from "../utils/password";
 import { clockTime } from "../utils/format";
 import { formatDate as dateText } from "../utils/format";
 import { api, ApiError, ifRefused, withMessage } from "../api/http";
@@ -701,7 +706,7 @@ const openLoginDialog = (staffMember: any) => {
 };
 
 const createLogin = async () => {
-  if (!newLogin.value.username || !newLogin.value.password) return;
+  if (!newLogin.value.username || !passwordOk(newLogin.value.password)) return;
 
   loading.value = true;
 

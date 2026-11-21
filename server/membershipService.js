@@ -2,21 +2,13 @@ if (process.env.NODE_ENV !== "production") {
   require("dotenv").config();
 }
 const cron = require("node-cron");
-const nodemailer = require("nodemailer");
+const { createMailTransport } = require("./domain/mailer");
 const pool = require("./db");
 const path = require("path");
 
 const LOGO_PATH = path.join(__dirname, "../client/static/logo for photos-02.png");
 
-const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST,
-  port: process.env.EMAIL_PORT,
-  secure: process.env.EMAIL_PORT == 465,
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
+const transporter = createMailTransport();
 
 const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email || "");
 

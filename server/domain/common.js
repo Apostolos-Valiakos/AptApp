@@ -39,8 +39,17 @@ const walkInClientRow = async (db, clientId, shopId) => {
 const clientInShop = async (db, clientId, shopId) =>
   (await db.query("SELECT 1 FROM clients WHERE id = $1 AND shop_id = $2", [clientId, shopId])).rowCount > 0;
 
+// One password rule for every login (staff, admins, owners' shop admins,
+// clients): at least 8 characters, at least one of them a digit. The screens
+// check the same (client/src/utils/password.ts). Passwords set before the rule
+// keep working; it applies when one is set or changed.
+const PASSWORD_RULE = "Password must be at least 8 characters and include a number";
+const passwordProblem = (password) =>
+  typeof password === "string" && password.length >= 8 && /\d/.test(password) ? null : PASSWORD_RULE;
+
 module.exports = {
   MONEY_METHODS,
+  passwordProblem,
   safeUUID,
   upperName,
   getVisibilityClause,

@@ -1,5 +1,7 @@
 export default {
   common: {
+    // The password rule, under every field where a new password is typed.
+    passwordRule: "Τουλάχιστον 8 χαρακτήρες, με έναν τουλάχιστον αριθμό.",
     save: "Αποθήκευση",
     cancel: "Ακύρωση",
     delete: "Διαγραφή",
@@ -550,7 +552,7 @@ export default {
         title: "Επαναφορά Κωδικού",
         newPassword: "Νέος Κωδικός",
         confirm: "Επαναφορά Κωδικού",
-        tooShort: "Ο κωδικός πρέπει να έχει τουλάχιστον 6 χαρακτήρες",
+        tooShort: "Ο κωδικός πρέπει να έχει τουλάχιστον 8 χαρακτήρες, με έναν τουλάχιστον αριθμό",
       },
       toast: {
         created: "Ο λογαριασμός διαχειριστή δημιουργήθηκε",
@@ -2185,6 +2187,7 @@ export default {
       day: "Ημέρα",
       week: "Εβδομάδα",
       month: "Μήνας",
+      label: "Προβολή",
     },
     zoom: "Ζουμ",
     showAllStaff: "Όλο το προσωπικό, και όσοι έχουν ρεπό ή άδεια",
@@ -2197,6 +2200,7 @@ export default {
     reorder: {
       title: "Σειρά προσωπικού",
       save: "Αποθήκευση σειράς",
+      hint: "Σύρετε για να αλλάξετε τη σειρά των στηλών.",
     },
     mySchedule: "Το πρόγραμμά μου",
     nav: {

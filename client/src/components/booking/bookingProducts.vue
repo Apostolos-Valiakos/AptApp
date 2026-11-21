@@ -26,7 +26,7 @@
         <div class="w-full min-w-0 sm:flex-1">
           <label class="text-xs text-gray-500 block mb-1">{{ t('bookingProducts.product') }}</label>
           <Dropdown
-            v-model="product.product_id"
+            :modelValue="product.product_id"
             :options="flatProducts"
             optionLabel="name"
             optionValue="id"
@@ -37,7 +37,7 @@
             :title="productLabel(product.product_id)"
             data-testid="product-pick"
             filter
-            @change="() => updateProductDetails(index)"
+            @update:modelValue="pickProduct(index, $event)"
           >
             <template #option="slotProps">
               <div class="flex justify-between items-center w-full gap-2">
@@ -61,7 +61,8 @@
           <div class="w-1/2 sm:w-24">
             <label class="text-xs text-gray-500 block mb-1">{{ t('bookingProducts.qty') }}</label>
             <InputNumber
-              v-model="product.quantity"
+              :modelValue="product.quantity"
+              @update:modelValue="setField(index, 'quantity', $event)"
               class="w-full"
               inputClass="p-inputtext-sm w-full"
               :min="1"
@@ -71,7 +72,8 @@
           <div class="w-1/2 sm:w-32">
             <label class="text-xs text-gray-500 block mb-1">{{ t('bookingProducts.price') }}</label>
             <InputNumber
-              v-model="product.price"
+              :modelValue="product.price"
+              @update:modelValue="setField(index, 'price', $event)"
               mode="currency"
               currency="EUR"
               class="w-full"
@@ -85,7 +87,7 @@
       <div v-if="sellerOptions(product).length" class="mt-3">
         <label class="text-xs text-gray-500 block mb-1">{{ t('bookingProducts.soldBy') }}</label>
         <Dropdown
-          v-model="product.staff_id"
+          :modelValue="product.staff_id"
           :options="sellerOptions(product)"
           optionLabel="name"
           optionValue="id"
@@ -94,7 +96,7 @@
           class="w-full min-w-0 p-inputtext-sm"
           labelClass="truncate"
           data-testid="product-seller"
-          @change="emit('update:modelValue', [...props.modelValue])"
+          @update:modelValue="setField(index, 'staff_id', $event)"
         />
       </div>
     </div>
@@ -201,14 +203,23 @@ const removeProduct = (index: number) => {
   emit("update:modelValue", newList);
 };
 
-const updateProductDetails = (index: number) => {
-  const newList = [...props.modelValue];
-  const item = newList[index];
-  const found = flatProducts.value.find((p: any) => p.id === item.product_id);
+// Every change is a new list with a new row: the parent's own rows are never
+// changed in place (it may still hold them, e.g. as what was loaded).
+const setField = (index: number, field: string, value: unknown) => {
+  emit(
+    "update:modelValue",
+    props.modelValue.map((row, i) => (i === index ? { ...row, [field]: value } : row)),
+  );
+};
 
-  if (found) {
-    item.price = Number(found.price);
-  }
-  emit("update:modelValue", newList);
+// Picking a product also takes its price.
+const pickProduct = (index: number, productId: string | null) => {
+  const found = flatProducts.value.find((p: any) => p.id === productId);
+  emit(
+    "update:modelValue",
+    props.modelValue.map((row, i) =>
+      i === index ? { ...row, product_id: productId, ...(found ? { price: Number(found.price) } : {}) } : row,
+    ),
+  );
 };
 </script>

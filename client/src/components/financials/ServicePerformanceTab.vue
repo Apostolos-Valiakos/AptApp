@@ -75,6 +75,6 @@ import { formatMoney } from "../../utils/format";
 import { useFinancialsPage } from "./context";
 
 const {
-  serviceSummaryReport, analytics, t,
+  serviceSummaryReport, t,
 } = useFinancialsPage();
 </script>

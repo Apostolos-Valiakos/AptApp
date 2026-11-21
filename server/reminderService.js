@@ -3,7 +3,7 @@ if (process.env.NODE_ENV !== "production") {
   require("dotenv").config();
 }
 const cron = require("node-cron");
-const nodemailer = require("nodemailer");
+const { createMailTransport } = require("./domain/mailer");
 const pool = require("./db");
 const path = require("path");
 const { sendPushToClient, recordNotification } = require("./pushService");
@@ -22,15 +22,7 @@ const PUBLIC_BASE_URL =
   process.env.PUBLIC_BASE_URL || `${process.env.API_URL}:${process.env.PORT}`;
 
 // 1. Configure Nodemailer
-const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST,
-  port: process.env.EMAIL_PORT,
-  secure: process.env.EMAIL_PORT == 465,
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
+const transporter = createMailTransport();
 
 
 
@@ -86,8 +78,6 @@ const reminderEmail = (appt) => {
   const endTimeStr = formatTime(appt.end_time);
   const dayStr = formatDay(appt.start_time);
   const windowText = describeReminderWindow(appt.reminder_hours_before);
-  const therapistFullName =
-    `${appt.staff_name}`.trim() || "Επαγγελματίας Υγείας";
   const formatCalendarDate = (date) => {
     return new Date(date).toISOString().replace(/-|:|\.\d\d\d/g, "");
   };

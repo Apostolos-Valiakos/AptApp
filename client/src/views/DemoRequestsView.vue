@@ -88,11 +88,9 @@ import { formatDate as dateText } from "../utils/format";
 import { api } from "../api/http";
 import { ref, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
-import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 
 const { t, locale } = useI18n();
-const toast = useToast();
 const notify = useNotify();
 const confirm = useConfirm();
 

@@ -6,6 +6,7 @@ const { MONEY_METHODS } = require("../domain/common");
 const crypto = require("crypto");
 const { HttpError, asyncHandler, withTransaction } = require("../http");
 const { appointmentCostSql, appointmentPaidSql } = require("../domain/moneySql");
+const { BALANCE_START } = require("../domain/balances");
 
 // Each appointment with service lines matching `where` (its parameters from
 // $1), with what it costs and what was paid on it.
@@ -243,7 +244,7 @@ module.exports = function transactionsRouter({
          AND a.id != ALL($2::uuid[])
          AND a.shop_id = $3
          AND a.status != 'cancelled'
-         AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) >= '2026-03-01 00:00:00'`,
+         AND (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) >= '${BALANCE_START}'`,
         "ORDER BY (SELECT MIN(start_time) FROM appointment_services WHERE appointment_id = a.id) ASC",
       ),
       [client_id, explicitIds, req.shopId],

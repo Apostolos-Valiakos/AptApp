@@ -38,12 +38,6 @@ interface Channel {
   updated_at: string;
 }
 
-interface TypingUser {
-  channelId: string;
-  userId: string;
-  username: string;
-}
-
 export const useChatStore = defineStore("chat", () => {
   const authStore = useAuthStore(); // Initialize Auth Store
 
@@ -59,7 +53,6 @@ export const useChatStore = defineStore("chat", () => {
   const cashLocked = ref(false);
   const remoteHideCard = ref(false);
   const cardLocked = ref(false);
-  // const notificationSound = ref<HTMLAudioElement | null>(null);
 
   const totalUnreadCount = computed(() => {
     if (!channels.value || !Array.isArray(channels.value)) {
@@ -159,7 +152,6 @@ export const useChatStore = defineStore("chat", () => {
         // AND I don't have that specific chat window open
         if (!isFromMe && !isChatOpen) {
           channel.unread_count = (channel.unread_count || 0) + 1;
-          // playNotificationSound();
         }
       }
     });
@@ -179,7 +171,7 @@ export const useChatStore = defineStore("chat", () => {
 
     socket.value.on("message:read:update", ({ messageId, userId }: any) => {
       // Update read receipts for the message
-      for (const [channelId, msgs] of messages.value.entries()) {
+      for (const msgs of messages.value.values()) {
         const msg = msgs.find((m) => m.id === messageId);
         if (msg) {
           if (!msg.read_by) msg.read_by = [];
@@ -263,9 +255,6 @@ export const useChatStore = defineStore("chat", () => {
       cardLocked.value = hidden;
       localStorage.setItem("hideCardPaid", String(hidden));
     });
-
-    // Initialize notification sound
-    // notificationSound.value = new Audio("/notification.mp3");
   };
 
   const disconnect = () => {
@@ -455,18 +444,6 @@ export const useChatStore = defineStore("chat", () => {
       throw err;
     }
   };
-
-  // const playNotificationSound = () => {
-  //   if (!isMinimized.value) return;
-
-  //   try {
-  //     notificationSound.value?.play().catch((err) => {
-  //       console.log("Could not play notification sound:", err);
-  //     });
-  //   } catch (err) {
-  //     console.log("Notification sound error:", err);
-  //   }
-  // };
 
   const toggleMinimized = () => {
     isMinimized.value = !isMinimized.value;
