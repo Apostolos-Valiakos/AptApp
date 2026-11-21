@@ -77,7 +77,7 @@ describe("AIC1 a proposed booking", () => {
 });
 
 describe("AIC2 a refused confirmation", () => {
-  test("the card says so and the assistant is told why", async () => {
+  test("the card says why, in the client's words, and the assistant is told the reason", async () => {
     const { chats } = await open(
       { "POST /api/v1/appointments": { status: 422, body: { error: "self_booking_not_allowed", reason: "slot_unavailable" } } },
       [sse([["action", BOOKING], ["done", {}]])],
@@ -85,7 +85,7 @@ describe("AIC2 a refused confirmation", () => {
     await ask("Θέλω μασάζ");
     button(el.portal.ai.card.confirm).click();
     await settle();
-    expect(pageText()).toContain(el.portal.ai.card.failed);
+    expect(pageText()).toContain(el.portal.actions.errors.slot_unavailable);
     await ask("Τι έγινε;");
     expect(JSON.stringify(chats[1].history)).toContain("slot_unavailable");
   });

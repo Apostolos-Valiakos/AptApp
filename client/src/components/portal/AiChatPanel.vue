@@ -87,7 +87,7 @@
                 'text-red-500': card.status === 'failed',
               }"
             >
-              {{ t(`portal.ai.card.${card.status}`) }}
+              {{ (card.status === "failed" && card.error) || t(`portal.ai.card.${card.status}`) }}
             </div>
           </div>
         </template>
@@ -118,10 +118,10 @@ import { ref, computed, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
 import Dialog from "primevue/dialog";
 import { useAuthStore } from "../../stores/auth";
-import { api, ApiError } from "../../api/http";
+import { newIdempotencyKey, PortalActionError, usePortalBookingActions } from "../../portal/composables/usePortalBookingActions";
 import { formatDate, formatDuration, formatMoney } from "../../utils/format";
 
-type Card = { action: any; status: "pending" | "working" | "done" | "dismissed" | "failed" };
+type Card = { action: any; status: "pending" | "working" | "done" | "dismissed" | "failed"; error?: string };
 type Message = { role: "user" | "assistant"; content: string; hidden?: boolean; actions?: Card[] };
 
 const props = defineProps<{ visible: boolean }>();
@@ -133,6 +133,7 @@ const visibleModel = computed({
 
 const { t, locale } = useI18n();
 const authStore = useAuthStore();
+const actions = usePortalBookingActions();
 
 const messages = ref<Message[]>([]);
 const input = ref("");
@@ -242,35 +243,31 @@ const note = (text: string) => messages.value.push({ role: "user", content: text
 const describe = (a: any) =>
   `${a.service_name}${a.staff_name ? `, ${a.staff_name}` : ""}, ${a.when}`;
 
-// The same requests the portal's own screens make, so the server applies the
-// same rules (only offered times, only future bookings) to both.
-const performAction = (a: any) => {
-  if (a.type === "booking") {
-    // One key per card: pressing Confirm again after a lost answer can't
-    // book twice.
-    a.idempotency_key ||= typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
-    return api.post(
-      "/api/v1/appointments",
-      { services: [{ service_id: a.service_id, staff_id: a.staff_id, start_time: a.start_time }] },
-      { headers: { "Idempotency-Key": a.idempotency_key } },
-    );
-  }
-  if (a.type === "cancel") return api.post(`/api/v1/portal/appointments/${a.appointment_id}/cancel`);
-  return api.post(`/api/v1/portal/appointments/${a.appointment_id}/reschedule`, { start_time: a.start_time, staff_id: a.staff_id });
-};
-
+// The same actions the portal's own screens use (usePortalBookingActions), so
+// the server applies the same rules to both and the client gets the same
+// vibration, texts and refreshed lists. The card shows the outcome, so no toast.
 const confirmCard = async (card: Card) => {
+  const a = card.action;
   card.status = "working";
+  card.error = "";
   try {
-    await performAction(card.action);
+    if (a.type === "booking") {
+      // One key per card: pressing Confirm again after a lost answer can't
+      // book twice.
+      a.idempotency_key ||= newIdempotencyKey();
+      await actions.book({ service_id: a.service_id, staff_id: a.staff_id, start_time: a.start_time }, { key: a.idempotency_key, quiet: true });
+    } else if (a.type === "cancel") {
+      await actions.cancel(a.appointment_id, { quiet: true });
+    } else {
+      await actions.reschedule(a.appointment_id, { start_time: a.start_time, staff_id: a.staff_id }, { quiet: true });
+    }
     card.status = "done";
-    note(`[Portal note: the client pressed Confirm and the ${card.action.type} succeeded: ${describe(card.action)}.]`);
-    // The portal's lists (next booking, bookings) show the change at once.
-    window.dispatchEvent(new CustomEvent("appointments-changed"));
+    note(`[Portal note: the client pressed Confirm and the ${a.type} succeeded: ${describe(a)}.]`);
   } catch (err) {
     card.status = "failed";
-    const reason = err instanceof ApiError ? err.data?.reason || err.data?.error || `HTTP ${err.status}` : "no connection";
-    note(`[Portal note: the client pressed Confirm but the ${card.action.type} failed (${describe(card.action)}); the spa's system said: ${reason}. Nothing was changed.]`);
+    card.error = err instanceof PortalActionError ? err.message : "";
+    const reason = err instanceof PortalActionError ? err.reason : "unknown";
+    note(`[Portal note: the client pressed Confirm but the ${a.type} failed (${describe(a)}); the spa's system said: ${reason}. Nothing was changed.]`);
   }
 };
 
