@@ -5,12 +5,15 @@ import { onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { api } from "../../api/http";
 
-export const usePortalNotifications = () => {
+// One list for the whole portal, so Profile's "Activity" opens the same
+// sheet as the bell.
+const items = ref<any[]>([]);
+const unreadCount = ref(0);
+const visible = ref(false);
+const loading = ref(false);
+
+export const usePortalNotifications = ({ watchPushes = true } = {}) => {
   const router = useRouter();
-  const items = ref<any[]>([]);
-  const unreadCount = ref(0);
-  const visible = ref(false);
-  const loading = ref(false);
 
   const fetchAll = async () => {
     try {
@@ -50,6 +53,7 @@ export const usePortalNotifications = () => {
   };
 
   onMounted(() => {
+    if (!watchPushes) return;
     fetchAll();
     // The service worker posts this when a push arrives while a tab is open,
     // so the bell updates at once instead of on the next load.

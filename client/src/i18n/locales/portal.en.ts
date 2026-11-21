@@ -76,4 +76,12 @@ export default {
     noPass: "Your pass will appear once you are online.",
     showAtReception: "Show this at reception",
   },
+  profile: {
+    notifications: "Notifications",
+    activity: "Notification history",
+    appearance: "Appearance",
+    system: "Like the device",
+    light: "Light",
+    dark: "Dark",
+  },
 };

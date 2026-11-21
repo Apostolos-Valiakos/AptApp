@@ -77,4 +77,12 @@ export default {
     noPass: "Η κάρτα σας θα εμφανιστεί μόλις συνδεθείτε στο διαδίκτυο.",
     showAtReception: "Δείξτε τον στην υποδοχή",
   },
+  profile: {
+    notifications: "Ειδοποιήσεις",
+    activity: "Ιστορικό ειδοποιήσεων",
+    appearance: "Εμφάνιση",
+    system: "Όπως η συσκευή",
+    light: "Φωτεινή",
+    dark: "Σκοτεινή",
+  },
 };

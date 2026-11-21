@@ -27,10 +27,6 @@
         <div class="h-14 px-4 flex items-center justify-between gap-2 max-w-3xl w-full mx-auto">
           <span class="portal-display text-lg truncate">{{ wide ? "" : shop.name }}</span>
           <div class="flex items-center gap-1 flex-shrink-0">
-            <!-- Until Profile gets its language section (step 2.5), phones switch here. -->
-            <button v-if="!wide" type="button" class="portal-target px-2 text-xs font-bold" :aria-label="t('portal.nav.language')" @click="switchLanguage(locale === 'el' ? 'en' : 'el')">
-              {{ locale === "el" ? "EN" : "EL" }}
-            </button>
             <button
               v-if="shop.aiEnabled"
               type="button"
