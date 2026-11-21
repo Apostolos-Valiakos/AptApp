@@ -4,9 +4,9 @@
   <div class="p-4 space-y-6">
     <h1 class="portal-display portal-h2" data-testid="greeting">{{ greeting }}</h1>
 
-    <Message v-if="bookings.failed && bookings.list.length" severity="warn" :closable="false">{{ t("portal.v2.home.offline") }}</Message>
+    <OfflineBanner :stale="bookings.failed && bookings.list.length > 0" />
 
-    <div v-if="!bookings.loaded" class="portal-card p-5 space-y-3" aria-busy="true">
+    <div v-if="!bookings.loaded && !bookings.list.length" class="portal-card p-5 space-y-3" aria-busy="true">
       <Skeleton width="40%" /><Skeleton width="70%" height="1.5rem" /><Skeleton width="50%" />
     </div>
     <UpNextCard v-else-if="next" :state="next" />
@@ -67,13 +67,13 @@
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import Button from "primevue/button";
-import Message from "primevue/message";
 import Skeleton from "primevue/skeleton";
 import { api } from "../../api/http";
 import { formatDate } from "../../utils/format";
 import { useAuthStore } from "../../stores/auth";
 import { usePushNotifications } from "../../composables/usePushNotifications";
 import UpNextCard from "../components/UpNextCard.vue";
+import OfflineBanner from "../components/OfflineBanner.vue";
 import BookAgainCarousel from "../components/BookAgainCarousel.vue";
 import PackageRing from "../components/PackageRing.vue";
 import { usePortalBookingsStore } from "../stores/bookings";

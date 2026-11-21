@@ -3,9 +3,10 @@
        opening its details (/portal/bookings/:id). -->
   <div class="p-4 space-y-4">
     <h1 class="portal-display portal-h2">{{ t("portal.nav.bookings") }}</h1>
+    <OfflineBanner :stale="bookings.failed && bookings.list.length > 0" />
     <SelectButton v-model="tab" :options="tabs" optionLabel="label" optionValue="value" :allowEmpty="false" class="w-full" :dt="{ root: { borderRadius: '999px' } }" data-testid="bookings-tabs" />
 
-    <div v-if="!bookings.loaded" class="space-y-3" aria-busy="true"><Skeleton v-for="i in 3" :key="i" height="5rem" class="!rounded-[20px]" /></div>
+    <div v-if="!bookings.loaded && !bookings.list.length" class="space-y-3" aria-busy="true"><Skeleton v-for="i in 3" :key="i" height="5rem" class="!rounded-[20px]" /></div>
 
     <template v-else-if="tab === 'upcoming'">
       <section v-if="!upcoming.length" class="portal-card p-6 text-center space-y-3" data-testid="no-upcoming">
@@ -63,6 +64,7 @@ import PaidAmount from "../../components/PaidAmount.vue";
 import { statusKey } from "../../utils/appointmentStatus";
 import { formatDate } from "../../utils/format";
 import BookingDetailSheet from "../components/BookingDetailSheet.vue";
+import OfflineBanner from "../components/OfflineBanner.vue";
 import { usePortalBookingsStore, serviceNames, staffNames } from "../stores/bookings";
 import { usePortalShopStore } from "../stores/shop";
 

@@ -27,6 +27,29 @@ export type PortalBooking = {
   services: PortalService[];
 };
 
+// The last list loaded is kept on the device, so Home and Bookings show it
+// with no connection (N13). Only the client's own bookings; logging out
+// clears it (portal/logout.ts).
+const CACHE_KEY = "portal.bookings";
+const readCache = (): PortalBooking[] => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(CACHE_KEY) || "[]");
+    return Array.isArray(saved) ? saved : [];
+  } catch {
+    return [];
+  }
+};
+const writeCache = (list: PortalBooking[]) => {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify(list));
+  } catch {}
+};
+export const clearBookingsCache = () => {
+  try {
+    localStorage.removeItem(CACHE_KEY);
+  } catch {}
+};
+
 const GONE = ["cancelled"];
 export const isActive = (b: PortalBooking) => !GONE.includes(b.status);
 export const serviceNames = (b: PortalBooking) => b.services.map((s) => s.service_name).filter(Boolean).join(", ");
@@ -34,7 +57,7 @@ export const staffNames = (b: PortalBooking) => [...new Set(b.services.map((s) =
 
 export const usePortalBookingsStore = defineStore("portalBookings", {
   state: () => ({
-    list: [] as PortalBooking[],
+    list: readCache(),
     loaded: false,
     failed: false,
     listening: false,
@@ -66,7 +89,9 @@ export const usePortalBookingsStore = defineStore("portalBookings", {
       try {
         this.list = await api.get<PortalBooking[]>("/api/v1/portal/appointments");
         this.failed = false;
+        writeCache(this.list);
       } catch {
+        // Keeps what's shown (the kept copy at first), marked as possibly old.
         this.failed = true;
       } finally {
         this.loaded = true;
