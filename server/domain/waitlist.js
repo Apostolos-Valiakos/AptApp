@@ -2,7 +2,7 @@
 // desk keeps it (routes/waitlist.js); a freed slot is matched against it, and
 // a booking made from an entry marks it booked.
 const { workingRangesBetween, bookableShifts } = require("./staffSchedule");
-const { peakPersons, personsOf, placesOf } = require("./bookings");
+const { peakPersons, personsOf, placesOf } = require("./capacity");
 
 const ENTRY_SELECT = `
   SELECT w.id, w.client_id, w.service_id, w.staff_id,

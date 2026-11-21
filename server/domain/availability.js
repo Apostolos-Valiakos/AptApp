@@ -4,12 +4,16 @@
 // by the portal's /availability (the booking screens) and the reschedule
 // route (the screens and the AI assistant), so both offer the same times.
 const { workingRangesOn, bookableShifts } = require("./staffSchedule");
+const { personsOf, placesOf, peakPersons } = require("./capacity");
 
 const STEP_MINUTES = 15;
 
 /** How long before a booking's start a client may still book, move or cancel it online. */
 const noticeMinutes = async (db, shopId) =>
   Number((await db.query("SELECT portal_min_notice_minutes FROM shops WHERE id = $1", [shopId])).rows[0]?.portal_min_notice_minutes) || 0;
+
+const capacityOf = async (db, staffId, shopId) =>
+  (await db.query("SELECT capacity FROM staff WHERE id = $1 AND shop_id = $2", [staffId, shopId])).rows[0]?.capacity;
 
 /**
  * Where a staff member can be booked on a date, as the calendar column shows
@@ -44,12 +48,12 @@ const freeStartTimes = async (
 
   const [busyRes, timeOffRes] = await Promise.all([
     db.query(
-      `SELECT aps.start_time,
+      `SELECT aps.start_time, aps.persons, a.is_block,
               (aps.start_time + (COALESCE(NULLIF(aps.duration_override, 0), s.duration_minutes, 60) || ' minutes')::interval) AS end_time
        FROM appointment_services aps
        JOIN appointments a ON a.id = aps.appointment_id
-       JOIN services s ON s.id = aps.service_id
-       WHERE aps.staff_id = $1 AND a.shop_id = $2 AND a.status != 'cancelled'
+       LEFT JOIN services s ON s.id = aps.service_id
+       WHERE aps.staff_id = $1 AND a.shop_id = $2 AND a.status NOT IN ('cancelled', 'no-show', 'no_show')
          AND aps.start_time::date = $3::date
          AND ($4::uuid IS NULL OR a.id <> $4::uuid)`,
       [staffId, shopId, date, excludeAppointmentId],
@@ -72,10 +76,17 @@ const freeStartTimes = async (
     d.setHours(h, m, 0, 0);
     return d.getTime();
   };
-  const busy = busyRes.rows.map((r) => ({ start: new Date(r.start_time).getTime(), end: new Date(r.end_time).getTime() }));
+  // A shared place (the sauna: capacity 5) is free while it has a place left;
+  // a block, leave or a break fills it whole.
+  const places = placesOf({ capacity: await capacityOf(db, staffId, shopId) });
+  const busy = busyRes.rows.map((r) => ({
+    start: new Date(r.start_time).getTime(),
+    end: new Date(r.end_time).getTime(),
+    persons: r.is_block ? places : personsOf(r),
+  }));
   for (const row of timeOffRes.rows) {
-    if (row.type === "leave") busy.push({ start: -Infinity, end: Infinity });
-    else busy.push({ start: at(row.start_time), end: at(row.end_time) });
+    if (row.type === "leave") busy.push({ start: -Infinity, end: Infinity, persons: places });
+    else busy.push({ start: at(row.start_time), end: at(row.end_time), persons: places });
   }
 
   const slots = [];
@@ -85,7 +96,7 @@ const freeStartTimes = async (
     for (let t = at(shift.start_time); t + durationMs <= at(shift.end_time); t += stepMs) {
       if (t < earliest) continue;
       const end = t + durationMs;
-      if (!busy.some((b) => t < b.end && end > b.start)) slots.push(new Date(t).toISOString());
+      if (peakPersons(busy, t, end) + 1 <= places) slots.push(new Date(t).toISOString());
     }
   }
   return slots;

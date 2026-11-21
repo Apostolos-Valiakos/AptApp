@@ -265,3 +265,47 @@ test("RV2 'How was it?' is asked once per visit, only for one that has begun", a
   const listed = (await as.client("GET", "/api/v1/portal/appointments")).data.find((a) => a.id === done);
   assert.ok(listed.review_prompted_at);
 });
+
+// --- Shared places in client bookings (CP-P) ---
+const sauna = () => {
+  const id = sql(DB, `SELECT id FROM staff WHERE shop_id = '${SHOP}' AND name ILIKE '%ΣΑΟΥΝΑ%' AND capacity > 1 LIMIT 1`);
+  sql(DB, `UPDATE staff SET visible_in_calendar = true, is_active = true, working_hours_enabled = true WHERE id = '${id}';
+    DELETE FROM staff_services WHERE staff_id = '${id}';
+    INSERT INTO staff_schedule_days (staff_id, shop_id, date, ranges) VALUES ('${id}', '${SHOP}', '${day}', '[{"start_time":"10:00","end_time":"14:00"}]')
+    ON CONFLICT (staff_id, date) DO UPDATE SET ranges = EXCLUDED.ranges`);
+  return { id, places: Number(sql(DB, `SELECT capacity FROM staff WHERE id = '${id}'`)) };
+};
+const others = (n) => Array.from({ length: n }, (_, i) => sql(DB, `INSERT INTO clients (first_name, last_name, shop_id) VALUES ('Σάουνα${i}', 'Δοκιμή', '${SHOP}') RETURNING id`).split("\n")[0]);
+const saunaSlots = async (staffId) =>
+  (await as.client("GET", `/api/v1/portal/availability/slots?service_id=${ids.service}&date=${day}&staff_id=${staffId}`)).data.map((s) => s.start_time);
+
+test("CP-P1 a shared place is offered while it has a place left", async () => {
+  clearDay();
+  const { id, places } = sauna();
+  assert.ok(places > 1, "the dev data's sauna takes several people");
+  for (const c of others(places - 1)) await bookAs(as.frontdesk, c, [svc(id, at(day, "10:00"))]);
+  assert.ok((await saunaSlots(id)).includes(at(day, "10:00")), "one place left");
+  const r = await as.client("POST", "/api/v1/appointments", { services: [{ service_id: ids.service, staff_id: id, start_time: at(day, "10:00") }] }, { "Idempotency-Key": "cpp1" });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+});
+
+test("CP-P2 a full shared place isn't offered, and a client's booking into it is refused", async () => {
+  const { id } = sauna();
+  assert.ok(!(await saunaSlots(id)).includes(at(day, "10:00")));
+  assert.ok(!(await saunaSlots(id)).includes(at(day, "10:30")), "a time overlapping the full hour neither");
+  assert.ok((await saunaSlots(id)).includes(at(day, "11:00")));
+  const r = await as.client("POST", "/api/v1/appointments", { services: [{ service_id: ids.service, staff_id: id, start_time: at(day, "10:00") }] }, { "Idempotency-Key": "cpp2" });
+  assert.equal(r.status, 422);
+});
+
+test("CP-P3 a break in a shared place (how the calendar saves a block) fills it", async () => {
+  clearDay();
+  const { id } = sauna();
+  sql(DB, `INSERT INTO staff_time_off (staff_id, shop_id, type, start_date, end_date, start_time, end_time)
+    VALUES ('${id}', '${SHOP}', 'break', '${day}', '${day}', '12:00', '13:00')`);
+  const free = await saunaSlots(id);
+  assert.ok(!free.includes(at(day, "12:00")));
+  assert.ok(!free.includes(at(day, "11:30")), "nor a time running into it");
+  assert.ok(free.includes(at(day, "10:00")));
+  sql(DB, `DELETE FROM staff_time_off WHERE staff_id = '${id}' AND start_date = '${day}'`);
+});

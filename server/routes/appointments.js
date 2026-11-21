@@ -269,8 +269,8 @@ module.exports = function appointmentsRouter({
 
       await assertNoNewOverlaps(client, req.shopId, bookingPayload);
       // Repeats (a series, or the repeat-booking dialog's dates) aren't
-      // checked, nor client portal bookings yet.
-      if (req.user.role !== "client" && !bookingPayload.recurrence && !Array.isArray(bookingPayload.instance_starts)) {
+      // checked. A client's booking is (a full sauna isn't offered either).
+      if (!bookingPayload.recurrence && !Array.isArray(bookingPayload.instance_starts)) {
         await assertCapacity(client, req.shopId, bookingPayload);
       }
 
