@@ -63,4 +63,11 @@ export default {
     book: "Book",
     move: "Move",
   },
+  bookings: {
+    upcoming: "Upcoming",
+    past: "Past",
+    noPast: "No past visits yet.",
+    cancelBooking: "Cancel booking",
+    keep: "Keep it",
+  },
 };

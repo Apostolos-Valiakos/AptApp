@@ -142,8 +142,8 @@ const routes = [
       // arrive (phase 2 of IMPLEMENTATION_PLAN.md) these show the old ones.
       { path: "book", name: "PortalBook", component: () => import("../portal/routes").then((m) => m.Book) },
       { path: "book/reschedule/:id", name: "PortalReschedule", component: () => import("../portal/routes").then((m) => m.Book) },
-      { path: "bookings", name: "PortalBookings", component: ClientAppointmentsView },
-      { path: "bookings/:id", name: "PortalBooking", component: ClientAppointmentsView },
+      { path: "bookings", name: "PortalBookings", component: () => import("../portal/routes").then((m) => m.Bookings) },
+      { path: "bookings/:id", name: "PortalBooking", component: () => import("../portal/routes").then((m) => m.Bookings) },
       { path: "wallet", name: "PortalWallet", component: ClientMoreView },
       { path: "wallet/pass", name: "PortalPass", component: ClientMoreView },
       { path: "profile", name: "PortalProfile", component: ClientMoreView },
