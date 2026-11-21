@@ -1,16 +1,24 @@
-// Inline SVG icons used across the page.
+// Inline SVG icons used across the page. The other arrows (diagonal, social,
+// footer, up) are different drawings, not this one at another size.
 import type { SVGProps } from "react";
 
-export function ArrowRightSmallIcon(props: SVGProps<SVGSVGElement>) {
+// The site's right arrow: one drawing on a 16-unit grid, at the size and line
+// weight each place uses (`size` and `weight` in pixels; the weight is
+// scaled to the grid so it renders at exactly that thickness).
+function RightArrow({ size, weight, color = "currentColor", ...props }: SVGProps<SVGSVGElement> & { size: number; weight: number; color?: string }) {
   return (
-    <svg {...props} width="16" height="16" fill="none" viewBox="0 0 16 16"><path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M2.343 8h11.314m0 0-4.984 4.984M13.657 8 8.673 3.016"></path></svg>
+    <svg {...props} width={size} height={size} fill="none" viewBox="0 0 16 16"><path stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth={(weight * 16) / size} d="M2.343 8h11.314m0 0-4.984 4.984M13.657 8 8.673 3.016"></path></svg>
   );
 }
 
+// The header's login button.
+export function ArrowRightSmallIcon(props: SVGProps<SVGSVGElement>) {
+  return <RightArrow {...props} size={16} weight={1.5} />;
+}
+
+// The menu's links.
 export function MenuLinkArrowIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg {...props} width="24" height="24" fill="none" viewBox="0 0 24 24"><path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3.515 12h16.97m0 0L13.01 4.525M20.485 12l-7.475 7.476"></path></svg>
-  );
+  return <RightArrow {...props} size={24} weight={2} />;
 }
 
 export function MenuTalkIcon(props: SVGProps<SVGSVGElement>) {
@@ -25,10 +33,10 @@ export function DiagonalArrowIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+// The page's call-to-action buttons: always white (their `color` fades on
+// hover, which mustn't reach the arrow).
 export function CtaArrowIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg {...props} width="16" height="16" fill="none" viewBox="0 0 16 16"><path stroke="#fff" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.343 8h11.314m0 0L8.673 3.016M13.657 8l-4.984 4.984"></path></svg>
-  );
+  return <RightArrow {...props} size={16} weight={2} color="#fff" />;
 }
 
 export function PlayIcon(props: SVGProps<SVGSVGElement>) {

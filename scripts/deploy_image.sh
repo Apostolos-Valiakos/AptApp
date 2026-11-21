@@ -76,7 +76,7 @@ fi
 if "${SSH[@]}" "$VPS" "docker image inspect pure-app:$TAG" >/dev/null 2>&1; then
   echo "== pure-app:$TAG is already on the VPS, not uploading again"
 else
-  echo "== Uploading pure-app:$TAG (about 150 MB compressed)"
+  echo "== Uploading pure-app:$TAG to the VPS (this may take a while)"
   docker save "pure-app:$TAG" | gzip | "${SSH[@]}" "$VPS" 'gunzip | docker load'
 fi
 

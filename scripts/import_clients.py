@@ -19,23 +19,17 @@ Usage:
 """
 
 import argparse
-import os
 import re
-import sys
 import unicodedata
 import zipfile
 import xml.etree.ElementTree as ET
 
 import psycopg2
 import psycopg2.extras
-from dotenv import load_dotenv
 
-load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
-DB_URI = os.environ.get("POSTGRES_URI")
-if not DB_URI:
-    sys.exit("ERROR: POSTGRES_URI not found in .env")
+from import_common import SHOP_ID, db_uri
 
-SHOP_ID = "00000000-0000-0000-0000-000000000001"
+DB_URI = db_uri()
 NS = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 
 
