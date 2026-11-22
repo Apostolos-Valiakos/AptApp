@@ -12,7 +12,7 @@
           v-for="s in suggestions"
           :key="s"
           type="button"
-          class="text-xs px-3 py-1.5 rounded-full border border-[var(--p-primary-200)] text-[var(--p-primary-600)] hover:bg-[var(--p-primary-50)]"
+          class="text-xs px-3 py-1.5 rounded-full border border-[var(--p-primary-200)] text-[var(--portal-accent-text)] hover:bg-[var(--p-primary-50)]"
           @click="send(s)"
         >
           {{ s }}
@@ -109,9 +109,10 @@
         class="flex-1"
         maxlength="2000"
         :placeholder="t('portal.ai.placeholder')"
+        :aria-label="t('portal.ai.placeholder')"
         :disabled="busy"
       />
-      <Button type="submit" icon="pi pi-send" :disabled="busy || !input.trim()" />
+      <Button type="submit" icon="pi pi-send" :aria-label="t('portal.ai.send')" :disabled="busy || !input.trim()" />
     </form>
   </div>
 </template>

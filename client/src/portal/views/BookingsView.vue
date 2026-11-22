@@ -21,11 +21,12 @@
               <p class="text-2xl font-semibold leading-none">{{ new Date(b.start_time).getDate() }}</p>
             </div>
             <div class="flex-1 min-w-0">
-              <p class="font-semibold truncate" :class="{ 'line-through': b.status === 'cancelled' }">{{ serviceNames(b) }}</p>
+              <p class="font-semibold line-clamp-2" :class="{ 'line-through': b.status === 'cancelled' }">{{ serviceNames(b) }}</p>
               <p class="portal-caption">{{ formatDate(b.start_time, locale, "weekdayTime") }}<span v-if="staffNames(b)"> · {{ staffNames(b) }}</span></p>
+              <!-- Under the name, so a long name keeps the whole width. -->
+              <Tag v-if="b.status === 'cancelled'" :value="t('portal.upcoming.cancelled')" severity="danger" rounded class="mt-1" />
+              <Tag v-else-if="b.status !== 'confirmed' && b.payment_status !== 'paid'" :value="t('portal.v2.upNext.needsConfirm')" severity="warn" rounded class="mt-1" />
             </div>
-            <Tag v-if="b.status === 'cancelled'" :value="t('portal.upcoming.cancelled')" severity="danger" rounded />
-            <Tag v-else-if="b.status !== 'confirmed' && b.payment_status !== 'paid'" :value="t('portal.v2.upNext.needsConfirm')" severity="warn" rounded />
           </router-link>
         </li>
       </ul>

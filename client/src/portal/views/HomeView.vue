@@ -21,7 +21,7 @@
     </section>
 
     <section v-if="showPushCard" class="portal-card p-4 flex items-center gap-3">
-      <i class="pi pi-bell text-[var(--p-primary-600)]"></i>
+      <i class="pi pi-bell text-[var(--portal-accent-text)]"></i>
       <div class="flex-1 min-w-0">
         <p class="font-semibold text-sm">{{ t("portal.notifications.title") }}</p>
         <p class="portal-caption">{{ t("portal.notifications.subtitle") }}</p>
@@ -51,7 +51,7 @@
     <section v-if="contest" class="portal-card overflow-hidden" data-testid="contest">
       <img v-if="contest.image_url" :src="contest.image_url" alt="" class="w-full h-32 object-cover" />
       <div class="p-4">
-        <p class="portal-micro font-semibold uppercase tracking-wide text-[var(--p-primary-600)]"><i class="pi pi-trophy mr-1"></i>{{ t("portal.contestLabel") }}</p>
+        <p class="portal-micro font-semibold uppercase tracking-wide text-[var(--portal-accent-text)]"><i class="pi pi-trophy mr-1"></i>{{ t("portal.contestLabel") }}</p>
         <h3 class="font-semibold mt-1">{{ contest.name }}</h3>
         <p v-if="contest.description" class="portal-caption mt-1">{{ contest.description }}</p>
       </div>

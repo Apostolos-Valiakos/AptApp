@@ -1176,6 +1176,7 @@ export default {
       main: 'Main navigation',
     },
     ai: {
+      send: 'Send',
       title: 'Assistant',
       greeting: 'Hello! I can answer questions about the spa and help you book, cancel or move an appointment.',
       placeholder: 'Write a message...',

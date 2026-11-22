@@ -4,7 +4,7 @@
   <div class="p-4 space-y-5">
     <h1 class="portal-display portal-h2">{{ t("portal.nav.wallet") }}</h1>
 
-    <router-link to="/portal/wallet/pass" class="block rounded-[var(--portal-radius-card)] p-5 text-white shadow-[var(--portal-shadow-2)] bg-[var(--p-primary-color)] portal-target" data-testid="pass-card">
+    <router-link to="/portal/wallet/pass" class="block rounded-[var(--portal-radius-card)] p-5 text-[var(--p-primary-contrast-color)] shadow-[var(--portal-shadow-2)] bg-[var(--p-primary-color)] portal-target" data-testid="pass-card">
       <div class="flex items-center justify-between gap-4">
         <div class="min-w-0">
           <p class="text-xs uppercase tracking-widest opacity-80">{{ shop.name }}</p>
@@ -21,7 +21,7 @@
       <div class="portal-card p-4 space-y-2">
         <template v-if="wallet.membership">
           <div class="flex items-center justify-between gap-3">
-            <span class="font-semibold text-[var(--p-primary-700)]">{{ wallet.membership.tier_name }}</span>
+            <span class="font-semibold text-[var(--portal-accent-text)]">{{ wallet.membership.tier_name }}</span>
             <span class="portal-caption">{{ t("portal.membership.renewsOn", { date: formatDate(wallet.membership.current_period_end, locale) }) }}</span>
           </div>
           <div v-for="u in wallet.usage" :key="u.service_id" class="flex justify-between text-sm">

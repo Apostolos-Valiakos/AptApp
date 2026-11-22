@@ -16,7 +16,7 @@
       :class="n.read_at ? 'hover:bg-[var(--p-surface-100)]' : 'bg-[var(--p-primary-50)] hover:bg-[var(--p-primary-100)]'"
       @click="emit('open', n)"
     >
-      <i :class="n.type === 'reminder' ? 'pi pi-calendar' : 'pi pi-megaphone'" class="text-[var(--p-primary-600)] mt-0.5 flex-shrink-0"></i>
+      <i :class="n.type === 'reminder' ? 'pi pi-calendar' : 'pi pi-megaphone'" class="text-[var(--portal-accent-text)] mt-0.5 flex-shrink-0"></i>
       <div class="min-w-0 flex-1">
         <p class="text-sm font-semibold truncate">{{ n.title }}</p>
         <p class="text-xs opacity-70 mt-0.5">{{ n.body }}</p>

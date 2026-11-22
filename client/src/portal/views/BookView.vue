@@ -73,7 +73,7 @@
             role="radio"
             :aria-checked="flow.state.staffChoice === choice.id"
             class="portal-target flex-shrink-0 px-4 rounded-full border text-sm font-medium"
-            :class="flow.state.staffChoice === choice.id ? 'bg-[var(--p-primary-color)] text-white border-transparent' : 'border-[var(--portal-border)]'"
+            :class="flow.state.staffChoice === choice.id ? 'bg-[var(--p-primary-color)] text-[var(--p-primary-contrast-color)] border-transparent' : 'border-[var(--portal-border)]'"
             @click="flow.setStaff(choice.id)"
           >
             {{ choice.name }}
@@ -86,7 +86,7 @@
             :key="d.date"
             type="button"
             class="flex-shrink-0 w-14 py-2 rounded-2xl flex flex-col items-center gap-1 border"
-            :class="flow.state.date === d.date ? 'bg-[var(--p-primary-color)] text-white border-transparent' : 'border-[var(--portal-border)]'"
+            :class="flow.state.date === d.date ? 'bg-[var(--p-primary-color)] text-[var(--p-primary-contrast-color)] border-transparent' : 'border-[var(--portal-border)]'"
             :aria-pressed="flow.state.date === d.date"
             :aria-label="`${formatDate(d.date, locale, 'weekdayDayMonth')}: ${t('portal.v2.book.freeCount', { n: d.count }, d.count)}`"
             :data-date="d.date"
@@ -95,7 +95,7 @@
             <span class="text-[11px] uppercase opacity-80">{{ weekday(d.date) }}</span>
             <span class="text-lg font-semibold leading-none">{{ Number(d.date.slice(8)) }}</span>
             <span class="flex gap-0.5 h-1.5" :data-dots="dots(d.count)">
-              <span v-for="i in dots(d.count)" :key="i" class="w-1.5 h-1.5 rounded-full" :class="flow.state.date === d.date ? 'bg-white' : 'bg-[var(--p-primary-color)]'"></span>
+              <span v-for="i in dots(d.count)" :key="i" class="w-1.5 h-1.5 rounded-full" :class="flow.state.date === d.date ? 'bg-[var(--p-primary-contrast-color)]' : 'bg-[var(--p-primary-color)]'"></span>
             </span>
           </button>
         </div>
@@ -116,7 +116,7 @@
                 :key="s.start_time"
                 type="button"
                 class="portal-target rounded-xl border text-sm font-medium tabular-nums"
-                :class="flow.state.slot?.start_time === s.start_time ? 'bg-[var(--p-primary-color)] text-white border-transparent' : 'border-[var(--portal-border)]'"
+                :class="flow.state.slot?.start_time === s.start_time ? 'bg-[var(--p-primary-color)] text-[var(--p-primary-contrast-color)] border-transparent' : 'border-[var(--portal-border)]'"
                 :aria-pressed="flow.state.slot?.start_time === s.start_time"
                 data-testid="slot"
                 @click="flow.pickSlot(s)"

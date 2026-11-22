@@ -2,8 +2,8 @@
   <!-- The check-in pass, full screen (P2, N4): the shop's colour, the
        client's name and a large QR to show at reception. It opens from the
        token kept on this device, so it works with no connection. -->
-  <div class="fixed inset-0 z-50 flex flex-col items-center justify-center gap-6 p-6 text-white bg-[var(--p-primary-color)]" data-testid="pass">
-    <Button icon="pi pi-times" rounded text class="!absolute top-[calc(1rem+env(safe-area-inset-top))] right-4 !text-white" :aria-label="t('common.close')" @click="close" />
+  <div class="fixed inset-0 z-50 flex flex-col items-center justify-center gap-6 p-6 text-[var(--p-primary-contrast-color)] bg-[var(--p-primary-color)]" data-testid="pass">
+    <Button icon="pi pi-times" rounded text class="!absolute top-[calc(1rem+env(safe-area-inset-top))] right-4 !text-[var(--p-primary-contrast-color)]" :aria-label="t('common.close')" @click="close" />
     <p class="text-xs uppercase tracking-widest opacity-80">{{ shop.name }}</p>
     <p class="portal-display text-3xl text-center">{{ clientName }}</p>
     <p v-if="wallet.membership" class="opacity-90">{{ t("portal.v2.home.member", { tier: wallet.membership.tier_name }) }}</p>

@@ -10,7 +10,7 @@
         :to="{ path: '/portal/book', query: { service: p.service_id, ...(p.staff_id ? { staff: p.staff_id } : {}) } }"
         class="portal-card snap-start flex-shrink-0 w-48 p-4 flex flex-col gap-1 portal-target"
       >
-        <span v-if="i === 0" class="portal-micro font-semibold uppercase tracking-wide text-[var(--p-primary-600)]">{{ t("portal.v2.home.sameAsLast") }}</span>
+        <span v-if="i === 0" class="portal-micro font-semibold uppercase tracking-wide text-[var(--portal-accent-text)]">{{ t("portal.v2.home.sameAsLast") }}</span>
         <span class="font-semibold leading-tight">{{ p.service_name }}</span>
         <span class="portal-caption">{{ p.staff_name || t("portal.v2.home.anyone") }}</span>
         <span class="portal-caption mt-auto">{{ formatDuration(p.duration_minutes, t) }} · {{ formatMoney(p.price) }}</span>

@@ -3,7 +3,7 @@
        check, what was booked, Add to calendar, Share, Done. -->
   <Dialog :visible="!!success.bookingId" modal :closable="false" :showHeader="false" :style="{ width: '420px', maxWidth: '94vw' }" @update:visible="(v) => !v && success.close()">
     <div class="text-center space-y-3 pt-6" data-testid="booking-success">
-      <span class="mx-auto w-16 h-16 rounded-full bg-[var(--p-primary-color)] text-white flex items-center justify-center">
+      <span class="mx-auto w-16 h-16 rounded-full bg-[var(--p-primary-color)] text-[var(--p-primary-contrast-color)] flex items-center justify-center">
         <i class="pi pi-check text-2xl"></i>
       </span>
       <h2 class="portal-display text-2xl">{{ success.kind === "moved" ? t("portal.actions.moved") : t("portal.actions.booked") }}</h2>

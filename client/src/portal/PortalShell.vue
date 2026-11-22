@@ -11,7 +11,7 @@
         :key="tab.to"
         :to="tab.to"
         class="portal-target flex items-center gap-3 px-3 rounded-[var(--portal-radius-button)] font-medium"
-        :class="isActive(tab) ? 'bg-[var(--p-primary-50)] text-[var(--p-primary-700)]' : 'opacity-80 hover:bg-[var(--p-surface-100)]'"
+        :class="isActive(tab) ? 'bg-[var(--p-primary-50)] text-[var(--portal-accent-text)]' : 'opacity-80 hover:bg-[var(--p-surface-100)]'"
         :aria-current="isActive(tab) ? 'page' : undefined"
       >
         <i :class="tab.icon"></i>
@@ -68,12 +68,12 @@
           :key="tab.to"
           :to="tab.to"
           class="flex flex-col items-center gap-0.5 py-2 text-[11px] font-medium min-h-[56px] justify-end"
-          :class="isActive(tab) ? 'text-[var(--p-primary-600)]' : 'opacity-60'"
+          :class="isActive(tab) ? 'text-[var(--portal-accent-text)]' : tab.raised ? '' : 'opacity-60'"
           :aria-current="isActive(tab) ? 'page' : undefined"
         >
           <span
             v-if="tab.raised"
-            class="w-14 h-14 -mt-6 mb-0.5 rounded-full bg-[var(--p-primary-color)] text-white flex items-center justify-center shadow-[var(--portal-shadow-2)]"
+            class="w-14 h-14 -mt-6 mb-0.5 rounded-full bg-[var(--p-primary-color)] text-[var(--p-primary-contrast-color)] flex items-center justify-center shadow-[var(--portal-shadow-2)]"
           ><i :class="tab.icon" class="text-xl"></i></span>
           <i v-else :class="tab.icon" class="text-lg"></i>
           {{ t(tab.label) }}
@@ -91,7 +91,7 @@
       <template #header>
         <div class="flex items-center justify-between w-full pr-4">
           <span class="font-bold">{{ t("portal.notificationHistory.title") }}</span>
-          <button v-if="activity.unreadCount.value > 0" type="button" class="text-xs font-semibold text-[var(--p-primary-600)]" @click="activity.markAllRead">
+          <button v-if="activity.unreadCount.value > 0" type="button" class="text-xs font-semibold text-[var(--portal-accent-text)]" @click="activity.markAllRead">
             {{ t("portal.notificationHistory.markAllRead") }}
           </button>
         </div>

@@ -19,7 +19,9 @@ const DATE_LOCALES: Record<string, string> = { el: "el-GR", en: "en-GB" };
 /** The browser locale for the app's language ("el" → "el-GR", "en" → "en-GB"). */
 export const dateLocale = (lang: string) => DATE_LOCALES[lang] || lang;
 
-const TIME = { hour: "2-digit", minute: "2-digit" } as const;
+// 24-hour, as clockTime: Greek's default is 12-hour ("05:00 μ.μ."), which
+// sat beside "18:00" on the same line.
+const TIME = { hour: "2-digit", minute: "2-digit", hourCycle: "h23" } as const;
 const DATE_STYLES = {
   /** 21/10/2026 */
   numeric: { day: "2-digit", month: "2-digit", year: "numeric" },

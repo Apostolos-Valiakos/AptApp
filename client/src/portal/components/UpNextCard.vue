@@ -5,7 +5,7 @@
     <div class="flex items-start justify-between gap-3">
       <div class="min-w-0">
         <p class="portal-caption">{{ t("portal.v2.upNext.title") }}</p>
-        <h2 class="portal-display portal-h3 mt-1 truncate">{{ names }}</h2>
+        <h2 class="portal-display portal-h3 mt-1 line-clamp-2">{{ names }}</h2>
         <p class="portal-small mt-1">
           {{ formatDate(b.start_time, locale, "weekdayTime") }}<span v-if="staff"> · {{ staff }}</span>
         </p>
@@ -13,7 +13,7 @@
       <Tag v-if="showStatus" :value="needsConfirm ? t('portal.v2.upNext.needsConfirm') : t('portal.v2.upNext.confirmed')" :severity="needsConfirm ? 'warn' : 'success'" rounded />
     </div>
 
-    <p class="text-lg font-semibold text-[var(--p-primary-700)]" data-testid="upnext-when">{{ countdown }}</p>
+    <p class="text-lg font-semibold text-[var(--portal-accent-text)]" data-testid="upnext-when">{{ countdown }}</p>
 
     <div v-if="state.kind !== 'now'" class="flex flex-wrap gap-2">
       <template v-if="state.kind === 'later'">

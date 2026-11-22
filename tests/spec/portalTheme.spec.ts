@@ -82,3 +82,14 @@ describe("PT3 the staff app stays light", () => {
     expect(document.documentElement.classList.contains(DARK_CLASS)).toBe(false);
   });
 });
+
+describe("PT4 text that reads on the shop's colour", () => {
+  test("white on a dark colour, near-black on a light one (WCAG contrast)", async () => {
+    const { textOn } = await import("../../client/src/portal/theme/portalPreset");
+    expect(textOn("#8B6F4E")).toBe("#ffffff");
+    expect(textOn("#2E6B5E")).toBe("#ffffff");
+    expect(textOn("#D4A97A")).toBe("#211a14");
+    expect(textOn("#F2E8DC")).toBe("#211a14");
+    expect(textOn("not a colour")).toBe("#ffffff");
+  });
+});

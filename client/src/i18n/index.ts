@@ -34,4 +34,7 @@ export const loadLocale = async (lang: string) => {
 export const setLocale = async (lang: string) => {
   await loadLocale(lang);
   (i18n.global.locale as any).value = lang;
+  // Screen readers pronounce the page in it, and CSS capitals follow it
+  // (Greek capitals drop their accents only when the page says "el").
+  if (typeof document !== "undefined") document.documentElement.lang = lang;
 };

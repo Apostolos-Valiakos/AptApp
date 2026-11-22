@@ -18,6 +18,9 @@
   --portal-border: var(--p-content-border-color);
   --portal-text: var(--p-text-color);
   --portal-muted: var(--p-text-muted-color);
+  /* Text in the shop's colour: dark enough on light surfaces (WCAG AA even
+     for a pale shop colour), light enough on dark ones. */
+  --portal-accent-text: var(--p-primary-800);
 
   background: var(--portal-bg);
   color: var(--portal-text);
@@ -28,6 +31,7 @@
 /* In the dark, borders instead of shadows (shadows vanish on dark surfaces). */
 .my-app-dark .portal-shell {
   --portal-bg: var(--p-surface-950);
+  --portal-accent-text: var(--p-primary-300);
   --portal-shadow-1: 0 0 0 1px var(--p-surface-700);
   --portal-shadow-2: 0 0 0 1px var(--p-surface-700);
   --portal-shadow-3: 0 0 0 1px var(--p-surface-600);

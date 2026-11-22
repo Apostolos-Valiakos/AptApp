@@ -6,7 +6,7 @@
 
     <section class="portal-card divide-y divide-[var(--portal-border)]" data-testid="account">
       <button type="button" class="w-full p-4 flex items-center gap-3 text-left portal-target" data-testid="edit-account" @click="openAccount">
-        <span class="w-11 h-11 rounded-full bg-[var(--p-primary-100)] text-[var(--p-primary-700)] flex items-center justify-center font-semibold">{{ initials }}</span>
+        <span class="w-11 h-11 rounded-full bg-[var(--p-primary-100)] text-[var(--portal-accent-text)] flex items-center justify-center font-semibold">{{ initials }}</span>
         <span class="flex-1 min-w-0">
           <span class="block font-semibold truncate">{{ fullName }}</span>
           <span class="portal-caption truncate block">{{ wallet.client?.email || wallet.client?.phone }}</span>
