@@ -2,7 +2,8 @@
 // a confirmed card makes the same request the portal's own screens make, so
 // the server's rules apply to both ways of booking. AIC1–AIC3.
 import { describe, expect, test, vi } from "vitest";
-import AiChatPanel from "../../client/src/components/portal/AiChatPanel.vue";
+import AiChat from "../../client/src/portal/components/AiChat.vue";
+import { defineComponent, h } from "vue";
 import el from "../../client/src/i18n/locales/el";
 import { fakeServer, mountScreen, pageText, saveLogin, settle } from "./helpers";
 
@@ -28,21 +29,21 @@ const open = async (routes: Record<string, any>, replies: string[]) => {
     chats.push(JSON.parse(String(init.body)));
     return new Response(replies.shift() ?? sse([["done", {}]]), { status: 200, headers: { "Content-Type": "text/event-stream" } });
   });
-  mountScreen(AiChatPanel, { props: { visible: true } });
+  mountScreen(defineComponent({ render: () => h("div", { style: "height: 600px" }, [h(AiChat)]) }));
   await settle();
   return { server, chats };
 };
 const ask = async (text: string) => {
-  const input = document.querySelector<HTMLInputElement>(".p-dialog form input")!;
+  const input = document.querySelector<HTMLInputElement>('[data-testid="assistant-chat"] form input')!;
   input.value = text;
   input.dispatchEvent(new Event("input"));
   await settle();
-  document.querySelector<HTMLFormElement>(".p-dialog form")!.dispatchEvent(new Event("submit"));
+  document.querySelector<HTMLFormElement>('[data-testid="assistant-chat"] form')!.dispatchEvent(new Event("submit"));
   await settle();
   await settle();
 };
 const button = (label: string) =>
-  [...document.querySelectorAll<HTMLButtonElement>(".p-dialog button")].find((b) => b.textContent?.trim() === label)!;
+  [...document.querySelectorAll<HTMLButtonElement>("[data-testid=\"assistant-chat\"] button")].find((b) => b.textContent?.trim() === label)!;
 
 describe("AIC1 a proposed booking", () => {
   test("shows what, who, when and the price; nothing is booked until Confirm", async () => {
@@ -107,7 +108,7 @@ describe("AIC3 moving and cancelling", () => {
       ],
     );
     await ask("Άλλαξε το ραντεβού");
-    const confirms = [...document.querySelectorAll<HTMLButtonElement>(".p-dialog button")].filter((b) => b.textContent?.trim() === el.portal.ai.card.confirm);
+    const confirms = [...document.querySelectorAll<HTMLButtonElement>("[data-testid=\"assistant-chat\"] button")].filter((b) => b.textContent?.trim() === el.portal.ai.card.confirm);
     expect(confirms).toHaveLength(2);
     confirms[0].click();
     await settle();
@@ -118,13 +119,11 @@ describe("AIC3 moving and cancelling", () => {
   });
 });
 
-describe("AIC4 in the redesigned portal, a booking from the chat ends like one from Book", () => {
+describe("AIC4 a booking from the chat ends like one from Book", () => {
   test("the same done sheet (Add to calendar, Share) and a link to the booking", async () => {
-    const { setPortalV2 } = await import("../../client/src/portal/flag");
     const { default: BookingSuccessSheet } = await import("../../client/src/portal/components/BookingSuccessSheet.vue");
     const { useBookingSuccessStore } = await import("../../client/src/portal/stores/success");
-    setPortalV2(true);
-    try {
+    {
       await open(
         {
           "POST /api/v1/appointments": { body: { id: "a1", success: true } },
@@ -143,8 +142,6 @@ describe("AIC4 in the redesigned portal, a booking from the chat ends like one f
       const sheet = document.querySelector('[data-testid="booking-success"]')!;
       expect(sheet.textContent).toContain(el.portal.v2.actions.addToCalendar);
       expect(document.querySelector('[data-testid="card-open-booking"]')!.getAttribute("href")).toBe("/portal/bookings/a1");
-    } finally {
-      setPortalV2(false);
     }
   });
 });

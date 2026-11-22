@@ -61,7 +61,9 @@ describe("U2 the client portal and the staff app are kept apart", () => {
   );
   test("a client's portal opens", async () => {
     as("client");
-    expect(await landsOn("/portal/appointments")).toBe("/portal/appointments");
+    // The redesigned portal: Bookings replaced Appointments (old links lead there).
+    expect(await landsOn("/portal/bookings")).toBe("/portal/bookings");
+    expect(await landsOn("/portal/appointments")).toBe("/portal/bookings");
   });
   test.each(["admin", "frontdesk", "staff"])("%s can't open the portal", async (role) => {
     as(role);

@@ -111,7 +111,7 @@ import Dialog from "primevue/dialog";
 import Drawer from "primevue/drawer";
 import SelectButton from "primevue/selectbutton";
 import { setLocale } from "../i18n";
-import AiChat from "../components/portal/AiChat.vue";
+import AiChat from "./components/AiChat.vue";
 import ActivityList from "./components/ActivityList.vue";
 import BookingSuccessSheet from "./components/BookingSuccessSheet.vue";
 import { usePortalTheme } from "./composables/usePortalTheme";

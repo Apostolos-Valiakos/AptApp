@@ -1,6 +1,6 @@
 <template>
   <!-- The assistant's conversation: messages, the cards it proposes and the
-       box to write in. Shown in a dialog (AiChatPanel), a bottom sheet or the
+       box to write in. Shown in a bottom sheet on a phone or the
        desktop's side panel (portal/PortalShell.vue). -->
   <div class="flex flex-col h-full min-h-0" data-testid="assistant-chat">
     <div ref="listRef" class="flex-1 overflow-y-auto px-4 py-3 space-y-3">
@@ -87,7 +87,7 @@
           </div>
           <!-- The booking in Bookings, where everything else can be done with it. -->
           <router-link
-            v-if="portalV2 && bookingLink(card)"
+            v-if="bookingLink(card)"
             :to="bookingLink(card)!"
             class="inline-block text-xs font-semibold underline mt-2"
             data-testid="card-open-booking"
@@ -122,12 +122,11 @@ import { ref, computed, nextTick } from "vue";
 import { storeToRefs } from "pinia";
 import { useI18n } from "vue-i18n";
 import { useAuthStore } from "../../stores/auth";
-import { newIdempotencyKey, PortalActionError, usePortalBookingActions } from "../../portal/composables/usePortalBookingActions";
+import { newIdempotencyKey, PortalActionError, usePortalBookingActions } from "../composables/usePortalBookingActions";
 import { formatDate, formatDuration, formatMoney } from "../../utils/format";
 
-import { useBookingSuccessStore } from "../../portal/stores/success";
-import { portalV2 } from "../../portal/flag";
-import { useAssistantStore, type AssistantCard as Card, type AssistantMessage as Message } from "../../portal/stores/assistant";
+import { useBookingSuccessStore } from "../stores/success";
+import { useAssistantStore, type AssistantCard as Card, type AssistantMessage as Message } from "../stores/assistant";
 
 const { t, locale } = useI18n();
 const authStore = useAuthStore();
@@ -257,12 +256,12 @@ const confirmCard = async (card: Card) => {
       const done = await actions.book({ service_id: a.service_id, staff_id: a.staff_id, start_time: a.start_time }, { key: a.idempotency_key, quiet: true });
       // The same "done" sheet as booking from the screen (Add to calendar, Share).
       a.booking_id = done.id;
-      if (portalV2.value) success.show(done.id, "booked");
+      success.show(done.id, "booked");
     } else if (a.type === "cancel") {
       await actions.cancel(a.appointment_id, { quiet: true });
     } else {
       await actions.reschedule(a.appointment_id, { start_time: a.start_time, staff_id: a.staff_id }, { quiet: true });
-      if (portalV2.value) success.show(a.appointment_id, "moved");
+      success.show(a.appointment_id, "moved");
     }
     card.status = "done";
     note(`[Portal note: the client pressed Confirm and the ${a.type} succeeded: ${describe(a)}.]`);

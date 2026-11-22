@@ -1,11 +1,11 @@
-// The redesigned portal's frame (docs/redesign/REDESIGN_SPEC.md §2), through
-// the real route table: five places, Book in the middle; a rail and a side
-// panel on a desktop; the assistant one tap away from every screen; links of
-// the old portal still working; and the switch that turns it on. PS1–PS5.
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+// The portal's frame (docs/redesign/REDESIGN_SPEC.md §2), through the real
+// route table: five places, Book in the middle; a rail and a side panel on a
+// desktop; the assistant one tap away from every screen; links of the old
+// portal still working; notifications from the bell. PS1–PS5.
+// (PS5 was the switch between the old and new portal, gone with the old one.)
+import { afterEach, describe, expect, test } from "vitest";
 import { RouterView } from "vue-router";
 import router from "../../client/src/router";
-import { setPortalV2, portalV2 } from "../../client/src/portal/flag";
 import { useAssistantStore } from "../../client/src/portal/stores/assistant";
 import el from "../../client/src/i18n/locales/el";
 import { fakeServer, mountScreen, saveLogin, settle } from "./helpers";
@@ -16,7 +16,7 @@ const at = (width: number) => Object.defineProperty(window, "innerWidth", { valu
 const open = async (path: string, { width = 390, ai = true } = {}) => {
   at(width);
   saveLogin({ id: "u1", role: "client", shop_id: "s1", client_id: "c1" });
-  fakeServer({
+  const server = fakeServer({
     "GET /api/v1/shop": { body: { id: "s1", name: "Pure Spa", phone: "2410555555", ai_assistant_enabled: ai } },
     "GET /api/v1/portal/notifications": { body: { items: [], unread_count: 2 } },
     "GET /api/v1/clients/c1/full": { body: { client: { first_name: "Μαρία" }, history: [] } },
@@ -24,6 +24,7 @@ const open = async (path: string, { width = 390, ai = true } = {}) => {
   await router.push(path);
   mountScreen(RouterView, { router });
   for (let i = 0; i < 4; i++) await settle();
+  return server;
 };
 const byTestId = (id: string) => document.querySelector<HTMLElement>(`[data-testid="${id}"]`);
 const landsOn = async (path: string) => {
@@ -31,11 +32,7 @@ const landsOn = async (path: string) => {
   return router.currentRoute.value.fullPath;
 };
 
-beforeEach(() => setPortalV2(true));
-afterEach(() => {
-  setPortalV2(false);
-  at(1024);
-});
+afterEach(() => at(1024));
 
 describe("PS1 five places on a phone", () => {
   test("Home, Bookings, Book (raised, in the middle), Wallet, Profile", async () => {
@@ -62,16 +59,6 @@ describe("PS2 old links still work", () => {
     expect(await landsOn("/portal/appointments")).toBe("/portal/bookings");
     expect(await landsOn("/portal/appointments?tab=book")).toBe("/portal/book");
     expect(await landsOn("/portal/more")).toBe("/portal/profile");
-  });
-
-  test("and with the redesign off, its links open the old portal", async () => {
-    await open("/portal/home");
-    setPortalV2(false);
-    expect(await landsOn("/portal/bookings")).toBe("/portal/appointments");
-    expect(await landsOn("/portal/bookings/a1")).toBe("/portal/appointments");
-    expect(await landsOn("/portal/book")).toBe("/portal/appointments?tab=book");
-    expect(await landsOn("/portal/wallet/pass")).toBe("/portal/more");
-    expect(await landsOn("/portal/profile")).toBe("/portal/more");
   });
 });
 
@@ -109,16 +96,19 @@ describe("PS4 a desktop", () => {
   });
 });
 
-describe("PS5 switching the redesign on and off", () => {
-  test("?portal=v2 turns it on for this device and the link opens without it; ?portal=v1 off", async () => {
-    setPortalV2(false);
-    await open("/portal/home");
-    expect(await landsOn("/portal/home?portal=v2")).toBe("/portal/home");
-    expect(portalV2.value).toBe(true);
-    expect(localStorage.getItem("portalV2")).toBe("1");
-    expect(await landsOn("/portal/bookings?portal=v1")).toBe("/portal/appointments");
-    expect(portalV2.value).toBe(false);
-    expect(localStorage.getItem("portalV2")).toBeNull();
+describe("PS5 notifications from the bell (K10)", () => {
+  test("the list opens, and can all be marked read", async () => {
+    const server = await open("/portal/home");
+    server.routes["GET /api/v1/portal/notifications"] = {
+      body: { items: [{ id: "n1", title: "Υπενθύμιση", body: "Αύριο 10:00", type: "reminder", read_at: null, created_at: "2026-11-20T10:00:00Z", url: null }], unread_count: 1 },
+    };
+    server.routes["PUT /api/v1/portal/notifications/read-all"] = { body: { success: true } };
+    byTestId("activity-button")!.click();
+    await settle();
+    expect(document.body.textContent).toContain("Υπενθύμιση");
+    [...document.querySelectorAll<HTMLElement>(".p-dialog button")].find((b) => b.textContent!.trim() === el.portal.notificationHistory.markAllRead)!.click();
+    await settle();
+    expect(server.called("PUT", "/api/v1/portal/notifications/read-all")).toHaveLength(1);
   });
 });
 

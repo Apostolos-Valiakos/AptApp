@@ -58,7 +58,7 @@
           <span v-else>{{ t("packages.neverExpires") }}</span>
           <span>{{ formatMoney(p.price_paid) }}</span>
         </div>
-        <p v-if="p.note && !portal" class="text-xs text-gray-500 mt-1 italic">{{ p.note }}</p>
+        <p v-if="p.note" class="text-xs text-gray-500 mt-1 italic">{{ p.note }}</p>
 
         <details v-if="p.usage.length" class="mt-2">
           <summary class="text-xs text-gray-500 cursor-pointer">
@@ -71,7 +71,7 @@
           </ul>
         </details>
 
-        <div v-if="isAdmin && !portal" class="mt-3 flex gap-2">
+        <div v-if="isAdmin" class="mt-3 flex gap-2">
           <Button size="small" text :label="t('packages.card.adjust')" @click="openAdjust(p)" />
         </div>
       </div>
@@ -127,12 +127,12 @@ const { t, locale } = useI18n();
 const notify = useNotify();
 const authStore = useAuthStore();
 
-const props = defineProps<{ clientId: string | null; portal?: boolean }>();
+const props = defineProps<{ clientId: string | null }>();
 
 const role = computed(() => authStore.user?.role);
 const isAdmin = computed(() => authStore.isAnalyticsAllowed);
 const canSell = computed(
-  () => !props.portal && (isAdmin.value || role.value === "frontdesk"),
+  () => isAdmin.value || role.value === "frontdesk",
 );
 
 const packages = ref<any[]>([]);

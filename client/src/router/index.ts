@@ -22,11 +22,6 @@ const sensitive = (load: () => Promise<any>) => {
 };
 const FinancialsView = sensitive(() => import("../components/FinancialsView.vue"));
 const profileView = () => import("../views/profileView.vue");
-const PortalEntry = () => import("../portal/PortalEntry.vue");
-import { portalPathFor, portalV2, setPortalV2 } from "../portal/flag";
-const ClientAppointmentsView = () =>
-  import("../views/portal/ClientAppointmentsView.vue");
-const ClientMoreView = () => import("../views/portal/ClientMoreView.vue");
 const SignupView = () => import("../views/SignupView.vue");
 const ShopsView = () => import("../views/ShopsView.vue");
 const MembershipTiersView = () => import("../views/MembershipTiersView.vue");
@@ -125,20 +120,13 @@ const routes = [
   },
   {
     path: "/portal",
-    // The redesigned portal or the one before it, as portal/flag.ts says.
-    component: PortalEntry,
+    // The client portal (docs/redesign/REDESIGN_SPEC.md §2): its own frame,
+    // theme and screens, loaded only when a client opens it.
+    component: () => import("../portal/PortalShell.vue"),
     meta: { requiresAuth: true, role: "client" },
     children: [
       { path: "", redirect: "/portal/home" },
-      { path: "home", name: "ClientHome", component: () => import("../portal/routes").then((m) => m.Home) },
-      // The portal before the redesign.
-      {
-        path: "appointments",
-        name: "ClientAppointments",
-        component: ClientAppointmentsView,
-      },
-      { path: "more", name: "ClientMore", component: ClientMoreView },
-      // The redesigned portal (REDESIGN_SPEC.md §2).
+      { path: "home", name: "PortalHome", component: () => import("../portal/routes").then((m) => m.Home) },
       { path: "book", name: "PortalBook", component: () => import("../portal/routes").then((m) => m.Book) },
       { path: "book/reschedule/:id", name: "PortalReschedule", component: () => import("../portal/routes").then((m) => m.Book) },
       { path: "bookings", name: "PortalBookings", component: () => import("../portal/routes").then((m) => m.Bookings) },
@@ -146,6 +134,10 @@ const routes = [
       { path: "wallet", name: "PortalWallet", component: () => import("../portal/routes").then((m) => m.Wallet) },
       { path: "wallet/pass", name: "PortalPass", component: () => import("../portal/routes").then((m) => m.Pass) },
       { path: "profile", name: "PortalProfile", component: () => import("../portal/routes").then((m) => m.Profile) },
+      // The portal before the redesign: links in emails and notifications
+      // already sent still open the same place.
+      { path: "appointments", redirect: (to: any) => ({ path: to.query.tab === "book" ? "/portal/book" : "/portal/bookings", query: {} }) },
+      { path: "more", redirect: "/portal/profile" },
     ],
   },
   // Redirects για να μη σπάνε τα παλιά links - ΠΡΟΣΟΧΗ ΣΤΑ "/"
@@ -217,20 +209,6 @@ router.beforeEach((to, from, next) => {
     authStore.isAuthenticated
   ) {
     return next("/app/scheduler");
-  }
-
-  if (to.path.startsWith("/portal")) {
-    // "?portal=v2" / "?portal=v1" switches the redesigned portal on or off
-    // for this device; the link then opens without it.
-    const { portal, ...rest } = to.query;
-    if (portal === "v2" || portal === "v1") {
-      setPortalV2(portal === "v2");
-      return next({ path: to.path, query: rest, hash: to.hash, replace: true });
-    }
-    // A link of the other portal (an email, a notification) leads to the
-    // same place in this one.
-    const same = portalPathFor(to.path, to.query, portalV2.value);
-    if (same) return next({ ...same, replace: true });
   }
 
   next();

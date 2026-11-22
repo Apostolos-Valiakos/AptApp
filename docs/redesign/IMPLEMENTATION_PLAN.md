@@ -33,6 +33,42 @@ same rules.** In practice:
 
 ---
 
+## Status (22 November 2026)
+
+Phases 0–6 are done on `ai-assistant`: one commit per step, each with its tests. Phase 7 (native)
+waits for the answers to spec §8.
+
+Where the work differs from the plan below:
+
+- **Free times are computed on the server** (`/portal/availability/slots` and `/days`, in
+  `domain/availability.js`), not merged in the browser (step 2.2's `useAnyoneSlots`). One request
+  gives "Anyone"'s times, and the date strip's 14 day counts would otherwise have taken dozens of
+  requests. The assistant uses the same routes (step 4.1), so it picks the same therapist the
+  screen would.
+- **`list_recent_visits` reads `GET /portal/appointments`** (added in step 2.1), with no route of
+  its own.
+- **Reminder timing (step 3.2) records each reminder sent** in `appointment_reminders`, keyed by the
+  booking's start time. A moved booking is reminded again without anything resetting flags. The
+  old flags now mean "all of this booking's reminders are sent".
+- **The conversation store** came in step 1.3, not 4.2.
+- **Bookings kept offline (5.1)** are in `localStorage` (one small list per device, cleared at
+  logout), not IndexedDB.
+- **Phase 6.1** (both portals side by side) ran throughout: the K tests stayed on the old portal
+  until 6.2 moved them onto the new one.
+
+Bugs found and fixed along the way, besides the eight listed below:
+
+1. `GET /shop` sent clients the whole shop row: the owner's email and name, the platform's notes,
+   the plan and trial dates. Clients now get only what the portal shows.
+2. The assistant's `propose_reschedule` treated the booking's own time as taken, so "move it half
+   an hour later" was refused.
+3. A client could book into a full shared place: client bookings skipped `assertCapacity`, and the
+   free times counted the sauna as one place. Both now count its places.
+4. Dates and times mixed 12-hour and 24-hour on one line ("05:00 μ.μ. – 18:00"). The shared
+   formatter is now 24-hour everywhere.
+5. Greek capitals kept their accents: the page said `lang="en"`, and now follows the app's
+   language.
+
 ## Already done on this branch
 
 | Commit | What |

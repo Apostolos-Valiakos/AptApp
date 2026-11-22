@@ -4,7 +4,6 @@
 import { describe, expect, test } from "vitest";
 import { RouterView } from "vue-router";
 import { defineComponent, h } from "vue";
-import { setPortalV2 } from "../../client/src/portal/flag";
 import { useAssistantStore } from "../../client/src/portal/stores/assistant";
 import router from "../../client/src/router";
 import { fakeServer, mountScreen, saveLogin, settle } from "./helpers";
@@ -52,7 +51,6 @@ const unnamed = () => {
 
 const visit = async (path: string, width = 390) => {
   Object.defineProperty(window, "innerWidth", { value: width, configurable: true, writable: true });
-  setPortalV2(true);
   saveLogin({ id: "u1", role: "client", shop_id: "s1", client_id: "c1" });
   fakeServer(ROUTES);
   await router.push(path);
@@ -74,7 +72,6 @@ describe("A11Y1 every control has a name", () => {
   ])("%s", async (path) => {
     await visit(path);
     expect(unnamed()).toEqual([]);
-    setPortalV2(false);
   });
 
   test("the assistant's panel", async () => {
@@ -82,7 +79,6 @@ describe("A11Y1 every control has a name", () => {
     useAssistantStore().open();
     await settle();
     expect(unnamed()).toEqual([]);
-    setPortalV2(false);
   });
 });
 
@@ -91,6 +87,5 @@ describe("A11Y2 the shell says where the client is", () => {
     await visit("/portal/wallet");
     expect(document.querySelector('[data-testid="portal-tabs"]')!.getAttribute("aria-label")).toBeTruthy();
     expect(document.querySelector('[data-testid="portal-tabs"] [aria-current="page"]')!.getAttribute("href")).toBe("/portal/wallet");
-    setPortalV2(false);
   });
 });
