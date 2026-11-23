@@ -2,7 +2,7 @@
 const express = require("express");
 const { asyncHandler } = require("../../http");
 const pool = require("../../db");
-const { hiddenAmountSql, shownPriceSql, buildServiceExclusionClause, buildRevenueExclusionClause, analyticsWindow, RETURNING_SQL } = require("../../domain/reportSql");
+const { localTimeOf, localDateOf, hiddenAmountSql, shownPriceSql, buildServiceExclusionClause, buildRevenueExclusionClause, analyticsWindow, RETURNING_SQL } = require("../../domain/reportSql");
 
 module.exports = function overviewRouter({
   authenticateToken,
@@ -27,7 +27,7 @@ module.exports = function overviewRouter({
       LEFT JOIN appointments a ON t.appointment_id = a.id
       LEFT JOIN appointment_services aps ON a.id = aps.appointment_id
       LEFT JOIN services s ON aps.service_id = s.id
-      WHERE t.shop_id = $1 AND t.created_at BETWEEN $2 AND $3
+      WHERE t.shop_id = $1 AND t.created_at BETWEEN ${localTimeOf(2)} AND ${localTimeOf(3)}
       ORDER BY t.created_at DESC
     `,
       [req.shopId, startDate, endDate],
@@ -67,7 +67,7 @@ module.exports = function overviewRouter({
            COUNT(DISTINCT a.client_id) FILTER (WHERE ${RETURNING_SQL}) as returning_clients
          FROM appointments a
          WHERE a.shop_id = $1 
-         AND a.created_at >= $2 AND a.created_at <= $3`,
+         AND a.created_at >= ${localDateOf(2)} AND a.created_at <= ${localDateOf(3)}`,
         [req.shopId, startDate, endDate],
       );
 

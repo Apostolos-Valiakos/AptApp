@@ -2,7 +2,7 @@
 const express = require("express");
 const { asyncHandler } = require("../../http");
 const pool = require("../../db");
-const { shownPriceSql, buildServiceExclusionClause, hiddenCostSql, buildRevenueExclusionClause, buildTxnMethodExclusionClause, periodAppointments, paymentsWindow, expensesWindow, analyticsWindow, RETURNING_SQL, DETAIL_KINDS, clientName, bookingsSql, paymentsSql } = require("../../domain/reportSql");
+const { localDateOf, shownPriceSql, buildServiceExclusionClause, hiddenCostSql, buildRevenueExclusionClause, buildTxnMethodExclusionClause, periodAppointments, paymentsWindow, expensesWindow, analyticsWindow, RETURNING_SQL, DETAIL_KINDS, clientName, bookingsSql, paymentsSql } = require("../../domain/reportSql");
 
 module.exports = function financesRouter({
   authenticateToken,
@@ -78,7 +78,7 @@ module.exports = function financesRouter({
       `SELECT a.client_id, ${clientName} AS client, c.phone, COUNT(DISTINCT a.id)::int AS bookings,
               BOOL_OR(${RETURNING_SQL}) AS returning
        FROM appointments a LEFT JOIN clients c ON c.id = a.client_id
-       WHERE a.shop_id = $1 AND a.created_at >= $2 AND a.created_at <= $3 AND a.client_id IS NOT NULL
+       WHERE a.shop_id = $1 AND a.created_at >= ${localDateOf(2)} AND a.created_at <= ${localDateOf(3)} AND a.client_id IS NOT NULL
        GROUP BY a.client_id, c.id ORDER BY client`,
       [req.shopId, start, end],
     );

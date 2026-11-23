@@ -2,7 +2,7 @@
 const express = require("express");
 const { asyncHandler } = require("../../http");
 const pool = require("../../db");
-const { buildRevenueExclusionClause, buildTxnMethodExclusionClause } = require("../../domain/reportSql");
+const { localTimeOf, buildRevenueExclusionClause, buildTxnMethodExclusionClause } = require("../../domain/reportSql");
 const { getVisibilityClause } = require("../../domain/common");
 
 module.exports = function logsRouter({
@@ -158,11 +158,11 @@ module.exports = function logsRouter({
     let revenueDateClause = "";
     if (from) {
       revenueParams.push(from);
-      revenueDateClause += ` AND created_at >= $${revenueParams.length}`;
+      revenueDateClause += ` AND created_at >= ${localTimeOf(revenueParams.length)}`;
     }
     if (to) {
       revenueParams.push(to);
-      revenueDateClause += ` AND created_at <= $${revenueParams.length}`;
+      revenueDateClause += ` AND created_at <= ${localTimeOf(revenueParams.length)}`;
     }
     const revenueRes = await pool.query(
       `SELECT COALESCE(SUM(amount), 0) as total FROM transactions

@@ -561,3 +561,21 @@ test("a booking paid by two ways: the filters hide only the service that way pai
   assert.deepEqual(day1.data.find((x) => x.id === appt).services.map((x) => Number(x.hidden.cash)), [15, 15], "the calendar gets the hidden amounts");
   assert.ok(sauna);
 });
+
+test("a period's payments are the shop's local days: not the evening before, and up to midnight", async () => {
+  // Stored as the shop's local time (no time zone), like every payment.
+  const at = (local, amount) =>
+    sql(DB, `INSERT INTO transactions (client_id, amount, payment_method, transaction_type, created_at, shop_id)
+             VALUES ('${ids.client}', ${amount}, 'cash', 'sale', TIMESTAMP '${local}', '${SHOP}') RETURNING id`).split("\n")[0];
+  const evening = at("2031-05-19 22:30", 1.11);
+  const noon = at("2031-05-20 12:00", 2.22);
+  const late = at("2031-05-20 23:30", 4.44);
+  // 20/05/2031 as the Analytics page sends it: Athens midnight to midnight (UTC+3 in May).
+  const day = "from=2031-05-19T21:00:00.000Z&to=2031-05-20T20:59:59.999Z";
+  for (const kind of ["payments", "net"]) {
+    const r = await call("GET", `/api/v1/reports/finances/details?kind=${kind}&${day}`);
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    const ids_ = r.data.rows.filter((row) => [evening, noon, late].map(String).includes(String(row.id))).map((row) => String(row.id));
+    assert.deepEqual(ids_.sort(), [noon, late].map(String).sort(), `${kind}: 12:00 and 23:30 on the 20th, not 22:30 on the 19th`);
+  }
+});

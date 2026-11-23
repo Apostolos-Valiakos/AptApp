@@ -2,7 +2,7 @@
 const express = require("express");
 const { asyncHandler } = require("../../http");
 const pool = require("../../db");
-const { shownPriceSql, buildServiceExclusionClause, hiddenCostSql, buildRevenueExclusionClause, buildTxnMethodExclusionClause } = require("../../domain/reportSql");
+const { localTimeOf, shownPriceSql, buildServiceExclusionClause, hiddenCostSql, buildRevenueExclusionClause, buildTxnMethodExclusionClause } = require("../../domain/reportSql");
 
 module.exports = function salesRouter({
   authenticateToken,
@@ -113,7 +113,7 @@ module.exports = function salesRouter({
             `SELECT COALESCE(SUM(-delta), 0) AS used
              FROM product_stock_adjustments
              WHERE product_inventory_id = $1 AND shop_id = $2 AND delta < 0
-               AND created_at BETWEEN $3 AND $4`,
+               AND created_at BETWEEN ${localTimeOf(3)} AND ${localTimeOf(4)}`,
             [productId, req.shopId, start, end],
           );
           actual = Number(rows[0].used);
@@ -227,11 +227,11 @@ module.exports = function salesRouter({
     }
     if (from) {
       params.push(from);
-      whereClause += ` AND gc.issued_at >= $${params.length}`;
+      whereClause += ` AND gc.issued_at >= ${localTimeOf(params.length)}`;
     }
     if (to) {
       params.push(to);
-      whereClause += ` AND gc.issued_at <= $${params.length}`;
+      whereClause += ` AND gc.issued_at <= ${localTimeOf(params.length)}`;
     }
     const { rows } = await pool.query(
       `SELECT gc.card_number, gc.customer_name, gc.initial_amount,
@@ -278,11 +278,11 @@ module.exports = function salesRouter({
     if (excludeCard === "true") gcWhere += " AND gc.purchase_payment_method != 'card'";
     if (from) {
       params.push(from);
-      gcWhere += ` AND gc.issued_at >= $${params.length}`;
+      gcWhere += ` AND gc.issued_at >= ${localTimeOf(params.length)}`;
     }
     if (to) {
       params.push(to);
-      gcWhere += ` AND gc.issued_at <= $${params.length}`;
+      gcWhere += ` AND gc.issued_at <= ${localTimeOf(params.length)}`;
     }
     const { rows } = await pool.query(
       `SELECT st.id as staff_id, st.name as staff_name,
@@ -328,11 +328,11 @@ module.exports = function salesRouter({
 
     if (from) {
       params.push(from);
-      whereClause += ` AND t.created_at >= $${params.length}`;
+      whereClause += ` AND t.created_at >= ${localTimeOf(params.length)}`;
     }
     if (to) {
       params.push(to);
-      whereClause += ` AND t.created_at <= $${params.length}`;
+      whereClause += ` AND t.created_at <= ${localTimeOf(params.length)}`;
     }
     const { rows } = await pool.query(
       `SELECT t.*, c.first_name, c.last_name 
@@ -417,11 +417,11 @@ module.exports = function salesRouter({
       let whereClause = "WHERE pa.shop_id = $1";
       if (from) {
         params.push(from);
-        whereClause += ` AND pa.created_at >= $${params.length}`;
+        whereClause += ` AND pa.created_at >= ${localTimeOf(params.length)}`;
       }
       if (to) {
         params.push(to);
-        whereClause += ` AND pa.created_at <= $${params.length}`;
+        whereClause += ` AND pa.created_at <= ${localTimeOf(params.length)}`;
       }
       const { rows } = await pool.query(
         `SELECT pa.*, c.first_name, c.last_name

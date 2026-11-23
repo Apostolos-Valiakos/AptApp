@@ -82,8 +82,15 @@ const buildTxnMethodExclusionClause = (excludeCash, excludeCard, columnPrefix = 
 };
 // A from/to bound arrives as an ISO timestamp of local midnight; expenses are
 // plain calendar dates, so compare against that timestamp's local date.
-const expenseDateOf = (paramIndex) =>
-  `(($${paramIndex})::timestamptz AT TIME ZONE '${process.env.TZ || "Europe/Athens"}')::date`;
+// The screens send a period as moments in time (ISO, e.g. 20/11 00:00 in Athens
+// is 2026-11-19T22:00:00Z). Columns stored without a time zone (payments'
+// created_at, gift cards' issued_at, ...) hold the shop's local time, so the
+// moment is turned into local time first; compared as is, PostgreSQL drops the
+// "Z" and the period starts and ends 2 hours early (3 in summer).
+const SHOP_TZ = process.env.TZ || "Europe/Athens";
+const localTimeOf = (paramIndex) => `(($${paramIndex})::timestamptz AT TIME ZONE '${SHOP_TZ}')`;
+const localDateOf = (paramIndex) => `${localTimeOf(paramIndex)}::date`;
+const expenseDateOf = localDateOf;
 // The bookings the Analytics money tiles count for a period: completed ones,
 // and past ones not cancelled or no-show (new, confirmed, started), with the
 // revenue exclusion given (alias a2). Shared by the tiles and their details.
@@ -126,11 +133,11 @@ const paymentsWindow = (req, col = "") => {
   let filter = "";
   if (from) {
     params.push(from);
-    filter += ` AND ${col}created_at >= $${params.length}`;
+    filter += ` AND ${col}created_at >= ${localTimeOf(params.length)}`;
   }
   if (to) {
     params.push(to);
-    filter += ` AND ${col}created_at <= $${params.length}`;
+    filter += ` AND ${col}created_at <= ${localTimeOf(params.length)}`;
   }
   return { params, filter };
 };
@@ -193,4 +200,4 @@ const paymentsSql = (filter) => `
   FROM transactions t LEFT JOIN clients c ON c.id = t.client_id
   WHERE t.shop_id = $1 ${filter}`;
 
-module.exports = { hiddenColumn, hiddenAmountSql, shownPriceSql, serviceHidden, buildServiceExclusionClause, hiddenCostSql, buildRevenueExclusionClause, buildTxnMethodExclusionClause, expenseDateOf, periodAppointments, paymentsWindow, expensesWindow, analyticsWindow, RETURNING_SQL, DETAIL_KINDS, clientName, serviceNames, bookingsSql, paymentsSql };
+module.exports = { localTimeOf, localDateOf, hiddenColumn, hiddenAmountSql, shownPriceSql, serviceHidden, buildServiceExclusionClause, hiddenCostSql, buildRevenueExclusionClause, buildTxnMethodExclusionClause, expenseDateOf, periodAppointments, paymentsWindow, expensesWindow, analyticsWindow, RETURNING_SQL, DETAIL_KINDS, clientName, serviceNames, bookingsSql, paymentsSql };
