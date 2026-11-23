@@ -24,7 +24,7 @@
         <p v-if="error" class="text-xs text-red-600 mt-1" data-testid="sensitive-error">{{ error }}</p>
       </div>
       <div class="flex justify-end gap-2">
-        <Button type="button" :label="t('common.cancel')" text data-testid="sensitive-cancel" @click="router.push('/app/scheduler')" />
+        <Button v-if="cancelable" type="button" :label="t('common.cancel')" text data-testid="sensitive-cancel" @click="router.push('/app/scheduler')" />
         <Button
           type="submit"
           :label="t('sensitive.open')"
@@ -45,7 +45,8 @@ import { useRouter } from "vue-router";
 import { api, ApiError } from "../api/http";
 import { reauthToken } from "../utils/reauth";
 
-const props = withDefaults(defineProps<{ required?: boolean }>(), { required: true });
+// `cancelable`: off where the gate guards one part of a page (Cancel would leave it).
+const props = withDefaults(defineProps<{ required?: boolean; cancelable?: boolean }>(), { required: true, cancelable: true });
 const emit = defineEmits<{ unlocked: [] }>();
 const { t } = useI18n();
 const router = useRouter();

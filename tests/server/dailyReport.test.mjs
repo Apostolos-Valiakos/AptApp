@@ -78,3 +78,46 @@ test("still only for admin, super admin and front desk", async () => {
   const r = await api(PORT, token(ids.staffUser, "staff"))("GET", `/api/v1/reports/daily?date=${DAY}`);
   assert.equal(r.status, 403);
 });
+
+test("the day's reconciliation: Sales − Uncollected = Expected, against Payments, each difference explained; the same figures as Analytics", async () => {
+  const D = "2031-03-11";
+  const admin = api(PORT, token(sql(DB, `SELECT id FROM users WHERE shop_id = '${SHOP}' AND role = 'admin' LIMIT 1`), "admin"));
+  // A booking at a local time, and a payment recorded at a local time.
+  const booking = (local, price, receipt = true) => {
+    const id = sql(DB, `INSERT INTO appointments (client_id, status, shop_id, save_receipt) VALUES ('${ids.client}', 'completed', '${SHOP}', ${receipt}) RETURNING id`).split("\n")[0];
+    sql(DB, `INSERT INTO appointment_services (appointment_id, service_id, staff_id, start_time, duration_override, price_override, shop_id)
+             VALUES ('${id}', '${ids.service}', '${ids.staff}', TIMESTAMP '${local}' AT TIME ZONE 'Europe/Athens', 60, ${price}, '${SHOP}')`);
+    return id;
+  };
+  const payment = (local, amount, extra = {}) =>
+    sql(DB, `INSERT INTO transactions (appointment_id, client_id, amount, payment_method, transaction_type, created_at, shop_id)
+             VALUES (${extra.appt ? `'${extra.appt}'` : "NULL"}, '${ids.client}', ${amount}, 'cash', '${extra.type || "payment"}', TIMESTAMP '${local}', '${SHOP}')`);
+  const a = booking(`${D} 10:00`, 40);
+  const b = booking(`${D} 12:00`, 30);
+  const evening = booking("2031-03-10 21:30", 35);
+  const hidden = booking(`${D} 13:00`, 50, false);
+  payment(`${D} 10:30`, 25, { appt: a });
+  payment("2031-03-13 11:00", 15, { appt: a }); // the rest, two days later
+  payment("2031-03-10 18:00", 30, { appt: b }); // a deposit the day before
+  payment("2031-03-10 22:30", 0.5, { appt: evening }); // the evening before: not the day's
+  payment(`${D} 09:00`, 34.5, { appt: evening }); // the rest of the evening before's booking
+  payment(`${D} 13:30`, 50, { appt: hidden }); // kept off the receipts: super admins only
+  payment(`${D} 16:00`, 20, { type: "gift_card_sale" });
+
+  assert.equal((await call("GET", `/api/v1/reports/daily/reconciliation?date=${D}`)).status, 403, "front desk doesn't get it");
+  assert.equal((await admin("GET", "/api/v1/reports/daily/reconciliation?date=2031-02-30")).status, 400);
+  const r = await admin("GET", `/api/v1/reports/daily/reconciliation?date=${D}`);
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  const { sales, uncollected, expected, payments, delta, unexplained } = r.data;
+  assert.deepEqual({ sales, uncollected, expected, payments, delta, unexplained }, { sales: 70, uncollected: 15, expected: 55, payments: 79.5, delta: 24.5, unexplained: 0 });
+  assert.deepEqual(Object.fromEntries(r.data.lines.map((l) => [l.key, l.amount])), { otherDaysBookings: 34.5, giftCardSales: 20, paidEarlier: -30 });
+  assert.equal(r.data.paid_later.amount, 15);
+
+  // The same day on the Daily Report and on Analytics (as the page sends it: Athens midnight to midnight).
+  assert.equal((await admin("GET", `/api/v1/reports/daily?date=${D}`)).data.total_collected, 79.5);
+  const range = "from=2031-03-10T22:00:00.000Z&to=2031-03-11T21:59:59.999Z";
+  const tiles = (await admin("GET", `/api/v1/reports/finances?${range}`)).data;
+  assert.equal(tiles.total_sales, 70);
+  assert.equal(tiles.total_payments, 79.5, "Πληρωμές: not the evening before, not the booking kept off the receipts");
+  assert.equal((await admin("GET", `/api/v1/reports/finances/details?kind=net&${range}`)).data.total, 79.5);
+});

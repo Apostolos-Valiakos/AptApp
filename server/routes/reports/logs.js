@@ -2,7 +2,10 @@
 const express = require("express");
 const { asyncHandler } = require("../../http");
 const pool = require("../../db");
-const { localTimeOf, buildRevenueExclusionClause, buildTxnMethodExclusionClause } = require("../../domain/reportSql");
+const { localTimeOf, buildRevenueExclusionClause, buildTxnMethodExclusionClause, dailyPaymentsSql } = require("../../domain/reportSql");
+const { dailyReconciliation } = require("../../domain/reconciliation");
+
+const SHOP_TZ = process.env.TZ || "Europe/Athens";
 const { getVisibilityClause } = require("../../domain/common");
 
 module.exports = function logsRouter({
@@ -32,27 +35,15 @@ module.exports = function logsRouter({
     const { excludeCash, excludeCard } = req.query;
     const methodExclusion = buildTxnMethodExclusionClause(excludeCash, excludeCard, "t.");
     const apptExclusion = buildRevenueExclusionClause(excludeCash, excludeCard, "a");
-    const visibility = role === "super_admin" ? "" : " AND (a.id IS NULL OR a.save_receipt = true)";
     // Package/membership visits are prepaid earlier — not money collected today.
-    const { rows: payments } = await pool.query(
-      `SELECT t.id, t.amount, t.payment_method, t.transaction_type, t.created_at,
-              c.first_name, c.last_name
-       FROM transactions t
-       LEFT JOIN clients c ON c.id = t.client_id
-       LEFT JOIN appointments a ON a.id = t.appointment_id
-       WHERE t.shop_id = $1 AND t.created_at::date = COALESCE($2::date, CURRENT_DATE)
-         AND COALESCE(t.payment_method, '') NOT IN ('membership', 'package', 'write-off')
-         ${methodExclusion}
-         ${visibility}
-       ORDER BY t.created_at DESC`,
-      [req.shopId, day],
-    );
+    const { rows: payments } = await pool.query(dailyPaymentsSql(req.user, methodExclusion), [req.shopId, day]);
 
     const { rows: appointments } = await pool.query(
       `SELECT a.status
        FROM appointments a
        WHERE a.shop_id = $1 AND a.is_block = false ${apptExclusion}
-         AND EXISTS (SELECT 1 FROM appointment_services x WHERE x.appointment_id = a.id AND x.start_time::date = COALESCE($2::date, CURRENT_DATE))
+         AND EXISTS (SELECT 1 FROM appointment_services x WHERE x.appointment_id = a.id
+                     AND (x.start_time AT TIME ZONE '${SHOP_TZ}')::date = COALESCE($2::date, (NOW() AT TIME ZONE '${SHOP_TZ}')::date))
          ${getVisibilityClause(req.user, "a")}`,
       [req.shopId, day],
     );
@@ -80,6 +71,19 @@ module.exports = function logsRouter({
       by_status: byStatus,
     });
   }));
+  // Does the day's money add up? Sales − what was still owed at the day's end,
+  // against the day's payments, with each difference explained (see
+  // domain/reconciliation.js). Admins only; the Daily Report hides it while
+  // the cash or card filter is on.
+  router.get("/reports/daily/reconciliation", authenticateToken, requireAnalyticsAccess, asyncHandler(async (req, res) => {
+    const day = String(req.query.date || "");
+    const parsed = new Date(`${day}T00:00:00Z`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || isNaN(parsed) || !parsed.toISOString().startsWith(day)) {
+      return res.status(400).json({ error: "invalid_date" });
+    }
+    res.json(await dailyReconciliation(pool, req, day, SHOP_TZ));
+  }, { log: "Daily reconciliation error:" }));
+
   // Backing report for the admin Financials "Payments Log" tab's new
   // Refunds & Price Changes section.
   // The log of deleted bookings, by when they were deleted.

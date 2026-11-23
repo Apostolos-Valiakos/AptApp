@@ -2,7 +2,7 @@
 const express = require("express");
 const { asyncHandler } = require("../../http");
 const pool = require("../../db");
-const { localDateOf, shownPriceSql, buildServiceExclusionClause, hiddenCostSql, buildRevenueExclusionClause, buildTxnMethodExclusionClause, periodAppointments, paymentsWindow, expensesWindow, analyticsWindow, RETURNING_SQL, DETAIL_KINDS, clientName, bookingsSql, paymentsSql } = require("../../domain/reportSql");
+const { transactionVisibilityClause, localDateOf, shownPriceSql, buildServiceExclusionClause, hiddenCostSql, buildRevenueExclusionClause, buildTxnMethodExclusionClause, periodAppointments, paymentsWindow, expensesWindow, analyticsWindow, RETURNING_SQL, DETAIL_KINDS, clientName, bookingsSql, paymentsSql } = require("../../domain/reportSql");
 
 module.exports = function financesRouter({
   authenticateToken,
@@ -24,9 +24,10 @@ module.exports = function financesRouter({
       return res.json({ rows, total: sum(rows, kind === "sales" ? "value" : "owed") });
     }
     if (kind === "payments" || kind === "today") {
-      const { params, filter } = kind === "today"
+      let { params, filter } = kind === "today"
         ? { params: [req.shopId], filter: " AND t.created_at >= CURRENT_DATE" }
         : paymentsWindow(req, "t.");
+      if (kind === "today") filter += transactionVisibilityClause(req.user, "t.");
       const { rows } = await pool.query(`${paymentsSql(`${filter} ${txnClause}`)} ORDER BY t.created_at`, params);
       return res.json({ rows, total: sum(rows, "amount") });
     }
@@ -150,7 +151,7 @@ module.exports = function financesRouter({
       const todayRes = await client.query(
         `
         SELECT SUM(amount) as total FROM transactions
-        WHERE shop_id = $1 AND created_at >= CURRENT_DATE ${cashTxnClause}
+        WHERE shop_id = $1 AND created_at >= CURRENT_DATE ${cashTxnClause} ${transactionVisibilityClause(req.user, "transactions.")}
       `,
         [shopId],
       );

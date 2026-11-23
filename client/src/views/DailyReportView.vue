@@ -93,6 +93,15 @@
       </div>
     </div>
 
+    <!-- Admins: does the day's money add up? Not at all while amounts are hidden
+         (Ctrl+1 / Ctrl+8): a check of half the figures can't balance, and its
+         difference would give the hidden ones away. -->
+    <DailyReconciliation
+      v-if="data && authStore.isAnalyticsAllowed && !settingsStore.hideCashPaid && !settingsStore.hideCardPaid"
+      :day="toLocalDateStr(selectedDay)"
+      :reloadKey="reloadKey"
+    />
+
     <div v-if="data" class="bg-white border border-gray-100 rounded-2xl shadow-sm p-6">
       <div class="flex items-center justify-between flex-wrap gap-3 mb-3">
         <h2 class="font-bold text-gray-800">{{ t("dailyReport.paymentsToday") }}</h2>
@@ -156,11 +165,16 @@ import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useSettingsStore } from "../stores/settings";
 import { toLocalDateStr } from "../utils/staffAvailability";
+import { useAuthStore } from "../stores/auth";
+import DailyReconciliation from "../components/DailyReconciliation.vue";
 
 const { t, te, locale } = useI18n();
 const notify = useNotify();
 const settingsStore = useSettingsStore();
+const authStore = useAuthStore();
 const data = ref<any>(null);
+// Bumped by Refresh, so the reconciliation reloads with the rest.
+const reloadKey = ref(0);
 const loading = ref(false);
 
 // The day shown: today when the page opens; today and earlier can be picked.
@@ -246,6 +260,7 @@ const exportExcel = async () => {
 let latestLoad = 0;
 const load = async () => {
   const thisLoad = ++latestLoad;
+  reloadKey.value++;
   loading.value = true;
   try {
     const params = new URLSearchParams({ date: toLocalDateStr(selectedDay.value) });
