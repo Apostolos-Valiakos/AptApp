@@ -227,8 +227,9 @@
             <p v-if="comboPriced" class="text-xs text-gray-400 mt-1">{{ t('services.dialog.comboPriceFromParts') }}</p>
           </div>
 
-          <!-- A redemption is booked at €0; for the staff bonus it counts as another service. -->
-          <div v-if="isRedemption" class="md:col-span-2" data-testid="service-bonus-link">
+          <!-- For the staff bonus: a redemption or a package's sessions count as
+               another service; any service can earn a fixed amount instead. -->
+          <div class="md:col-span-2" data-testid="service-bonus-link">
             <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('services.dialog.bonusService') }}</label>
             <Dropdown
               v-model="editingService.bonus_service_id"
@@ -237,11 +238,27 @@
               optionValue="id"
               showClear
               filter
-              :placeholder="t('services.dialog.bonusServicePlaceholder')"
+              :placeholder="t(isRedemption ? 'services.dialog.bonusServicePlaceholder' : 'services.dialog.bonusServicePackagePlaceholder')"
               class="w-full"
               data-testid="service-bonus-service"
             />
-            <p class="text-xs text-gray-400 mt-1">{{ t('services.dialog.bonusServiceNote') }}</p>
+            <p class="text-xs text-gray-400 mt-1">{{ t(isRedemption ? 'services.dialog.bonusServiceNote' : 'services.dialog.bonusServicePackageNote') }}</p>
+          </div>
+          <div class="md:col-span-2">
+            <label class="block text-sm font-medium text-gray-700 mb-1" for="service-bonus-fixed">{{ t('services.dialog.bonusFixed') }}</label>
+            <InputNumber
+              v-model="editingService.bonus_fixed"
+              inputId="service-bonus-fixed"
+              mode="currency"
+              currency="EUR"
+              locale="el-GR"
+              :min="0"
+              :max="1000"
+              :placeholder="t('services.dialog.bonusFixedPlaceholder')"
+              class="w-full"
+              data-testid="service-bonus-fixed"
+            />
+            <p class="text-xs text-gray-400 mt-1">{{ t('services.dialog.bonusFixedNote') }}</p>
           </div>
 
           <!-- Color picker — full width with light gray background -->
@@ -748,7 +765,7 @@ const onCategoryDragEnd = () => saveOrder("/api/v1/service-categories/reorder", 
 const onServiceDragEnd = (group: { items: any[] }) => saveOrder("/api/v1/services/reorder", group.items.map((s) => s.id));
 
 const isRedemption = computed(() => String(editingService.value.category || "").trim() === REDEMPTION_CATEGORY);
-// What a redemption can count as: the shop's other services, not redemptions themselves.
+// What a redemption or a package can count as: the shop's other services, not redemptions.
 const bonusServiceOptions = computed(() =>
   services.value
     .filter((s: any) => s.id !== editingService.value.id && String(s.category || "").trim() !== REDEMPTION_CATEGORY && (s.is_active !== false || s.id === editingService.value.bonus_service_id))
@@ -765,6 +782,7 @@ const openNew = () => {
     bookable_online: false,
     default_staff_id: null,
     bonus_service_id: null,
+    bonus_fixed: null,
     combo_component_ids: [],
     combo_part_prices: {},
     variations: [],
@@ -778,6 +796,7 @@ const openNew = () => {
 const editService = (service: any) => {
   editingService.value = {
     ...service,
+    bonus_fixed: service.bonus_fixed == null ? null : Number(service.bonus_fixed),
     combo_component_ids: (service.combo_components || []).map((c: any) => c.id),
     combo_part_prices: Object.fromEntries(
       (service.combo_components || []).map((c: any) => [c.id, c.combo_price == null ? null : Number(c.combo_price)]),

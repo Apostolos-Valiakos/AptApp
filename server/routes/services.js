@@ -309,24 +309,45 @@ module.exports = function servicesRouter({
     res.json(answer);
   }, { message: "Reorder failed" }));
 
-  // A redemption (category Εξαργύρωση) counts for the staff bonus at the price
-  // of the service it stands for. Answers that service's id, null to clear it,
-  // or undefined when the body doesn't say (an older screen: keep what's set).
-  // Only a redemption has one, and only another of the shop's services that
+  // A redemption (category Εξαργύρωση) or a package's sessions count for the
+  // staff bonus at the price of the service they stand for. Answers that
+  // service's id, null to clear it, or undefined when the body doesn't say (an
+  // older screen: keep what's set). Only another of the shop's services that
   // isn't itself a redemption.
   const REDEMPTION_CATEGORY = "Εξαργύρωση";
   const bonusServiceFrom = async (body, shopId, ownId = null) => {
     if (!Object.prototype.hasOwnProperty.call(body, "bonus_service_id")) return undefined;
     const target = safeUUID(body.bonus_service_id);
-    if (!target || String(body.category || "").trim() !== REDEMPTION_CATEGORY || target === ownId) return null;
+    if (!target || target === ownId) return null;
     const { rows } = await pool.query(
       "SELECT 1 FROM services WHERE id = $1 AND shop_id = $2 AND trim(COALESCE(category, '')) <> $3",
       [target, shopId, REDEMPTION_CATEGORY],
     );
     return rows.length ? target : null;
   };
+  // A fixed staff bonus for the service instead of the percent (e.g. €2.20 for
+  // a diagnostic appointment): a number of euros, null for none, or undefined
+  // when the body doesn't say. Anything else is refused.
+  const bonusFixedFrom = (body) => {
+    if (!Object.prototype.hasOwnProperty.call(body, "bonus_fixed")) return undefined;
+    const v = body.bonus_fixed;
+    if (v === null || v === "") return null;
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 0 && n <= 1000 ? Math.round(n * 100) / 100 : NaN;
+  };
+  const saveBonusSettings = async (req, id) => {
+    const bonusService = await bonusServiceFrom(req.body, req.shopId, id);
+    if (bonusService !== undefined) {
+      await pool.query("UPDATE services SET bonus_service_id = $1 WHERE id = $2 AND shop_id = $3", [bonusService, id, req.shopId]);
+    }
+    const fixed = bonusFixedFrom(req.body);
+    if (fixed !== undefined) {
+      await pool.query("UPDATE services SET bonus_fixed = $1 WHERE id = $2 AND shop_id = $3", [fixed, id, req.shopId]);
+    }
+  };
 
   router.post("/services", authenticateToken, requireShopAdminAccess, asyncHandler(async (req, res) => {
+    if (Number.isNaN(bonusFixedFrom(req.body))) return res.status(400).json({ error: "bonus_fixed must be between 0 and 1000" });
     const {
       name,
       duration_minutes,
@@ -374,8 +395,7 @@ module.exports = function servicesRouter({
       ],
     );
     if (combo) await setComboComponents(pool, rows[0].id, combo.parts);
-    const bonusService = await bonusServiceFrom(req.body, req.shopId);
-    if (bonusService) await pool.query("UPDATE services SET bonus_service_id = $1 WHERE id = $2", [bonusService, rows[0].id]);
+    await saveBonusSettings(req, rows[0].id);
     if (Array.isArray(variations)) {
       await setServiceVariations(pool, rows[0].id, variations);
     }
@@ -386,6 +406,7 @@ module.exports = function servicesRouter({
   }));
 
   router.put("/services/:id", authenticateToken, requireShopAdminAccess, asyncHandler(async (req, res) => {
+    if (Number.isNaN(bonusFixedFrom(req.body))) return res.status(400).json({ error: "bonus_fixed must be between 0 and 1000" });
     const { id } = req.params;
     const {
       name,
@@ -415,11 +436,7 @@ module.exports = function servicesRouter({
       ],
     );
     if (combo) await setComboComponents(pool, id, combo.parts);
-    // Leaving the category drops the link; an older screen leaves it as it is.
-    const bonusService = await bonusServiceFrom(req.body, req.shopId, safeUUID(id));
-    if (bonusService !== undefined || String(category || "").trim() !== REDEMPTION_CATEGORY) {
-      await pool.query("UPDATE services SET bonus_service_id = $1 WHERE id = $2 AND shop_id = $3", [bonusService ?? null, id, req.shopId]);
-    }
+    await saveBonusSettings(req, safeUUID(id));
     if (Array.isArray(variations)) {
       await setServiceVariations(pool, id, variations);
     }

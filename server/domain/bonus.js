@@ -151,8 +151,9 @@ const byStart = (a, b) =>
   new Date(a.start_time) - new Date(b.start_time) || Number(a.price) - Number(b.price) || Number(a.id) - Number(b.id);
 
 // Each service's bonus says how it was worked out (`how`): "percent" of its
-// price less the deduction (`base`), "laser" at the amount per hour, or
-// "last" at the fixed amount.
+// price less the deduction (`base`), "laser" at the amount per hour, "fixed"
+// at the service's own fixed amount (bonus_fixed, e.g. a diagnostic
+// appointment), or "last" at the rule's fixed amount for a short last service.
 const percentDay = (sorted, rule) => {
   const counted = sorted.filter((s) => (Number(s.minutes) || 0) > 0);
   const deduction = Number(rule.deduction_per_service || 0);
@@ -168,13 +169,17 @@ const percentDay = (sorted, rule) => {
     if (past <= 0) return;
     extra += past;
     const laser = rule.laser_amount_per_hour != null && isLaser(s);
-    const last = i === counted.length - 1 && !laser && rule.last_service_fixed != null && past <= LAST_SERVICE_MAX_MINUTES;
+    const fixed = !laser && s.bonus_fixed != null;
+    const last = i === counted.length - 1 && !laser && !fixed && rule.last_service_fixed != null && past <= LAST_SERVICE_MAX_MINUTES;
     const base = Math.max(0, round2(Number(s.price) - deduction));
     let amount;
     let how;
     if (laser) {
       amount = round2((past / 60) * rule.laser_amount_per_hour);
       how = "laser";
+    } else if (fixed) {
+      amount = round2(Number(s.bonus_fixed));
+      how = "fixed";
     } else if (last) {
       amount = round2(rule.last_service_fixed);
       how = "last";

@@ -421,7 +421,7 @@ describe("BN9 a redemption counts as the service it stands for", () => {
     return server;
   };
 
-  test("in the service form, a redemption picks the service it counts as; other services don't have the field", async () => {
+  test("in the service form, a redemption picks the service it counts as", async () => {
     const server = await openService(
       { id: "red1", name: "ΕΞΑΓΥΡΩΣΗ HOLISTIC", category: "Εξαργύρωση", price: 0, duration_minutes: 60, is_active: true, bonus_service_id: null },
       { "PUT /api/v1/services/red1": { body: { success: true } } },
@@ -440,9 +440,18 @@ describe("BN9 a redemption counts as the service it stands for", () => {
     expect(server.called("PUT", "/api/v1/services/red1")[0]?.body.bonus_service_id).toBe("reg");
   });
 
-  test("a regular service has no such field", async () => {
-    await openService({ id: "s1", name: "AAA MASSAGE", category: "Hot", price: 30, duration_minutes: 60, is_active: true });
-    expect(byTestId("service-bonus-link")).toBeNull();
+  // Requirement changed (Nov 2026): a package's sessions count as another
+  // service too, and any service can earn a fixed bonus instead of the percent.
+  test("any service can count as another one and can have a fixed bonus, sent when saved", async () => {
+    const server = await openService(
+      { id: "s1", name: "AAA MASSAGE", category: "Hot", price: 30, duration_minutes: 60, is_active: true, bonus_fixed: "2.20" },
+      { "PUT /api/v1/services/s1": { body: { success: true } } },
+    );
+    expect(byTestId("service-bonus-link")).not.toBeNull();
+    expect(byTestId("service-bonus-fixed")).not.toBeNull();
+    [...document.querySelectorAll<HTMLElement>(".p-dialog-footer button")].find((b) => b.textContent?.includes(el.common.save))!.click();
+    await settle();
+    expect(server.called("PUT", "/api/v1/services/s1")[0]?.body.bonus_fixed).toBe(2.2);
   });
 });
 

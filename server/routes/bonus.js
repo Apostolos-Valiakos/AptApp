@@ -25,11 +25,25 @@ const IS_REDEMPTION = "(trim(COALESCE(s.category, '')) = 'Εξαργύρωση')
 const COMMISSION_COLUMNS = "id, staff_id, to_char(effective_from, 'YYYY-MM-DD') AS effective_from, enabled, percent::float AS percent";
 const TARGET_COLUMNS = "id, staff_id, to_char(effective_from, 'YYYY-MM-DD') AS effective_from, enabled, steps";
 const REVIEW_COLUMNS = "id, staff_id, to_char(effective_from, 'YYYY-MM-DD') AS effective_from, enabled, amount_per_review::float AS amount_per_review";
-// What a completed service counts for: the price charged; a redemption, the
-// price of the service it stands for (stored when booked, else that service's
-// price now). Needs services s and bs joined as below.
-const SERVICE_VALUE = `(CASE WHEN ${IS_REDEMPTION} THEN COALESCE(aps.bonus_value, bs.price, 0)
-                       ELSE COALESCE(aps.price_override, s.price, 0) END)`;
+// Counts for the bonus as another service: a redemption, or a package's
+// session (a service linked to the one it stands for in the service form).
+const COUNTS_AS_OTHER = `(${IS_REDEMPTION} OR s.bonus_service_id IS NOT NULL)`;
+// What a completed service counts for: the price charged (a variation's own
+// price when none was stored, not the main service's); a redemption or a
+// package session, the price of the service it stands for, stored when
+// booked, else priced now: that service's variation of the row's length, else
+// its main price (as stampRedemptionValues in domain/bookings.js). Needs
+// services s and bs joined as below.
+const SERVICE_VALUE = `(CASE WHEN ${COUNTS_AS_OTHER} THEN COALESCE(aps.bonus_value,
+                         (SELECT v.price FROM service_variations v
+                          WHERE v.service_id = bs.id AND v.duration_minutes = COALESCE(NULLIF(aps.duration_override, 0), s.duration_minutes)
+                          ORDER BY v.sort_order, v.id LIMIT 1),
+                         bs.price, 0)
+                       ELSE COALESCE(aps.price_override,
+                         (SELECT v.price FROM service_variations v
+                          WHERE v.service_id = s.id AND v.name = NULLIF(aps.variation_name, '')
+                          ORDER BY v.sort_order, v.id LIMIT 1),
+                         s.price, 0) END)`;
 const MAX_STEPS = 10;
 
 module.exports = function bonusRouter({ authenticateToken, requireAnalyticsAccess, requireSensitiveAccess, requireShopAdminAccess, safeUUID }) {
@@ -215,6 +229,10 @@ module.exports = function bonusRouter({ authenticateToken, requireAnalyticsAcces
                 -- stored when it was booked, else that service's price now.
                 ${SERVICE_VALUE}::float AS price,
                 ${IS_REDEMPTION} AS is_redemption,
+                -- A package's session: counts as the service it stands for.
+                (NOT ${IS_REDEMPTION} AND s.bonus_service_id IS NOT NULL) AS is_package,
+                bs.name AS counts_as,
+                s.bonus_fixed::float AS bonus_fixed,
                 s.name AS service_name, s.category AS service_category,
                 NULLIF(TRIM(CONCAT_WS(' ', c.first_name, c.last_name)), '') AS client_name
          FROM appointment_services aps
