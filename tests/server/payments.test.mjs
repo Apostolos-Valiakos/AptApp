@@ -579,3 +579,49 @@ test("a period's payments are the shop's local days: not the evening before, and
     assert.deepEqual(ids_.sort(), [noon, late].map(String).sort(), `${kind}: 12:00 and 23:30 on the 20th, not 22:30 on the 19th`);
   }
 });
+
+test("a refund keeps the booking's paid state in step: partial, unpaid, then paid again", async () => {
+  const id = await book();
+  const state = () => sql(DB, `SELECT payment_status || ' ' || deposit_amount FROM appointments WHERE id = '${id}'`);
+  await pay(id, 40);
+  assert.equal(state(), "paid 40.00");
+  const part = await call("POST", `/api/v1/appointments/${id}/refund`, { amount: 15, payment_method: "cash", reason: "part" });
+  assert.equal(part.status, 200);
+  assert.equal(part.data.payment_status, "partial");
+  assert.equal(state(), "partial 25.00");
+  await call("POST", `/api/v1/appointments/${id}/refund`, { amount: 25, payment_method: "cash", reason: "rest" });
+  assert.equal(state(), "unpaid 0.00");
+  // Paid again from the start.
+  await pay(id, 40);
+  assert.equal(sql(DB, `SELECT payment_status FROM appointments WHERE id = '${id}'`), "paid");
+});
+
+test("the payment's ways, and moving a payment from card to cash in one step", async () => {
+  const id = await book();
+  const card = await call("POST", "/api/v1/transactions", { appointment_id: id, client_id: ids.client, amount: 40, payment_method: "card" });
+  assert.equal(card.status, 200, JSON.stringify(card.data));
+  const before = await balance();
+
+  const ways = await call("GET", `/api/v1/appointments/${id}/payment-methods`);
+  assert.deepEqual(ways.data, { methods: [{ method: "card", net: 40 }], last_method: "card" });
+
+  // Only what was paid that way can move; the two ways must differ.
+  assert.equal((await call("POST", `/api/v1/appointments/${id}/change-payment-method`, { from_method: "card", to_method: "cash", amount: 41 })).status, 400);
+  assert.equal((await call("POST", `/api/v1/appointments/${id}/change-payment-method`, { from_method: "cash", to_method: "card", amount: 10 })).status, 400);
+  assert.equal((await call("POST", `/api/v1/appointments/${id}/change-payment-method`, { from_method: "card", to_method: "card", amount: 10 })).status, 400);
+
+  const moved = await call("POST", `/api/v1/appointments/${id}/change-payment-method`, { from_method: "card", to_method: "cash", amount: 40, note: "λάθος" });
+  assert.equal(moved.status, 200, JSON.stringify(moved.data));
+  assert.equal(moved.data.payment_status, "paid");
+  assert.equal(
+    sql(DB, `SELECT string_agg(payment_method || ' ' || amount || ' ' || transaction_type, ', ' ORDER BY id) FROM transactions WHERE appointment_id = '${id}'`),
+    "card 40.00 payment, card -40.00 refund, cash 40.00 payment",
+  );
+  assert.match(sql(DB, `SELECT reason FROM transactions WHERE appointment_id = '${id}' AND transaction_type = 'refund'`), /Κάρτα → Μετρητά · λάθος/);
+  assert.equal(sql(DB, `SELECT payment_status FROM appointments WHERE id = '${id}'`), "paid");
+  assert.equal(await balance(), before, "what the client owes doesn't change");
+  // The cash filter now hides the service; the card one doesn't.
+  assert.equal(sql(DB, `SELECT paid_with || ' ' || hidden_cash || ' ' || hidden_card FROM appointment_service_payments WHERE appointment_id = '${id}'`), "cash 40.00 0.00");
+  const after = await call("GET", `/api/v1/appointments/${id}/payment-methods`);
+  assert.deepEqual(after.data, { methods: [{ method: "cash", net: 40 }], last_method: "cash" });
+});

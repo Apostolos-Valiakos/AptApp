@@ -10,6 +10,10 @@
 .fc-event.fc-completed {
   border-left: 3px solid #2563eb !important;
 }
+/* Completed but not all paid (a refund not paid again, or still owed): orange. */
+.fc-event.fc-completed.fc-completed-unpaid {
+  border-left: 3px solid #f97316 !important;
+}
 /* Cancelled and no-show ones get a red line, and stay crossed out. */
 .fc-event.fc-did-not-happen {
   border-left: 3px solid #dc2626 !important;

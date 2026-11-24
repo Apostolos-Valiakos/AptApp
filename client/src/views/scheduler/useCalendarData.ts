@@ -189,6 +189,10 @@ export const useCalendarData = (ctx: ReturnType<typeof useSchedulerCore> & Retur
       appt.services.forEach((svc: any, index: number) => {
         if (fullyHidden(svc.charged, svc.hidden, settings)) return;
         const isCompleted = appt.status === "completed";
+        // Completed but not all paid (a refund not paid again, or a debt): the
+        // whole booking's money decides, whatever the cash/card filters hide.
+        const completedUnpaid =
+          isCompleted && Number(appt.deposit_amount || 0) < Number(appt.current_appt_total || 0) - 0.01;
         const bgColor = resolveServiceColor(svc.service_color, svc.category_color);
         const duration = svc.duration_minutes || 60;
         const endTime = svc.start_time
@@ -240,6 +244,7 @@ export const useCalendarData = (ctx: ReturnType<typeof useSchedulerCore> & Retur
           classNames: [
             "fresha-event",
             ...(isCompleted ? ["fc-completed"] : []),
+            ...(completedUnpaid ? ["fc-completed-unpaid"] : []),
             ...(DID_NOT_HAPPEN.includes(appt.status) ? ["fc-did-not-happen"] : []),
             ...(appt._offline === "conflict"
               ? ["fc-offline-conflict"]

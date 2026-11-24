@@ -6,7 +6,7 @@ import type { Later } from "./context";
 
 export const useBookingDelete = (state: BookingState, later: Later) => {
   const {
-    props, emit, dialogVisible, confirm, toast, t, form, isReadOnly,
+    props, emit, dialogVisible, confirm, confirmGroup, toast, t, form, isReadOnly,
     selectedClient, deleteReason, freedSlots,
   } = state;
 
@@ -16,7 +16,7 @@ export const useBookingDelete = (state: BookingState, later: Later) => {
     deleteReason.value = "";
 
     confirm.require({
-      group: "delete-booking",
+      group: `${confirmGroup}-delete`,
       message: isSeries
         ? t("booking.deleteDialog.messageRecurring")
         : t("booking.deleteDialog.messageSingle"),

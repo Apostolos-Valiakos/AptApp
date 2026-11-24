@@ -291,3 +291,50 @@ describe("NP7 a client's history shows only what they paid", () => {
     expect(amounts('[data-testid="quick-profile-appointment"]')).toEqual(["40,00 €", "20,00 €", null]);
   });
 });
+
+describe("a visit in the client's history opens its booking", () => {
+  const openProfile = (props: Record<string, any> = {}) => {
+    const Parent = defineComponent({
+      data: () => ({ visible: false }),
+      render() {
+        return h(ClientProfileDialog, { visible: (this as any).visible, clientId: "c1", initialTab: "History", ...props });
+      },
+    });
+    const wrapper = mountScreen(Parent);
+    (wrapper.findComponent(Parent).vm as any).visible = true;
+    return wrapper;
+  };
+  const visit = { ...past, id: "a1", start_time: `${MONDAY}T10:00:00`, service_names: "Massage", paid: 0, total_service_price: 30 };
+
+  test("the booking dialog opens on top with that booking, from the day's list; the profile stays behind", async () => {
+    saveLogin({ id: "u1", role: "admin", shop_id: "s1" });
+    const server = fakeServer({
+      "GET /api/v1/clients/c1/full": { body: { client: clientRow, history: [visit] } },
+      "GET /api/v1/appointments": { body: [appointment()] },
+      "GET /api/v1/staff": { body: staff },
+      "GET /api/v1/services": { body: [{ id: "svc", name: "Massage", price: 30, duration_minutes: 60 }] },
+      "GET /api/v1/shop": { body: { slot_min_time: "09:00", slot_max_time: "21:00" } },
+    });
+    openProfile();
+    await settle();
+    document.querySelector<HTMLElement>('[data-testid="history-booking"]')!.click();
+    await vi.waitFor(() => {
+      if (!document.querySelector(".fresha-dialog")) throw new Error("no booking dialog yet");
+    });
+    await settle();
+    expect(server.calls.some((c) => c.path === "/api/v1/appointments" && c.url.includes(`date=${MONDAY}`))).toBe(true);
+    expect(document.querySelector(".fresha-dialog")!.textContent).toContain("Eleni");
+    expect(document.querySelector(".client-profile-dialog")).not.toBeNull();
+  });
+
+  test("the booking it was opened from just closes the profile, showing that booking", async () => {
+    saveLogin({ id: "u1", role: "admin", shop_id: "s1" });
+    const server = fakeServer({ "GET /api/v1/clients/c1/full": { body: { client: clientRow, history: [visit] } } });
+    openProfile({ currentAppointmentId: "a1" });
+    await settle();
+    document.querySelector<HTMLElement>('[data-testid="history-booking"]')!.click();
+    await settle();
+    expect(server.called("GET", "/api/v1/appointments")).toHaveLength(0);
+    expect(document.querySelector(".fresha-dialog")).toBeNull();
+  });
+});

@@ -30,8 +30,19 @@ export type BookingDialogProps = {
 };
 export type BookingDialogEmit = (event: "save" | "refresh" | "open-appointment" | "freed", ...args: any[]) => void;
 
+// Each booking dialog asks its questions in its own confirmation box
+// (BookingDialog.vue). A booking can open on top of another one (from a
+// client's history), and pages have their own box: shared, every question
+// would show in all of them.
+let dialogCount = 0;
+
 export const createBookingState = (props: BookingDialogProps, emit: BookingDialogEmit, dialogVisible: Ref<boolean>) => {
-  const confirm = useConfirm();
+  const confirmGroup = `booking-${++dialogCount}`;
+  const pageConfirm = useConfirm();
+  const confirm: typeof pageConfirm = {
+    ...pageConfirm,
+    require: (options) => pageConfirm.require({ group: confirmGroup, ...options }),
+  };
   const toast = useToast();
   const notify = useNotify();
   const { t, locale } = useI18n();
@@ -244,7 +255,7 @@ export const createBookingState = (props: BookingDialogProps, emit: BookingDialo
       });
 
   return {
-    props, emit, dialogVisible, confirm, toast, notify, t, locale, authStore,
+    props, emit, dialogVisible, confirm, confirmGroup, toast, notify, t, locale, authStore,
     form, servicesList, productsList, isRecurring, recurrenceForm, currentStaffId,
     isEditMode, isBlockEdit, isReadOnly, missingStaffService, canSaveBooking, canRepeatBooking,
     originalServices, originalSnapshot, originalDiscountAmount, currentVersion, savedStatus,

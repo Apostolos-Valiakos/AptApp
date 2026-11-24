@@ -789,6 +789,7 @@ export default {
       saveChanges: 'Save Changes',
     },
     history: {
+      open: 'Open the booking',
       empty: 'No appointment history found.',
       noServices: 'No Services',
     },
@@ -1978,6 +1979,23 @@ export default {
     success: 'Refund recorded',
     failed: 'Could not process the refund',
     exceedsPaid: 'That exceeds the amount paid on this appointment.',
+    paidWays: 'Paid:',
+  },
+  changeMethod: {
+    button: 'Change payment method',
+    title: 'Change payment method',
+    from: 'Paid with',
+    to: 'Right method',
+    amount: 'Amount',
+    maxNote: 'Up to {max}, what was paid that way.',
+    note: 'Note (optional)',
+    notePlaceholder: 'e.g. card picked by mistake',
+    explain: 'A refund the wrong way and a payment the right way are recorded together. What was paid in all stays the same.',
+    confirm: 'Change',
+    success: 'Payment method changed',
+    failed: 'The change was not made',
+    exceeds: 'That is more than was paid that way.',
+    nothing: 'There is no cash, card or transfer payment to change.',
   },
   payment: {
     stepper: {

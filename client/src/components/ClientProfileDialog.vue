@@ -206,13 +206,23 @@
           >
             {{ t('clientProfile.history.empty') }}
           </div>
+          <!-- Each visit opens its booking, on top of this profile. -->
           <div
             v-for="appt in visibleHistory"
             :key="appt.id"
-            class="flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 border border-gray-100 rounded-lg bg-gray-50 gap-2"
+            role="button"
+            tabindex="0"
+            :aria-busy="openingId === appt.id"
+            :aria-label="t('clientProfile.history.open')"
+            class="flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 border border-gray-100 rounded-lg bg-gray-50 gap-2 cursor-pointer hover:border-[var(--p-primary-300)] hover:bg-white focus-visible:outline-2 focus-visible:outline-[var(--p-primary-color)] transition-colors"
+            data-testid="history-booking"
+            @click="openBooking(appt)"
+            @keydown.enter.prevent="openBooking(appt)"
+            @keydown.space.prevent="openBooking(appt)"
           >
             <div>
               <div class="font-bold text-gray-900">
+                <i v-if="openingId === appt.id" class="pi pi-spin pi-spinner text-sm text-[var(--p-primary-color)] mr-1"></i>
                 {{ new Date(appt.start_time).toLocaleDateString("en-GB") }}
                 <span class="text-gray-400 font-normal text-sm ml-2">{{
                   new Date(appt.start_time).toLocaleTimeString([], {
@@ -418,6 +428,7 @@
     </div>
   </Dialog>
   <ConfirmDialog group="clientProfileFile"></ConfirmDialog>
+  <BookingFromHistory ref="bookingHost" @changed="onBookingChanged" />
 </template>
 
 <script setup lang="ts">
@@ -432,6 +443,7 @@ import { useAuthStore } from "../stores/auth";
 import { useSettingsStore } from "../stores/settings";
 import { fullyHidden, hiddenAmount, shownMoney } from "../utils/paymentFilters";
 import PaidAmount from "./PaidAmount.vue";
+import BookingFromHistory from "./booking/BookingFromHistory.vue";
 import AppointmentNotesTip from "./AppointmentNotesTip.vue";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
@@ -444,7 +456,8 @@ const confirm = useConfirm();
 const isShopAdmin = authStore.isShopAdmin;
 const settingsStore = useSettingsStore();
 
-const props = defineProps(["clientId", "initialTab"]);
+// currentAppointmentId: the booking this profile was opened from, if any.
+const props = defineProps(["clientId", "initialTab", "currentAppointmentId"]);
 const emit = defineEmits(["refresh"]);
 
 const isVisible = defineModel<boolean>("visible", { default: false });
@@ -482,6 +495,29 @@ const visibleHistory = computed(() =>
     })
     .filter(Boolean),
 );
+
+// A visit opens its booking on top; the one this profile was opened from is
+// already open behind it, so that one just closes the profile.
+const bookingHost = ref<InstanceType<typeof BookingFromHistory> | null>(null);
+const openingId = ref<string | null>(null);
+const openBooking = async (appt: any) => {
+  if (openingId.value) return;
+  if (props.currentAppointmentId && appt.id === props.currentAppointmentId) {
+    isVisible.value = false;
+    return;
+  }
+  openingId.value = appt.id;
+  try {
+    await bookingHost.value?.open(appt);
+  } finally {
+    openingId.value = null;
+  }
+};
+// Saved or paid there: this history and the page behind show it.
+const onBookingChanged = () => {
+  fetchClientData();
+  emit("refresh");
+};
 
 const fetchClientData = async () => {
   if (!props.clientId) return;

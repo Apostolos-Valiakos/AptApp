@@ -165,10 +165,22 @@ export const useBookingPayment = (state: BookingState, later: Later) => {
       0,
       form.value.deposit_amount - Number(data.amount || 0),
     );
+    // The server now keeps the booking's paid state in step with the refund.
+    if (data.payment_status) form.value.payment_status = data.payment_status;
     originalSnapshot.value = {
       ...originalSnapshot.value,
       deposit: form.value.deposit_amount,
     };
+    emit("save");
+  };
+
+  // A payment moved to another way of paying: what was paid in all is the
+  // same, only the calendar and the client's balance need refreshing.
+  const onPaymentMethodChanged = (data: any) => {
+    if (data.new_balance !== undefined && selectedClient.value) {
+      selectedClient.value.outstanding_balance = Number(data.new_balance);
+    }
+    if (data.payment_status) form.value.payment_status = data.payment_status;
     emit("save");
   };
 
@@ -446,5 +458,5 @@ export const useBookingPayment = (state: BookingState, later: Later) => {
     }
   };
 
-  return { openSale, resetPayment, suggestAmountToPay, onPackageChanged, onPriceChanged, onRefunded, onPriceChangedInPayment, recordPayment };
+  return { openSale, resetPayment, suggestAmountToPay, onPackageChanged, onPriceChanged, onRefunded, onPaymentMethodChanged, onPriceChangedInPayment, recordPayment };
 };
