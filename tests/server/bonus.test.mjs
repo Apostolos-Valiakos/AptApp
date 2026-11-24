@@ -49,7 +49,8 @@ after(() => {
 test("after 5 hours of completed services in a day, 10% of the price of the time past them", async () => {
   book("2030-03-04 09:00", 120, 40);
   book("2030-03-04 11:00", 120, 40);
-  book("2030-03-04 13:00", 90, 45); // crosses at 5h: 30 of 90 minutes past, €1.50
+  // Requirement changed (24/11/2026): a service with 30′ or less past the threshold earns the rule's fixed €2.20.
+  book("2030-03-04 13:00", 90, 45); // crosses at 5h: 30 of 90 minutes past, €2.20 (10% would be €1.50)
   book("2030-03-04 14:30", 60, 30); // €3
   // Not completed: don't count towards the hours or the bonus.
   book("2030-03-04 15:30", 60, 100, "confirmed");
@@ -59,8 +60,8 @@ test("after 5 hours of completed services in a day, 10% of the price of the time
   const r = await report("2030-03-04", "2030-03-04");
   assert.equal(r.status, 200, JSON.stringify(r.data));
   const row = mine(r);
-  assert.deepEqual([row.days_worked, row.minutes, row.extra_minutes, row.bonus], [1, 390, 90, 4.5]);
-  assert.deepEqual(row.days[0].services.map((s) => s.bonus), [1.5, 3]);
+  assert.deepEqual([row.days_worked, row.minutes, row.extra_minutes, row.bonus], [1, 390, 90, 5.2]);
+  assert.deepEqual(row.days[0].services.map((s) => [s.how, s.bonus]), [["last", 2.2], ["percent", 3]]);
 });
 
 test("the day is the shop's day: a service late in the evening stays on that day", async () => {
@@ -418,10 +419,12 @@ test("a sales target pays the highest step reached in the month; review counts p
   assert.equal(part.targets[0].sales, 120, "the whole month, not only the 15th on");
 });
 
-test("laser by the hour, a deduction per service and a fixed short last service; aestheticians set up by the migration", async () => {
-  // The migration made ΕΥΗ's (Αισθητικός) per-hour rule: percent, laser at €4 an hour, €15 off, €2.20 last.
-  const evi = sql(DB, `SELECT laser_amount_per_hour || ' ' || deduction_per_service || ' ' || last_service_fixed || ' ' || kind FROM staff_bonus_rules r JOIN staff st ON st.id = r.staff_id WHERE st.shop_id = '${SHOP}' AND upper(st.specialty) LIKE '%ΑΙΣΘΗΤΙΚ%' ORDER BY r.effective_from LIMIT 1`);
-  assert.equal(evi, "4.00 15.00 2.20 percent");
+test("laser by the hour, a deduction per service and a fixed amount up to 30′ past; aestheticians set up by the migration", async () => {
+  // The migration gave every aesthetician (specialty Αισθητικός) a percent rule with laser at €4 an
+  // hour, €15 off and €2.20 up to 30′ past. Only checked when the dev data has aestheticians.
+  const aestheticianRules = sql(DB, `SELECT DISTINCT laser_amount_per_hour || ' ' || deduction_per_service || ' ' || last_service_fixed || ' ' || kind FROM staff_bonus_rules r JOIN staff st ON st.id = r.staff_id WHERE st.shop_id = '${SHOP}' AND upper(st.specialty) LIKE '%ΑΙΣΘΗΤΙΚ%'`);
+  const aestheticians = Number(sql(DB, `SELECT count(*) FROM staff WHERE shop_id = '${SHOP}' AND upper(specialty) LIKE '%ΑΙΣΘΗΤΙΚ%'`));
+  if (aestheticians) assert.equal(aestheticianRules, "4.00 15.00 2.20 percent");
 
   const member = sql(DB, `INSERT INTO staff (name, shop_id) VALUES ('Laser Tester', '${SHOP}') RETURNING id`).split("\n")[0];
   const service = (name, category) =>

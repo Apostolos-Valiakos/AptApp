@@ -5,9 +5,10 @@
 //   threshold earns the percent of that time's share of the service's price,
 //   less the rule's deduction per service (never below 0). With a laser amount
 //   set, laser services (see isLaser) earn it per hour of their time past the
-//   threshold instead. With a fixed last-service amount set, the day's last
-//   service, when it isn't laser and 30 minutes or less of it is past the
-//   threshold, earns that amount instead (e.g. €2.20). Same-moment services:
+//   threshold instead. With a fixed short-part amount set (last_service_fixed),
+//   any service that isn't laser with 30 minutes or less of it past the
+//   threshold, wherever it is in the day, earns that amount instead (e.g.
+//   €2.20). Same-moment services:
 //   the cheaper one counts first. Each service's bonus is rounded to the cent.
 // - per_hour: the time worked (gaps don't count, overlapping time counts once)
 //   past the threshold earns a fixed amount an hour, in proportion for part of
@@ -36,7 +37,8 @@ const DEFAULT_RULE = {
   deduction_per_service: 0,
   last_service_fixed: 2.2,
 };
-// The fixed last-service amount is for a last service up to this far past the threshold.
+// The rule's fixed amount (last_service_fixed, the name from when it was for the
+// day's last service only) is for a service up to this far past the threshold.
 const LAST_SERVICE_MAX_MINUTES = 30;
 
 const fold = (text) =>
@@ -153,7 +155,8 @@ const byStart = (a, b) =>
 // Each service's bonus says how it was worked out (`how`): "percent" of its
 // price less the deduction (`base`), "laser" at the amount per hour, "fixed"
 // at the service's own fixed amount (bonus_fixed, e.g. a diagnostic
-// appointment), or "last" at the rule's fixed amount for a short last service.
+// appointment), or "last" at the rule's fixed amount for a service with 30
+// minutes or less past the threshold (any of the day's, not only the last).
 const percentDay = (sorted, rule) => {
   const counted = sorted.filter((s) => (Number(s.minutes) || 0) > 0);
   const deduction = Number(rule.deduction_per_service || 0);
@@ -161,7 +164,7 @@ const percentDay = (sorted, rule) => {
   let extra = 0;
   let bonus = 0;
   const earning = [];
-  counted.forEach((s, i) => {
+  counted.forEach((s) => {
     const minutes = Number(s.minutes);
     const before = worked;
     worked += minutes;
@@ -170,7 +173,7 @@ const percentDay = (sorted, rule) => {
     extra += past;
     const laser = rule.laser_amount_per_hour != null && isLaser(s);
     const fixed = !laser && s.bonus_fixed != null;
-    const last = i === counted.length - 1 && !laser && !fixed && rule.last_service_fixed != null && past <= LAST_SERVICE_MAX_MINUTES;
+    const last = !laser && !fixed && rule.last_service_fixed != null && past <= LAST_SERVICE_MAX_MINUTES;
     const base = Math.max(0, round2(Number(s.price) - deduction));
     let amount;
     let how;

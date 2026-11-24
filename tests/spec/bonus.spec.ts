@@ -689,8 +689,8 @@ describe("BN14 a change typed in but not added with + isn't lost", () => {
   });
 });
 
-describe("BN15 laser by the hour, a deduction per service and a fixed short last service, on the hours rule", () => {
-  test("from the shop's default rule (€2.20 for the last service, nothing else), the three amounts are sent", async () => {
+describe("BN15 laser by the hour, a deduction per service and a fixed amount up to 30′ past, on the hours rule", () => {
+  test("from the shop's default rule (€2.20 up to 30′ past, nothing else), the three amounts are sent", async () => {
     const server = await openStaffForm("admin", {
       // What the server answers for a staff member without a rule (domain/bonus.js DEFAULT_RULE).
       "GET /api/v1/staff/st1/bonus-rules": {
@@ -743,7 +743,7 @@ describe("BN15 laser by the hour, a deduction per service and a fixed short last
 });
 
 describe("BN16 the report says how each service past the threshold was paid", () => {
-  test("laser by the hour, the fixed last service, and the percent after the deduction", async () => {
+  test("laser by the hour, the fixed amount up to 30′ past, and the percent after the deduction", async () => {
     saveLogin({ id: "u1", role: "admin", shop_id: "s1" });
     const services = [
       { id: 1, start_time: "2026-11-10T12:00:00+02:00", service_name: "PURE FACIAL", client_name: null, price: 45, minutes: 120, extra_minutes: 60, bonus: 1.5, how: "percent", base: 30, deduction: 15 },

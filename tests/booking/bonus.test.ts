@@ -86,8 +86,8 @@ describe("which rule applies", () => {
     expect(ruleOn(rules, "2026-11-14", 1).percent).toBe(10);
     expect(ruleOn(rules, "2026-11-15", 1).percent).toBe(12);
   });
-  // Requirement changed (Nov 2026): the default also pays €2.20 for a last service up to 30′ past.
-  it("with none: 5 hours and 10% for people (last service €2.20), none for shared places", () => {
+  // Requirement changed (Nov 2026): the default also pays €2.20 for a service up to 30′ past.
+  it("with none: 5 hours and 10% for people (€2.20 up to 30′ past), none for shared places", () => {
     const DEFAULT = { ...RULE, laser_amount_per_hour: null, deduction_per_service: 0, last_service_fixed: 2.2 };
     expect(ruleOn([], "2026-11-15", 1)).toEqual(DEFAULT);
     expect(ruleOn([], "2026-11-15", 5).enabled).toBe(false);
@@ -340,7 +340,9 @@ describe("review bonus", () => {
   });
 });
 
-describe("the day's last service at a fixed amount", () => {
+// Requirement changed (24/11/2026): any service with 30′ or less past the
+// threshold, not only the day's last one.
+describe("a service with 30 minutes or less past the threshold at a fixed amount", () => {
   const LAST = { ...RULE, last_service_fixed: 2.2 };
 
   it("30 minutes or less of it past the threshold: €2.20 instead of the percent", () => {
@@ -353,12 +355,34 @@ describe("the day's last service at a fixed amount", () => {
     expect(bonusForDay([svc("09:00", 285, 100), svc("13:45", 30, 13)], LAST).bonus).toBe(2.2);
   });
 
-  it("only the last service: an earlier one 30′ past earns the percent", () => {
+  it("wherever it is in the day: an earlier service 30′ past earns €2.20 too; one 60′ past, the percent", () => {
     const day = bonusForDay([svc("09:00", 300, 100), svc("14:00", 30, 20), svc("14:30", 60, 50)], LAST);
     expect(day.services.map((s: any) => [s.how, s.bonus])).toEqual([
-      ["percent", 2],
+      ["last", 2.2],
       ["percent", 5],
     ]);
+  });
+
+  it("XRISTINA, 1/11 (threshold 4h): the 4-hour mark mid-way through 17:00 → €2.20 + €2.80 + €3.20", () => {
+    const rule = { ...LAST, threshold_minutes: 240 };
+    const day = bonusForDay(
+      [
+        svc("13:00", 60, 32),
+        svc("14:00", 60, 0),
+        svc("15:00", 60, 32),
+        svc("16:00", 30, 22),
+        svc("17:00", 60, 29), // 30′ past (the threshold falls at 17:30)
+        svc("19:00", 60, 28),
+        svc("20:00", 60, 32),
+      ],
+      rule,
+    );
+    expect(day.services.map((s: any) => [s.extra_minutes, s.how, s.bonus])).toEqual([
+      [30, "last", 2.2],
+      [60, "percent", 2.8],
+      [60, "percent", 3.2],
+    ]);
+    expect(day).toMatchObject({ minutes: 390, extra_minutes: 150, bonus: 8.2 });
   });
 
   it("off when the rule has no fixed amount", () => {
