@@ -118,6 +118,7 @@
       v-model:visible="fullProfileVisible"
       :clientId="quickProfileClientId"
       :initialTab="fullProfileTab"
+      @refresh="handleRefresh"
     />
   </div>
 

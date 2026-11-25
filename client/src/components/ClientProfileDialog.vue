@@ -427,9 +427,16 @@
       </div>
     </div>
   </Dialog>
-  <ConfirmDialog group="clientProfileFile"></ConfirmDialog>
+  <!-- Its own box for its questions (a file, a membership), named for this
+       profile: one can be open inside a booking while the page has another. -->
+  <ConfirmDialog :group="confirmGroup"></ConfirmDialog>
   <BookingFromHistory ref="bookingHost" @changed="onBookingChanged" />
 </template>
+
+<script lang="ts">
+// Numbers each profile's question box (see confirmGroup below).
+let profileCount = 0;
+</script>
 
 <script setup lang="ts">
 import { useNotify } from "../composables/useNotify";
@@ -452,7 +459,12 @@ const { t } = useI18n();
 const authStore = useAuthStore();
 const toast = useToast();
 const notify = useNotify();
-const confirm = useConfirm();
+const pageConfirm = useConfirm();
+const confirmGroup = `client-profile-${++profileCount}`;
+const confirm: typeof pageConfirm = {
+  ...pageConfirm,
+  require: (options) => pageConfirm.require({ ...options, group: confirmGroup }),
+};
 const isShopAdmin = authStore.isShopAdmin;
 const settingsStore = useSettingsStore();
 
@@ -698,7 +710,6 @@ const handleFileUpload = async (event: any) => {
 
 const deleteFile = (fileId: number) => {
   confirm.require({
-    group: "clientProfileFile",
     message: t('clientProfile.files.deleteConfirmMessage'),
     header: t('clientProfile.files.deleteConfirmHeader'),
     icon: "pi pi-exclamation-triangle",

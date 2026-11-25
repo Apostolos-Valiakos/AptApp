@@ -177,6 +177,8 @@ export const useBookingSave = (state: BookingState, later: Later) => {
           reject: async () => {
             resolve(await executeSave(close, "single"));
           },
+          // Closed with ✕ or Esc: nothing saved, and the save doesn't hang.
+          onHide: () => resolve(false),
         });
       });
     }
