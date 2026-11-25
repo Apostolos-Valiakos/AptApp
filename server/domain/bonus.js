@@ -157,42 +157,71 @@ const byStart = (a, b) =>
 // at the service's own fixed amount (bonus_fixed, e.g. a diagnostic
 // appointment), or "last" at the rule's fixed amount for a service with 30
 // minutes or less past the threshold (any of the day's, not only the last).
-const percentDay = (sorted, rule) => {
+// Two short services (30 minutes or less) past the threshold earn together
+// what one Holistic does: 10% of €32.
+const SHORT_PAIR_BONUS = 3.2;
+const SHORT_SERVICE_MAX_MINUTES = 30;
+
+/**
+ * A percent-kind day. `opts.aesthetician`: an aesthetician's short services
+ * earn their percent even before the threshold. Past the threshold, short
+ * services (not laser, not with a fixed bonus of their own, and wholly past
+ * it) are taken in pairs, in time order: each pair earns SHORT_PAIR_BONUS,
+ * half each ("pair"); an odd one left over is worked out as any other.
+ */
+const percentDay = (sorted, rule, opts = {}) => {
   const counted = sorted.filter((s) => (Number(s.minutes) || 0) > 0);
   const deduction = Number(rule.deduction_per_service || 0);
   let worked = 0;
-  let extra = 0;
-  let bonus = 0;
-  const earning = [];
-  counted.forEach((s) => {
+  // Each service's minutes past the threshold, in order.
+  const lines = counted.map((s) => {
     const minutes = Number(s.minutes);
     const before = worked;
     worked += minutes;
     const past = Math.max(0, worked - Math.max(before, rule.threshold_minutes));
-    if (past <= 0) return;
-    extra += past;
     const laser = rule.laser_amount_per_hour != null && isLaser(s);
     const fixed = !laser && s.bonus_fixed != null;
-    const last = !laser && !fixed && rule.last_service_fixed != null && past <= LAST_SERVICE_MAX_MINUTES;
+    const short = !laser && !fixed && minutes <= SHORT_SERVICE_MAX_MINUTES;
+    return { s, minutes, past, laser, fixed, short };
+  });
+  // The short services wholly past the threshold, paired in time order; an
+  // odd last one stays unpaired.
+  const pairable = lines.filter((l) => l.short && l.past > 0 && l.past >= l.minutes);
+  const paired = new Set(pairable.slice(0, pairable.length - (pairable.length % 2)));
+
+  let extra = 0;
+  let bonus = 0;
+  const earning = [];
+  for (const l of lines) {
+    const { s, minutes, past, laser, fixed } = l;
     const base = Math.max(0, round2(Number(s.price) - deduction));
     let amount;
     let how;
-    if (laser) {
+    if (past <= 0) {
+      // Before the threshold only an aesthetician's short services earn.
+      if (!(opts.aesthetician && l.short)) continue;
+      amount = round2((base * rule.percent) / 100);
+      how = "short_early";
+    } else if (laser) {
       amount = round2((past / 60) * rule.laser_amount_per_hour);
       how = "laser";
     } else if (fixed) {
       amount = round2(Number(s.bonus_fixed));
       how = "fixed";
-    } else if (last) {
+    } else if (paired.has(l)) {
+      amount = round2(SHORT_PAIR_BONUS / 2);
+      how = "pair";
+    } else if (rule.last_service_fixed != null && past <= LAST_SERVICE_MAX_MINUTES) {
       amount = round2(rule.last_service_fixed);
       how = "last";
     } else {
       amount = round2((base * (past / minutes) * rule.percent) / 100);
       how = "percent";
     }
+    extra += past;
     bonus = round2(bonus + amount);
     earning.push({ ...s, minutes, extra_minutes: past, bonus: amount, how, base, deduction });
-  });
+  }
   return { minutes: worked, extra_minutes: extra, bonus, services: earning };
 };
 
@@ -223,11 +252,14 @@ const perHourDay = (sorted, rule) => {
  * price, ... }. Answers the minutes worked, those past the threshold, the bonus
  * and, for a percent rule, the services that earned one.
  */
-const bonusForDay = (services, rule) => {
+const bonusForDay = (services, rule, opts = {}) => {
   const sorted = [...services].sort(byStart);
   if (!rule.enabled) return { minutes: 0, extra_minutes: 0, bonus: 0, services: [] };
-  return rule.kind === "per_hour" ? perHourDay(sorted, rule) : percentDay(sorted, rule);
+  return rule.kind === "per_hour" ? perHourDay(sorted, rule) : percentDay(sorted, rule, opts);
 };
+
+// An aesthetician, by the specialty (as the bonus migration 0024 finds them).
+const isAesthetician = (member) => /αισθητικ/.test(fold(member?.specialty || ""));
 
 const groupBy = (list, key) => {
   const map = new Map();
@@ -281,7 +313,7 @@ const bonusReport = ({
         laser_amount_per_hour: rule.laser_amount_per_hour,
         deduction_per_service: rule.deduction_per_service,
         last_service_fixed: rule.last_service_fixed,
-        ...bonusForDay(byDay.get(day), rule),
+        ...bonusForDay(byDay.get(day), rule, { aesthetician: isAesthetician(member) }),
       });
     }
     const productRows = [];

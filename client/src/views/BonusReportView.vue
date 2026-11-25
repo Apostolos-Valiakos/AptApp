@@ -134,6 +134,8 @@
                         {{ t(s.is_redemption ? "bonus.servicePartRedemption" : s.is_package ? "bonus.servicePartPackage" : "bonus.servicePart", { part: minutesText(s.extra_minutes), of: minutesText(s.minutes), price: formatMoney(s.price) }) }}
                         <span v-if="s.how === 'laser'" data-testid="bonus-how">· {{ t("bonus.howLaser", { amount: formatMoney(d.laser_amount_per_hour) }) }}</span>
                         <span v-else-if="s.how === 'fixed'" data-testid="bonus-how">· {{ t("bonus.howFixed") }}</span>
+                        <span v-else-if="s.how === 'pair'" data-testid="bonus-how">· {{ t("bonus.howPair") }}</span>
+                        <span v-else-if="s.how === 'short_early'" data-testid="bonus-how">· {{ t("bonus.howShortEarly") }}</span>
                         <span v-else-if="s.how === 'last'" data-testid="bonus-how">· {{ t("bonus.howLast") }}</span>
                         <span v-else-if="s.deduction" data-testid="bonus-how">· {{ t("bonus.howDeducted", { base: formatMoney(s.base) }) }}</span>
                       </div>

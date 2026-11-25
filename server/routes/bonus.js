@@ -218,7 +218,7 @@ module.exports = function bonusRouter({ authenticateToken, requireAnalyticsAcces
     // cover only part of one.
     const months = monthsBetween(from, to);
     const [staff, rules, commission, services, products, targets, monthSales, reviewRuleRows, reviewCounts] = await Promise.all([
-      pool.query("SELECT id, name, capacity FROM staff WHERE shop_id = $1", [req.shopId]),
+      pool.query("SELECT id, name, capacity, specialty FROM staff WHERE shop_id = $1", [req.shopId]),
       pool.query(`SELECT ${BONUS_COLUMNS} FROM staff_bonus_rules WHERE shop_id = $1`, [req.shopId]),
       pool.query(`SELECT ${COMMISSION_COLUMNS} FROM staff_product_commission_rules WHERE shop_id = $1`, [req.shopId]),
       pool.query(

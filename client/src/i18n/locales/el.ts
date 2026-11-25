@@ -499,6 +499,10 @@ export default {
         title: "Δεν υπάρχουν καταστήματα ακόμα",
       },
       dialog: {
+        sections: {
+          shop: "Κατάστημα",
+          owner: "Ιδιοκτήτης",
+        },
         newShop: "Νέο Κατάστημα",
         editShop: "Επεξεργασία Καταστήματος",
         name: "Όνομα Καταστήματος",
@@ -1025,6 +1029,13 @@ export default {
     },
   },
   profile: {
+    groups: {
+      label: "Ομάδες ρυθμίσεων",
+      account: "Λογαριασμός",
+      shop: "Κατάστημα",
+      clients: "Πελάτες & προωθήσεις",
+      security: "Ασφάλεια",
+    },
     uploadPhoto: "Ανέβασμα φωτογραφίας",
     contests: {
       title: "Διαγωνισμοί",
@@ -1326,6 +1337,8 @@ export default {
     howLaser: "laser, {amount} ανά ώρα",
     howLast: "έως 30′ μετά το όριο, σταθερό ποσό",
     howFixed: "σταθερό ποσό της υπηρεσίας",
+    howPair: "δύο υπηρεσίες έως 30′ μετρούν μαζί ως ένα Holistic (3,20 €)",
+    howShortEarly: "υπηρεσία έως 30′ αισθητικού: μετρά και πριν το όριο",
     package: "Πακέτο",
     howDeducted: "ποσοστό επί {base} μετά την αφαίρεση",
     redemption: "Εξαργύρωση",

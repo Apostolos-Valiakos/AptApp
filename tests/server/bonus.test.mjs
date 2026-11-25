@@ -392,6 +392,38 @@ test("a service can count fewer minutes for the bonus than it's booked for (deep
   assert.deepEqual([day.minutes, line.minutes, line.booked_minutes, line.extra_minutes, line.bonus], [360, 60, 75, 60, 6]);
 });
 
+test("past the threshold, every two services of 30' or less earn €3.20 together (one Holistic); an odd one earns as usual", async () => {
+  const staffId = sql(DB, `INSERT INTO staff (name, shop_id) VALUES ('Pairs Tester', '${SHOP}') RETURNING id`).split("\n")[0];
+  book("2030-09-08 04:00", 300, 0, "completed", staffId); // the 5 hours
+  book("2030-09-08 09:00", 30, 25, "completed", staffId);
+  book("2030-09-08 09:30", 30, 20, "completed", staffId);
+  book("2030-09-08 10:00", 30, 18, "completed", staffId); // the odd one
+  book("2030-09-08 10:30", 60, 40, "completed", staffId);
+  const day = (await report("2030-09-08", "2030-09-08")).data.staff.find((x) => x.staff_id === staffId).days[0];
+  const got = day.services.filter((x) => x.bonus > 0).map((x) => [x.minutes, x.how, x.bonus]);
+  // The odd short one: what it would earn anyway (the €2.20 for a short service past the threshold).
+  assert.deepEqual(got, [[30, "pair", 1.6], [30, "pair", 1.6], [30, "last", 2.2], [60, "percent", 4]]);
+  assert.equal(day.bonus, 9.4);
+});
+
+test("an aesthetician's services of 30' or less earn their percent before the threshold too", async () => {
+  const staffId = sql(DB, `INSERT INTO staff (name, shop_id, specialty) VALUES ('Aesthetic Tester', '${SHOP}', 'ΑΙΣΘΗΤΙΚΟΣ') RETURNING id`).split("\n")[0];
+  await admin("POST", `/api/v1/staff/${staffId}/bonus-rules`, {
+    effective_from: "2000-01-01", enabled: true, kind: "percent", threshold_minutes: 240, percent: 10, amount_per_hour: 0, deduction_per_service: 15,
+  });
+  book("2030-09-09 10:00", 30, 35, "completed", staffId); // short: (35 − 15) × 10% = €2
+  book("2030-09-09 11:00", 60, 50, "completed", staffId); // not short, before the threshold: nothing
+  const day = (await report("2030-09-09", "2030-09-09")).data.staff.find((x) => x.staff_id === staffId).days[0];
+  assert.deepEqual(day.services.map((x) => [x.minutes, x.how, x.bonus]), [[30, "short_early", 2]]);
+  // Someone who isn't an aesthetician: nothing before the threshold.
+  const other = sql(DB, `INSERT INTO staff (name, shop_id) VALUES ('Not Aesthetic', '${SHOP}') RETURNING id`).split("\n")[0];
+  book("2030-09-09 10:00", 30, 35, "completed", other);
+  const row = (await report("2030-09-09", "2030-09-09")).data.staff.find((x) => x.staff_id === other);
+  assert.equal(row?.bonus ?? 0, 0);
+  // Not left as an aesthetician: another test checks every aesthetician has the migration's rule.
+  sql(DB, `UPDATE staff SET specialty = NULL WHERE id = '${staffId}'`);
+});
+
 test("a sales target pays the highest step reached in the month; review counts pay front desk per new review", async () => {
   const seller = sql(DB, `INSERT INTO staff (name, shop_id) VALUES ('Target Tester', '${SHOP}') RETURNING id`).split("\n")[0];
   const desk = sql(DB, `INSERT INTO staff (name, shop_id) VALUES ('Desk Tester', '${SHOP}') RETURNING id`).split("\n")[0];

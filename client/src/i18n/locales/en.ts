@@ -493,6 +493,10 @@ export default {
         title: 'No shops yet',
       },
       dialog: {
+        sections: {
+          shop: 'Shop',
+          owner: 'Owner',
+        },
         newShop: 'New Shop',
         editShop: 'Edit Shop',
         name: 'Shop Name',
@@ -1000,6 +1004,13 @@ export default {
     },
   },
   profile: {
+    groups: {
+      label: 'Settings groups',
+      account: 'Account',
+      shop: 'Shop',
+      clients: 'Clients & promotions',
+      security: 'Security',
+    },
     uploadPhoto: "Upload photo",
     contests: {
       title: "Contests",
@@ -1295,6 +1306,8 @@ export default {
     howLaser: "laser, {amount} an hour",
     howLast: "up to 30′ past the threshold, fixed amount",
     howFixed: "the service's fixed amount",
+    howPair: "two services of up to 30' count together as one Holistic (€3.20)",
+    howShortEarly: "an aesthetician's service of up to 30': counts before the threshold too",
     package: "Package",
     howDeducted: "percent of {base} after the deduction",
     redemption: "Redemption",

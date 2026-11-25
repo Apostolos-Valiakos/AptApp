@@ -168,3 +168,29 @@ describe("SP6 who sees which card", () => {
     expect(pageText()).not.toContain(el.profile.forceLogout.title);
   });
 });
+
+describe("SP the settings in groups", () => {
+  const groups = () => [...document.querySelectorAll<HTMLElement>('[data-testid^="profile-group-"]')].map((b) => b.dataset.testid!.replace("profile-group-", ""));
+  const shownPanel = () =>
+    [...document.querySelectorAll<HTMLElement>('[id^="profile-group-"][role="tabpanel"]')].filter((p) => p.style.display !== "none").map((p) => p.id);
+
+  test("each role sees only its groups; it opens on the account", async () => {
+    await open("super_admin");
+    expect(groups()).toEqual(["account", "shop", "clients", "security"]);
+    expect(shownPanel()).toEqual(["profile-group-account"]);
+  });
+
+  test("plain staff see only their account", async () => {
+    await open("staff");
+    expect(groups()).toEqual(["account"]);
+  });
+
+  test("a group is picked from the menu, kept in the address, and shown alone", async () => {
+    const { wrapper } = await open("admin");
+    document.querySelector<HTMLElement>('[data-testid="profile-group-shop"]')!.click();
+    await settle();
+    const router = (wrapper.vm as any).$router;
+    expect(router.currentRoute.value.query.group).toBe("shop");
+    expect(shownPanel()).toEqual(["profile-group-shop"]);
+  });
+});
