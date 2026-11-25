@@ -49,7 +49,12 @@ const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(",")
   : ["http://localhost:5173"];
 
-const allowedOrigins = [...ALLOWED_ORIGINS];
+// The Android app's WebView serves its page from https://localhost
+// (capacitor.config.ts), so its requests carry that origin. Let through for
+// the API and Socket.IO alike; ALLOWED_ORIGINS works as before.
+// (capacitor://localhost is iOS's, for later.)
+const ANDROID_APP_ORIGIN = "https://localhost";
+const allowedOrigins = [...new Set([...ALLOWED_ORIGINS, ANDROID_APP_ORIGIN])];
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -236,6 +241,25 @@ app.get("/manifest.webmanifest", async (req, res) => {
 
 // APP_DIST_PATH: another build folder (the browser tests use client/dist).
 const distPath = process.env.APP_DIST_PATH || path.join(__dirname, "../dist");
+// Android App Links: links to /portal/* on this domain open in the app
+// instead of the browser. Android checks this file for the app's package and
+// its signing key's SHA-256 fingerprint (ANDROID_APP_SHA256, comma-separated
+// for more than one key). Without the key there's nothing to vouch for: 404.
+const ANDROID_APP_PACKAGE = "com.purespaexperience.app";
+app.get("/.well-known/assetlinks.json", (req, res) => {
+  const fingerprints = (process.env.ANDROID_APP_SHA256 || "")
+    .split(",")
+    .map((f) => f.trim().toUpperCase())
+    .filter(Boolean);
+  if (!fingerprints.length) return res.status(404).json({ error: "Not found" });
+  res.json([
+    {
+      relation: ["delegate_permission/common.handle_all_urls"],
+      target: { namespace: "android_app", package_name: ANDROID_APP_PACKAGE, sha256_cert_fingerprints: fingerprints },
+    },
+  ]);
+});
+
 // Public home page: a separately built static site (landing/, a Next.js static
 // export) served at "/", with its files under /_next and /sites. Everything
 // else stays the Vue app. If the page hasn't been built, "/" falls through to

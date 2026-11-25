@@ -534,7 +534,8 @@ const processPushReminders = async () => {
         // Opens the booking's details (the old portal sends it to its list).
         const url = `/portal/bookings/${appt.appointment_id}`;
         await recordNotification(appt.client_id, appt.shop_id, { type: "reminder", title, body, url });
-        await sendPushToClient(appt.client_id, { title, body, url });
+        // Not to the Android app: it schedules this reminder on the phone itself.
+        await sendPushToClient(appt.client_id, { title, body, url }, { appDevices: false });
         await markAllSent("push", appt);
       } catch (pushErr) {
         console.error("Push reminder error:", pushErr);

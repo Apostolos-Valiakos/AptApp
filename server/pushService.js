@@ -47,15 +47,84 @@ const sendToSubscriptions = async (subscriptions, payload) => {
   return sent;
 };
 
-// Every device subscribed for one client, or for one shop. `column` is
-// one of the two fixed names below, never user input.
-const sendPushWhere = (column) => async (id, payload) => {
+// --- The Android app: Firebase Cloud Messaging (docs/redesign/ANDROID_HANDOFF.md §1) ---
+// On only when FIREBASE_SERVICE_ACCOUNT holds the Firebase service account (its
+// JSON, or the path to its file). Without it, app devices are skipped silently
+// and everything else works as before.
+let fcmSend = null; // (token, payload) => Promise
+let fcmChecked = false;
+const fcmSender = () => {
+  if (fcmChecked) return fcmSend;
+  fcmChecked = true;
+  const raw = (process.env.FIREBASE_SERVICE_ACCOUNT || "").trim();
+  if (!raw) return null;
+  try {
+    const admin = require("firebase-admin");
+    const account = JSON.parse(raw.startsWith("{") ? raw : require("fs").readFileSync(raw, "utf8"));
+    const app = admin.initializeApp({ credential: admin.credential.cert(account) }, "pure-app-push");
+    const messaging = admin.messaging(app);
+    // Kept minimal (no treatment names): the app shows the details. `url` is
+    // the portal page the app opens when the notification is tapped.
+    fcmSend = (token, payload) =>
+      messaging.send({
+        token,
+        notification: { title: payload.title, body: payload.body },
+        data: { url: payload.url || "/portal/home" },
+        android: { priority: "high", notification: { icon: "ic_stat_icon", color: "#8B6F4E" } },
+      });
+  } catch (err) {
+    console.error("App push (FCM) not started:", err.message);
+  }
+  return fcmSend;
+};
+// Tests send through a fake instead of Google's servers.
+const setFcmSender = (send) => {
+  fcmSend = send;
+  fcmChecked = true;
+};
+
+// FCM's answers for a token that will never work again: the app was
+// uninstalled, or the token was replaced.
+const DEAD_TOKEN_CODES = new Set(["messaging/registration-token-not-registered", "messaging/invalid-registration-token"]);
+
+// Sends one payload to app devices (rows with `token`), dropping dead tokens.
+// Returns how many succeeded.
+const sendToAppDevices = async (devices, payload) => {
+  const send = fcmSender();
+  if (!send || devices.length === 0) return 0;
+  let sent = 0;
+  await Promise.all(
+    devices.map(async ({ token }) => {
+      try {
+        await send(token, { title: payload.title, body: payload.body, url: payload.url });
+        sent += 1;
+      } catch (err) {
+        if (DEAD_TOKEN_CODES.has(err?.code || err?.errorInfo?.code)) {
+          await pool.query("DELETE FROM push_devices WHERE token = $1", [token]).catch(() => {});
+        } else {
+          console.error("App push send error:", err?.code || err?.message);
+        }
+      }
+    }),
+  );
+  return sent;
+};
+
+// Every device of one client, or of one shop: browsers (web push) and, unless
+// `appDevices` is false, the Android app (FCM). `column` is one of the two
+// fixed names below, never user input. Reminders leave the app out: the app
+// schedules its own on the phone, so it would otherwise get each one twice.
+const sendPushWhere = (column) => async (id, payload, { appDevices = true } = {}) => {
   const { rows } = await pool.query(
     `SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE ${column} = $1`,
     [id],
   );
-  if (rows.length === 0) return 0;
-  return sendToSubscriptions(rows, payload);
+  let sent = rows.length ? await sendToSubscriptions(rows, payload) : 0;
+  if (appDevices && fcmSender()) {
+    const devices = await pool.query(`SELECT token FROM push_devices WHERE ${column} = $1`, [id]);
+    sent += await sendToAppDevices(devices.rows, payload);
+  }
+  return sent;
 };
 const sendPushToClient = sendPushWhere("client_id");
 const sendPushToShop = sendPushWhere("shop_id");
@@ -90,6 +159,7 @@ const recordNotificationForShop = async (shopId, { type, title, body, url }) => 
 };
 
 module.exports = {
+  setFcmSender,
   sendPushToClient,
   sendPushToShop,
   recordNotification,

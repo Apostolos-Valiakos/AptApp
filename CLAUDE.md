@@ -23,7 +23,7 @@ npm run test:mutation      # StrykerJS on the files in stryker.config.json (~10 
 ./scripts/deploy_image.sh  # builds HEAD's image here, uploads it to the VPS and runs it (see DEPLOY.md)
 ```
 
-`npm test` runs only the server test files named in its script. Others exist and must be run by hand when their area changes: `aiAssistant`, `capacityCases`, `portal`, `clientNotes`, `clientPhones`, `moneySql`, `roleGates`, `staffSchedule`, `waitlist` (`node --test tests/server/<name>.test.mjs`).
+`npm test` runs only the server test files named in its script. Others exist and must be run by hand when their area changes: `aiAssistant`, `capacityCases`, `portal`, `pushDevices`, `clientNotes`, `clientPhones`, `moneySql`, `roleGates`, `staffSchedule`, `waitlist` (`node --test tests/server/<name>.test.mjs`).
 
 The public home page is its own Next.js project: `cd landing && npm run dev` (port 3010) / `npm run build` (static export to `landing/out`). Read `landing/AGENTS.md` first: its Next.js version differs from what you may know.
 

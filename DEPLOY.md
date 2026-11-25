@@ -109,6 +109,15 @@ VAPID_PUBLIC_KEY=CHANGEME_run_node_-e_generateVAPIDKeys
 VAPID_PRIVATE_KEY=CHANGEME_run_node_-e_generateVAPIDKeys
 VAPID_CONTACT_EMAIL=CHANGEME_a_real_support_address
 
+# --- The Android app (optional: leave unset until it's ready; nothing else needs them) ---
+# The release signing key's SHA-256 fingerprint, for App Links (/.well-known/assetlinks.json):
+# ANDROID_APP_SHA256=AB:CD:...
+# Shop announcements to the app (Firebase Cloud Messaging): the PATH, inside the app
+# container, to the Firebase service-account JSON (a path, not the JSON itself, which
+# would break `source`). The app container has no file mounts yet: add one in
+# docker-compose.yml (e.g. ./firebase-service-account.json:/run/secrets/firebase.json:ro).
+# FIREBASE_SERVICE_ACCOUNT=/run/secrets/firebase.json
+
 # --- AI assistant (Section 9) ---
 ANTHROPIC_API_KEY=CHANGEME_create_a_key_in_the_anthropic_console
 ```

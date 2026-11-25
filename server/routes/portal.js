@@ -150,6 +150,34 @@ module.exports = function portalRouter({
     res.json({ success: true });
   }, { log: "Portal notifications update error:" }));
 
+  // --- The Android app's device, for shop announcements (FCM, pushService.js) ---
+  // The app registers its token after login and removes it at logout. A
+  // token is one phone: if another client signs in on it, it moves to them.
+  const deviceToken = (body) => {
+    const token = typeof body?.token === "string" ? body.token.trim() : "";
+    return token.length >= 20 && token.length <= 4096 ? token : null;
+  };
+  router.post("/portal/push-device", authenticateToken, onlyClients, asyncHandler(async (req, res) => {
+    const token = deviceToken(req.body);
+    if (!token) return res.status(400).json({ error: "invalid_token" });
+    const platform = req.body.platform === "ios" ? "ios" : "android";
+    await pool.query(
+      `INSERT INTO push_devices (client_id, shop_id, token, platform) VALUES ($1, $2, $3, $4)
+       ON CONFLICT (token) DO UPDATE
+         SET client_id = EXCLUDED.client_id, shop_id = EXCLUDED.shop_id, platform = EXCLUDED.platform, last_seen_at = NOW()`,
+      [req.user.clientId, req.shopId, token, platform],
+    );
+    res.status(201).json({ success: true });
+  }, { log: "Push device register error:" }));
+
+  // Only the client's own device: someone else's token is left alone.
+  router.delete("/portal/push-device", authenticateToken, onlyClients, asyncHandler(async (req, res) => {
+    const token = deviceToken(req.body);
+    if (!token) return res.status(400).json({ error: "invalid_token" });
+    await pool.query("DELETE FROM push_devices WHERE token = $1 AND client_id = $2", [token, req.user.clientId]);
+    res.json({ success: true });
+  }, { log: "Push device unregister error:" }));
+
   // --- Client self-booking: read-only, field-allowlisted service/staff lists ---
   // Kept separate from the admin-facing services/staff endpoints so the
   // bookable_online / is_active filters never affect what staff/admin see.
