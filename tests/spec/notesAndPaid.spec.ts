@@ -52,7 +52,7 @@ beforeEach(async () => {
   await clearOfflineData();
 });
 
-const openBooking = async (role: string) => {
+const openBooking = async (role: string, appt: any = appointment()) => {
   saveLogin({ id: "u1", role, shop_id: "s1" });
   const server = fakeServer(routes);
   vi.spyOn(console, "error").mockImplementation(() => {});
@@ -74,7 +74,7 @@ const openBooking = async (role: string) => {
   const wrapper = mountScreen(Parent);
   const parent = wrapper.findComponent(Parent);
   await settle();
-  (parent.vm as any).appt = appointment();
+  (parent.vm as any).appt = appt;
   (parent.vm as any).visible = true;
   await settle();
   return { server, parent };
@@ -189,8 +189,22 @@ describe("NP4 the calendar's hover card", () => {
     return {
       notes: pick("hover-client-notes").exists() ? pick("hover-client-notes").text() : null,
       payment: pick("hover-payment").text().replace(/\s+/g, " "),
+      serviceNotes: wrapper.findAll('[data-testid="hover-service-note"]').map((n) => n.text()),
     };
   };
+
+  test("shows the hovered service's own note, and each one's in the day's list", () => {
+    expect(card("admin", { service_notes: "Pressure on the left shoulder" }).serviceNotes[0]).toContain("Pressure on the left shoulder");
+    expect(card("admin", { service_notes: "" }).serviceNotes).toEqual([]);
+    const day = card("admin", {
+      day_services: [
+        { id: "a1_0", start: new Date(`${MONDAY}T10:00:00`), service: "Massage", staff: "Anna", notes: "Firm", current: true },
+        { id: "a1_1", start: new Date(`${MONDAY}T11:00:00`), service: "Sauna", staff: "", notes: "" },
+      ],
+    });
+    expect(day.serviceNotes).toHaveLength(1);
+    expect(day.serviceNotes[0]).toContain("Firm");
+  });
 
   test("shows the client's notes", () => {
     expect(card("admin", { client_notes: "Allergic to almond oil" }).notes).toContain("Allergic to almond oil");
@@ -336,5 +350,29 @@ describe("a visit in the client's history opens its booking", () => {
     await settle();
     expect(server.called("GET", "/api/v1/appointments")).toHaveLength(0);
     expect(document.querySelector(".fresha-dialog")).toBeNull();
+  });
+});
+
+describe("NP6 each service's own note in the booking dialog", () => {
+  const withNote = () => ({
+    ...appointment(),
+    services: [{ ...appointment().services[0], notes: "Pressure on the left shoulder" }],
+  });
+  const noteBoxes = () => [...document.querySelectorAll<HTMLTextAreaElement>('[data-testid="service-notes"]')];
+
+  test("every service row has its note box, showing the saved note", async () => {
+    await openBooking("admin", withNote());
+    expect(noteBoxes().map((b) => b.value)).toEqual(["Pressure on the left shoulder"]);
+  });
+
+  test("an edited note is sent with that service when the booking is saved", async () => {
+    const { server } = await openBooking("admin", withNote());
+    const box = noteBoxes()[0];
+    box.value = "Softer on the neck";
+    box.dispatchEvent(new Event("input"));
+    await settle();
+    await save();
+    const put = server.called("PUT", "/api/v1/appointments/a1")[0];
+    expect(put?.body.services.map((s: any) => s.notes)).toEqual(["Softer on the neck"]);
   });
 });

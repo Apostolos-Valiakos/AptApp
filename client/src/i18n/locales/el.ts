@@ -2129,6 +2129,8 @@ export default {
     },
   },
   bookingServices: {
+    notes: "Σημείωση για αυτή την υπηρεσία",
+    notesPlaceholder: "π.χ. πίεση στον αριστερό ώμο (τη βλέπει μόνο το κατάστημα)",
     persons: "Άτομα",
     dragToReorder: "Σύρετε για αλλαγή σειράς",
     outsideHours: "εκτός ωραρίου",
@@ -2277,6 +2279,7 @@ export default {
       menu: "Περισσότερες επιλογές",
     },
     hoverCard: {
+      serviceNote: "Σημείωση",
       dayServices: "Υπηρεσίες της ημέρας",
       newClient: "ΝΕΟΣ ΠΕΛΑΤΗΣ",
       appointmentSuffix: "ραντεβού",

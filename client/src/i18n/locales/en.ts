@@ -2075,6 +2075,8 @@ export default {
     },
   },
   bookingServices: {
+    notes: 'Note for this service',
+    notesPlaceholder: 'e.g. pressure on the left shoulder (seen by the shop only)',
     persons: "Persons",
     dragToReorder: "Drag to reorder",
     outsideHours: 'outside hours',
@@ -2223,6 +2225,7 @@ export default {
       menu: 'More options',
     },
     hoverCard: {
+      serviceNote: 'Note',
       dayServices: "Services this day",
       newClient: 'NEW CLIENT',
       appointmentSuffix: 'appointment',

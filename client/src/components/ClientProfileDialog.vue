@@ -237,6 +237,15 @@
               <div v-if="appt.staff_names" class="text-xs text-gray-400 mt-0.5">
                 {{ appt.staff_names }}
               </div>
+              <!-- Each service's own note. -->
+              <div
+                v-for="(svc, i) in (appt.services_paid || []).filter((x: any) => x.notes)"
+                :key="i"
+                class="text-xs text-gray-600 italic mt-1 whitespace-pre-line"
+                data-testid="history-service-note"
+              >
+                <i class="pi pi-comment text-[10px] mr-1"></i><span class="not-italic font-medium">{{ svc.name }}:</span> {{ svc.notes }}
+              </div>
             </div>
             <div
               class="flex justify-between w-full sm:w-auto sm:block text-right"
@@ -499,6 +508,7 @@ const visibleHistory = computed(() =>
       return {
         ...a,
         ...money,
+        services_paid: shown,
         service_names: shown.map((x: any) => x.name).join(", "),
         staff_names: [...new Set(shown.map((x: any) => x.staff).filter(Boolean))].join(", "),
         total_service_price: Number(a.total_service_price || 0) - hiddenCost,

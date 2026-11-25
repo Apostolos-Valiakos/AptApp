@@ -431,8 +431,8 @@ const createAppointmentSeries = async (client, data, shopId) => {
           await client.query(
             `INSERT INTO appointment_services (
               appointment_id, service_id, staff_id, start_time,
-              duration_override, price_override, shop_id, list_price, variation_name, persons, combo_service_id
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+              duration_override, price_override, shop_id, list_price, variation_name, persons, combo_service_id, notes
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
             [
               appointmentId,
               validServiceId,
@@ -445,6 +445,7 @@ const createAppointmentSeries = async (client, data, shopId) => {
               svc.variation_name || null,
               personsOf(svc),
               safeUUID(svc.combo_service_id),
+              serviceNote(svc),
             ],
           );
         }
@@ -601,8 +602,8 @@ const performSingleUpdate = async (client, id, shopId, body) => {
       if (safeUUID(svc.service_id)) {
         await client.query(
           `INSERT INTO appointment_services (
-            appointment_id, service_id, staff_id, start_time, duration_override, price_override, shop_id, list_price, variation_name, persons, combo_service_id
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+            appointment_id, service_id, staff_id, start_time, duration_override, price_override, shop_id, list_price, variation_name, persons, combo_service_id, notes
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
           [
             id,
             safeUUID(svc.service_id),
@@ -615,6 +616,7 @@ const performSingleUpdate = async (client, id, shopId, body) => {
             svc.variation_name || null,
             personsOf(svc),
             safeUUID(svc.combo_service_id),
+            serviceNote(svc),
           ],
         );
       }
@@ -804,6 +806,13 @@ const sharedPlacesFor = async (client, shopId, services) => {
 // The same rules as the screens' (client/src/utils/capacity.ts); both are
 // tested against tests/shared/capacityCases.json.
 /** How many persons a service row is for: a whole number, at least one. */
+// A service row's own note (for that service and its staff member): text,
+// trimmed, at most 2000 characters; empty is none.
+const serviceNote = (svc) => {
+  const note = typeof svc?.notes === "string" ? svc.notes.trim().slice(0, 2000) : "";
+  return note || null;
+};
+
 const personsOf = (svc) => Math.max(1, Math.floor(Number(svc?.persons)) || 1);
 /** Places at the same time; 1 for an ordinary staff member. */
 const placesOf = (staff) => Math.max(1, Number(staff?.capacity) || 1);

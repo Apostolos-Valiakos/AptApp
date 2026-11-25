@@ -196,6 +196,7 @@ module.exports = function appointmentsRouter({
               'staff_name', st.name,
               'start_time', aps.start_time,
               'persons', aps.persons,
+              'notes', aps.notes,
               'charged', COALESCE(aps.price_override, s.price, 0),
               'paid_with', (SELECT paid_with FROM appointment_service_payments WHERE appointment_service_id = aps.id),
               'hidden', (SELECT json_build_object('cash', hidden_cash, 'card', hidden_card, 'both', hidden_both)
@@ -238,7 +239,15 @@ module.exports = function appointmentsRouter({
         deposit_amount: parseFloat(row.deposit_amount),
         // Staff-authored notes about a client should never reach the client's
         // own portal view of their own appointment.
-        ...(req.user.role === "client" ? { internal_notes: null, booking_notes: null, client_notes: null, products: [] } : {}),
+        ...(req.user.role === "client"
+          ? {
+              internal_notes: null,
+              booking_notes: null,
+              client_notes: null,
+              products: [],
+              services: (row.services || []).map(({ notes, ...svc }) => svc),
+            }
+          : {}),
       }));
 
       res.json(formatted);

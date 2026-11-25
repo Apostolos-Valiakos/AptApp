@@ -277,6 +277,8 @@ export const useCalendarData = (ctx: ReturnType<typeof useSchedulerCore> & Retur
                 ? outsideWorkingHours(calendarStore.workingHours, calendarStore.resources, svc.staff_id, new Date(svc.start_time), new Date(endTime))
                 : null,
             service_name: serviceLabel,
+            // This service's own note (the hover card shows it).
+            service_notes: svc.notes || "",
             persons,
             serviceArchived: !!svc.service_archived,
             // Same client + same service + same start time = one booking split
