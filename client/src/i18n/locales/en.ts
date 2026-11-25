@@ -1492,6 +1492,22 @@ export default {
     failed: 'Something went wrong. Please try again.',
   },
   analytics: {
+    staffBreakdown: {
+      hint: "Click a staff member to see which bookings their numbers come from.",
+      title: "{name}: where the numbers come from",
+      when: "When",
+      client: "Client",
+      service: "Service",
+      minutes: "Minutes",
+      revenue: "Revenue",
+      flagged: "{n} line(s) worth checking (marked below).",
+      flags: {
+        zero: "€0",
+        short: "very short",
+        comboLine: "combination line",
+        filtered: "part hidden by a filter",
+      },
+    },
     details: {
       search: "Search…",
       export: "Export to Excel",
@@ -1537,7 +1553,15 @@ export default {
     },
     kpi: {
       totalSales: 'Total Sales',
-      totalSalesNote: 'Completed revenue (includes unpaid services)',
+      totalSalesNote: 'Services (incl. unpaid) and products, plus gift cards, packages and memberships sold',
+      salesParts: {
+        services: 'Services',
+        products: 'Products',
+        giftCards: 'Gift cards',
+        packages: 'Packages',
+        memberships: 'Memberships',
+        usedBefore: 'paid by gift card/package',
+      },
       collectedToday: 'Collected Today',
       collectedTodayNote: 'Actual payments received today',
       totalDebt: 'Total Business Debt',

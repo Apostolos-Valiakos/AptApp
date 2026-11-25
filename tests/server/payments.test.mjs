@@ -625,3 +625,36 @@ test("the payment's ways, and moving a payment from card to cash in one step", a
   const after = await call("GET", `/api/v1/appointments/${id}/payment-methods`);
   assert.deepEqual(after.data, { methods: [{ method: "cash", net: 40 }], last_method: "cash" });
 });
+
+test("total sales: gift cards, packages and memberships count when sold, products sold on their own too; debt doesn't change", async () => {
+  const client = clientFor("SalesParts");
+  const day = "2027-08-20";
+  const range = `from=${encodeURIComponent(`${day}T00:00:00+03:00`)}&to=${encodeURIComponent(`${day}T23:59:59+03:00`)}`;
+  const appt = bookAt(client, `'${day} 10:00:00+03'::timestamptz`, 50);
+  sql(DB, `UPDATE appointments SET status = 'completed', save_receipt = true WHERE id = '${appt}'`);
+  // €20 of it paid with a gift card bought earlier with cash (its sale was another day).
+  const card = sql(DB, `INSERT INTO gift_cards (card_number, customer_name, initial_amount, remaining_balance, purchase_payment_method, shop_id, expires_at)
+                        VALUES ('SP-${Date.now()}', 'x', 20, 0, 'cash', '${SHOP}', '2030-01-01') RETURNING id`).split("\n")[0];
+  const txn = (amount, method, type, extra = "") =>
+    sql(DB, `INSERT INTO transactions (appointment_id, client_id, amount, payment_method, transaction_type, shop_id, created_at${extra ? ", gift_card_id" : ""})
+             VALUES (${type === "payment" ? `'${appt}'` : "NULL"}, '${client}', ${amount}, '${method}', '${type}', '${SHOP}', TIMESTAMP '${day} 12:00'${extra ? `, '${extra}'` : ""})`);
+  txn(20, "gift-card", "payment", card);
+  txn(100, "card", "gift_card_sale");
+  txn(60, "cash", "package_sale");
+  txn(30, "card", "membership_sale");
+  sql(DB, `INSERT INTO product_sales (quantity, total_price, sale_date, shop_id) VALUES (1, 15, TIMESTAMPTZ '${day} 11:00:00+03', '${SHOP}')`);
+
+  const all = (await call("GET", `/api/v1/reports/finances?${range}`)).data;
+  // 50 of services, less the 20 a gift card paid (counted when it was sold), + 15 + 100 + 60 + 30.
+  assert.equal(all.total_sales, 235);
+  assert.deepEqual(
+    [all.total_sales_parts.gift_card_used, all.total_sales_parts.own_products, all.total_sales_parts.packages_sold],
+    [20, 15, 60],
+  );
+  // Debt is what the bookings still owe: 50 − 20, whatever else was sold.
+  assert.equal(all.total_debt, 30);
+
+  // Ctrl+8 (card hidden): the gift card and membership sold by card leave the total.
+  const noCard = (await call("GET", `/api/v1/reports/finances?${range}&excludeCard=true`)).data;
+  assert.equal(noCard.total_sales, 105);
+});

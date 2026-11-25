@@ -2,7 +2,7 @@
 const express = require("express");
 const { asyncHandler } = require("../../http");
 const pool = require("../../db");
-const { transactionVisibilityClause, localDateOf, shownPriceSql, buildServiceExclusionClause, hiddenCostSql, buildRevenueExclusionClause, buildTxnMethodExclusionClause, periodAppointments, paymentsWindow, expensesWindow, analyticsWindow, RETURNING_SQL, DETAIL_KINDS, clientName, bookingsSql, paymentsSql } = require("../../domain/reportSql");
+const { transactionVisibilityClause, localDateOf, localTimeOf, shownPriceSql, buildServiceExclusionClause, hiddenCostSql, buildRevenueExclusionClause, buildTxnMethodExclusionClause, periodAppointments, paymentsWindow, expensesWindow, analyticsWindow, RETURNING_SQL, DETAIL_KINDS, clientName, bookingsSql, paymentsSql } = require("../../domain/reportSql");
 
 module.exports = function financesRouter({
   authenticateToken,
@@ -120,9 +120,82 @@ module.exports = function financesRouter({
       `,
         apptParams,
       );
-      const totalSales =
+      // What the period's bookings cost: services and the products sold on
+      // them. The period's debt is worked out from this, not from the total
+      // below (a gift card sold isn't money a booking owes).
+      const bookingSales =
         (Number(salesRes.rows[0].total) || 0) +
         (Number(productSalesRes.rows[0].total) || 0);
+
+      // Gift cards, packages and memberships count when sold, in the period
+      // they were paid for. So a service later paid by gift card or package
+      // visit isn't counted again: what those paid on the period's bookings
+      // comes off. (Bookings fully paid by package or membership are already
+      // left out; a gift card bought with cash is already hidden by Ctrl+1.)
+      const usedRes = await client.query(
+        `SELECT
+           COALESCE(SUM(t.amount) FILTER (WHERE t.payment_method = 'package'), 0) AS package_used,
+           COALESCE(SUM(t.amount) FILTER (
+             WHERE t.payment_method = 'gift-card'
+             ${excludeCash === "true" ? "AND NOT EXISTS (SELECT 1 FROM gift_cards gc WHERE gc.id = t.gift_card_id AND gc.purchase_payment_method = 'cash')" : ""}
+           ), 0) AS gift_card_used
+         FROM transactions t
+         WHERE t.appointment_id IN (${appointmentSubquery})`,
+        apptParams,
+      );
+      const { from, to } = req.query;
+      const saleParams = [shopId];
+      let saleWindow = "";
+      if (from) {
+        saleParams.push(from);
+        saleWindow += ` AND created_at >= ${localTimeOf(saleParams.length)}`;
+      }
+      if (to) {
+        saleParams.push(to);
+        saleWindow += ` AND created_at <= ${localTimeOf(saleParams.length)}`;
+      }
+      const soldRes = await client.query(
+        `SELECT transaction_type AS kind, COALESCE(SUM(amount), 0) AS total
+         FROM transactions
+         WHERE shop_id = $1 AND appointment_id IS NULL
+           AND transaction_type IN ('gift_card_sale', 'package_sale', 'membership_sale')
+           ${saleWindow} ${cashTxnClause}
+         GROUP BY transaction_type`,
+        saleParams,
+      );
+      const sold = Object.fromEntries(soldRes.rows.map((r) => [r.kind, Number(r.total) || 0]));
+      // Products sold on their own, not on a booking (sale_date has a time zone).
+      const productParams = [shopId];
+      let productWindow = "";
+      if (from) {
+        productParams.push(from);
+        productWindow += ` AND sale_date >= $${productParams.length}::timestamptz`;
+      }
+      if (to) {
+        productParams.push(to);
+        productWindow += ` AND sale_date <= $${productParams.length}::timestamptz`;
+      }
+      const ownProductsRes = await client.query(
+        `SELECT COALESCE(SUM(total_price), 0) AS total FROM product_sales
+         WHERE shop_id = $1 AND appointment_id IS NULL ${productWindow}`,
+        productParams,
+      );
+      const salesParts = {
+        services: Number(salesRes.rows[0].total) || 0,
+        booking_products: Number(productSalesRes.rows[0].total) || 0,
+        own_products: Number(ownProductsRes.rows[0].total) || 0,
+        gift_cards_sold: sold.gift_card_sale || 0,
+        packages_sold: sold.package_sale || 0,
+        memberships_sold: sold.membership_sale || 0,
+        gift_card_used: Number(usedRes.rows[0].gift_card_used) || 0,
+        package_used: Number(usedRes.rows[0].package_used) || 0,
+      };
+      const round2 = (n) => Math.round(n * 100) / 100;
+      const totalSales = round2(
+        bookingSales + salesParts.own_products
+          + salesParts.gift_cards_sold + salesParts.packages_sold + salesParts.memberships_sold
+          - salesParts.gift_card_used - salesParts.package_used,
+      );
 
       // --- B. PERIOD DEBT ---
       const periodPaymentsRes = await client.query(
@@ -134,7 +207,7 @@ module.exports = function financesRouter({
         apptParams,
       );
       const periodPaymentsApplied = Number(periodPaymentsRes.rows[0].total) || 0;
-      const totalDebt = totalSales - periodPaymentsApplied;
+      const totalDebt = bookingSales - periodPaymentsApplied;
 
       // --- C. TOTAL COLLECTED (Cash Flow for Period) ---
       const { params: flowParams, filter: flowFilter } = paymentsWindow(req);
@@ -168,6 +241,8 @@ module.exports = function financesRouter({
       // --- Final Response (All keys required by FinancialsView.vue) ---
       res.json({
         total_sales: totalSales,
+        // What the total is made of, for the tile's explanation.
+        total_sales_parts: salesParts,
         total_payments: totalPayments,
         collected_today: collectedToday,
         total_debt: totalDebt,

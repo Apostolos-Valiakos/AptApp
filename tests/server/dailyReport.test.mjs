@@ -117,7 +117,12 @@ test("the day's reconciliation: Sales − Uncollected = Expected, against Paymen
   assert.equal((await admin("GET", `/api/v1/reports/daily?date=${D}`)).data.total_collected, 79.5);
   const range = "from=2031-03-10T22:00:00.000Z&to=2031-03-11T21:59:59.999Z";
   const tiles = (await admin("GET", `/api/v1/reports/finances?${range}`)).data;
-  assert.equal(tiles.total_sales, 70);
+  // Requirement changed (Nov 2026): Analytics' total sales also counts gift
+  // cards, packages and memberships sold, so the day's €20 gift card is in it;
+  // the reconciliation keeps its sales to the bookings (70) and lists gift card
+  // sales as their own line.
+  assert.equal(tiles.total_sales, 90);
+  assert.equal(tiles.total_sales_parts.services + tiles.total_sales_parts.booking_products, 70);
   assert.equal(tiles.total_payments, 79.5, "Πληρωμές: not the evening before, not the booking kept off the receipts");
   assert.equal((await admin("GET", `/api/v1/reports/finances/details?kind=net&${range}`)).data.total, 79.5);
 });

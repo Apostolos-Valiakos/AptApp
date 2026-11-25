@@ -73,6 +73,10 @@
       <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wide mb-1">{{ t("analytics.kpi.totalSales") }}</h4>
       <Skeleton v-if="loading" height="1.75rem" width="6rem" />
       <div v-else class="text-2xl font-bold text-gray-800">{{ formatMoney(finances.total_sales) }}</div>
+      <!-- What the total is made of (only the parts that aren't zero). -->
+      <p v-if="!loading && salesParts.length" class="text-xs text-gray-600 mt-1 tabular-nums" data-testid="tile-sales-parts">
+        <span v-for="(p, i) in salesParts" :key="p.key">{{ i ? " · " : "" }}{{ t(`analytics.kpi.salesParts.${p.key}`) }} {{ p.sign }}{{ formatMoney(p.amount) }}</span>
+      </p>
       <p class="text-xs text-gray-400 mt-1">
         {{ t("analytics.kpi.totalSalesNote") }} ({{ formatDate(filters.from) }} – {{ formatDate(filters.to) }})
       </p>
@@ -149,6 +153,22 @@ import { useFinancialsPage } from "./context";
 const {
   loading, filters, finances, analytics, openDetails, formatDate, t,
 } = useFinancialsPage();
+
+// Total sales, part by part: what the bookings cost, products sold on their
+// own, gift cards / packages / memberships sold, less what gift cards and
+// package visits paid on the bookings (counted when sold instead).
+const salesParts = computed(() => {
+  const p = (finances.value as any)?.total_sales_parts;
+  if (!p) return [];
+  return [
+    { key: "services", amount: p.services, sign: "" },
+    { key: "products", amount: Number(p.booking_products || 0) + Number(p.own_products || 0), sign: "+" },
+    { key: "giftCards", amount: p.gift_cards_sold, sign: "+" },
+    { key: "packages", amount: p.packages_sold, sign: "+" },
+    { key: "memberships", amount: p.memberships_sold, sign: "+" },
+    { key: "usedBefore", amount: Number(p.gift_card_used || 0) + Number(p.package_used || 0), sign: "−" },
+  ].filter((x) => Number(x.amount) > 0.004);
+});
 
 // Both dates of the period filter on today ("Σήμερα" sets them so).
 const periodIsToday = computed(() => {

@@ -35,6 +35,55 @@ module.exports = function overviewRouter({
     res.json(rows);
   }));
   // --- REPORT ENDPOINTS (ALL FILTERED BY SHOP_ID AND VISIBILITY) ---
+  const TZ = process.env.TZ || "Europe/Athens";
+  // The service rows the staff performance table counts: in the period, not
+  // cancelled or a no-show, not a time block, and not hidden by the cash/card
+  // filters. The table and its per-staff breakdown both use this, so the
+  // breakdown always adds up to the table's numbers.
+  const staffRowsFrom = (excludeCash, excludeCard, joins = "") => `
+         FROM appointment_services aps
+         JOIN staff st ON aps.staff_id = st.id
+         LEFT JOIN services s ON aps.service_id = s.id
+         JOIN appointments a ON aps.appointment_id = a.id
+         ${joins}
+         WHERE st.shop_id = $1
+         AND aps.start_time >= $2 AND aps.start_time <= $3
+         AND a.status NOT IN ('cancelled', 'no-show', 'no_show')
+         AND NOT COALESCE(a.is_block, false)
+         ${buildRevenueExclusionClause(excludeCash, excludeCard, "a")}
+         ${buildServiceExclusionClause(excludeCash, excludeCard)}`;
+
+  // One staff member's row of the staff performance table, line by line:
+  // each service counted, with its minutes and the price it adds to the
+  // revenue, so a total that looks wrong can be traced to the lines behind it.
+  router.get("/reports/staff-performance/:staffId", authenticateToken, requireAnalyticsAccess, asyncHandler(async (req, res) => {
+    const { excludeCash, excludeCard } = req.query;
+    const staffId = String(req.params.staffId || "");
+    if (!/^[0-9a-f-]{36}$/i.test(staffId)) return res.status(400).json({ error: "Invalid staff id" });
+    const { start: startDate, end: endDate } = analyticsWindow(req);
+    const { rows } = await pool.query(
+      `SELECT aps.id, aps.appointment_id, aps.start_time,
+              to_char(aps.start_time AT TIME ZONE '${TZ}', 'YYYY-MM-DD') AS day,
+              COALESCE(aps.duration_override, s.duration_minutes)::int AS minutes,
+              (${shownPriceSql(excludeCash, excludeCard)})::float AS revenue,
+              COALESCE(aps.price_override, s.price, 0)::float AS charged,
+              s.name AS service, aps.variation_name, cs.name AS combo_name,
+              -- The line of a combination itself (not one of its parts).
+              EXISTS (SELECT 1 FROM service_combo_components scc WHERE scc.service_id = aps.service_id) AS is_combo_line,
+              a.status, a.payment_status,
+              NULLIF(TRIM(CONCAT_WS(' ', cl.last_name, cl.first_name)), '') AS client
+       ${staffRowsFrom(
+         excludeCash,
+         excludeCard,
+         "LEFT JOIN services cs ON cs.id = aps.combo_service_id LEFT JOIN clients cl ON cl.id = a.client_id",
+       )}
+       AND st.id = $4
+       ORDER BY aps.start_time, aps.id`,
+      [req.shopId, startDate, endDate, staffId],
+    );
+    res.json(rows);
+  }));
+
   router.get("/reports/analytics", authenticateToken, requireAnalyticsAccess, asyncHandler(async (req, res) => {
     const { excludeCash, excludeCard } = req.query;
     // Default to last 30 days if no dates provided
@@ -84,24 +133,15 @@ module.exports = function overviewRouter({
       // no-show appointments and time blocks are left out, so every column
       // (and the average) counts the same appointments.
       const utilRes = await client.query(
-        `SELECT st.name,
+        `SELECT st.id, st.name,
            SUM(COALESCE(aps.duration_override, s.duration_minutes))/60.0 as hours_booked,
            COUNT(aps.id) as appt_count,
            SUM(${shownPriceSql(excludeCash, excludeCard)}) as total_revenue,
-           COUNT(DISTINCT (aps.start_time AT TIME ZONE '${process.env.TZ || "Europe/Athens"}')::date) as days_worked,
+           COUNT(DISTINCT (aps.start_time AT TIME ZONE '${TZ}')::date) as days_worked,
            ROUND(COUNT(aps.id)::numeric
-                 / NULLIF(COUNT(DISTINCT (aps.start_time AT TIME ZONE '${process.env.TZ || "Europe/Athens"}')::date), 0), 1) as avg_per_day
-         FROM appointment_services aps
-         JOIN staff st ON aps.staff_id = st.id
-         LEFT JOIN services s ON aps.service_id = s.id
-         JOIN appointments a ON aps.appointment_id = a.id
-         WHERE st.shop_id = $1
-         AND aps.start_time >= $2 AND aps.start_time <= $3
-         AND a.status NOT IN ('cancelled', 'no-show', 'no_show')
-         AND NOT COALESCE(a.is_block, false)
-         ${buildRevenueExclusionClause(excludeCash, excludeCard, "a")}
-         ${buildServiceExclusionClause(excludeCash, excludeCard)}
-         GROUP BY st.name`,
+                 / NULLIF(COUNT(DISTINCT (aps.start_time AT TIME ZONE '${TZ}')::date), 0), 1) as avg_per_day
+         ${staffRowsFrom(excludeCash, excludeCard)}
+         GROUP BY st.id, st.name`,
         [req.shopId, startDate, endDate],
       );
 

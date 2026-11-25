@@ -72,6 +72,13 @@ describe("CP6 a combination without part prices works as before", () => {
     expect(total(lines)).toBe(40);
   });
 
+  test("parts that cover the price but not all the minutes: no stray €0 line for the combination", () => {
+    // 95 minutes booked, the parts make 90: 5 minutes left and no money left.
+    const lines = splitCombo(offer([holistic, sauna]), row({ duration_override: 95 }));
+    expect(lines.map((l) => l.service_id)).toEqual(["holistic", "sauna"]);
+    expect(lines.some((l) => l.price_override === 0)).toBe(false);
+  });
+
   test("some parts priced, others not: not a priced combination", () => {
     expect(hasPartPrices([{ ...holistic, combo_price: 28 }, sauna])).toBe(false);
     expect(splitCombo(offer([{ ...holistic, combo_price: 28 }, sauna]), row()).some((l) => l.combo_service_id)).toBe(false);
