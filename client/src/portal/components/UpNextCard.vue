@@ -23,11 +23,11 @@
       </template>
       <template v-else-if="state.kind === 'soon'">
         <router-link to="/portal/wallet/pass" class="p-button p-component"><i class="pi pi-qrcode mr-2"></i>{{ t("portal.v2.actions.pass") }}</router-link>
-        <a :href="extras.directionsUrl()" target="_blank" rel="noopener" class="p-button p-button-outlined p-component">{{ t("portal.v2.actions.directions") }}</a>
+        <a :href="extras.directionsUrl()" target="_blank" rel="noopener" @click="extras.openDirections($event)" class="p-button p-button-outlined p-component">{{ t("portal.v2.actions.directions") }}</a>
         <a v-if="extras.callUrl()" :href="extras.callUrl()" class="p-button p-button-text p-component">{{ t("portal.v2.actions.call") }}</a>
       </template>
       <template v-else-if="state.kind === 'go'">
-        <a :href="extras.directionsUrl()" target="_blank" rel="noopener" class="p-button p-component"><i class="pi pi-map-marker mr-2"></i>{{ t("portal.v2.actions.directions") }}</a>
+        <a :href="extras.directionsUrl()" target="_blank" rel="noopener" @click="extras.openDirections($event)" class="p-button p-component"><i class="pi pi-map-marker mr-2"></i>{{ t("portal.v2.actions.directions") }}</a>
         <router-link to="/portal/wallet/pass" class="p-button p-button-outlined p-component">{{ t("portal.v2.actions.pass") }}</router-link>
       </template>
       <template v-else-if="state.kind === 'done'">

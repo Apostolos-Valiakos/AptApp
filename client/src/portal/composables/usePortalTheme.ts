@@ -7,6 +7,7 @@ import { usePreset } from "@primeuix/themes";
 import { useThemeStore } from "../../stores/themes";
 import { appPreset } from "../../theme/appPreset";
 import { portalPreset } from "../theme/portalPreset";
+import { useNativeChrome } from "../native/useNativeChrome";
 
 export type Appearance = "system" | "light" | "dark";
 
@@ -53,9 +54,18 @@ export const usePortalTheme = () => {
   const themeStore = useThemeStore();
   const media = typeof window.matchMedia === "function" ? window.matchMedia("(prefers-color-scheme: dark)") : null;
 
+  const chrome = useNativeChrome();
   const isDark = () => appearance.value === "dark" || (appearance.value === "system" && !!media?.matches);
-  const applyScheme = () => document.documentElement.classList.toggle(DARK_CLASS, isDark());
-  const applyPreset = () => usePreset(portalPreset(themeStore.primaryColor));
+  // The app's status bar (or the browser's theme-color) follows the scheme and the shop's colour.
+  const applyChrome = () => chrome.applyTheme(isDark(), themeStore.primaryColor);
+  const applyScheme = () => {
+    document.documentElement.classList.toggle(DARK_CLASS, isDark());
+    applyChrome();
+  };
+  const applyPreset = () => {
+    usePreset(portalPreset(themeStore.primaryColor));
+    applyChrome();
+  };
 
   const stopColour = watch(() => themeStore.primaryColor, applyPreset);
   const stopScheme = watch(appearance, applyScheme);

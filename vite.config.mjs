@@ -72,6 +72,11 @@ export default defineConfig(({ mode, command }) => {
         resolvers: [PrimeVueAliasResolver, PrimeVueResolver()],
       }),
     ],
+    // The app's shop announcements (portal/native/usePush.ts) are on only in a
+    // build made with android/app/google-services.json in place.
+    define: isPortal
+      ? { "import.meta.env.VITE_FCM_ENABLED": JSON.stringify(String(fs.existsSync(path.resolve("android/app/google-services.json")))) }
+      : {},
     root: "client",
     server: {
       port: 5173,

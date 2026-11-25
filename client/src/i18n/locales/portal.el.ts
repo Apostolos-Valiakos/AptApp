@@ -43,6 +43,16 @@ export default {
     offline: "Δεν υπάρχει σύνδεση. Βλέπετε ό,τι φορτώθηκε τελευταία.",
   },
   calendar: { downloaded: "Το αρχείο ημερολογίου κατέβηκε", google: "Google Calendar", file: "Αρχείο .ics (Apple, Outlook)" },
+  // The Android app (portal/native/*).
+  native: {
+    reminderTitle: "Υπενθύμιση ραντεβού",
+    reminderBody: "{when} · {shop}",
+    confirm: "Επιβεβαίωση",
+    directions: "Οδηγίες",
+    remindersAsk: "Θέλετε υπενθύμιση στο κινητό πριν από κάθε ραντεβού;",
+    remindersOn: "Ενεργοποίηση υπενθυμίσεων",
+    calendarAdded: "Προστέθηκε στο ημερολόγιό σας",
+  },
   share: { copied: "Ο σύνδεσμος αντιγράφηκε", booking: "Έχω ραντεβού στο {shop}: {what}, {when}" },
   book: {
     title: "Κλείστε ραντεβού",

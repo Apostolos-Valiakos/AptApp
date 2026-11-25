@@ -42,6 +42,16 @@ export default {
     offline: "No connection. Showing what was loaded last.",
   },
   calendar: { downloaded: "Calendar file downloaded", google: "Google Calendar", file: ".ics file (Apple, Outlook)" },
+  // The Android app (portal/native/*).
+  native: {
+    reminderTitle: "Appointment reminder",
+    reminderBody: "{when} · {shop}",
+    confirm: "Confirm",
+    directions: "Directions",
+    remindersAsk: "Would you like a reminder on your phone before each appointment?",
+    remindersOn: "Turn on reminders",
+    calendarAdded: "Added to your calendar",
+  },
   share: { copied: "Link copied", booking: "I'm booked at {shop}: {what}, {when}" },
   book: {
     title: "Book",

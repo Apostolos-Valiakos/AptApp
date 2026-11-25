@@ -22,6 +22,8 @@ import { i18n, savedLocale, setLocale } from "../i18n";
 import { elDatePickerNames } from "../i18n/datePicker";
 import { portalPreset } from "./theme/portalPreset";
 import { setOutsidePortalPreset } from "./composables/usePortalTheme";
+import { useDeepLinks } from "./native/useDeepLinks";
+import { useNativeChrome } from "./native/useNativeChrome";
 
 const start = async () => {
   const app = createApp(App);
@@ -62,7 +64,15 @@ const start = async () => {
   app.directive("tooltip", Tooltip);
 
   await setLocale(savedLocale).catch(() => {});
+  // App Links to /portal/* and Android's back button.
+  useDeepLinks().install(router);
   app.mount("#app");
+
+  // The status bar in the shop's colour from the start, and the splash
+  // screen gone once the first screen is drawn.
+  const chrome = useNativeChrome();
+  chrome.applyTheme(false, themeStore.primaryColor);
+  requestAnimationFrame(() => chrome.hideSplash());
 };
 
 start();

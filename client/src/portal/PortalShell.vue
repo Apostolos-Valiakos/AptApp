@@ -104,7 +104,7 @@
 <script setup lang="ts">
 import "./theme/portal.css";
 import { computed, onMounted } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import Button from "primevue/button";
 import Dialog from "primevue/dialog";
@@ -120,6 +120,9 @@ import { usePortalInstall, setShopManifest } from "./composables/usePortalInstal
 import { useMinWidth, PORTAL_DESKTOP_WIDTH } from "./composables/useMinWidth";
 import { useAssistantStore } from "./stores/assistant";
 import { usePortalShopStore } from "./stores/shop";
+import { usePortalBookingActions } from "./composables/usePortalBookingActions";
+import { useReminders } from "./native/useReminders";
+import { usePush } from "./native/usePush";
 
 type Tab = { to: string; label: string; icon: string; raised?: boolean; also?: string[] };
 const tabs: Tab[] = [
@@ -155,7 +158,14 @@ const switchLanguage = async (lang: string) => {
   } catch {}
 };
 
+// In the Android app: a reminder's Confirm / Directions / tap, and shop
+// announcements once notifications are allowed. Nothing in a browser.
+const router = useRouter();
+const actions = usePortalBookingActions();
+useReminders().listenForActions(router, (id) => actions.confirmAttendance(id));
+
 onMounted(async () => {
+  void usePush().register(router);
   await shop.load();
   if (shop.shop?.id) setShopManifest(shop.shop.id);
 });

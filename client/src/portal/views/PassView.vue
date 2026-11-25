@@ -17,7 +17,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from "vue";
+import { computed, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import Button from "primevue/button";
@@ -26,6 +26,7 @@ import PassQr from "../components/PassQr.vue";
 import { usePortalWalletStore } from "../stores/wallet";
 import { usePortalShopStore } from "../stores/shop";
 import { useFeedback } from "../composables/useFeedback";
+import { useBrightness } from "../native/useBrightness";
 
 const { t } = useI18n();
 const router = useRouter();
@@ -36,8 +37,14 @@ const clientName = computed(() => [wallet.client?.first_name, wallet.client?.las
 
 const close = () => (window.history.length > 1 ? router.back() : router.push("/portal/wallet"));
 
+// In the app, the screen at full brightness while the pass is open, so the
+// shop's scanner reads it; back to what it was after.
+const brightness = useBrightness();
+onUnmounted(() => void brightness.restore());
+
 onMounted(() => {
   useFeedback().tick();
+  void brightness.boost();
   shop.load();
   wallet.load(auth.clientId);
 });

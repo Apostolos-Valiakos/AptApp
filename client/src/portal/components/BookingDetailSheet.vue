@@ -10,7 +10,7 @@
       <dl class="space-y-3 text-sm">
         <div class="flex gap-3"><dt class="w-6"><i class="pi pi-clock opacity-60"></i></dt><dd>{{ formatDate(booking.start_time, locale, "weekdayTime") }} – {{ clockTime(booking.end_time) }}</dd></div>
         <div v-if="staffNames(booking)" class="flex gap-3"><dt class="w-6"><i class="pi pi-user opacity-60"></i></dt><dd>{{ staffNames(booking) }}</dd></div>
-        <div v-if="shop.shop?.address" class="flex gap-3"><dt class="w-6"><i class="pi pi-map-marker opacity-60"></i></dt><dd><a :href="extras.directionsUrl()" target="_blank" rel="noopener" class="underline">{{ shop.shop.address }}</a></dd></div>
+        <div v-if="shop.shop?.address" class="flex gap-3"><dt class="w-6"><i class="pi pi-map-marker opacity-60"></i></dt><dd><a :href="extras.directionsUrl()" target="_blank" rel="noopener" @click="extras.openDirections($event)" class="underline">{{ shop.shop.address }}</a></dd></div>
         <div class="flex gap-3"><dt class="w-6"><i class="pi pi-euro opacity-60"></i></dt>
           <dd class="flex gap-3">
             <span>{{ formatMoney(booking.total) }}</span>
@@ -26,7 +26,7 @@
         <router-link v-if="changeable && booking.services.length === 1" :to="`/portal/book/reschedule/${booking.id}`" class="p-button p-button-outlined p-component justify-center" data-testid="detail-reschedule">{{ t("portal.v2.actions.reschedule") }}</router-link>
         <Button :label="t('portal.v2.actions.addToCalendar')" icon="pi pi-calendar-plus" outlined @click="extras.addToCalendar(booking)" />
         <Button :label="t('portal.v2.actions.share')" icon="pi pi-share-alt" outlined @click="extras.share(booking)" />
-        <a :href="extras.directionsUrl()" target="_blank" rel="noopener" class="p-button p-button-outlined p-component justify-center">{{ t("portal.v2.actions.directions") }}</a>
+        <a :href="extras.directionsUrl()" target="_blank" rel="noopener" @click="extras.openDirections($event)" class="p-button p-button-outlined p-component justify-center">{{ t("portal.v2.actions.directions") }}</a>
         <a v-if="extras.callUrl()" :href="extras.callUrl()" class="p-button p-button-outlined p-component justify-center">{{ t("portal.v2.actions.call") }}</a>
         <Button v-if="changeable" :label="t('portal.v2.actions.cancel')" severity="danger" text class="col-span-2" :loading="working === 'cancel'" data-testid="detail-cancel" @click="cancel" />
         <!-- Inside the shop's notice period only the shop can change it. -->

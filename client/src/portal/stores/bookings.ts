@@ -3,6 +3,7 @@
 // assistant changes one ("appointments-changed").
 import { defineStore } from "pinia";
 import { api } from "../../api/http";
+import { useReminders } from "../native/useReminders";
 
 export type PortalService = {
   service_id: string;
@@ -90,6 +91,8 @@ export const usePortalBookingsStore = defineStore("portalBookings", {
         this.list = await api.get<PortalBooking[]>("/api/v1/portal/appointments");
         this.failed = false;
         writeCache(this.list);
+        // In the app, the phone's own reminders follow the fresh list (nothing on the web).
+        void useReminders().syncAll(this.upcoming);
       } catch {
         // Keeps what's shown (the kept copy at first), marked as possibly old.
         this.failed = true;
