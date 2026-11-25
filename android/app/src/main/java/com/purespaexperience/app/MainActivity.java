@@ -1,4 +1,4 @@
-package com.interventio.app;
+package com.purespaexperience.app;
 
 import com.getcapacitor.BridgeActivity;
 

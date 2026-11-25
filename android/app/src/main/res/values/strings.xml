@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Interventio Booking</string>
-    <string name="title_activity_main">Interventio Booking</string>
-    <string name="package_name">com.interventio.app</string>
-    <string name="custom_url_scheme">com.interventio.app</string>
+    <string name="app_name">Pure Spa Experience</string>
+    <string name="title_activity_main">Pure Spa Experience</string>
+    <string name="package_name">com.purespaexperience.app</string>
+    <string name="custom_url_scheme">com.purespaexperience.app</string>
 </resources>
