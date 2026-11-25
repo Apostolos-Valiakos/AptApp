@@ -156,6 +156,8 @@ export const useBookingLoad = (state: BookingState, later: Later) => {
           variation_name: resolvedVariationName || null,
           combo_service_id: s.combo_service_id || null,
           persons: personsOf(s),
+          // This service's own note, for its staff member (shop only).
+          notes: s.notes || "",
           service_archived: !!s.service_archived,
           _paidWith: s.paid_with || null,
           _hidden: s.hidden || null,
@@ -225,6 +227,7 @@ export const useBookingLoad = (state: BookingState, later: Later) => {
         s.price_override,
         s.variation_name || null,
         s.persons || 1,
+        (s.notes || "").trim(),
       ]),
       products: productsList.value,
       discount: discount.value,

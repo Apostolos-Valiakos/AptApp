@@ -180,8 +180,28 @@
       :header="editingService?.id ? t('services.dialog.editService') : t('services.dialog.newService')"
       modal
       class="w-full max-w-2xl"
+      :style="{ maxHeight: '96dvh' }"
     >
-      <div class="space-y-5 mt-4">
+      <!-- The form in parts: only one shows at a time; all stay filled in, and
+           Save works from any of them. -->
+      <div class="flex gap-1 border-b border-gray-200 mb-4 overflow-x-auto" role="tablist">
+        <button
+          v-for="tab in FORM_TABS"
+          :key="tab"
+          type="button"
+          role="tab"
+          :aria-selected="formTab === tab"
+          :aria-controls="`service-tab-${tab}`"
+          class="relative px-3 py-2 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition-colors"
+          :class="formTab === tab ? 'border-[var(--p-primary-color)] text-[var(--p-primary-color)]' : 'border-transparent text-gray-500 hover:text-gray-800'"
+          :data-testid="`service-tab-${tab}`"
+          @click="formTab = tab"
+        >
+          {{ t(`services.dialog.tabs.${tab}`) }}
+          <span v-if="tab === 'basic' && basicMissing" class="absolute top-1.5 -right-0.5 w-2 h-2 rounded-full bg-red-500" aria-hidden="true"></span>
+        </button>
+      </div>
+      <div v-show="formTab === 'basic'" role="tabpanel" :id="`service-tab-basic`" data-testid="service-tab-panel-basic">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('services.dialog.serviceName') }}</label>
@@ -227,23 +247,6 @@
             <p v-if="comboPriced" class="text-xs text-gray-400 mt-1">{{ t('services.dialog.comboPriceFromParts') }}</p>
           </div>
 
-          <!-- A redemption is booked at €0; for the staff bonus it counts as another service. -->
-          <div v-if="isRedemption" class="md:col-span-2" data-testid="service-bonus-link">
-            <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('services.dialog.bonusService') }}</label>
-            <Dropdown
-              v-model="editingService.bonus_service_id"
-              :options="bonusServiceOptions"
-              optionLabel="label"
-              optionValue="id"
-              showClear
-              filter
-              :placeholder="t('services.dialog.bonusServicePlaceholder')"
-              class="w-full"
-              data-testid="service-bonus-service"
-            />
-            <p class="text-xs text-gray-400 mt-1">{{ t('services.dialog.bonusServiceNote') }}</p>
-          </div>
-
           <!-- Color picker — full width with light gray background -->
           <div class="md:col-span-2 p-4 bg-gray-50 rounded-xl border border-gray-200">
             <label class="block text-sm font-medium text-gray-700 mb-3">{{ t('services.dialog.serviceColor') }}</label>
@@ -278,49 +281,10 @@
             </label>
           </div>
 
-          <!-- Default staff for this service (used when this service appears as a combo component block) -->
-          <div class="md:col-span-2">
-            <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('services.dialog.defaultStaff') }}</label>
-            <Dropdown
-              v-model="editingService.default_staff_id"
-              :options="staffList"
-              optionLabel="name"
-              optionValue="id"
-              showClear
-              filter
-              :placeholder="t('services.dialog.defaultStaffPlaceholder')"
-              class="w-full"
-            />
-            <p class="text-xs text-gray-400 mt-1">{{ t('services.dialog.defaultStaffNote') }}</p>
-          </div>
-
-          <!-- Staff eligibility -->
-          <div class="md:col-span-2 p-4 bg-gray-50 rounded-xl border border-gray-200">
-            <div class="flex items-center justify-between mb-3 gap-3">
-              <div>
-                <span class="block text-sm font-medium text-gray-700">{{ t('services.dialog.staffEligibility') }}</span>
-                <span class="block text-xs text-gray-500 mt-0.5">{{ t('services.dialog.staffEligibilityNote') }}</span>
-              </div>
-              <button
-                type="button"
-                class="text-xs font-medium text-[var(--p-primary-600)] hover:underline whitespace-nowrap"
-                @click="toggleAllStaff"
-              >
-                {{ allStaffChecked ? t('services.dialog.deselectAllStaff') : t('services.dialog.selectAllStaff') }}
-              </button>
-            </div>
-            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              <label
-                v-for="staff in staffList"
-                :key="staff.id"
-                class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer"
-              >
-                <Checkbox v-model="editingService.staff_ids" :value="staff.id" />
-                {{ staff.name }}
-              </label>
-            </div>
-          </div>
-
+        </div>
+      </div>
+      <div v-show="formTab === 'variations'" role="tabpanel" :id="`service-tab-variations`" data-testid="service-tab-panel-variations">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
           <!-- Combination of services -->
           <div class="md:col-span-2 p-4 bg-gray-50 rounded-xl border border-gray-200">
             <div class="flex items-start gap-3">
@@ -415,6 +379,104 @@
               />
             </div>
           </div>
+        </div>
+      </div>
+      <div v-show="formTab === 'staff'" role="tabpanel" :id="`service-tab-staff`" data-testid="service-tab-panel-staff">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <!-- Default staff for this service (used when this service appears as a combo component block) -->
+          <div class="md:col-span-2">
+            <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('services.dialog.defaultStaff') }}</label>
+            <Dropdown
+              v-model="editingService.default_staff_id"
+              :options="staffList"
+              optionLabel="name"
+              optionValue="id"
+              showClear
+              filter
+              :placeholder="t('services.dialog.defaultStaffPlaceholder')"
+              class="w-full"
+            />
+            <p class="text-xs text-gray-400 mt-1">{{ t('services.dialog.defaultStaffNote') }}</p>
+          </div>
+
+          <!-- Staff eligibility -->
+          <div class="md:col-span-2 p-4 bg-gray-50 rounded-xl border border-gray-200">
+            <div class="flex items-center justify-between mb-3 gap-3">
+              <div>
+                <span class="block text-sm font-medium text-gray-700">{{ t('services.dialog.staffEligibility') }}</span>
+                <span class="block text-xs text-gray-500 mt-0.5">{{ t('services.dialog.staffEligibilityNote') }}</span>
+              </div>
+              <button
+                type="button"
+                class="text-xs font-medium text-[var(--p-primary-600)] hover:underline whitespace-nowrap"
+                @click="toggleAllStaff"
+              >
+                {{ allStaffChecked ? t('services.dialog.deselectAllStaff') : t('services.dialog.selectAllStaff') }}
+              </button>
+            </div>
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              <label
+                v-for="staff in staffList"
+                :key="staff.id"
+                class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer"
+              >
+                <Checkbox v-model="editingService.staff_ids" :value="staff.id" />
+                {{ staff.name }}
+              </label>
+            </div>
+          </div>
+
+        </div>
+      </div>
+      <div v-show="formTab === 'bonus'" role="tabpanel" :id="`service-tab-bonus`" data-testid="service-tab-panel-bonus">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <!-- For the staff bonus: a redemption or a package's sessions count as
+               another service; any service can earn a fixed amount instead. -->
+          <div class="md:col-span-2" data-testid="service-bonus-link">
+            <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('services.dialog.bonusService') }}</label>
+            <Dropdown
+              v-model="editingService.bonus_service_id"
+              :options="bonusServiceOptions"
+              optionLabel="label"
+              optionValue="id"
+              showClear
+              filter
+              :placeholder="t(isRedemption ? 'services.dialog.bonusServicePlaceholder' : 'services.dialog.bonusServicePackagePlaceholder')"
+              class="w-full"
+              data-testid="service-bonus-service"
+            />
+            <p class="text-xs text-gray-400 mt-1">{{ t(isRedemption ? 'services.dialog.bonusServiceNote' : 'services.dialog.bonusServicePackageNote') }}</p>
+          </div>
+          <div class="md:col-span-2">
+            <label class="block text-sm font-medium text-gray-700 mb-1" for="service-bonus-fixed">{{ t('services.dialog.bonusFixed') }}</label>
+            <InputNumber
+              v-model="editingService.bonus_fixed"
+              inputId="service-bonus-fixed"
+              mode="currency"
+              currency="EUR"
+              locale="el-GR"
+              :min="0"
+              :max="1000"
+              :placeholder="t('services.dialog.bonusFixedPlaceholder')"
+              class="w-full"
+              data-testid="service-bonus-fixed"
+            />
+            <p class="text-xs text-gray-400 mt-1">{{ t('services.dialog.bonusFixedNote') }}</p>
+          </div>
+          <div class="md:col-span-2">
+            <label class="block text-sm font-medium text-gray-700 mb-1" for="service-bonus-minutes">{{ t('services.dialog.bonusMinutes') }}</label>
+            <InputNumber
+              v-model="editingService.bonus_minutes"
+              inputId="service-bonus-minutes"
+              :min="1"
+              :max="1440"
+              :placeholder="t('services.dialog.bonusMinutesPlaceholder')"
+              class="w-full"
+              data-testid="service-bonus-minutes"
+            />
+            <p class="text-xs text-gray-400 mt-1">{{ t('services.dialog.bonusMinutesNote') }}</p>
+          </div>
+
         </div>
       </div>
 
@@ -747,8 +809,16 @@ const saveOrder = async (url: string, order: any[]) => {
 const onCategoryDragEnd = () => saveOrder("/api/v1/service-categories/reorder", groupedServices.value.map((g) => g.label));
 const onServiceDragEnd = (group: { items: any[] }) => saveOrder("/api/v1/services/reorder", group.items.map((s) => s.id));
 
+// The service form's tabs; it opens on the first.
+const FORM_TABS = ["basic", "variations", "staff", "bonus"] as const;
+const formTab = ref<(typeof FORM_TABS)[number]>("basic");
+// The required fields (name, category) are on the first tab: a red dot there
+// while they're empty, after a save was tried.
+const triedSave = ref(false);
+const basicMissing = computed(() => triedSave.value && (!editingService.value.name || !editingService.value.category));
+
 const isRedemption = computed(() => String(editingService.value.category || "").trim() === REDEMPTION_CATEGORY);
-// What a redemption can count as: the shop's other services, not redemptions themselves.
+// What a redemption or a package can count as: the shop's other services, not redemptions.
 const bonusServiceOptions = computed(() =>
   services.value
     .filter((s: any) => s.id !== editingService.value.id && String(s.category || "").trim() !== REDEMPTION_CATEGORY && (s.is_active !== false || s.id === editingService.value.bonus_service_id))
@@ -765,6 +835,8 @@ const openNew = () => {
     bookable_online: false,
     default_staff_id: null,
     bonus_service_id: null,
+    bonus_fixed: null,
+    bonus_minutes: null,
     combo_component_ids: [],
     combo_part_prices: {},
     variations: [],
@@ -772,12 +844,16 @@ const openNew = () => {
   };
   isCombo.value = false;
   hasVariations.value = false;
+  formTab.value = "basic";
+  triedSave.value = false;
   dialogVisible.value = true;
 };
 
 const editService = (service: any) => {
   editingService.value = {
     ...service,
+    bonus_fixed: service.bonus_fixed == null ? null : Number(service.bonus_fixed),
+    bonus_minutes: service.bonus_minutes == null ? null : Number(service.bonus_minutes),
     combo_component_ids: (service.combo_components || []).map((c: any) => c.id),
     combo_part_prices: Object.fromEntries(
       (service.combo_components || []).map((c: any) => [c.id, c.combo_price == null ? null : Number(c.combo_price)]),
@@ -787,11 +863,15 @@ const editService = (service: any) => {
   };
   isCombo.value = (service.combo_components || []).length > 0;
   hasVariations.value = (service.variations || []).length > 0;
+  formTab.value = "basic";
+  triedSave.value = false;
   dialogVisible.value = true;
 };
 
 const saveService = async () => {
+  triedSave.value = true;
   if (!editingService.value.name || !editingService.value.category) {
+    formTab.value = "basic";
     toast.add({
       severity: "warn",
       summary: t('common.required'),

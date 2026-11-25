@@ -183,8 +183,28 @@
     "
     modal
     class="w-full max-w-2xl"
+    :style="{ maxHeight: '96dvh' }"
   >
-    <div class="space-y-5 mt-2">
+    <!-- The form in parts: only one shows at a time; all stay filled in, and
+         Save works from any of them. -->
+    <div class="flex gap-1 border-b border-gray-200 mb-4 overflow-x-auto" role="tablist">
+      <button
+        v-for="tab in staffTabs"
+        :key="tab"
+        type="button"
+        role="tab"
+        :aria-selected="staffTab === tab"
+        :aria-controls="`staff-tab-${tab}`"
+        class="relative px-3 py-2 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition-colors"
+        :class="staffTab === tab ? 'border-[var(--p-primary-color)] text-[var(--p-primary-color)]' : 'border-transparent text-gray-500 hover:text-gray-800'"
+        :data-testid="`staff-tab-${tab}`"
+        @click="staffTab = tab"
+      >
+        {{ t(`staff.dialog.tabs.${tab}`) }}
+        <span v-if="tab === 'services' && editingStaff.service_ids?.length" class="ml-1 text-xs text-gray-400">{{ editingStaff.service_ids.length }}</span>
+      </button>
+    </div>
+    <div v-show="staffTab === 'details'" id="staff-tab-details" role="tabpanel" data-testid="staff-tab-panel-details">
       <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">{{
@@ -243,6 +263,21 @@
             {{ t("staff.dialog.capacityNote") }}
           </div>
         </div>
+        <div class="md:col-span-2 flex items-center gap-3">
+          <ToggleSwitch v-model="editingStaff.visible_in_calendar" />
+          <div>
+            <div class="text-sm font-medium text-gray-700">
+              {{ t("staff.dialog.visibleInCalendar") }}
+            </div>
+            <div class="text-xs text-gray-400">
+              {{ t("staff.dialog.visibleInCalendarNote") }}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div v-show="staffTab === 'services'" id="staff-tab-services" role="tabpanel" data-testid="staff-tab-panel-services">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
         <div class="md:col-span-2">
           <label class="block text-sm font-medium text-gray-700 mb-1">{{
             t("staff.dialog.servicesProvided")
@@ -263,19 +298,10 @@
             :services="services"
           />
         </div>
-        <div class="md:col-span-2 flex items-center gap-3">
-          <ToggleSwitch v-model="editingStaff.visible_in_calendar" />
-          <div>
-            <div class="text-sm font-medium text-gray-700">
-              {{ t("staff.dialog.visibleInCalendar") }}
-            </div>
-            <div class="text-xs text-gray-400">
-              {{ t("staff.dialog.visibleInCalendarNote") }}
-            </div>
-          </div>
-        </div>
       </div>
-      <!-- Admins only. Rules added here are saved by the dialog's Save, after the staff member. -->
+    </div>
+    <!-- Admins only. Rules added here are saved by the dialog's Save, after the staff member. -->
+    <div v-if="isAdmin" v-show="staffTab === 'bonus'" id="staff-tab-bonus" role="tabpanel" data-testid="staff-tab-panel-bonus">
       <template v-if="isAdmin">
         <StaffBonusSettings ref="bonusSettings" :key="`bonus-${formKey}`" :staffId="editingStaff.id" />
       </template>
@@ -577,6 +603,9 @@ const isAdmin = computed(() => useAuthStore().isAnalyticsAllowed);
 // A fresh rules form each time the dialog opens; a new staff member getting
 // their id on Save keeps it, with any rules still to send.
 const formKey = ref(0);
+// The staff form's tabs (the bonus one for admins only); it opens on the first.
+const staffTab = ref<"details" | "services" | "bonus">("details");
+const staffTabs = computed(() => (isAdmin.value ? ["details", "services", "bonus"] : ["details", "services"]) as ("details" | "services" | "bonus")[]);
 const bonusSettings = ref<InstanceType<typeof StaffBonusSettings> | null>(null);
 
 // ... (imports remain same) ...
@@ -642,6 +671,7 @@ const openNew = () => {
     capacity: 1,
   };
   formKey.value++;
+  staffTab.value = "details";
   showDialog.value = true;
 };
 
@@ -655,6 +685,7 @@ const editStaff = (data: any) => {
     capacity: data.capacity || 1,
   };
   formKey.value++;
+  staffTab.value = "details";
   showDialog.value = true;
 };
 
@@ -662,6 +693,7 @@ const saveStaff = async () => {
   // A bonus rule changed but left incomplete: nothing is saved until it's
   // finished or put back (its section is shown).
   if (bonusSettings.value?.showIncomplete()) {
+    staffTab.value = "bonus"; // where the unfinished change is
     notify.error(t("bonus.rules.incomplete"));
     return;
   }

@@ -118,6 +118,25 @@ const openStaffForm = async (role: "admin" | "frontdesk", routes: Record<string,
   return server;
 };
 
+describe("SF2 the staff form in tabs", () => {
+  const shown = (id: string) => byTestId(id)!.style.display !== "none";
+  test("opens on the details; the bonus has its own tab, for admins only", async () => {
+    await openStaffForm("admin");
+    expect(shown("staff-tab-panel-details")).toBe(true);
+    expect(shown("staff-tab-panel-bonus")).toBe(false);
+    byTestId("staff-tab-bonus")!.click();
+    await settle();
+    expect(shown("staff-tab-panel-bonus")).toBe(true);
+    expect(shown("staff-tab-panel-details")).toBe(false);
+  });
+
+  test("front desk has no bonus tab", async () => {
+    await openStaffForm("frontdesk");
+    expect(byTestId("staff-tab-bonus")).toBeNull();
+    expect(byTestId("staff-tab-services")).not.toBeNull();
+  });
+});
+
 describe("BN3 who sets the bonus rule", () => {
   test("admins see it in the staff form, with today's rule", async () => {
     await openStaffForm("admin");
@@ -421,7 +440,7 @@ describe("BN9 a redemption counts as the service it stands for", () => {
     return server;
   };
 
-  test("in the service form, a redemption picks the service it counts as; other services don't have the field", async () => {
+  test("in the service form, a redemption picks the service it counts as", async () => {
     const server = await openService(
       { id: "red1", name: "ΕΞΑΓΥΡΩΣΗ HOLISTIC", category: "Εξαργύρωση", price: 0, duration_minutes: 60, is_active: true, bonus_service_id: null },
       { "PUT /api/v1/services/red1": { body: { success: true } } },
@@ -440,9 +459,18 @@ describe("BN9 a redemption counts as the service it stands for", () => {
     expect(server.called("PUT", "/api/v1/services/red1")[0]?.body.bonus_service_id).toBe("reg");
   });
 
-  test("a regular service has no such field", async () => {
-    await openService({ id: "s1", name: "AAA MASSAGE", category: "Hot", price: 30, duration_minutes: 60, is_active: true });
-    expect(byTestId("service-bonus-link")).toBeNull();
+  // Requirement changed (Nov 2026): a package's sessions count as another
+  // service too, and any service can earn a fixed bonus instead of the percent.
+  test("any service can count as another one and can have a fixed bonus, sent when saved", async () => {
+    const server = await openService(
+      { id: "s1", name: "AAA MASSAGE", category: "Hot", price: 30, duration_minutes: 60, is_active: true, bonus_fixed: "2.20" },
+      { "PUT /api/v1/services/s1": { body: { success: true } } },
+    );
+    expect(byTestId("service-bonus-link")).not.toBeNull();
+    expect(byTestId("service-bonus-fixed")).not.toBeNull();
+    [...document.querySelectorAll<HTMLElement>(".p-dialog-footer button")].find((b) => b.textContent?.includes(el.common.save))!.click();
+    await settle();
+    expect(server.called("PUT", "/api/v1/services/s1")[0]?.body.bonus_fixed).toBe(2.2);
   });
 });
 
@@ -677,5 +705,84 @@ describe("BN14 a change typed in but not added with + isn't lost", () => {
     await setNumber("bonus-amount", "4");
     await saveStaffForm();
     expect(server.called("POST", "/api/v1/staff/st1/bonus-rules")[0]?.body).toMatchObject({ kind: "per_hour", amount_per_hour: 4 });
+  });
+});
+
+describe("BN15 laser by the hour, a deduction per service and a fixed amount up to 30′ past, on the hours rule", () => {
+  test("from the shop's default rule (€2.20 up to 30′ past, nothing else), the three amounts are sent", async () => {
+    const server = await openStaffForm("admin", {
+      // What the server answers for a staff member without a rule (domain/bonus.js DEFAULT_RULE).
+      "GET /api/v1/staff/st1/bonus-rules": {
+        body: {
+          rules: [],
+          current: { enabled: true, kind: "percent", threshold_minutes: 300, percent: 10, amount_per_hour: 0, laser_amount_per_hour: null, deduction_per_service: 0, last_service_fixed: 2.2 },
+          today: "2026-11-21",
+        },
+      },
+      "PUT /api/v1/staff/st1": { body: { success: true } },
+      "POST /api/v1/staff/st1/bonus-rules": { status: 201, body: { rules: [] } },
+    });
+    await setNumber("bonus-laser", "4");
+    await setNumber("bonus-deduction", "15");
+    await press("bonus-add");
+    expect(byTestId("bonus-rule")!.textContent).toContain("laser");
+    await saveStaffForm();
+    expect(server.called("POST", "/api/v1/staff/st1/bonus-rules")[0]?.body).toMatchObject({
+      kind: "percent",
+      laser_amount_per_hour: 4,
+      deduction_per_service: 15,
+      last_service_fixed: 2.2,
+    });
+  });
+
+  test("today's rule is filled in, and described with its extras", async () => {
+    await openStaffForm("admin", {
+      "GET /api/v1/staff/st1/bonus-rules": {
+        body: {
+          rules: [],
+          current: { enabled: true, kind: "percent", threshold_minutes: 240, percent: 10, amount_per_hour: 0, laser_amount_per_hour: 4, deduction_per_service: 15, last_service_fixed: 2.2 },
+          today: "2026-11-21",
+        },
+      },
+    });
+    const today = byTestId("bonus-current")!.textContent!;
+    expect(today).toContain("laser 4 €/ώρα");
+    expect(today).toContain("τιμή − 15 €");
+    expect(today).toContain("2,20 €");
+    expect((byTestId("bonus-laser")!.querySelector("input") as HTMLInputElement).value).toContain("4,00");
+  });
+
+  test("the extras are for the percent kind only", async () => {
+    await openStaffForm("admin");
+    expect(byTestId("bonus-extras")).not.toBeNull();
+    [...byTestId("bonus-kind")!.querySelectorAll<HTMLElement>("button")].find((b) => b.textContent?.includes(el.bonus.rules.kinds.per_hour))!.click();
+    await settle();
+    expect(byTestId("bonus-extras")).toBeNull();
+  });
+});
+
+describe("BN16 the report says how each service past the threshold was paid", () => {
+  test("laser by the hour, the fixed amount up to 30′ past, and the percent after the deduction", async () => {
+    saveLogin({ id: "u1", role: "admin", shop_id: "s1" });
+    const services = [
+      { id: 1, start_time: "2026-11-10T12:00:00+02:00", service_name: "PURE FACIAL", client_name: null, price: 45, minutes: 120, extra_minutes: 60, bonus: 1.5, how: "percent", base: 30, deduction: 15 },
+      { id: 2, start_time: "2026-11-10T14:00:00+02:00", service_name: "Laser 755nm - Πόδια", client_name: null, price: 70, minutes: 60, extra_minutes: 60, bonus: 4, how: "laser", base: 55, deduction: 15 },
+      { id: 3, start_time: "2026-11-10T15:00:00+02:00", service_name: "PURE FACIAL", client_name: null, price: 45, minutes: 30, extra_minutes: 30, bonus: 2.2, how: "last", base: 30, deduction: 15 },
+    ];
+    const day = { date: "2026-11-10", kind: "percent", threshold_minutes: 240, percent: 10, amount_per_hour: 0, laser_amount_per_hour: 4, deduction_per_service: 15, last_service_fixed: 2.2, minutes: 390, extra_minutes: 150, bonus: 7.7, services };
+    fakeServer({
+      "GET /api/v1/reports/bonus": {
+        body: { from: "2026-11-01", to: "2026-11-30", total: 7.7, review_months: [], staff: [{ staff_id: "evi", staff_name: "ΕΥΗ", days_worked: 1, minutes: 390, extra_minutes: 150, hours_bonus: 7.7, products_bonus: 0, target_bonus: 0, reviews_bonus: 0, bonus: 7.7, days: [day], products: [], targets: [], reviews: [] }] },
+      },
+    });
+    mountScreen(BonusReportView);
+    await settle();
+    (document.querySelector('[data-testid="bonus-table"] .p-datatable-row-toggle-button') as HTMLElement).click();
+    await settle();
+    const how = [...document.querySelectorAll('[data-testid="bonus-how"]')].map((e) => e.textContent!.trim());
+    expect(how[0]).toContain("30,00");
+    expect(how[1]).toContain("laser");
+    expect(how[2]).toContain(el.bonus.howLast);
+    expect(byTestId("bonus-days-evi")!.textContent).toContain("laser 4 €/ώρα");
   });
 });

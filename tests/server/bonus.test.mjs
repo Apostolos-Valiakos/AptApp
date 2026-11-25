@@ -4,6 +4,7 @@
 // Run: node --test tests/server/bonus.test.mjs
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { SHOP, api, createTestDb, dropTestDb, sql, startServer, token } from "../offline/helpers.mjs";
 
 const DB = "bonus_test";
@@ -14,7 +15,7 @@ let frontdesk;
 const ids = {};
 
 // A booking with one service for the test staff member, in shop time.
-const book = (local, minutes, price, status = "completed", staffId = ids.staff) => {
+const book = (local, minutes, price, status = "completed", staffId = ids.staff, serviceId = ids.service) => {
   const appt = sql(
     DB,
     `INSERT INTO appointments (client_id, status, shop_id) VALUES ('${ids.client}', '${status}', '${SHOP}') RETURNING id`,
@@ -22,7 +23,7 @@ const book = (local, minutes, price, status = "completed", staffId = ids.staff) 
   sql(
     DB,
     `INSERT INTO appointment_services (appointment_id, service_id, staff_id, start_time, duration_override, price_override, shop_id)
-     VALUES ('${appt}', '${ids.service}', '${staffId}', TIMESTAMP '${local}' AT TIME ZONE 'Europe/Athens', ${minutes}, ${price}, '${SHOP}')`,
+     VALUES ('${appt}', '${serviceId}', '${staffId}', TIMESTAMP '${local}' AT TIME ZONE 'Europe/Athens', ${minutes}, ${price}, '${SHOP}')`,
   );
   return appt;
 };
@@ -48,7 +49,8 @@ after(() => {
 test("after 5 hours of completed services in a day, 10% of the price of the time past them", async () => {
   book("2030-03-04 09:00", 120, 40);
   book("2030-03-04 11:00", 120, 40);
-  book("2030-03-04 13:00", 90, 45); // crosses at 5h: 30 of 90 minutes past, €1.50
+  // Requirement changed (24/11/2026): a service with 30′ or less past the threshold earns the rule's fixed €2.20.
+  book("2030-03-04 13:00", 90, 45); // crosses at 5h: 30 of 90 minutes past, €2.20 (10% would be €1.50)
   book("2030-03-04 14:30", 60, 30); // €3
   // Not completed: don't count towards the hours or the bonus.
   book("2030-03-04 15:30", 60, 100, "confirmed");
@@ -58,8 +60,8 @@ test("after 5 hours of completed services in a day, 10% of the price of the time
   const r = await report("2030-03-04", "2030-03-04");
   assert.equal(r.status, 200, JSON.stringify(r.data));
   const row = mine(r);
-  assert.deepEqual([row.days_worked, row.minutes, row.extra_minutes, row.bonus], [1, 390, 90, 4.5]);
-  assert.deepEqual(row.days[0].services.map((s) => s.bonus), [1.5, 3]);
+  assert.deepEqual([row.days_worked, row.minutes, row.extra_minutes, row.bonus], [1, 390, 90, 5.2]);
+  assert.deepEqual(row.days[0].services.map((s) => [s.how, s.bonus]), [["last", 2.2], ["percent", 3]]);
 });
 
 test("the day is the shop's day: a service late in the evening stays on that day", async () => {
@@ -295,6 +297,133 @@ test("a redemption counts at the price of the service it stands for, as it was w
   sql(DB, `UPDATE services SET price = 32 WHERE id = '${regular}'`);
 });
 
+test("a redemption counts at the redeemed variation's price, found by its booked length", async () => {
+  const serviceId = (name) => sql(DB, `SELECT id FROM services WHERE shop_id = '${SHOP}' AND trim(name) = '${name}' LIMIT 1`);
+  const redemption = serviceId("ΕΞΑΓΥΡΩΣΗ HOLISTIC");
+  const holistic = serviceId("HOLISTIC");
+  // The dev data: HOLISTIC is €32 for 1 hour, €55 for 1,5 hours.
+  assert.equal(sql(DB, `SELECT string_agg(duration_minutes || '=' || price, ',' ORDER BY duration_minutes) FROM service_variations WHERE service_id = '${holistic}'`), "60=32.00,90=55.00");
+  const staffId = sql(DB, `INSERT INTO staff (name, shop_id) VALUES ('Variation Tester', '${SHOP}') RETURNING id`).split("\n")[0];
+  // 5 hours of work first, so the services after it earn the 10% and are listed.
+  book("2030-09-03 04:00", 300, 0, "completed", staffId);
+
+  const line = (minutes) => ({ service_id: redemption, staff_id: staffId, start_time: "2030-09-03T10:00:00+03:00", duration_override: minutes, price_override: 0 });
+  const save = (method, url, minutes) =>
+    admin(method, url, { client_id: ids.client, status: "completed", save_receipt: true, allow_unavailable: true, services: [line(minutes)], products: [] });
+  const made = await save("POST", "/api/v1/appointments", 90);
+  assert.equal(made.status, 200, JSON.stringify(made.data));
+  const value = () => sql(DB, `SELECT bonus_value FROM appointment_services WHERE appointment_id = '${made.data.id}'`);
+  assert.equal(value(), "55.00", "90 minutes: the 1,5-hour variation");
+  // A new length is priced again; the same length keeps its value.
+  assert.equal((await save("PUT", `/api/v1/appointments/${made.data.id}`, 60)).status, 200);
+  assert.equal(value(), "32.00");
+  assert.equal((await save("PUT", `/api/v1/appointments/${made.data.id}`, 45)).status, 200);
+  assert.equal(value(), "32.00", "no variation of that length: the main price");
+
+  // Rows without a stored value: a redemption by its length, a variation at its own price.
+  const noValue = book("2030-09-03 12:00", 90, 0, "completed", staffId, redemption);
+  const variation = book("2030-09-03 14:00", 90, 0, "completed", staffId, holistic);
+  sql(DB, `UPDATE appointment_services SET price_override = NULL, variation_name = '1,5 ώρα' WHERE appointment_id = '${variation}'`);
+  const prices = async () =>
+    (await report("2030-09-03", "2030-09-03")).data.staff.find((x) => x.staff_id === staffId).days[0].services.map((x) => x.price).filter((x) => x > 0).sort((a, b) => a - b);
+  assert.deepEqual(await prices(), [32, 55, 55]);
+
+  // The migration prices redemptions already booked again, by their length.
+  sql(DB, `UPDATE appointment_services SET bonus_value = 32 WHERE appointment_id = '${noValue}'`);
+  sql(DB, fs.readFileSync(new URL("../../server/migrations/0025_redemption_variation_value.sql", import.meta.url), "utf8"));
+  assert.equal(sql(DB, `SELECT bonus_value FROM appointment_services WHERE appointment_id = '${noValue}'`), "55.00");
+  assert.equal(value(), "32.00", "45 minutes: no variation, unchanged");
+});
+
+test("a package's sessions, the paid one too, count as one session of the linked service; a fixed bonus pays its amount", async () => {
+  const serviceId = (name) => sql(DB, `SELECT id FROM services WHERE shop_id = '${SHOP}' AND trim(name) = '${name}' LIMIT 1`);
+  const pure = serviceId("Pure Massage");
+  const diagnostic = serviceId("ΔΙΑΓΝΩΣΤΙΚΟ ΡΑΝΤΕΒΟΥ");
+  // The migration: €2.20 for the diagnostic appointment, the dev data's package linked by name.
+  assert.equal(sql(DB, `SELECT bonus_fixed FROM services WHERE id = '${diagnostic}'`), "2.20");
+  assert.equal(sql(DB, `SELECT b.name FROM services p JOIN services b ON b.id = p.bonus_service_id WHERE trim(p.name) = '5 PURE'`), "Pure Massage");
+
+  // Any service can be linked in the service form; a fixed amount must be a sensible number.
+  const pkg = (await admin("POST", "/api/v1/services", { name: "ΠΑΚΕΤΟ 3 TEST", duration_minutes: 60, price: 90, category: "Other", bonus_service_id: pure })).data.id;
+  assert.equal(sql(DB, `SELECT bonus_service_id FROM services WHERE id = '${pkg}'`), pure);
+  const bad = await admin("PUT", `/api/v1/services/${pkg}`, { name: "ΠΑΚΕΤΟ 3 TEST", duration_minutes: 60, price: 90, category: "Other", bonus_fixed: -1 });
+  assert.equal(bad.status, 400);
+
+  const staffId = sql(DB, `INSERT INTO staff (name, shop_id) VALUES ('Package Tester', '${SHOP}') RETURNING id`).split("\n")[0];
+  book("2030-09-04 04:00", 300, 0, "completed", staffId);
+  const line = (start, price, serviceId = pkg, minutes = 60) =>
+    ({ service_id: serviceId, staff_id: staffId, start_time: `2030-09-04T${start}:00+03:00`, duration_override: minutes, price_override: price });
+  const made = await admin("POST", "/api/v1/appointments", {
+    client_id: ids.client, status: "completed", save_receipt: true, allow_unavailable: true,
+    services: [line("09:00", 90), line("10:00", 0), line("11:00", 0, diagnostic, 15)],
+  });
+  assert.equal(made.status, 200, JSON.stringify(made.data));
+  // Pure Massage's 1-hour variation is €29: the paid session and the €0 one both count as €29.
+  assert.equal(sql(DB, `SELECT string_agg(COALESCE(bonus_value::text, '-'), ',' ORDER BY start_time) FROM appointment_services WHERE appointment_id = '${made.data.id}'`), "29.00,29.00,-");
+
+  const day = (await report("2030-09-04", "2030-09-04")).data.staff.find((x) => x.staff_id === staffId).days[0];
+  const got = day.services.map((x) => [x.price, x.is_package, x.how, x.bonus]);
+  assert.deepEqual(got, [[29, true, "percent", 2.9], [29, true, "percent", 2.9], [0, false, "fixed", 2.2]]);
+
+  // Before the threshold, the fixed amount isn't earned either.
+  const early = sql(DB, `INSERT INTO staff (name, shop_id) VALUES ('Fixed Early', '${SHOP}') RETURNING id`).split("\n")[0];
+  book("2030-09-04 09:00", 15, 0, "completed", early, diagnostic);
+  assert.equal((await report("2030-09-04", "2030-09-04")).data.staff.find((x) => x.staff_id === early)?.bonus ?? 0, 0);
+
+  // The migration prices package sessions already booked.
+  const old = book("2030-09-05 10:00", 60, 0, "completed", staffId, pkg);
+  sql(DB, fs.readFileSync(new URL("../../server/migrations/0026_package_bonus_and_fixed_bonus.sql", import.meta.url), "utf8"));
+  assert.equal(sql(DB, `SELECT bonus_value FROM appointment_services WHERE appointment_id = '${old}'`), "29.00");
+});
+
+test("a service can count fewer minutes for the bonus than it's booked for (deep cleansing: 1h15 counts 1 hour)", async () => {
+  const staffId = sql(DB, `INSERT INTO staff (name, shop_id) VALUES ('Minutes Tester', '${SHOP}') RETURNING id`).split("\n")[0];
+  const cleansing = (await admin("POST", "/api/v1/services", { name: "TEST ΒΑΘΥΣ ΚΑΘΑΡΙΣΜΟΣ", duration_minutes: 75, price: 60, category: "Other", bonus_minutes: 60 })).data.id;
+  assert.equal(sql(DB, `SELECT bonus_minutes FROM services WHERE id = '${cleansing}'`), "60");
+  assert.equal((await admin("PUT", `/api/v1/services/${cleansing}`, { name: "TEST ΒΑΘΥΣ ΚΑΘΑΡΙΣΜΟΣ", duration_minutes: 75, price: 60, category: "Other", bonus_minutes: 1.5 })).status, 400);
+  // The migration set the dev data's deep cleansing services (over an hour) to 60.
+  assert.equal(sql(DB, `SELECT count(*) FROM services WHERE name ILIKE '%ΒΑΘΥΣ ΚΑΘΑΡΙΣΜ%' AND duration_minutes > 60 AND bonus_minutes IS DISTINCT FROM 60 AND id <> '${cleansing}'`), "0");
+
+  // 5 hours of work, then a cleansing booked for 75 minutes: 60 of them count, all past the threshold.
+  book("2030-09-06 04:00", 300, 0, "completed", staffId);
+  book("2030-09-06 09:00", 75, 60, "completed", staffId, cleansing);
+  const day = (await report("2030-09-06", "2030-09-06")).data.staff.find((x) => x.staff_id === staffId).days[0];
+  const line = day.services.find((x) => x.service_name === "TEST ΒΑΘΥΣ ΚΑΘΑΡΙΣΜΟΣ");
+  assert.deepEqual([day.minutes, line.minutes, line.booked_minutes, line.extra_minutes, line.bonus], [360, 60, 75, 60, 6]);
+});
+
+test("past the threshold, every two services of 30' or less earn €3.20 together (one Holistic); an odd one earns as usual", async () => {
+  const staffId = sql(DB, `INSERT INTO staff (name, shop_id) VALUES ('Pairs Tester', '${SHOP}') RETURNING id`).split("\n")[0];
+  book("2030-09-08 04:00", 300, 0, "completed", staffId); // the 5 hours
+  book("2030-09-08 09:00", 30, 25, "completed", staffId);
+  book("2030-09-08 09:30", 30, 20, "completed", staffId);
+  book("2030-09-08 10:00", 30, 18, "completed", staffId); // the odd one
+  book("2030-09-08 10:30", 60, 40, "completed", staffId);
+  const day = (await report("2030-09-08", "2030-09-08")).data.staff.find((x) => x.staff_id === staffId).days[0];
+  const got = day.services.filter((x) => x.bonus > 0).map((x) => [x.minutes, x.how, x.bonus]);
+  // The odd short one: what it would earn anyway (the €2.20 for a short service past the threshold).
+  assert.deepEqual(got, [[30, "pair", 1.6], [30, "pair", 1.6], [30, "last", 2.2], [60, "percent", 4]]);
+  assert.equal(day.bonus, 9.4);
+});
+
+test("an aesthetician's services of 30' or less earn their percent before the threshold too", async () => {
+  const staffId = sql(DB, `INSERT INTO staff (name, shop_id, specialty) VALUES ('Aesthetic Tester', '${SHOP}', 'ΑΙΣΘΗΤΙΚΟΣ') RETURNING id`).split("\n")[0];
+  await admin("POST", `/api/v1/staff/${staffId}/bonus-rules`, {
+    effective_from: "2000-01-01", enabled: true, kind: "percent", threshold_minutes: 240, percent: 10, amount_per_hour: 0, deduction_per_service: 15,
+  });
+  book("2030-09-09 10:00", 30, 35, "completed", staffId); // short: (35 − 15) × 10% = €2
+  book("2030-09-09 11:00", 60, 50, "completed", staffId); // not short, before the threshold: nothing
+  const day = (await report("2030-09-09", "2030-09-09")).data.staff.find((x) => x.staff_id === staffId).days[0];
+  assert.deepEqual(day.services.map((x) => [x.minutes, x.how, x.bonus]), [[30, "short_early", 2]]);
+  // Someone who isn't an aesthetician: nothing before the threshold.
+  const other = sql(DB, `INSERT INTO staff (name, shop_id) VALUES ('Not Aesthetic', '${SHOP}') RETURNING id`).split("\n")[0];
+  book("2030-09-09 10:00", 30, 35, "completed", other);
+  const row = (await report("2030-09-09", "2030-09-09")).data.staff.find((x) => x.staff_id === other);
+  assert.equal(row?.bonus ?? 0, 0);
+  // Not left as an aesthetician: another test checks every aesthetician has the migration's rule.
+  sql(DB, `UPDATE staff SET specialty = NULL WHERE id = '${staffId}'`);
+});
+
 test("a sales target pays the highest step reached in the month; review counts pay front desk per new review", async () => {
   const seller = sql(DB, `INSERT INTO staff (name, shop_id) VALUES ('Target Tester', '${SHOP}') RETURNING id`).split("\n")[0];
   const desk = sql(DB, `INSERT INTO staff (name, shop_id) VALUES ('Desk Tester', '${SHOP}') RETURNING id`).split("\n")[0];
@@ -336,4 +465,44 @@ test("a sales target pays the highest step reached in the month; review counts p
   assert.equal(of(desk).bonus, 21);
   const part = (await report("2031-01-15", "2031-01-31")).data.staff.find((s) => s.staff_id === seller);
   assert.equal(part.targets[0].sales, 120, "the whole month, not only the 15th on");
+});
+
+test("laser by the hour, a deduction per service and a fixed amount up to 30′ past; aestheticians set up by the migration", async () => {
+  // The migration gave every aesthetician (specialty Αισθητικός) a percent rule with laser at €4 an
+  // hour, €15 off and €2.20 up to 30′ past. Only checked when the dev data has aestheticians.
+  const aestheticianRules = sql(DB, `SELECT DISTINCT laser_amount_per_hour || ' ' || deduction_per_service || ' ' || last_service_fixed || ' ' || kind FROM staff_bonus_rules r JOIN staff st ON st.id = r.staff_id WHERE st.shop_id = '${SHOP}' AND upper(st.specialty) LIKE '%ΑΙΣΘΗΤΙΚ%'`);
+  const aestheticians = Number(sql(DB, `SELECT count(*) FROM staff WHERE shop_id = '${SHOP}' AND upper(specialty) LIKE '%ΑΙΣΘΗΤΙΚ%'`));
+  if (aestheticians) assert.equal(aestheticianRules, "4.00 15.00 2.20 percent");
+
+  const member = sql(DB, `INSERT INTO staff (name, shop_id) VALUES ('Laser Tester', '${SHOP}') RETURNING id`).split("\n")[0];
+  const service = (name, category) =>
+    sql(DB, `INSERT INTO services (name, category, duration_minutes, price, shop_id) VALUES ('${name}', '${category}', 60, 50, '${SHOP}') RETURNING id`).split("\n")[0];
+  const laser = service("Αποτρίχωση test", "Λειζερ");
+  const facial = service("Facial test", "Πρόσωπο");
+  const rule = (body) => admin("POST", `/api/v1/staff/${member}/bonus-rules`, { effective_from: "2032-01-01", enabled: true, kind: "percent", threshold_minutes: 240, percent: 10, ...body });
+  assert.equal((await rule({ laser_amount_per_hour: -1 })).status, 400);
+  const saved = await rule({ laser_amount_per_hour: 4, deduction_per_service: 15, last_service_fixed: 2.2 });
+  assert.equal(saved.status, 201, JSON.stringify(saved.data));
+  assert.deepEqual(
+    [saved.data.rules[0].laser_amount_per_hour, saved.data.rules[0].deduction_per_service, saved.data.rules[0].last_service_fixed],
+    [4, 15, 2.2],
+  );
+
+  // 3h laser, a 2h €45 facial (1h past 4h), 1h laser, then a 30-min €45 facial last.
+  book("2032-01-05 09:00", 180, 300, "completed", member, laser);
+  book("2032-01-05 12:00", 120, 45, "completed", member, facial);
+  book("2032-01-05 14:00", 60, 70, "completed", member, laser);
+  book("2032-01-05 15:00", 30, 45, "completed", member, facial);
+  const day = (await report("2032-01-05", "2032-01-05")).data.staff.find((s) => s.staff_id === member).days[0];
+  assert.deepEqual(day.services.map((s) => [s.how, s.extra_minutes, s.bonus]), [
+    ["percent", 60, 1.5],
+    ["laser", 60, 4],
+    ["last", 30, 2.2],
+  ]);
+  assert.equal(day.bonus, 7.7);
+
+  // Empty amounts switch them off: everything by percent of the full price.
+  await rule({ laser_amount_per_hour: null, deduction_per_service: 0, last_service_fixed: null });
+  const plain = (await report("2032-01-05", "2032-01-05")).data.staff.find((s) => s.staff_id === member).days[0];
+  assert.deepEqual(plain.services.map((s) => s.bonus), [2.25, 7, 4.5]);
 });

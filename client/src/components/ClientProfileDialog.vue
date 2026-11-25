@@ -206,13 +206,23 @@
           >
             {{ t('clientProfile.history.empty') }}
           </div>
+          <!-- Each visit opens its booking, on top of this profile. -->
           <div
             v-for="appt in visibleHistory"
             :key="appt.id"
-            class="flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 border border-gray-100 rounded-lg bg-gray-50 gap-2"
+            role="button"
+            tabindex="0"
+            :aria-busy="openingId === appt.id"
+            :aria-label="t('clientProfile.history.open')"
+            class="flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 border border-gray-100 rounded-lg bg-gray-50 gap-2 cursor-pointer hover:border-[var(--p-primary-300)] hover:bg-white focus-visible:outline-2 focus-visible:outline-[var(--p-primary-color)] transition-colors"
+            data-testid="history-booking"
+            @click="openBooking(appt)"
+            @keydown.enter.prevent="openBooking(appt)"
+            @keydown.space.prevent="openBooking(appt)"
           >
             <div>
               <div class="font-bold text-gray-900">
+                <i v-if="openingId === appt.id" class="pi pi-spin pi-spinner text-sm text-[var(--p-primary-color)] mr-1"></i>
                 {{ new Date(appt.start_time).toLocaleDateString("en-GB") }}
                 <span class="text-gray-400 font-normal text-sm ml-2">{{
                   new Date(appt.start_time).toLocaleTimeString([], {
@@ -226,6 +236,15 @@
               </div>
               <div v-if="appt.staff_names" class="text-xs text-gray-400 mt-0.5">
                 {{ appt.staff_names }}
+              </div>
+              <!-- Each service's own note. -->
+              <div
+                v-for="(svc, i) in (appt.services_paid || []).filter((x: any) => x.notes)"
+                :key="i"
+                class="text-xs text-gray-600 italic mt-1 whitespace-pre-line"
+                data-testid="history-service-note"
+              >
+                <i class="pi pi-comment text-[10px] mr-1"></i><span class="not-italic font-medium">{{ svc.name }}:</span> {{ svc.notes }}
               </div>
             </div>
             <div
@@ -417,8 +436,16 @@
       </div>
     </div>
   </Dialog>
-  <ConfirmDialog group="clientProfileFile"></ConfirmDialog>
+  <!-- Its own box for its questions (a file, a membership), named for this
+       profile: one can be open inside a booking while the page has another. -->
+  <ConfirmDialog :group="confirmGroup"></ConfirmDialog>
+  <BookingFromHistory ref="bookingHost" @changed="onBookingChanged" />
 </template>
+
+<script lang="ts">
+// Numbers each profile's question box (see confirmGroup below).
+let profileCount = 0;
+</script>
 
 <script setup lang="ts">
 import { useNotify } from "../composables/useNotify";
@@ -432,6 +459,7 @@ import { useAuthStore } from "../stores/auth";
 import { useSettingsStore } from "../stores/settings";
 import { fullyHidden, hiddenAmount, shownMoney } from "../utils/paymentFilters";
 import PaidAmount from "./PaidAmount.vue";
+import BookingFromHistory from "./booking/BookingFromHistory.vue";
 import AppointmentNotesTip from "./AppointmentNotesTip.vue";
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
@@ -440,11 +468,17 @@ const { t } = useI18n();
 const authStore = useAuthStore();
 const toast = useToast();
 const notify = useNotify();
-const confirm = useConfirm();
+const pageConfirm = useConfirm();
+const confirmGroup = `client-profile-${++profileCount}`;
+const confirm: typeof pageConfirm = {
+  ...pageConfirm,
+  require: (options) => pageConfirm.require({ ...options, group: confirmGroup }),
+};
 const isShopAdmin = authStore.isShopAdmin;
 const settingsStore = useSettingsStore();
 
-const props = defineProps(["clientId", "initialTab"]);
+// currentAppointmentId: the booking this profile was opened from, if any.
+const props = defineProps(["clientId", "initialTab", "currentAppointmentId"]);
 const emit = defineEmits(["refresh"]);
 
 const isVisible = defineModel<boolean>("visible", { default: false });
@@ -474,6 +508,7 @@ const visibleHistory = computed(() =>
       return {
         ...a,
         ...money,
+        services_paid: shown,
         service_names: shown.map((x: any) => x.name).join(", "),
         staff_names: [...new Set(shown.map((x: any) => x.staff).filter(Boolean))].join(", "),
         total_service_price: Number(a.total_service_price || 0) - hiddenCost,
@@ -482,6 +517,29 @@ const visibleHistory = computed(() =>
     })
     .filter(Boolean),
 );
+
+// A visit opens its booking on top; the one this profile was opened from is
+// already open behind it, so that one just closes the profile.
+const bookingHost = ref<InstanceType<typeof BookingFromHistory> | null>(null);
+const openingId = ref<string | null>(null);
+const openBooking = async (appt: any) => {
+  if (openingId.value) return;
+  if (props.currentAppointmentId && appt.id === props.currentAppointmentId) {
+    isVisible.value = false;
+    return;
+  }
+  openingId.value = appt.id;
+  try {
+    await bookingHost.value?.open(appt);
+  } finally {
+    openingId.value = null;
+  }
+};
+// Saved or paid there: this history and the page behind show it.
+const onBookingChanged = () => {
+  fetchClientData();
+  emit("refresh");
+};
 
 const fetchClientData = async () => {
   if (!props.clientId) return;
@@ -662,7 +720,6 @@ const handleFileUpload = async (event: any) => {
 
 const deleteFile = (fileId: number) => {
   confirm.require({
-    group: "clientProfileFile",
     message: t('clientProfile.files.deleteConfirmMessage'),
     header: t('clientProfile.files.deleteConfirmHeader'),
     icon: "pi pi-exclamation-triangle",

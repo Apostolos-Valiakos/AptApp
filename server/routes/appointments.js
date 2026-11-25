@@ -196,6 +196,7 @@ module.exports = function appointmentsRouter({
               'staff_name', st.name,
               'start_time', aps.start_time,
               'persons', aps.persons,
+              'notes', aps.notes,
               'charged', COALESCE(aps.price_override, s.price, 0),
               'paid_with', (SELECT paid_with FROM appointment_service_payments WHERE appointment_service_id = aps.id),
               'hidden', (SELECT json_build_object('cash', hidden_cash, 'card', hidden_card, 'both', hidden_both)
@@ -238,7 +239,15 @@ module.exports = function appointmentsRouter({
         deposit_amount: parseFloat(row.deposit_amount),
         // Staff-authored notes about a client should never reach the client's
         // own portal view of their own appointment.
-        ...(req.user.role === "client" ? { internal_notes: null, booking_notes: null, client_notes: null, products: [] } : {}),
+        ...(req.user.role === "client"
+          ? {
+              internal_notes: null,
+              booking_notes: null,
+              client_notes: null,
+              products: [],
+              services: (row.services || []).map(({ notes, ...svc }) => svc),
+            }
+          : {}),
       }));
 
       res.json(formatted);
@@ -688,6 +697,53 @@ module.exports = function appointmentsRouter({
     res.json(result);
   }, { log: "Resolve appointment debt error:" }));
 
+  // After money is taken back or moved, the booking's stored "paid" state
+  // follows what its payments now add up to (the calendar's hover card and the
+  // client portal read it): paid in full, part of it, or nothing. Its status
+  // (completed etc.) is left alone. Answers the new state and the net paid.
+  const refreshPaymentState = async (client, id) => {
+    const { rows } = await client.query(
+      `SELECT ${appointmentCostSql("$1")} AS cost, ${appointmentPaidSql("$1")} AS paid`,
+      [id],
+    );
+    const cost = round2(Number(rows[0].cost));
+    const paid = round2(Number(rows[0].paid));
+    const state = paid <= 0.005 ? "unpaid" : paid >= cost - 0.01 ? "paid" : "partial";
+    await client.query(
+      "UPDATE appointments SET payment_status = $1, deposit_amount = $2, updated_at = NOW() WHERE id = $3",
+      [state, Math.max(0, paid), id],
+    );
+    return { payment_status: state, net_paid: paid };
+  };
+
+  // What was paid on a booking by each way of paying, net of refunds, and the
+  // way of its latest payment still standing: the refund and "change the way
+  // of paying" dialogs start on it, since that's usually the one picked wrong.
+  router.get(
+    "/:id/payment-methods",
+    authenticateToken,
+    asyncHandler(async (req, res) => {
+      if (!canSellExtras(req.user)) return res.status(403).json({ error: "Not authorized" });
+      const id = safeUUID(req.params.id);
+      if (!id) return res.status(404).json({ error: "Appointment not found" });
+      const found = await pool.query("SELECT 1 FROM appointments WHERE id = $1 AND shop_id = $2", [id, req.shopId]);
+      if (!found.rows.length) return res.status(404).json({ error: "Appointment not found" });
+      const { rows } = await pool.query(
+        `SELECT payment_method AS method, ROUND(SUM(amount), 2)::float AS net,
+                MAX(created_at) FILTER (WHERE amount > 0) AS last_paid_at
+         FROM transactions WHERE appointment_id = $1 AND payment_method = ANY($2)
+         GROUP BY payment_method`,
+        [id, MONEY_METHODS],
+      );
+      const standing = rows.filter((r) => r.net > 0.005);
+      const last = [...standing].sort((a, b) => new Date(b.last_paid_at) - new Date(a.last_paid_at))[0];
+      res.json({
+        methods: standing.map((r) => ({ method: r.method, net: r.net })),
+        last_method: last?.method || null,
+      });
+    }),
+  );
+
   // A refund is an ordinary negative-amount transaction — every revenue/debt/
   // balance query already sums `amount`, so this nets out correctly everywhere
   // (Financials, Daily Report, client balance) with no other changes needed.
@@ -711,9 +767,9 @@ module.exports = function appointmentsRouter({
         return res.status(400).json({ error: "A reason is required" });
       }
 
-      const newBalance = await withTransaction(async (client) => {
+      const result = await withTransaction(async (client) => {
         const apptRes = await client.query(
-          `SELECT client_id FROM appointments WHERE id = $1 AND shop_id = $2`,
+          `SELECT client_id FROM appointments WHERE id = $1 AND shop_id = $2 FOR UPDATE`,
           [id, req.shopId],
         );
         if (apptRes.rows.length === 0) throw new HttpError(404, { error: "Appointment not found" });
@@ -737,9 +793,68 @@ module.exports = function appointmentsRouter({
           [id, clientId, -refundAmount, payment_method, reason.trim(), req.user.username, req.shopId],
         );
 
-        return clientId ? await recalculateClientBalance(client, clientId) : 0;
+        const state = await refreshPaymentState(client, id);
+        const newBalance = clientId ? await recalculateClientBalance(client, clientId) : 0;
+        return { ...state, new_balance: newBalance };
       });
-      res.json({ success: true, new_balance: newBalance });
+      res.json({ success: true, ...result });
+    }),
+  );
+
+  // A payment recorded the wrong way (card instead of cash, say) is moved to
+  // the right one in one step: a refund the wrong way and the same amount paid
+  // the right way, together, with the same reason on both. What the booking
+  // was paid in all doesn't change; the daily report and the cash/card
+  // filters then count it the right way.
+  router.post(
+    "/:id/change-payment-method",
+    authenticateToken,
+    asyncHandler(async (req, res) => {
+      if (!canSellExtras(req.user)) {
+        return res.status(403).json({ error: "Not authorized to change payments" });
+      }
+      const id = safeUUID(req.params.id);
+      if (!id) return res.status(404).json({ error: "Appointment not found" });
+      const { from_method, to_method, note } = req.body;
+      const amount = round2(Number(req.body.amount));
+      if (!amount || amount <= 0) return res.status(400).json({ error: "amount must be a positive number" });
+      if (!MONEY_METHODS.includes(from_method) || !MONEY_METHODS.includes(to_method) || from_method === to_method) {
+        return res.status(400).json({ error: "Invalid payment methods" });
+      }
+
+      const result = await withTransaction(async (client) => {
+        const apptRes = await client.query(
+          "SELECT client_id FROM appointments WHERE id = $1 AND shop_id = $2 FOR UPDATE",
+          [id, req.shopId],
+        );
+        if (apptRes.rows.length === 0) throw new HttpError(404, { error: "Appointment not found" });
+        const clientId = apptRes.rows[0].client_id;
+        // Only what was really paid the wrong way can move.
+        const { rows } = await client.query(
+          "SELECT COALESCE(SUM(amount), 0) AS net FROM transactions WHERE appointment_id = $1 AND payment_method = $2",
+          [id, from_method],
+        );
+        const paidThatWay = round2(Number(rows[0].net));
+        if (amount > paidThatWay + 0.001) {
+          throw new HttpError(400, { error: "exceeds_paid_with_method", paid: paidThatWay });
+        }
+        // Stored as text for the reports and logs, in the shop's language.
+        const NAMES = { cash: "Μετρητά", CASH: "CASH", card: "Κάρτα", "bank-transfer": "Τραπεζική μεταφορά" };
+        const reason = `Αλλαγή τρόπου πληρωμής: ${NAMES[from_method]} → ${NAMES[to_method]}${note?.trim() ? ` · ${note.trim()}` : ""}`;
+        const insert = (value, method, type) =>
+          client.query(
+            `INSERT INTO transactions
+              (appointment_id, client_id, amount, payment_method, transaction_type, reason, created_by_user_id, shop_id, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
+            [id, clientId, value, method, type, reason, req.user.username, req.shopId],
+          );
+        await insert(-amount, from_method, "refund");
+        await insert(amount, to_method, "payment");
+        const state = await refreshPaymentState(client, id);
+        const newBalance = clientId ? await recalculateClientBalance(client, clientId) : 0;
+        return { ...state, new_balance: newBalance };
+      });
+      res.json({ success: true, ...result });
     }),
   );
 

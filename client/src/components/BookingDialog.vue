@@ -112,12 +112,13 @@
     <ClientProfileDialog
       v-model:visible="showClientProfile"
       :clientId="currentProfileId"
+      :currentAppointmentId="form.id"
       @refresh="() => {}"
     />
   </Dialog>
-  <ConfirmDialog></ConfirmDialog>
+  <ConfirmDialog :group="confirmGroup"></ConfirmDialog>
   <!-- Deleting a booking: the question, and why (optional, kept in the log). -->
-  <ConfirmDialog group="delete-booking">
+  <ConfirmDialog :group="`${confirmGroup}-delete`">
     <template #message="{ message }">
       <div class="w-full space-y-3">
         <p>{{ message.message }}</p>
@@ -193,7 +194,7 @@ provide(BookingDialogKey, { ...state, ...client, ...load, ...saving, ...payment,
 
 const {
   t, form, servicesList, productsList, isEditMode, isReadOnly, currentTab, loadingPastId,
-  showRepeatDialog, showClientProfile, currentProfileId, deleteReason,
+  showRepeatDialog, showClientProfile, currentProfileId, deleteReason, confirmGroup,
 } = state;
 </script>
 

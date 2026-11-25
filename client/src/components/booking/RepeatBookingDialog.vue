@@ -171,6 +171,7 @@ const save = async () => {
           price_override: Number(s.price_override) || 0,
           variation_name: s.variation_name || null,
           persons: s.persons || 1,
+          notes: s.notes || null,
         })),
         instance_starts: rows.value.map((r) => rowStart(r).toISOString()),
         allow_unavailable: true,

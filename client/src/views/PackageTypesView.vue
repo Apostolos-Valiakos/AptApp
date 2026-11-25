@@ -94,6 +94,8 @@
         <Button :label="t('packages.adjust.save')" icon="pi pi-check" :loading="saving" :disabled="!canSave" @click="save" />
       </template>
     </Dialog>
+    <!-- Deleting a package type asks first; the page needs its own box for it. -->
+    <ConfirmDialog />
   </div>
 </template>
 

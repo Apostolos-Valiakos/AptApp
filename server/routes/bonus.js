@@ -17,17 +17,33 @@ const isDate = (v) => {
 };
 const shopToday = () => new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(new Date());
 const BONUS_COLUMNS = `id, staff_id, to_char(effective_from, 'YYYY-MM-DD') AS effective_from, enabled, kind,
-  threshold_minutes, percent::float AS percent, amount_per_hour::float AS amount_per_hour`;
+  threshold_minutes, percent::float AS percent, amount_per_hour::float AS amount_per_hour,
+  laser_amount_per_hour::float AS laser_amount_per_hour, deduction_per_service::float AS deduction_per_service,
+  last_service_fixed::float AS last_service_fixed`;
 // A redemption: a service in the category Εξαργύρωση (see migration 0020).
 const IS_REDEMPTION = "(trim(COALESCE(s.category, '')) = 'Εξαργύρωση')";
 const COMMISSION_COLUMNS = "id, staff_id, to_char(effective_from, 'YYYY-MM-DD') AS effective_from, enabled, percent::float AS percent";
 const TARGET_COLUMNS = "id, staff_id, to_char(effective_from, 'YYYY-MM-DD') AS effective_from, enabled, steps";
 const REVIEW_COLUMNS = "id, staff_id, to_char(effective_from, 'YYYY-MM-DD') AS effective_from, enabled, amount_per_review::float AS amount_per_review";
-// What a completed service counts for: the price charged; a redemption, the
-// price of the service it stands for (stored when booked, else that service's
-// price now). Needs services s and bs joined as below.
-const SERVICE_VALUE = `(CASE WHEN ${IS_REDEMPTION} THEN COALESCE(aps.bonus_value, bs.price, 0)
-                       ELSE COALESCE(aps.price_override, s.price, 0) END)`;
+// Counts for the bonus as another service: a redemption, or a package's
+// session (a service linked to the one it stands for in the service form).
+const COUNTS_AS_OTHER = `(${IS_REDEMPTION} OR s.bonus_service_id IS NOT NULL)`;
+// What a completed service counts for: the price charged (a variation's own
+// price when none was stored, not the main service's); a redemption or a
+// package session, the price of the service it stands for, stored when
+// booked, else priced now: that service's variation of the row's length, else
+// its main price (as stampRedemptionValues in domain/bookings.js). Needs
+// services s and bs joined as below.
+const SERVICE_VALUE = `(CASE WHEN ${COUNTS_AS_OTHER} THEN COALESCE(aps.bonus_value,
+                         (SELECT v.price FROM service_variations v
+                          WHERE v.service_id = bs.id AND v.duration_minutes = COALESCE(NULLIF(aps.duration_override, 0), s.duration_minutes)
+                          ORDER BY v.sort_order, v.id LIMIT 1),
+                         bs.price, 0)
+                       ELSE COALESCE(aps.price_override,
+                         (SELECT v.price FROM service_variations v
+                          WHERE v.service_id = s.id AND v.name = NULLIF(aps.variation_name, '')
+                          ORDER BY v.sort_order, v.id LIMIT 1),
+                         s.price, 0) END)`;
 const MAX_STEPS = 10;
 
 module.exports = function bonusRouter({ authenticateToken, requireAnalyticsAccess, requireSensitiveAccess, requireShopAdminAccess, safeUUID }) {
@@ -104,7 +120,23 @@ module.exports = function bonusRouter({ authenticateToken, requireAnalyticsAcces
     const amount = Number(body.amount_per_hour ?? 0);
     if (!(amount >= 0 && amount <= 1000)) return { error: "amount_per_hour must be 0 to 1000" };
     if (kind === "per_hour" && body.enabled !== false && !(amount > 0)) return { error: "amount_per_hour is required" };
-    return { kind, threshold_minutes: threshold, percent, amount_per_hour: Math.round(amount * 100) / 100 };
+    // Empty (null) laser or last-service amounts are off; no deduction is 0.
+    const money = (v) => (v === null || v === undefined || v === "" ? null : Math.round(Number(v) * 100) / 100);
+    const laser = money(body.laser_amount_per_hour);
+    const deduction = money(body.deduction_per_service) ?? 0;
+    const last = money(body.last_service_fixed);
+    for (const v of [laser, deduction, last]) {
+      if (v !== null && !(v >= 0 && v <= 1000)) return { error: "amounts must be 0 to 1000" };
+    }
+    return {
+      kind,
+      threshold_minutes: threshold,
+      percent,
+      amount_per_hour: Math.round(amount * 100) / 100,
+      laser_amount_per_hour: laser,
+      deduction_per_service: deduction,
+      last_service_fixed: last,
+    };
   }, "bonus rules");
 
   ruleRoutes("product-commission-rules", "staff_product_commission_rules", commissionRules, (rules, day) => commissionOn(rules, day), (body) => {
@@ -186,18 +218,26 @@ module.exports = function bonusRouter({ authenticateToken, requireAnalyticsAcces
     // cover only part of one.
     const months = monthsBetween(from, to);
     const [staff, rules, commission, services, products, targets, monthSales, reviewRuleRows, reviewCounts] = await Promise.all([
-      pool.query("SELECT id, name, capacity FROM staff WHERE shop_id = $1", [req.shopId]),
+      pool.query("SELECT id, name, capacity, specialty FROM staff WHERE shop_id = $1", [req.shopId]),
       pool.query(`SELECT ${BONUS_COLUMNS} FROM staff_bonus_rules WHERE shop_id = $1`, [req.shopId]),
       pool.query(`SELECT ${COMMISSION_COLUMNS} FROM staff_product_commission_rules WHERE shop_id = $1`, [req.shopId]),
       pool.query(
         `SELECT aps.id, aps.staff_id, aps.start_time,
                 to_char(aps.start_time AT TIME ZONE '${TZ}', 'YYYY-MM-DD') AS day,
-                COALESCE(NULLIF(aps.duration_override, 0), s.duration_minutes, 60) AS minutes,
+                -- The booked time, at most the service's minutes for the bonus
+                -- (e.g. a deep cleansing booked for 1h15 counts 1 hour).
+                LEAST(COALESCE(NULLIF(aps.duration_override, 0), s.duration_minutes, 60),
+                      COALESCE(s.bonus_minutes, 2147483647)) AS minutes,
+                COALESCE(NULLIF(aps.duration_override, 0), s.duration_minutes, 60) AS booked_minutes,
                 -- A redemption counts at the price of the service it stands for:
                 -- stored when it was booked, else that service's price now.
                 ${SERVICE_VALUE}::float AS price,
                 ${IS_REDEMPTION} AS is_redemption,
-                s.name AS service_name,
+                -- A package's session: counts as the service it stands for.
+                (NOT ${IS_REDEMPTION} AND s.bonus_service_id IS NOT NULL) AS is_package,
+                bs.name AS counts_as,
+                s.bonus_fixed::float AS bonus_fixed,
+                s.name AS service_name, s.category AS service_category,
                 NULLIF(TRIM(CONCAT_WS(' ', c.first_name, c.last_name)), '') AS client_name
          FROM appointment_services aps
          JOIN appointments a ON a.id = aps.appointment_id

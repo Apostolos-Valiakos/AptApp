@@ -402,6 +402,7 @@ export const useCalendarOptions = (ctx: ReturnType<typeof useSchedulerCore> & Re
         ...info.event.extendedProps.fullAppointment,
         client_name: info.event.extendedProps.client_name,
         service_name: info.event.extendedProps.service_name,
+        service_notes: info.event.extendedProps.service_notes,
         ...info.event.extendedProps.shownMoney,
         start: info.event.start,
         end: info.event.end,

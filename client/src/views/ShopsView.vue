@@ -117,57 +117,58 @@
     :header="editingShop.id ? t('platform.shops.dialog.editShop') : t('platform.shops.dialog.newShop')"
     modal
     class="w-full max-w-2xl"
+    :style="{ maxHeight: '96dvh' }"
   >
-    <div class="space-y-5 mt-2">
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-        <div class="md:col-span-2">
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('platform.shops.dialog.name') }}</label>
-          <InputText v-model="editingShop.name" class="w-full" />
+    <!-- The shop's details in labelled parts: the shop, its owner, notes, and
+         (for a new shop) its first admin login. -->
+    <div class="space-y-6 mt-1">
+      <section data-testid="shop-section-shop">
+        <h3 class="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-gray-500 mb-3"><i class="pi pi-building"></i>{{ t('platform.shops.dialog.sections.shop') }}</h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="md:col-span-2">
+            <label class="block text-sm font-medium text-gray-700 mb-1" for="shop-name">{{ t('platform.shops.dialog.name') }}</label>
+            <InputText id="shop-name" v-model="editingShop.name" class="w-full" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('platform.shops.dialog.plan') }}</label>
+            <Dropdown v-model="editingShop.plan" :options="planOptions" optionLabel="label" optionValue="value" class="w-full" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('platform.shops.dialog.status') }}</label>
+            <Dropdown v-model="editingShop.status" :options="statusOptions" optionLabel="label" optionValue="value" class="w-full" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('platform.shops.dialog.trialEndsAt') }}</label>
+            <DatePicker v-model="editingShop.trial_ends_at" class="w-full" dateFormat="dd/mm/yy" showIcon />
+          </div>
         </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('platform.shops.dialog.plan') }}</label>
-          <Dropdown
-            v-model="editingShop.plan"
-            :options="planOptions"
-            optionLabel="label"
-            optionValue="value"
-            class="w-full"
-          />
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('platform.shops.dialog.status') }}</label>
-          <Dropdown
-            v-model="editingShop.status"
-            :options="statusOptions"
-            optionLabel="label"
-            optionValue="value"
-            class="w-full"
-          />
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('platform.shops.dialog.ownerName') }}</label>
-          <InputText v-model="editingShop.owner_name" class="w-full" />
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('platform.shops.dialog.ownerEmail') }}</label>
-          <InputText v-model="editingShop.owner_email" class="w-full" />
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('platform.shops.dialog.trialEndsAt') }}</label>
-          <DatePicker v-model="editingShop.trial_ends_at" class="w-full" dateFormat="dd/mm/yy" showIcon />
-        </div>
-        <div class="md:col-span-2">
-          <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('platform.shops.dialog.notes') }}</label>
-          <Textarea v-model="editingShop.notes" class="w-full" rows="3" />
-        </div>
-      </div>
+      </section>
 
-      <div v-if="!editingShop.id" class="border-t border-gray-100 pt-4">
-        <div class="flex items-center gap-3 mb-3">
-          <ToggleSwitch v-model="createAdminNow" />
-          <span class="text-sm font-medium text-gray-700">{{ t('platform.shops.dialog.createAdminToggle') }}</span>
+      <section class="border-t border-gray-100 pt-5" data-testid="shop-section-owner">
+        <h3 class="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-gray-500 mb-3"><i class="pi pi-user"></i>{{ t('platform.shops.dialog.sections.owner') }}</h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1" for="shop-owner-name">{{ t('platform.shops.dialog.ownerName') }}</label>
+            <InputText id="shop-owner-name" v-model="editingShop.owner_name" class="w-full" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1" for="shop-owner-email">{{ t('platform.shops.dialog.ownerEmail') }}</label>
+            <InputText id="shop-owner-email" v-model="editingShop.owner_email" class="w-full" />
+          </div>
         </div>
-        <div v-if="createAdminNow" class="grid grid-cols-1 md:grid-cols-2 gap-5">
+      </section>
+
+      <section class="border-t border-gray-100 pt-5">
+        <label class="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-gray-500 mb-3" for="shop-notes"><i class="pi pi-pencil"></i>{{ t('platform.shops.dialog.notes') }}</label>
+        <Textarea id="shop-notes" v-model="editingShop.notes" class="w-full" rows="3" autoResize />
+      </section>
+
+      <section v-if="!editingShop.id" class="border-t border-gray-100 pt-5" data-testid="shop-section-admin">
+        <div class="flex items-center gap-3 mb-3">
+          <ToggleSwitch v-model="createAdminNow" inputId="shop-create-admin" />
+          <label for="shop-create-admin" class="text-sm font-medium text-gray-700">{{ t('platform.shops.dialog.createAdminToggle') }}</label>
+        </div>
+        <div v-if="createAdminNow" class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('platform.shops.dialog.adminUsername') }}</label>
             <InputText v-model="editingShop.admin_username" class="w-full" />
@@ -178,7 +179,7 @@
             <small class="block mt-1" :class="editingShop.admin_password && !passwordOk(editingShop.admin_password) ? 'text-red-500' : 'text-gray-500'" data-testid="password-rule">{{ t("common.passwordRule") }}</small>
           </div>
         </div>
-      </div>
+      </section>
     </div>
     <template #footer>
       <Button :label="t('common.cancel')" icon="pi pi-times" text @click="showDialog = false" />

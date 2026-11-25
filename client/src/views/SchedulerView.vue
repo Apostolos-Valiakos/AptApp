@@ -68,6 +68,10 @@
       </div>
     </div>
 
+    <!-- The calendar's own questions (moving or resizing a card, the waiting
+         list, the quick profile). The booking dialog asks in its own box. -->
+    <ConfirmDialog />
+
     <BookingDialog
       v-model:visible="dialogVisible"
       :appointment="selectedAppointment"
@@ -114,6 +118,7 @@
       v-model:visible="fullProfileVisible"
       :clientId="quickProfileClientId"
       :initialTab="fullProfileTab"
+      @refresh="handleRefresh"
     />
   </div>
 

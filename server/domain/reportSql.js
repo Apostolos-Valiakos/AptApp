@@ -82,8 +82,15 @@ const buildTxnMethodExclusionClause = (excludeCash, excludeCard, columnPrefix = 
 };
 // A from/to bound arrives as an ISO timestamp of local midnight; expenses are
 // plain calendar dates, so compare against that timestamp's local date.
-const expenseDateOf = (paramIndex) =>
-  `(($${paramIndex})::timestamptz AT TIME ZONE '${process.env.TZ || "Europe/Athens"}')::date`;
+// The screens send a period as moments in time (ISO, e.g. 20/11 00:00 in Athens
+// is 2026-11-19T22:00:00Z). Columns stored without a time zone (payments'
+// created_at, gift cards' issued_at, ...) hold the shop's local time, so the
+// moment is turned into local time first; compared as is, PostgreSQL drops the
+// "Z" and the period starts and ends 2 hours early (3 in summer).
+const SHOP_TZ = process.env.TZ || "Europe/Athens";
+const localTimeOf = (paramIndex) => `(($${paramIndex})::timestamptz AT TIME ZONE '${SHOP_TZ}')`;
+const localDateOf = (paramIndex) => `${localTimeOf(paramIndex)}::date`;
+const expenseDateOf = localDateOf;
 // The bookings the Analytics money tiles count for a period: completed ones,
 // and past ones not cancelled or no-show (new, confirmed, started), with the
 // revenue exclusion given (alias a2). Shared by the tiles and their details.
@@ -118,19 +125,26 @@ const periodAppointments = (req, cashApptClause) => {
 
   return { params: apptParams, sql: appointmentSubquery };
 };
+// Payments of bookings kept off the receipts (save_receipt false) are for
+// super admins only, like the bookings themselves; payments without a booking
+// (gift cards, packages...) are for everyone. `ref` qualifies the table.
+const transactionVisibilityClause = (user, ref = "t.") =>
+  user?.role === "super_admin"
+    ? ""
+    : ` AND NOT EXISTS (SELECT 1 FROM appointments _va WHERE _va.id = ${ref}appointment_id AND _va.save_receipt IS DISTINCT FROM true)`;
 // Payments received in the period (Πληρωμές περιόδου, Καθαρό), by when they
 // were recorded. `col` qualifies the column names.
 const paymentsWindow = (req, col = "") => {
   const { from, to } = req.query;
   const params = [req.shopId];
-  let filter = "";
+  let filter = transactionVisibilityClause(req.user, col || "transactions.");
   if (from) {
     params.push(from);
-    filter += ` AND ${col}created_at >= $${params.length}`;
+    filter += ` AND ${col}created_at >= ${localTimeOf(params.length)}`;
   }
   if (to) {
     params.push(to);
-    filter += ` AND ${col}created_at <= $${params.length}`;
+    filter += ` AND ${col}created_at <= ${localTimeOf(params.length)}`;
   }
   return { params, filter };
 };
@@ -154,6 +168,20 @@ const expensesWindow = (req, col = "") => {
   if (excludeCard === "true") filter += ` AND ${col}payment_method <> 'card'`;
   return { params, filter };
 };
+// The Daily Report's payments for a shop day ($1 shop, $2 YYYY-MM-DD or null
+// for today): money recorded that local day (created_at holds local time),
+// not package or membership visits or write-offs, nor what the filters hide.
+// The reconciliation uses the same rows.
+const dailyPaymentsSql = (user, methodExclusion = buildTxnMethodExclusionClause(undefined, undefined, "t.")) => `
+  SELECT t.id, t.appointment_id, t.amount, t.payment_method, t.transaction_type, t.created_at,
+         t.client_debt_id, t.gift_card_id, c.first_name, c.last_name
+  FROM transactions t
+  LEFT JOIN clients c ON c.id = t.client_id
+  WHERE t.shop_id = $1 AND t.created_at::date = COALESCE($2::date, CURRENT_DATE)
+    AND COALESCE(t.payment_method, '') NOT IN ('membership', 'package', 'write-off')
+    ${methodExclusion}
+    ${transactionVisibilityClause(user, "t.")}
+  ORDER BY t.created_at DESC`;
 // The cancellation and retention tiles: the last 30 days unless dates are given.
 const analyticsWindow = (req) => ({
   start: req.query.from || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
@@ -193,4 +221,4 @@ const paymentsSql = (filter) => `
   FROM transactions t LEFT JOIN clients c ON c.id = t.client_id
   WHERE t.shop_id = $1 ${filter}`;
 
-module.exports = { hiddenColumn, hiddenAmountSql, shownPriceSql, serviceHidden, buildServiceExclusionClause, hiddenCostSql, buildRevenueExclusionClause, buildTxnMethodExclusionClause, expenseDateOf, periodAppointments, paymentsWindow, expensesWindow, analyticsWindow, RETURNING_SQL, DETAIL_KINDS, clientName, serviceNames, bookingsSql, paymentsSql };
+module.exports = { transactionVisibilityClause, dailyPaymentsSql, localTimeOf, localDateOf, hiddenColumn, hiddenAmountSql, shownPriceSql, serviceHidden, buildServiceExclusionClause, hiddenCostSql, buildRevenueExclusionClause, buildTxnMethodExclusionClause, expenseDateOf, periodAppointments, paymentsWindow, expensesWindow, analyticsWindow, RETURNING_SQL, DETAIL_KINDS, clientName, serviceNames, bookingsSql, paymentsSql };

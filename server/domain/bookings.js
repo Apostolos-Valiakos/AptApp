@@ -17,31 +17,42 @@ const sellerOf = (prod, fallback) =>
 // from another shop is stored as none.
 const SELLER_IN_SHOP = "(SELECT _st.id FROM staff _st WHERE _st.id = $3::uuid AND _st.shop_id = $7)";
 
-const REDEMPTION_CATEGORY = "Εξαργύρωση";
+// What a row `aps` of a redemption or package service `r` stands for, as priced
+// now: the variation of the redeemed service `b` with the redemption's booked
+// length (90 minutes of ΕΞΑΓΥΡΩΣΗ HOLISTIC is HOLISTIC's 1,5-hour), else `b`'s
+// main price. Redemptions have no variations of their own, so the length is
+// what tells them apart.
+const REDEEMED_PRICE_SQL = `COALESCE((SELECT v.price FROM service_variations v
+    WHERE v.service_id = b.id AND v.duration_minutes = COALESCE(NULLIF(aps.duration_override, 0), r.duration_minutes)
+    ORDER BY v.sort_order, v.id LIMIT 1), b.price)`;
+
 /**
- * A booking's redemptions (services in the category Εξαργύρωση) get the price of
- * the service each stands for, as it is now, for the staff bonus. `earlier`:
- * { service_id, bonus_value } from before an edit; a redemption still on the
- * booking keeps the value it had.
+ * A booking's rows that count for the staff bonus as another service (a
+ * redemption, or a package's session: services with bonus_service_id) get
+ * that service's price, as it is now. `earlier`:
+ * { service_id, duration_override, bonus_value } from before an edit; a
+ * redemption still on the booking at the same length keeps the value it had
+ * (a new length can mean another variation, so it's priced again).
  */
 const stampRedemptionValues = async (client, appointmentId, earlier = []) => {
   const kept = earlier.filter((r) => r.bonus_value != null);
   if (kept.length) {
     const { rows } = await client.query(
-      "SELECT id, service_id FROM appointment_services WHERE appointment_id = $1 AND bonus_value IS NULL ORDER BY start_time, id",
+      "SELECT id, service_id, duration_override FROM appointment_services WHERE appointment_id = $1 AND bonus_value IS NULL ORDER BY start_time, id",
       [appointmentId],
     );
+    const sameLength = (a, b) => (Number(a) || 0) === (Number(b) || 0);
     for (const row of rows) {
-      const i = kept.findIndex((k) => k.service_id === row.service_id);
+      const i = kept.findIndex((k) => k.service_id === row.service_id && sameLength(k.duration_override, row.duration_override));
       if (i === -1) continue;
       await client.query("UPDATE appointment_services SET bonus_value = $1 WHERE id = $2", [kept.splice(i, 1)[0].bonus_value, row.id]);
     }
   }
   await client.query(
-    `UPDATE appointment_services aps SET bonus_value = b.price
+    `UPDATE appointment_services aps SET bonus_value = ${REDEEMED_PRICE_SQL}
      FROM services r JOIN services b ON b.id = r.bonus_service_id
-     WHERE aps.appointment_id = $1 AND aps.service_id = r.id AND trim(r.category) = $2 AND aps.bonus_value IS NULL`,
-    [appointmentId, REDEMPTION_CATEGORY],
+     WHERE aps.appointment_id = $1 AND aps.service_id = r.id AND aps.bonus_value IS NULL`,
+    [appointmentId],
   );
 };
 
@@ -421,8 +432,8 @@ const createAppointmentSeries = async (client, data, shopId) => {
           await client.query(
             `INSERT INTO appointment_services (
               appointment_id, service_id, staff_id, start_time,
-              duration_override, price_override, shop_id, list_price, variation_name, persons, combo_service_id
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+              duration_override, price_override, shop_id, list_price, variation_name, persons, combo_service_id, notes
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
             [
               appointmentId,
               validServiceId,
@@ -435,6 +446,7 @@ const createAppointmentSeries = async (client, data, shopId) => {
               svc.variation_name || null,
               personsOf(svc),
               safeUUID(svc.combo_service_id),
+              serviceNote(svc),
             ],
           );
         }
@@ -571,7 +583,7 @@ const performSingleUpdate = async (client, id, shopId, body) => {
 
   const earlierRedemptions = (
     await client.query(
-      "SELECT service_id, bonus_value FROM appointment_services WHERE appointment_id = $1 AND bonus_value IS NOT NULL ORDER BY start_time, id",
+      "SELECT service_id, duration_override, bonus_value FROM appointment_services WHERE appointment_id = $1 AND bonus_value IS NOT NULL ORDER BY start_time, id",
       [id],
     )
   ).rows;
@@ -591,8 +603,8 @@ const performSingleUpdate = async (client, id, shopId, body) => {
       if (safeUUID(svc.service_id)) {
         await client.query(
           `INSERT INTO appointment_services (
-            appointment_id, service_id, staff_id, start_time, duration_override, price_override, shop_id, list_price, variation_name, persons, combo_service_id
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+            appointment_id, service_id, staff_id, start_time, duration_override, price_override, shop_id, list_price, variation_name, persons, combo_service_id, notes
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
           [
             id,
             safeUUID(svc.service_id),
@@ -605,6 +617,7 @@ const performSingleUpdate = async (client, id, shopId, body) => {
             svc.variation_name || null,
             personsOf(svc),
             safeUUID(svc.combo_service_id),
+            serviceNote(svc),
           ],
         );
       }
@@ -803,6 +816,13 @@ const sharedPlacesFor = async (client, shopId, services) => {
 };
 
 const { personsOf, placesOf, peakPersons } = require("./capacity");
+
+// A service row's own note (for that service and its staff member): text,
+// trimmed, at most 2000 characters; empty is none.
+const serviceNote = (svc) => {
+  const note = typeof svc?.notes === "string" ? svc.notes.trim().slice(0, 2000) : "";
+  return note || null;
+};
 
 const rowMinutes = (svc) => Number(svc.duration_override || svc.duration_minutes) || 60;
 

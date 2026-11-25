@@ -87,3 +87,12 @@
     font-size: 16px !important;
   }
 }
+
+/* Tabs that scroll (Analytics, Product Usage): the ripple effect writes
+   "position: relative" on the arrow buttons as an inline style, which beats
+   PrimeVue's own "absolute" and drops the arrows onto a line under the tabs.
+   Kept at the ends of the tab row. */
+.p-tabview-next-button,
+.p-tabview-prev-button {
+  position: absolute !important;
+}

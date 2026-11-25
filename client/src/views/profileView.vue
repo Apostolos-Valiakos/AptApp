@@ -15,28 +15,64 @@
       </div>
     </div>
 
-    <!-- phone-sections: on phones one settings card is open at a time. -->
-    <div class="phone-sections grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-8">
-      <!-- Left Column -->
-      <div class="lg:col-span-4 space-y-3 sm:space-y-6">
-        <ProfileCard :profile="profile" :isLoadingProfile="isLoadingProfile" />
-        <PreferencesCard v-phone-section />
-        <ClinicContactCard v-if="isShopAdmin" v-phone-section :profile="profile" />
-        <BrandingCard v-if="isShopAdmin" v-phone-section />
-        <ForceLogoutCard v-if="isSuperAdmin" v-phone-section />
-      </div>
+    <!-- The settings in groups, one group at a time: a menu on the left on a
+         computer, a row at the top on a phone. Every card stays loaded, so
+         switching groups loses nothing typed. phone-sections: on phones one
+         card of a group is open at a time. -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-8 items-start">
+      <nav
+        class="lg:col-span-3 lg:sticky lg:top-4 flex lg:flex-col gap-1 overflow-x-auto bg-white rounded-xl border border-gray-100 p-1.5"
+        role="tablist"
+        :aria-label="t('profile.groups.label')"
+      >
+        <button
+          v-for="g in visibleGroups"
+          :key="g.key"
+          type="button"
+          role="tab"
+          :aria-selected="group === g.key"
+          :aria-controls="`profile-group-${g.key}`"
+          class="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-semibold whitespace-nowrap text-left transition-colors"
+          :class="group === g.key ? 'bg-[var(--p-primary-50)] text-[var(--p-primary-700)]' : 'text-gray-600 hover:bg-gray-50'"
+          :data-testid="`profile-group-${g.key}`"
+          @click="setGroup(g.key)"
+        >
+          <i :class="g.icon" class="text-sm"></i>
+          {{ t(`profile.groups.${g.key}`) }}
+        </button>
+      </nav>
 
-      <!-- Right Column -->
-      <div class="lg:col-span-8 space-y-3 sm:space-y-6">
-        <PersonalInfoCard v-phone-section :profile="profile" :isLoadingProfile="isLoadingProfile" @saved="onProfileSaved" />
-        <ReplyEmailCard v-if="isShopAdmin" v-phone-section :profile="profile" />
-        <CalendarSettingsCard v-if="isShopAdmin" v-phone-section :profile="profile" />
-        <SelfBookingCard v-if="authStore.isAnalyticsAllowed" :profile="profile" />
-        <AiAssistantAdmin v-if="authStore.isAnalyticsAllowed" v-phone-section />
-        <DiscountCodesAdmin v-if="authStore.isAnalyticsAllowed" v-phone-section />
-        <BroadcastCard v-if="authStore.isAnalyticsAllowed" v-phone-section />
-        <PasswordCard v-phone-section />
-        <ContestsCard v-if="authStore.isAnalyticsAllowed" v-phone-section />
+      <div class="lg:col-span-9 phone-sections">
+        <div v-show="group === 'account'" id="profile-group-account" role="tabpanel" class="grid grid-cols-1 xl:grid-cols-2 gap-3 sm:gap-6 items-start">
+          <div class="space-y-3 sm:space-y-6">
+            <ProfileCard :profile="profile" :isLoadingProfile="isLoadingProfile" />
+            <PreferencesCard v-phone-section />
+          </div>
+          <div class="space-y-3 sm:space-y-6">
+            <PersonalInfoCard v-phone-section :profile="profile" :isLoadingProfile="isLoadingProfile" @saved="onProfileSaved" />
+            <PasswordCard v-phone-section />
+          </div>
+        </div>
+        <div v-if="isShopAdmin" v-show="group === 'shop'" id="profile-group-shop" role="tabpanel" class="grid grid-cols-1 xl:grid-cols-2 gap-3 sm:gap-6 items-start">
+          <div class="space-y-3 sm:space-y-6">
+            <ClinicContactCard v-phone-section :profile="profile" />
+            <BrandingCard v-phone-section />
+          </div>
+          <div class="space-y-3 sm:space-y-6">
+            <ReplyEmailCard v-phone-section :profile="profile" />
+            <CalendarSettingsCard v-phone-section :profile="profile" />
+          </div>
+        </div>
+        <div v-if="authStore.isAnalyticsAllowed" v-show="group === 'clients'" id="profile-group-clients" role="tabpanel" class="space-y-3 sm:space-y-6">
+          <SelfBookingCard :profile="profile" />
+          <AiAssistantAdmin v-phone-section />
+          <DiscountCodesAdmin v-phone-section />
+          <BroadcastCard v-phone-section />
+          <ContestsCard v-phone-section />
+        </div>
+        <div v-if="isSuperAdmin" v-show="group === 'security'" id="profile-group-security" role="tabpanel" class="max-w-xl">
+          <ForceLogoutCard v-phone-section />
+        </div>
       </div>
     </div>
   </div>
@@ -51,6 +87,7 @@
 // here.
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
+import { useRoute, useRouter } from "vue-router";
 import { api } from "../api/http";
 import { useNotify } from "../composables/useNotify";
 import { useAuthStore } from "../stores/auth";
@@ -84,6 +121,23 @@ const isShopAdmin = computed(() => {
 // Shop-wide "disconnect everyone" is destructive and shop-wide — restricted
 // to super_admin only, not plain admin.
 const isSuperAdmin = computed(() => (authStore.user?.role || profile.value?.role) === "super_admin");
+
+// The groups, each for those who may see its cards; the one shown is kept
+// in the address (?group=), so a refresh or a shared link opens it again.
+const GROUPS = [
+  { key: "account", icon: "pi pi-user", show: () => true },
+  { key: "shop", icon: "pi pi-building", show: () => isShopAdmin.value },
+  { key: "clients", icon: "pi pi-megaphone", show: () => authStore.isAnalyticsAllowed },
+  { key: "security", icon: "pi pi-shield", show: () => isSuperAdmin.value },
+];
+const route = useRoute();
+const router = useRouter();
+const visibleGroups = computed(() => GROUPS.filter((g) => g.show()));
+const group = computed(() => {
+  const asked = String(route.query.group || "");
+  return visibleGroups.value.some((g) => g.key === asked) ? asked : "account";
+});
+const setGroup = (key: string) => router.replace({ query: { ...route.query, group: key } });
 
 const fetchProfile = async () => {
   isLoadingProfile.value = true;

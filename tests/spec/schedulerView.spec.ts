@@ -754,11 +754,24 @@ describe("the hover card's services of the day", () => {
   });
 });
 
+describe("the calendar's own questions", () => {
+  // Moving a card asks first. The calendar must show that question in a box
+  // of its own: the booking dialog's box only takes the booking dialog's
+  // questions, and with none here a drop waited forever and saved nothing.
+  // (The test helper adds a page-wide box, so it's looked for inside the page.)
+  test("the page has a confirmation box for questions without a group", async () => {
+    const { wrapper } = await open("admin");
+    const page = wrapper.findComponent(SchedulerView);
+    const boxes = page.findAllComponents({ name: "ConfirmDialog" }).filter((c: any) => !c.props("group"));
+    expect(boxes.length).toBeGreaterThan(0);
+  });
+});
+
 describe("a completed appointment's card", () => {
-  const serviceEvent = async (status: string) => {
+  const serviceEvent = async (status: string, money: Record<string, number> = {}) => {
     const { options } = await open("admin", {
       "GET /api/v1/appointments": {
-        body: [{ ...appointment(), status, services: [{ ...appointment().services[0], service_color: "#fde68a" }] }],
+        body: [{ ...appointment(), status, ...money, services: [{ ...appointment().services[0], service_color: "#fde68a" }] }],
       },
     });
     await showDay(options, `${MONDAY}T00:00:00`, "2026-11-03T00:00:00");
@@ -775,6 +788,15 @@ describe("a completed appointment's card", () => {
 
   test("other statuses get no line", async () => {
     expect((await serviceEvent("confirmed")).classNames).not.toContain("fc-completed");
+  });
+
+  test("completed but not all paid (a refund not paid again, or a debt): the orange line", async () => {
+    const owing = await serviceEvent("completed", { current_appt_total: 49, deposit_amount: 0 });
+    expect(owing.classNames).toEqual(expect.arrayContaining(["fc-completed", "fc-completed-unpaid"]));
+    const paid = await serviceEvent("completed", { current_appt_total: 49, deposit_amount: 49 });
+    expect(paid.classNames).not.toContain("fc-completed-unpaid");
+    // Not completed yet: owing is normal, no orange line.
+    expect((await serviceEvent("confirmed", { current_appt_total: 49, deposit_amount: 0 })).classNames).not.toContain("fc-completed-unpaid");
   });
 
   test.each(["cancelled", "no-show"])("a %s booking gets the red line instead", async (status) => {

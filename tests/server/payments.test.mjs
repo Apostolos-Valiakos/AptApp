@@ -561,3 +561,100 @@ test("a booking paid by two ways: the filters hide only the service that way pai
   assert.deepEqual(day1.data.find((x) => x.id === appt).services.map((x) => Number(x.hidden.cash)), [15, 15], "the calendar gets the hidden amounts");
   assert.ok(sauna);
 });
+
+test("a period's payments are the shop's local days: not the evening before, and up to midnight", async () => {
+  // Stored as the shop's local time (no time zone), like every payment.
+  const at = (local, amount) =>
+    sql(DB, `INSERT INTO transactions (client_id, amount, payment_method, transaction_type, created_at, shop_id)
+             VALUES ('${ids.client}', ${amount}, 'cash', 'sale', TIMESTAMP '${local}', '${SHOP}') RETURNING id`).split("\n")[0];
+  const evening = at("2031-05-19 22:30", 1.11);
+  const noon = at("2031-05-20 12:00", 2.22);
+  const late = at("2031-05-20 23:30", 4.44);
+  // 20/05/2031 as the Analytics page sends it: Athens midnight to midnight (UTC+3 in May).
+  const day = "from=2031-05-19T21:00:00.000Z&to=2031-05-20T20:59:59.999Z";
+  for (const kind of ["payments", "net"]) {
+    const r = await call("GET", `/api/v1/reports/finances/details?kind=${kind}&${day}`);
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    const ids_ = r.data.rows.filter((row) => [evening, noon, late].map(String).includes(String(row.id))).map((row) => String(row.id));
+    assert.deepEqual(ids_.sort(), [noon, late].map(String).sort(), `${kind}: 12:00 and 23:30 on the 20th, not 22:30 on the 19th`);
+  }
+});
+
+test("a refund keeps the booking's paid state in step: partial, unpaid, then paid again", async () => {
+  const id = await book();
+  const state = () => sql(DB, `SELECT payment_status || ' ' || deposit_amount FROM appointments WHERE id = '${id}'`);
+  await pay(id, 40);
+  assert.equal(state(), "paid 40.00");
+  const part = await call("POST", `/api/v1/appointments/${id}/refund`, { amount: 15, payment_method: "cash", reason: "part" });
+  assert.equal(part.status, 200);
+  assert.equal(part.data.payment_status, "partial");
+  assert.equal(state(), "partial 25.00");
+  await call("POST", `/api/v1/appointments/${id}/refund`, { amount: 25, payment_method: "cash", reason: "rest" });
+  assert.equal(state(), "unpaid 0.00");
+  // Paid again from the start.
+  await pay(id, 40);
+  assert.equal(sql(DB, `SELECT payment_status FROM appointments WHERE id = '${id}'`), "paid");
+});
+
+test("the payment's ways, and moving a payment from card to cash in one step", async () => {
+  const id = await book();
+  const card = await call("POST", "/api/v1/transactions", { appointment_id: id, client_id: ids.client, amount: 40, payment_method: "card" });
+  assert.equal(card.status, 200, JSON.stringify(card.data));
+  const before = await balance();
+
+  const ways = await call("GET", `/api/v1/appointments/${id}/payment-methods`);
+  assert.deepEqual(ways.data, { methods: [{ method: "card", net: 40 }], last_method: "card" });
+
+  // Only what was paid that way can move; the two ways must differ.
+  assert.equal((await call("POST", `/api/v1/appointments/${id}/change-payment-method`, { from_method: "card", to_method: "cash", amount: 41 })).status, 400);
+  assert.equal((await call("POST", `/api/v1/appointments/${id}/change-payment-method`, { from_method: "cash", to_method: "card", amount: 10 })).status, 400);
+  assert.equal((await call("POST", `/api/v1/appointments/${id}/change-payment-method`, { from_method: "card", to_method: "card", amount: 10 })).status, 400);
+
+  const moved = await call("POST", `/api/v1/appointments/${id}/change-payment-method`, { from_method: "card", to_method: "cash", amount: 40, note: "λάθος" });
+  assert.equal(moved.status, 200, JSON.stringify(moved.data));
+  assert.equal(moved.data.payment_status, "paid");
+  assert.equal(
+    sql(DB, `SELECT string_agg(payment_method || ' ' || amount || ' ' || transaction_type, ', ' ORDER BY id) FROM transactions WHERE appointment_id = '${id}'`),
+    "card 40.00 payment, card -40.00 refund, cash 40.00 payment",
+  );
+  assert.match(sql(DB, `SELECT reason FROM transactions WHERE appointment_id = '${id}' AND transaction_type = 'refund'`), /Κάρτα → Μετρητά · λάθος/);
+  assert.equal(sql(DB, `SELECT payment_status FROM appointments WHERE id = '${id}'`), "paid");
+  assert.equal(await balance(), before, "what the client owes doesn't change");
+  // The cash filter now hides the service; the card one doesn't.
+  assert.equal(sql(DB, `SELECT paid_with || ' ' || hidden_cash || ' ' || hidden_card FROM appointment_service_payments WHERE appointment_id = '${id}'`), "cash 40.00 0.00");
+  const after = await call("GET", `/api/v1/appointments/${id}/payment-methods`);
+  assert.deepEqual(after.data, { methods: [{ method: "cash", net: 40 }], last_method: "cash" });
+});
+
+test("total sales: gift cards, packages and memberships count when sold, products sold on their own too; debt doesn't change", async () => {
+  const client = clientFor("SalesParts");
+  const day = "2027-08-20";
+  const range = `from=${encodeURIComponent(`${day}T00:00:00+03:00`)}&to=${encodeURIComponent(`${day}T23:59:59+03:00`)}`;
+  const appt = bookAt(client, `'${day} 10:00:00+03'::timestamptz`, 50);
+  sql(DB, `UPDATE appointments SET status = 'completed', save_receipt = true WHERE id = '${appt}'`);
+  // €20 of it paid with a gift card bought earlier with cash (its sale was another day).
+  const card = sql(DB, `INSERT INTO gift_cards (card_number, customer_name, initial_amount, remaining_balance, purchase_payment_method, shop_id, expires_at)
+                        VALUES ('SP-${Date.now()}', 'x', 20, 0, 'cash', '${SHOP}', '2030-01-01') RETURNING id`).split("\n")[0];
+  const txn = (amount, method, type, extra = "") =>
+    sql(DB, `INSERT INTO transactions (appointment_id, client_id, amount, payment_method, transaction_type, shop_id, created_at${extra ? ", gift_card_id" : ""})
+             VALUES (${type === "payment" ? `'${appt}'` : "NULL"}, '${client}', ${amount}, '${method}', '${type}', '${SHOP}', TIMESTAMP '${day} 12:00'${extra ? `, '${extra}'` : ""})`);
+  txn(20, "gift-card", "payment", card);
+  txn(100, "card", "gift_card_sale");
+  txn(60, "cash", "package_sale");
+  txn(30, "card", "membership_sale");
+  sql(DB, `INSERT INTO product_sales (quantity, total_price, sale_date, shop_id) VALUES (1, 15, TIMESTAMPTZ '${day} 11:00:00+03', '${SHOP}')`);
+
+  const all = (await call("GET", `/api/v1/reports/finances?${range}`)).data;
+  // 50 of services, less the 20 a gift card paid (counted when it was sold), + 15 + 100 + 60 + 30.
+  assert.equal(all.total_sales, 235);
+  assert.deepEqual(
+    [all.total_sales_parts.gift_card_used, all.total_sales_parts.own_products, all.total_sales_parts.packages_sold],
+    [20, 15, 60],
+  );
+  // Debt is what the bookings still owe: 50 − 20, whatever else was sold.
+  assert.equal(all.total_debt, 30);
+
+  // Ctrl+8 (card hidden): the gift card and membership sold by card leave the total.
+  const noCard = (await call("GET", `/api/v1/reports/finances?${range}&excludeCard=true`)).data;
+  assert.equal(noCard.total_sales, 105);
+});

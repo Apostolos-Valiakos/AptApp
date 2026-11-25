@@ -172,6 +172,15 @@
             class="flex-1 !py-3 !font-semibold !border-2"
             @click="refundVisible = true"
           />
+          <Button
+            v-if="form.deposit_amount > 0"
+            :label="t('changeMethod.button')"
+            icon="pi pi-arrow-right-arrow-left"
+            severity="secondary"
+            outlined
+            class="flex-1 !py-3 !font-semibold !border-2"
+            @click="changeMethodVisible = true"
+          />
         </div>
       </template>
     </BookingPayments>
@@ -198,6 +207,16 @@
         data-testid="payment-refund"
         @click="refundVisible = true"
       />
+      <Button
+        v-if="form.deposit_amount > 0"
+        :label="t('changeMethod.button')"
+        icon="pi pi-arrow-right-arrow-left"
+        severity="secondary"
+        outlined
+        class="flex-1 !py-3 !font-semibold !border-2"
+        data-testid="payment-change-method"
+        @click="changeMethodVisible = true"
+      />
     </div>
 
     <PriceChangeDialog
@@ -215,6 +234,11 @@
       :ensureSaved="ensureSavedForPackage"
       @refunded="onRefunded"
     />
+    <ChangePaymentMethodDialog
+      v-model:visible="changeMethodVisible"
+      :appointmentId="form.id"
+      @changed="onPaymentMethodChanged"
+    />
   </div>
 </template>
 
@@ -226,6 +250,8 @@ import BookingPackages from "../BookingPackages.vue";
 import BookingGiftCards from "../BookingGiftCards.vue";
 import PriceChangeDialog from "../PriceChangeDialog.vue";
 import RefundDialog from "../RefundDialog.vue";
+import ChangePaymentMethodDialog from "../ChangePaymentMethodDialog.vue";
+import { ref } from "vue";
 import PaymentSteps from "../PaymentSteps.vue";
 import PaymentSummary from "../PaymentSummary.vue";
 import { formatMoney } from "../../../utils/format";
@@ -238,6 +264,7 @@ const {
   priceChangeVisible, refundVisible, bookingPaymentsRef, bookingPackagesRef, packageSaleRef, giftCardSaleRef, canChangePriceOrRefund, canChangePrice,
   canSellExtras, isPaymentSettled, canReachCharge, currentTab, selectedSiblingsOwedTotal, selectedSiblingsDepositTotal, servicesTotal,
   productsTotal, discountAmount, currentApptTotal, previousDebt, combinedTotalDueNow, ensureSavedForPackage, openSale,
-  onPackageChanged, onRefunded, onPriceChangedInPayment, recordPayment,
+  onPackageChanged, onRefunded, onPaymentMethodChanged, onPriceChangedInPayment, recordPayment,
 } = useBookingDialog();
+const changeMethodVisible = ref(false);
 </script>

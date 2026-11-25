@@ -90,6 +90,7 @@ module.exports = function cardRouter({
             SELECT COALESCE(json_agg(json_build_object(
               'name', s.name,
               'staff', st.name,
+              'notes', aps.notes,
               'charged', COALESCE(aps.price_override, s.price, 0),
               'paid_with', (SELECT paid_with FROM appointment_service_payments WHERE appointment_service_id = aps.id),
               'hidden', (SELECT json_build_object('cash', hidden_cash, 'card', hidden_card, 'both', hidden_both)
@@ -133,7 +134,11 @@ module.exports = function cardRouter({
     // The notes on a client's card are the shop's, not for the client to read.
     if (req.user.role === "client") {
       delete client.notes;
-      for (const row of historyRes.rows) delete row.internal_notes;
+      for (const row of historyRes.rows) {
+        delete row.internal_notes;
+        // Each service's own note is the shop's too.
+        row.services_paid = (row.services_paid || []).map(({ notes, ...svc }) => svc);
+      }
     }
     res.json({
       client: {

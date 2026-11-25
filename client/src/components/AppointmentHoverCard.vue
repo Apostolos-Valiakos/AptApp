@@ -44,12 +44,20 @@
               <span class="min-w-0">
                 {{ s.service }}
                 <span v-if="s.staff" class="block text-xs font-normal text-gray-500">{{ s.staff }}</span>
+                <span v-if="s.notes" class="block text-xs font-normal italic text-gray-600 whitespace-pre-line" data-testid="hover-service-note">
+                  <i class="pi pi-comment text-[10px] mr-1"></i>{{ s.notes }}
+                </span>
               </span>
             </div>
           </div>
           <div v-else class="flex text-sm">
             <span class="w-24 flex-shrink-0 text-gray-500">{{ t("scheduler.hoverCard.service") }}</span>
             <span class="text-gray-900 font-medium">{{ appointment.service_name }}</span>
+          </div>
+          <!-- The hovered service's own note. -->
+          <div v-if="!otherServicesThatDay && appointment.service_notes" class="flex text-sm" data-testid="hover-service-note">
+            <span class="w-24 flex-shrink-0 text-gray-500">{{ t("scheduler.hoverCard.serviceNote") }}</span>
+            <span class="text-gray-700 italic whitespace-pre-line">{{ appointment.service_notes }}</span>
           </div>
           <div class="flex text-sm items-center">
             <span class="w-24 flex-shrink-0 text-gray-500">{{ t("scheduler.hoverCard.payment") }}</span>

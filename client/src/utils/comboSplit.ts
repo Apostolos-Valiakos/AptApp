@@ -70,11 +70,12 @@ export const splitCombo = (combo: ComboService, row: any, staff: any[] = []): an
   const partsPrice = parts.reduce((sum, p) => sum + Number(p.price || 0), 0);
   const remainingMinutes = row.duration_override - partsMinutes;
   const remainingPrice = row.price_override - partsPrice;
-  // The parts already make up the whole combination: no line is left for it.
-  if (remainingMinutes <= 0 && remainingPrice <= 0) return carved;
-  // A real remainder (e.g. Sport + Sauna with only the sauna listed): the
-  // combination's line keeps it.
+  // The combination keeps a line of its own only for money the parts don't
+  // cover (e.g. Sport + Sauna with only the sauna listed: the sport part).
+  // Leftover minutes alone used to leave a stray €0 line of 5 minutes or so,
+  // named after the combination, counted as one more booking in the reports.
+  if (remainingPrice <= 0.005) return carved;
   row.duration_override = Math.max(5, remainingMinutes);
-  row.price_override = Math.max(0, remainingPrice);
+  row.price_override = remainingPrice;
   return [row, ...carved];
 };

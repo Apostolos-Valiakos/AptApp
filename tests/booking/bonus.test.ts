@@ -3,7 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { createRequire } from "node:module";
 
-const { bonusForDay, bonusReport, ruleOn, commissionOn, commissionBase, bulkWithVat, targetOn, targetBonus, monthsBetween } = createRequire(import.meta.url)("../../server/domain/bonus.js");
+const { bonusForDay, bonusReport, ruleOn, commissionOn, commissionBase, bulkWithVat, targetOn, targetBonus, monthsBetween, isLaser } = createRequire(import.meta.url)("../../server/domain/bonus.js");
 
 const RULE = { enabled: true, kind: "percent", threshold_minutes: 300, percent: 10, amount_per_hour: 0 };
 let nextId = 1;
@@ -86,10 +86,12 @@ describe("which rule applies", () => {
     expect(ruleOn(rules, "2026-11-14", 1).percent).toBe(10);
     expect(ruleOn(rules, "2026-11-15", 1).percent).toBe(12);
   });
-  it("with none: 5 hours and 10% for people, none for shared places", () => {
-    expect(ruleOn([], "2026-11-15", 1)).toEqual(RULE);
+  // Requirement changed (Nov 2026): the default also pays €2.20 for a service up to 30′ past.
+  it("with none: 5 hours and 10% for people (€2.20 up to 30′ past), none for shared places", () => {
+    const DEFAULT = { ...RULE, laser_amount_per_hour: null, deduction_per_service: 0, last_service_fixed: 2.2 };
+    expect(ruleOn([], "2026-11-15", 1)).toEqual(DEFAULT);
     expect(ruleOn([], "2026-11-15", 5).enabled).toBe(false);
-    expect(ruleOn(rules, "2025-12-31", 1)).toEqual(RULE);
+    expect(ruleOn(rules, "2025-12-31", 1)).toEqual(DEFAULT);
   });
 });
 
@@ -335,5 +337,95 @@ describe("review bonus", () => {
       ["2026-10", null, 0],
       ["2026-11", null, 0],
     ]);
+  });
+});
+
+// Requirement changed (24/11/2026): any service with 30′ or less past the
+// threshold, not only the day's last one.
+describe("a service with 30 minutes or less past the threshold at a fixed amount", () => {
+  const LAST = { ...RULE, last_service_fixed: 2.2 };
+
+  it("30 minutes or less of it past the threshold: €2.20 instead of the percent", () => {
+    // 4h45 then a 1-hour €60 service: 45′ past → 10% of ¾ of €60, as before.
+    expect(bonusForDay([svc("09:00", 285, 100), svc("13:45", 60, 60)], LAST).bonus).toBe(4.5);
+    // 5h then a 30′ Foot Massage (€13): €2.20, not €1.30.
+    const day = bonusForDay([svc("09:00", 300, 100), svc("14:00", 30, 13)], LAST);
+    expect(day.services.map((s: any) => [s.how, s.bonus])).toEqual([["last", 2.2]]);
+    // 4h45 then 30′: only 15′ past → still €2.20.
+    expect(bonusForDay([svc("09:00", 285, 100), svc("13:45", 30, 13)], LAST).bonus).toBe(2.2);
+  });
+
+  it("wherever it is in the day: an earlier service 30′ past earns €2.20 too; one 60′ past, the percent", () => {
+    const day = bonusForDay([svc("09:00", 300, 100), svc("14:00", 30, 20), svc("14:30", 60, 50)], LAST);
+    expect(day.services.map((s: any) => [s.how, s.bonus])).toEqual([
+      ["last", 2.2],
+      ["percent", 5],
+    ]);
+  });
+
+  it("XRISTINA, 1/11 (threshold 4h): the 4-hour mark mid-way through 17:00 → €2.20 + €2.80 + €3.20", () => {
+    const rule = { ...LAST, threshold_minutes: 240 };
+    const day = bonusForDay(
+      [
+        svc("13:00", 60, 32),
+        svc("14:00", 60, 0),
+        svc("15:00", 60, 32),
+        svc("16:00", 30, 22),
+        svc("17:00", 60, 29), // 30′ past (the threshold falls at 17:30)
+        svc("19:00", 60, 28),
+        svc("20:00", 60, 32),
+      ],
+      rule,
+    );
+    expect(day.services.map((s: any) => [s.extra_minutes, s.how, s.bonus])).toEqual([
+      [30, "last", 2.2],
+      [60, "percent", 2.8],
+      [60, "percent", 3.2],
+    ]);
+    expect(day).toMatchObject({ minutes: 390, extra_minutes: 150, bonus: 8.2 });
+  });
+
+  it("off when the rule has no fixed amount", () => {
+    expect(bonusForDay([svc("09:00", 300, 100), svc("14:00", 30, 13)], RULE).bonus).toBe(1.3);
+  });
+});
+
+describe("laser by the hour and a deduction per service (aestheticians)", () => {
+  const AESTH = { ...RULE, threshold_minutes: 240, laser_amount_per_hour: 4, deduction_per_service: 15, last_service_fixed: 2.2 };
+  const laser = (time: string, minutes: number, price: number) => svc(time, minutes, price, { service_name: "Laser 755nm - Πόδια", service_category: "Laser 755nm" });
+  const facial = (time: string, minutes: number, price: number) => svc(time, minutes, price, { service_name: "PURE FACIAL", service_category: "Πρόσωπο" });
+
+  it("laser is found by name or category, any case or accents", () => {
+    expect(isLaser({ service_name: "Αποτρίχωση", service_category: "Λειζερ" })).toBe(true);
+    expect(isLaser({ service_name: "LASER 2X2" })).toBe(true);
+    expect(isLaser({ service_name: "Λέιζερ μασχάλες" })).toBe(true);
+    expect(isLaser({ service_name: "HOLISTIC", service_category: "Μασάζ" })).toBe(false);
+  });
+
+  it("all services count towards one threshold; past it laser earns €4/hour, others 10% of (price − €15)", () => {
+    // 3h laser, then a 2h €45 facial (1h past 4h), then 1h laser (all past).
+    const day = bonusForDay([laser("09:00", 180, 300), facial("12:00", 120, 45), laser("14:00", 60, 70)], AESTH);
+    expect(day.services.map((s: any) => [s.how, s.extra_minutes, s.bonus])).toEqual([
+      ["percent", 60, 1.5], // 10% × (45 − 15) × ½
+      ["laser", 60, 4],
+    ]);
+    expect(day).toMatchObject({ minutes: 360, extra_minutes: 120, bonus: 5.5 });
+  });
+
+  it("a service at €15 or less earns nothing, never less", () => {
+    const day = bonusForDay([laser("09:00", 240, 300), facial("13:00", 60, 10), facial("14:00", 60, 45)], AESTH);
+    expect(day.services.map((s: any) => s.bonus)).toEqual([0, 3]);
+  });
+
+  it("the fixed last-service amount applies to a last non-laser service, not to laser", () => {
+    const lastFacial = bonusForDay([laser("09:00", 240, 300), facial("13:00", 30, 45)], AESTH);
+    expect(lastFacial.services.map((s: any) => [s.how, s.bonus])).toEqual([["last", 2.2]]);
+    const lastLaser = bonusForDay([facial("09:00", 240, 45), laser("13:00", 30, 70)], AESTH);
+    expect(lastLaser.services.map((s: any) => [s.how, s.bonus])).toEqual([["laser", 2]]);
+  });
+
+  it("without a laser amount, laser services are paid like the others", () => {
+    const day = bonusForDay([facial("09:00", 300, 45), laser("14:00", 60, 70)], { ...RULE });
+    expect(day.services.map((s: any) => [s.how, s.bonus])).toEqual([["percent", 7]]);
   });
 });

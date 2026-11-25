@@ -201,6 +201,22 @@
           @update:modelValue="(v: number | null) => (service.persons = v || 1)"
         />
       </div>
+
+      <!-- This service's own note, for its staff member (the shop only; the
+           booking's notes are for the whole visit). -->
+      <div class="mt-4">
+        <label class="text-xs text-gray-500 block mb-1" :for="`service-notes-${modelValue.indexOf(service)}`">{{ t("bookingServices.notes") }}</label>
+        <Textarea
+          :id="`service-notes-${modelValue.indexOf(service)}`"
+          v-model="service.notes"
+          rows="2"
+          autoResize
+          maxlength="2000"
+          class="w-full text-sm"
+          :placeholder="t('bookingServices.notesPlaceholder')"
+          data-testid="service-notes"
+        />
+      </div>
     </div>
       </div>
       </template>

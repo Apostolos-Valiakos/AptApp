@@ -84,6 +84,7 @@ export const useHoverCard = (ctx: ReturnType<typeof useSchedulerCore> & ReturnTy
       id: `${props.appointmentId}_${props.serviceIndex}`,
       start: new Date(start),
       service: props.service_name,
+      notes: props.service_notes || "",
       staff: staffName(resourceId),
       current: props.appointmentId === hovered.appointmentId && props.serviceIndex === hovered.serviceIndex,
       key: props.dayClientKey,

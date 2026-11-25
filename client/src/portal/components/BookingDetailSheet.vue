@@ -35,6 +35,9 @@
       <router-link v-else-if="booking.status !== 'cancelled' && booking.services[0]" :to="{ path: '/portal/book', query: { service: booking.services[0].service_id, ...(booking.services[0].staff_id ? { staff: booking.services[0].staff_id } : {}) } }" class="p-button p-component w-full justify-center">{{ t("portal.v2.actions.bookAgain") }}</router-link>
     </div>
   </Drawer>
+  <!-- The cancel question's box: nothing else in the portal draws one, and a
+       question with no box waits forever (Cancel would do nothing). -->
+  <ConfirmDialog />
 </template>
 
 <script setup lang="ts">
@@ -42,6 +45,7 @@ import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useConfirm } from "primevue/useconfirm";
 import Button from "primevue/button";
+import ConfirmDialog from "primevue/confirmdialog";
 import Drawer from "primevue/drawer";
 import Tag from "primevue/tag";
 import PaidAmount from "../../components/PaidAmount.vue";

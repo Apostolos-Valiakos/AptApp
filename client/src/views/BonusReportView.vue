@@ -120,7 +120,7 @@
               </div>
               <div class="text-xs text-gray-500">
                 {{ hours(d.minutes) }} · {{ t("bonus.extraShort") }} {{ hours(d.extra_minutes) }} ·
-                {{ t("bonus.ruleShort", { hours: hours(d.threshold_minutes), percent: d.kind === "per_hour" ? t("bonus.perHourShort", { amount: number(d.amount_per_hour) }) : `${number(d.percent)}%` }) }}
+                {{ t("bonus.ruleShort", { hours: hours(d.threshold_minutes), percent: d.kind === "per_hour" ? t("bonus.perHourShort", { amount: number(d.amount_per_hour) }) : `${number(d.percent)}%` }) }}<template v-if="d.kind !== 'per_hour'"><template v-if="d.deduction_per_service">, {{ t("bonus.rules.describeDeduction", { amount: number(d.deduction_per_service) }) }}</template><template v-if="d.laser_amount_per_hour != null">, {{ t("bonus.rules.describeLaser", { amount: number(d.laser_amount_per_hour) }) }}</template></template>
               </div>
               <table v-if="d.services.length" class="w-full text-xs mt-1.5">
                 <tbody>
@@ -129,8 +129,15 @@
                     <td class="py-0.5 pr-2 align-top">
                       {{ s.service_name }}<span v-if="s.client_name" class="text-gray-400"> · {{ s.client_name }}</span>
                       <Tag v-if="s.is_redemption" :value="t('bonus.redemption')" severity="info" class="ml-1 !text-[10px] !py-0" data-testid="bonus-redemption" />
+                      <Tag v-else-if="s.is_package" :value="t('bonus.package')" severity="info" class="ml-1 !text-[10px] !py-0" data-testid="bonus-package" />
                       <div class="text-gray-400">
-                        {{ t(s.is_redemption ? "bonus.servicePartRedemption" : "bonus.servicePart", { part: minutesText(s.extra_minutes), of: minutesText(s.minutes), price: formatMoney(s.price) }) }}
+                        {{ t(s.is_redemption ? "bonus.servicePartRedemption" : s.is_package ? "bonus.servicePartPackage" : "bonus.servicePart", { part: minutesText(s.extra_minutes), of: minutesText(s.minutes), price: formatMoney(s.price) }) }}
+                        <span v-if="s.how === 'laser'" data-testid="bonus-how">· {{ t("bonus.howLaser", { amount: formatMoney(d.laser_amount_per_hour) }) }}</span>
+                        <span v-else-if="s.how === 'fixed'" data-testid="bonus-how">· {{ t("bonus.howFixed") }}</span>
+                        <span v-else-if="s.how === 'pair'" data-testid="bonus-how">· {{ t("bonus.howPair") }}</span>
+                        <span v-else-if="s.how === 'short_early'" data-testid="bonus-how">· {{ t("bonus.howShortEarly") }}</span>
+                        <span v-else-if="s.how === 'last'" data-testid="bonus-how">· {{ t("bonus.howLast") }}</span>
+                        <span v-else-if="s.deduction" data-testid="bonus-how">· {{ t("bonus.howDeducted", { base: formatMoney(s.base) }) }}</span>
                       </div>
                     </td>
                     <td class="py-0.5 text-right tabular-nums whitespace-nowrap align-top">{{ formatMoney(s.bonus) }}</td>
@@ -299,7 +306,11 @@ const staffSheetRows = (r: any) => {
     }));
     for (const sv of d.services) {
       rows.push(row({
-        [k("kind")]: sv.is_redemption ? `${k("service")} (${t("bonus.redemption")})` : k("service"),
+        [k("kind")]: sv.is_redemption
+          ? `${k("service")} (${t("bonus.redemption")})`
+          : sv.is_package
+            ? `${k("service")} (${t("bonus.package")})`
+            : k("service"),
         [t("bonus.date")]: d.date,
         [k("time")]: clockTime(sv.start_time),
         [k("item")]: sv.service_name,
