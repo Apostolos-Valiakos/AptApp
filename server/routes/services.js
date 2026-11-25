@@ -335,7 +335,21 @@ module.exports = function servicesRouter({
     const n = Number(v);
     return Number.isFinite(n) && n >= 0 && n <= 1000 ? Math.round(n * 100) / 100 : NaN;
   };
+  // The minutes the service counts for the bonus at most: a whole number of
+  // minutes, null for all of its booked time, or undefined when the body
+  // doesn't say. Anything else is refused.
+  const bonusMinutesFrom = (body) => {
+    if (!Object.prototype.hasOwnProperty.call(body, "bonus_minutes")) return undefined;
+    const v = body.bonus_minutes;
+    if (v === null || v === "") return null;
+    const n = Number(v);
+    return Number.isInteger(n) && n >= 1 && n <= 1440 ? n : NaN;
+  };
   const saveBonusSettings = async (req, id) => {
+    const minutes = bonusMinutesFrom(req.body);
+    if (minutes !== undefined) {
+      await pool.query("UPDATE services SET bonus_minutes = $1 WHERE id = $2 AND shop_id = $3", [minutes, id, req.shopId]);
+    }
     const bonusService = await bonusServiceFrom(req.body, req.shopId, id);
     if (bonusService !== undefined) {
       await pool.query("UPDATE services SET bonus_service_id = $1 WHERE id = $2 AND shop_id = $3", [bonusService, id, req.shopId]);
@@ -348,6 +362,7 @@ module.exports = function servicesRouter({
 
   router.post("/services", authenticateToken, requireShopAdminAccess, asyncHandler(async (req, res) => {
     if (Number.isNaN(bonusFixedFrom(req.body))) return res.status(400).json({ error: "bonus_fixed must be between 0 and 1000" });
+    if (Number.isNaN(bonusMinutesFrom(req.body))) return res.status(400).json({ error: "bonus_minutes must be a whole number from 1 to 1440" });
     const {
       name,
       duration_minutes,
@@ -407,6 +422,7 @@ module.exports = function servicesRouter({
 
   router.put("/services/:id", authenticateToken, requireShopAdminAccess, asyncHandler(async (req, res) => {
     if (Number.isNaN(bonusFixedFrom(req.body))) return res.status(400).json({ error: "bonus_fixed must be between 0 and 1000" });
+    if (Number.isNaN(bonusMinutesFrom(req.body))) return res.status(400).json({ error: "bonus_minutes must be a whole number from 1 to 1440" });
     const { id } = req.params;
     const {
       name,

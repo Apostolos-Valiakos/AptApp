@@ -260,6 +260,19 @@
             />
             <p class="text-xs text-gray-400 mt-1">{{ t('services.dialog.bonusFixedNote') }}</p>
           </div>
+          <div class="md:col-span-2">
+            <label class="block text-sm font-medium text-gray-700 mb-1" for="service-bonus-minutes">{{ t('services.dialog.bonusMinutes') }}</label>
+            <InputNumber
+              v-model="editingService.bonus_minutes"
+              inputId="service-bonus-minutes"
+              :min="1"
+              :max="1440"
+              :placeholder="t('services.dialog.bonusMinutesPlaceholder')"
+              class="w-full"
+              data-testid="service-bonus-minutes"
+            />
+            <p class="text-xs text-gray-400 mt-1">{{ t('services.dialog.bonusMinutesNote') }}</p>
+          </div>
 
           <!-- Color picker — full width with light gray background -->
           <div class="md:col-span-2 p-4 bg-gray-50 rounded-xl border border-gray-200">
@@ -783,6 +796,7 @@ const openNew = () => {
     default_staff_id: null,
     bonus_service_id: null,
     bonus_fixed: null,
+    bonus_minutes: null,
     combo_component_ids: [],
     combo_part_prices: {},
     variations: [],
@@ -797,6 +811,7 @@ const editService = (service: any) => {
   editingService.value = {
     ...service,
     bonus_fixed: service.bonus_fixed == null ? null : Number(service.bonus_fixed),
+    bonus_minutes: service.bonus_minutes == null ? null : Number(service.bonus_minutes),
     combo_component_ids: (service.combo_components || []).map((c: any) => c.id),
     combo_part_prices: Object.fromEntries(
       (service.combo_components || []).map((c: any) => [c.id, c.combo_price == null ? null : Number(c.combo_price)]),

@@ -224,7 +224,11 @@ module.exports = function bonusRouter({ authenticateToken, requireAnalyticsAcces
       pool.query(
         `SELECT aps.id, aps.staff_id, aps.start_time,
                 to_char(aps.start_time AT TIME ZONE '${TZ}', 'YYYY-MM-DD') AS day,
-                COALESCE(NULLIF(aps.duration_override, 0), s.duration_minutes, 60) AS minutes,
+                -- The booked time, at most the service's minutes for the bonus
+                -- (e.g. a deep cleansing booked for 1h15 counts 1 hour).
+                LEAST(COALESCE(NULLIF(aps.duration_override, 0), s.duration_minutes, 60),
+                      COALESCE(s.bonus_minutes, 2147483647)) AS minutes,
+                COALESCE(NULLIF(aps.duration_override, 0), s.duration_minutes, 60) AS booked_minutes,
                 -- A redemption counts at the price of the service it stands for:
                 -- stored when it was booked, else that service's price now.
                 ${SERVICE_VALUE}::float AS price,

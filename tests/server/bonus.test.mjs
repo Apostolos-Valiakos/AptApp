@@ -376,6 +376,22 @@ test("a package's sessions, the paid one too, count as one session of the linked
   assert.equal(sql(DB, `SELECT bonus_value FROM appointment_services WHERE appointment_id = '${old}'`), "29.00");
 });
 
+test("a service can count fewer minutes for the bonus than it's booked for (deep cleansing: 1h15 counts 1 hour)", async () => {
+  const staffId = sql(DB, `INSERT INTO staff (name, shop_id) VALUES ('Minutes Tester', '${SHOP}') RETURNING id`).split("\n")[0];
+  const cleansing = (await admin("POST", "/api/v1/services", { name: "TEST ΒΑΘΥΣ ΚΑΘΑΡΙΣΜΟΣ", duration_minutes: 75, price: 60, category: "Other", bonus_minutes: 60 })).data.id;
+  assert.equal(sql(DB, `SELECT bonus_minutes FROM services WHERE id = '${cleansing}'`), "60");
+  assert.equal((await admin("PUT", `/api/v1/services/${cleansing}`, { name: "TEST ΒΑΘΥΣ ΚΑΘΑΡΙΣΜΟΣ", duration_minutes: 75, price: 60, category: "Other", bonus_minutes: 1.5 })).status, 400);
+  // The migration set the dev data's deep cleansing services (over an hour) to 60.
+  assert.equal(sql(DB, `SELECT count(*) FROM services WHERE name ILIKE '%ΒΑΘΥΣ ΚΑΘΑΡΙΣΜ%' AND duration_minutes > 60 AND bonus_minutes IS DISTINCT FROM 60 AND id <> '${cleansing}'`), "0");
+
+  // 5 hours of work, then a cleansing booked for 75 minutes: 60 of them count, all past the threshold.
+  book("2030-09-06 04:00", 300, 0, "completed", staffId);
+  book("2030-09-06 09:00", 75, 60, "completed", staffId, cleansing);
+  const day = (await report("2030-09-06", "2030-09-06")).data.staff.find((x) => x.staff_id === staffId).days[0];
+  const line = day.services.find((x) => x.service_name === "TEST ΒΑΘΥΣ ΚΑΘΑΡΙΣΜΟΣ");
+  assert.deepEqual([day.minutes, line.minutes, line.booked_minutes, line.extra_minutes, line.bonus], [360, 60, 75, 60, 6]);
+});
+
 test("a sales target pays the highest step reached in the month; review counts pay front desk per new review", async () => {
   const seller = sql(DB, `INSERT INTO staff (name, shop_id) VALUES ('Target Tester', '${SHOP}') RETURNING id`).split("\n")[0];
   const desk = sql(DB, `INSERT INTO staff (name, shop_id) VALUES ('Desk Tester', '${SHOP}') RETURNING id`).split("\n")[0];
