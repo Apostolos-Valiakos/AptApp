@@ -754,6 +754,19 @@ describe("the hover card's services of the day", () => {
   });
 });
 
+describe("the calendar's own questions", () => {
+  // Moving a card asks first. The calendar must show that question in a box
+  // of its own: the booking dialog's box only takes the booking dialog's
+  // questions, and with none here a drop waited forever and saved nothing.
+  // (The test helper adds a page-wide box, so it's looked for inside the page.)
+  test("the page has a confirmation box for questions without a group", async () => {
+    const { wrapper } = await open("admin");
+    const page = wrapper.findComponent(SchedulerView);
+    const boxes = page.findAllComponents({ name: "ConfirmDialog" }).filter((c: any) => !c.props("group"));
+    expect(boxes.length).toBeGreaterThan(0);
+  });
+});
+
 describe("a completed appointment's card", () => {
   const serviceEvent = async (status: string, money: Record<string, number> = {}) => {
     const { options } = await open("admin", {
