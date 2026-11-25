@@ -310,6 +310,11 @@ export default {
       specialty: 'Specialty',
     },
     dialog: {
+      tabs: {
+        details: 'Details',
+        services: 'Services',
+        bonus: 'Bonus',
+      },
       editStaff: 'Edit Staff',
       newStaff: 'New Staff',
       firstName: 'First Name',
@@ -596,6 +601,12 @@ export default {
       bonusFixed: "Fixed bonus",
       bonusFixedPlaceholder: "None: a percent of the price",
       bonusFixedNote: "When set, staff earn this amount for the service instead of a percent of its price, once past their hours threshold (e.g. €2.20 for the diagnostic appointment).",
+      tabs: {
+        basic: 'Basics',
+        variations: 'Variations',
+        staff: 'Staff',
+        bonus: 'Bonus',
+      },
       bonusMinutes: 'Minutes that count for the bonus',
       bonusMinutesPlaceholder: 'All of the booked time',
       bonusMinutesNote: 'When set, the service counts at most this many minutes for the bonus, however long it is booked (e.g. a deep cleansing of 1h15 counts 60).',

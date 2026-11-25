@@ -1,5 +1,5 @@
 <template>
-  <div class="border-t border-gray-100 pt-5" data-testid="staff-bonus-settings">
+  <div data-testid="staff-bonus-settings">
     <label class="block text-sm font-bold text-gray-800 mb-2" for="bonus-section">{{ t("bonus.settings.title") }}</label>
     <Select
       v-model="section"

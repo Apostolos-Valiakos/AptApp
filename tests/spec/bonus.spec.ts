@@ -118,6 +118,25 @@ const openStaffForm = async (role: "admin" | "frontdesk", routes: Record<string,
   return server;
 };
 
+describe("SF2 the staff form in tabs", () => {
+  const shown = (id: string) => byTestId(id)!.style.display !== "none";
+  test("opens on the details; the bonus has its own tab, for admins only", async () => {
+    await openStaffForm("admin");
+    expect(shown("staff-tab-panel-details")).toBe(true);
+    expect(shown("staff-tab-panel-bonus")).toBe(false);
+    byTestId("staff-tab-bonus")!.click();
+    await settle();
+    expect(shown("staff-tab-panel-bonus")).toBe(true);
+    expect(shown("staff-tab-panel-details")).toBe(false);
+  });
+
+  test("front desk has no bonus tab", async () => {
+    await openStaffForm("frontdesk");
+    expect(byTestId("staff-tab-bonus")).toBeNull();
+    expect(byTestId("staff-tab-services")).not.toBeNull();
+  });
+});
+
 describe("BN3 who sets the bonus rule", () => {
   test("admins see it in the staff form, with today's rule", async () => {
     await openStaffForm("admin");
