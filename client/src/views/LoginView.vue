@@ -2,15 +2,25 @@
   <!-- Styled like the public home page (landing/): its colours, the PURE
        wordmark and the serif heading font, without the app's top bar. -->
   <div class="pure-login">
-    <a :href="homeUrl" class="pure-login-back">
+    <!-- The Android app has no home page to go back to. -->
+    <a v-if="!isAppBuild" :href="homeUrl" class="pure-login-back">
       <i class="pi pi-arrow-left text-xs"></i>
       {{ t("login.backHome") }}
     </a>
 
     <div class="pure-login-card">
-      <a :href="homeUrl" class="pure-login-logo" aria-label="Pure Massage & Spa Experience"></a>
+      <a :href="isAppBuild ? undefined : homeUrl" class="pure-login-logo" aria-label="Pure Massage & Spa Experience"></a>
       <h1 class="pure-login-title">{{ t("login.welcome") }}</h1>
       <p class="pure-login-subtitle">{{ t("login.subtitle") }}</p>
+
+      <!-- A staff account signed in to the Android app, which holds only the
+           client portal (portal/router.ts): signed out, sent to the web app. -->
+      <div v-if="staffSignedOut" class="mb-5 rounded-xl border border-[#eadfd2] bg-[#f6f1ea] p-4 text-sm text-[#2a211b]" data-testid="login-staff-app">
+        <p>{{ t("login.staffApp") }}</p>
+        <a :href="webAppUrl" target="_blank" rel="noopener" class="mt-2 inline-flex items-center gap-2 font-semibold text-[#8B6F4E]" data-testid="login-open-web-app">
+          {{ t("login.openWebApp") }} <i class="pi pi-external-link text-xs"></i>
+        </a>
+      </div>
 
       <form @submit.prevent="login" class="space-y-5">
         <div class="flex flex-col gap-1.5">
@@ -84,6 +94,11 @@ const toast = useToast();
 // (see utils/sessionRecovery.ts).
 // Back to the public home page (its own server in development).
 const homeUrl = (import.meta.env.VITE_LANDING_URL as string | undefined) || "/";
+// The Android app's build (vite --mode portal).
+const isAppBuild = import.meta.env.MODE === "portal";
+// The staff web app, opened in the phone's browser from the app.
+const webAppUrl = `${(import.meta.env.VITE_API_BASE_URL as string | undefined) || window.location.origin}/login`;
+const staffSignedOut = ref(!!route.query.staffApp);
 
 // Open in the language the visitor picked on the home page: passed as ?lang=
 // (different ports in development) or read from the page's own setting
@@ -112,7 +127,7 @@ onMounted(() => {
   if (route.query.expired) {
     toast.add({ severity: "warn", summary: t("login.sessionExpired"), life: 6000 });
   }
-  if (route.query.expired || route.query.lang) router.replace({ path: "/login" });
+  if (route.query.expired || route.query.lang || route.query.staffApp) router.replace({ path: "/login" });
 });
 
 const login = async () => {

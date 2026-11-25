@@ -1,23 +1,8 @@
 import { createApp, watch } from "vue";
+import { installApiBase } from "./apiBase";
 
-// In the Capacitor native build there is no Vite proxy, so relative /api
-// URLs would resolve to capacitor://localhost/api and fail. Patch fetch to
-// prepend the real server origin when VITE_API_BASE_URL is set at build time.
-const _apiBase = (import.meta.env.VITE_API_BASE_URL as string) ?? "";
-if (_apiBase) {
-  const _orig = window.fetch.bind(window);
-  window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
-    if (
-      typeof input === "string" &&
-      (input.startsWith("/api") ||
-        input.startsWith("/socket.io") ||
-        input.startsWith("/health"))
-    ) {
-      return _orig(_apiBase + input, init);
-    }
-    return _orig(input, init);
-  };
-}
+// Server requests go to VITE_API_BASE_URL when a build sets it (see apiBase.ts).
+installApiBase();
 import { createPinia } from "pinia";
 import PrimeVue from "primevue/config";
 import App from "./App.vue";

@@ -7,6 +7,8 @@
     "server": "node server/server.js",
     "client:dev": "vite --host",
     "build": "vite build",
+    "build:portal": "vite build --mode portal",
+    "app:sync": "npm run build:portal && npx cap sync android",
     "start": "node server/server.js",
     "typecheck": "vue-tsc --noEmit -p client",
     "test": "npm run typecheck && vitest run && npm run test:spec && node --test tests/offline/server.test.mjs tests/server/auth.test.mjs tests/server/payments.test.mjs tests/server/expenses.test.mjs tests/server/capacity.test.mjs tests/server/sharedPlaceRows.test.mjs tests/server/serviceNotes.test.mjs tests/server/staffBreakdown.test.mjs tests/server/insights.test.mjs tests/server/quickwins.test.mjs tests/server/roles.test.mjs tests/server/dailyReport.test.mjs tests/server/clientExport.test.mjs tests/server/reviewFixes.test.mjs tests/server/staffReadOnly.test.mjs tests/server/comboPrices.test.mjs tests/server/bonus.test.mjs",

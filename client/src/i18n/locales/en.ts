@@ -163,6 +163,8 @@ export default {
     backHome: 'Home',
     welcome: 'Welcome',
     sessionExpired: 'Your session has expired. Please log in again.',
+    staffApp: 'This app is for clients. Staff sign in through the web app.',
+    openWebApp: 'Open the web app',
     subtitle: 'Sign in to your account.',
     username: 'Username',
     password: 'Password',

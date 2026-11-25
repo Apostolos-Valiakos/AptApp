@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { defineAsyncComponent, defineComponent, h } from "vue";
 import { useAuthStore } from "../stores/auth";
+import { portalRoute } from "../portal/portalRoute";
 
 // Views — landing/login stay eager (first paint), the rest are lazy-loaded chunks
 import Layout from "../components/Layout.vue";
@@ -118,28 +119,8 @@ const routes = [
       },
     ],
   },
-  {
-    path: "/portal",
-    // The client portal (docs/redesign/REDESIGN_SPEC.md §2): its own frame,
-    // theme and screens, loaded only when a client opens it.
-    component: () => import("../portal/PortalShell.vue"),
-    meta: { requiresAuth: true, role: "client" },
-    children: [
-      { path: "", redirect: "/portal/home" },
-      { path: "home", name: "PortalHome", component: () => import("../portal/routes").then((m) => m.Home) },
-      { path: "book", name: "PortalBook", component: () => import("../portal/routes").then((m) => m.Book) },
-      { path: "book/reschedule/:id", name: "PortalReschedule", component: () => import("../portal/routes").then((m) => m.Book) },
-      { path: "bookings", name: "PortalBookings", component: () => import("../portal/routes").then((m) => m.Bookings) },
-      { path: "bookings/:id", name: "PortalBooking", component: () => import("../portal/routes").then((m) => m.Bookings) },
-      { path: "wallet", name: "PortalWallet", component: () => import("../portal/routes").then((m) => m.Wallet) },
-      { path: "wallet/pass", name: "PortalPass", component: () => import("../portal/routes").then((m) => m.Pass) },
-      { path: "profile", name: "PortalProfile", component: () => import("../portal/routes").then((m) => m.Profile) },
-      // The portal before the redesign: links in emails and notifications
-      // already sent still open the same place.
-      { path: "appointments", redirect: (to: any) => ({ path: to.query.tab === "book" ? "/portal/book" : "/portal/bookings", query: {} }) },
-      { path: "more", redirect: "/portal/profile" },
-    ],
-  },
+  // The client portal: the same routes as the Android app (portal/portalRoute.ts).
+  portalRoute,
   // Redirects για να μη σπάνε τα παλιά links - ΠΡΟΣΟΧΗ ΣΤΑ "/"
   { path: "/scheduler", redirect: "/app/scheduler" },
   { path: "/staff", redirect: "/app/staff" },

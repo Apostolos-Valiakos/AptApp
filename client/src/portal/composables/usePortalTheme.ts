@@ -30,6 +30,14 @@ const saveAppearance = (value: Appearance) => {
   } catch {}
 };
 
+// The look outside the portal shell (login, signup): the staff app's on the
+// web. The Android app holds nothing but the portal, so its entry
+// (portal/main.ts) keeps the portal's look there too.
+let outsidePreset: unknown = appPreset;
+export const setOutsidePortalPreset = (preset: unknown) => {
+  outsidePreset = preset;
+};
+
 // Shared by every component that shows or changes it (shell, Profile).
 const appearance = ref<Appearance>(readAppearance());
 
@@ -62,7 +70,7 @@ export const usePortalTheme = () => {
     stopScheme();
     media?.removeEventListener?.("change", applyScheme);
     document.documentElement.classList.remove(DARK_CLASS);
-    usePreset(appPreset);
+    usePreset(outsidePreset as any);
   });
 
   return { isDark };

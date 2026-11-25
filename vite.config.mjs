@@ -44,7 +44,19 @@ const appServiceWorker = () => {
   };
 };
 
+// The Android app's build (`vite build --mode portal`, see client/portal.html):
+// the page has to be index.html, the one Capacitor opens.
+const portalPageAsIndex = () => ({
+  name: "portal-page-as-index",
+  enforce: "post",
+  generateBundle(_, bundle) {
+    if (bundle["portal.html"]) bundle["portal.html"].fileName = "index.html";
+  },
+});
+
 export default defineConfig(({ mode, command }) => {
+  // The client portal alone, for the Android app (client/dist-portal).
+  const isPortal = mode === "portal";
   // Load env file from the root directory
   // process.cwd() tells Vite to look in the project root for the .env file
   const env = loadEnv(mode, process.cwd(), "");
@@ -52,7 +64,8 @@ export default defineConfig(({ mode, command }) => {
   return {
     plugins: [
       vue(),
-      appServiceWorker(),
+      // The staff app's offline files: not in the app, which has no staff screens.
+      isPortal ? portalPageAsIndex() : appServiceWorker(),
       Components({
         dirs: [], // the app's own components stay explicitly imported
         dts: false,
@@ -100,9 +113,8 @@ export default defineConfig(({ mode, command }) => {
       command === "build"
         ? { alias: { "@vue/devtools-api": path.resolve("client/src/shims/devtools-api.ts") } }
         : {},
-    build: {
-      outDir: "dist",
-      emptyOutDir: true,
-    },
+    build: isPortal
+      ? { outDir: "dist-portal", emptyOutDir: true, rollupOptions: { input: path.resolve("client/portal.html") } }
+      : { outDir: "dist", emptyOutDir: true },
   };
 });
