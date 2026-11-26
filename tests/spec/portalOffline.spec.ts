@@ -45,7 +45,8 @@ describe("OF2 with no connection", () => {
 describe("OF3 logging out", () => {
   test("forgets them", async () => {
     await open({ body: [BOOKING] });
-    forgetPortal();
+    // Logout is async now: the app's native clean-up runs first (step 7.5).
+    await forgetPortal();
     expect(localStorage.getItem("portal.bookings")).toBeNull();
     expect(usePortalBookingsStore().list).toEqual([]);
   });

@@ -51,6 +51,11 @@ export default {
     remindersAsk: "Would you like a reminder on your phone before each appointment?",
     remindersOn: "Turn on reminders",
     calendarAdded: "Added to your calendar",
+    security: "Security",
+    unlockToggle: "Unlock with fingerprint",
+    unlockNote: "The app asks for your fingerprint (or the phone's PIN) every time it opens.",
+    unlockTitle: "Unlock",
+    unlockReason: "Confirm it's you",
   },
   share: { copied: "Link copied", booking: "I'm booked at {shop}: {what}, {when}" },
   book: {

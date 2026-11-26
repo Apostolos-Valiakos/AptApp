@@ -58,6 +58,18 @@
       </div>
     </section>
 
+    <!-- The Android app only, on a phone with a fingerprint (or face) enrolled. -->
+    <section v-if="biometric.available.value" class="space-y-2" data-testid="security">
+      <h2 class="portal-micro font-semibold uppercase tracking-wider px-1">{{ t("portal.v2.native.security") }}</h2>
+      <div class="portal-card flex items-center justify-between gap-3 p-4">
+        <label for="biometric-unlock" class="min-w-0">
+          <span class="block font-medium">{{ t("portal.v2.native.unlockToggle") }}</span>
+          <span class="block text-sm opacity-70">{{ t("portal.v2.native.unlockNote") }}</span>
+        </label>
+        <ToggleSwitch inputId="biometric-unlock" :modelValue="biometric.enabled.value" data-testid="biometric-unlock" @update:modelValue="toggleBiometric" />
+      </div>
+    </section>
+
     <section class="space-y-2">
       <h2 class="portal-micro font-semibold uppercase tracking-wider px-1">{{ t("portal.v2.profile.appearance") }}</h2>
       <SelectButton :modelValue="appearance" :options="appearances" optionLabel="label" optionValue="value" :allowEmpty="false" class="w-full" data-testid="appearance" @update:modelValue="setAppearance" />
@@ -123,6 +135,7 @@ import { usePushNotifications } from "../../composables/usePushNotifications";
 import { useAppearance, type Appearance } from "../composables/usePortalTheme";
 import { usePortalNotifications } from "../composables/usePortalNotifications";
 import { forgetPortal } from "../logout";
+import { useBiometricUnlock } from "../native/useSecureSession";
 import { usePortalWalletStore } from "../stores/wallet";
 import { usePortalShopStore } from "../stores/shop";
 
@@ -241,13 +254,21 @@ const saveNotifications = async () => {
   }
 };
 
-const logout = () => {
-  forgetPortal();
+// Unlock with fingerprint: turned on only after one successful unlock.
+const biometric = useBiometricUnlock();
+const toggleBiometric = async (on: boolean) => {
+  if (on) await biometric.enable();
+  else biometric.disable();
+};
+
+const logout = async () => {
+  await forgetPortal();
   auth.logout();
   router.push("/");
 };
 
 onMounted(() => {
+  void biometric.check();
   shop.load();
   wallet.load(auth.clientId);
 });
