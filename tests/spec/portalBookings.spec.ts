@@ -3,7 +3,7 @@
 // and cancelling there (BH4, K3, K4), the calendar file (BH5), sharing
 // without a share sheet (BH6), and a change made elsewhere showing at once (BH7).
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { RouterView } from "vue-router";
+import { RouterView, createRouter, createWebHistory } from "vue-router";
 import BookingsView from "../../client/src/portal/views/BookingsView.vue";
 import { icsFor } from "../../client/src/portal/utils/calendarFile";
 import { usePortalBookingsStore, type PortalBooking } from "../../client/src/portal/stores/bookings";
@@ -30,17 +30,22 @@ const LIST = [
   b("unpaid", -24 * 10, { status: "completed", paid: 0, total: 40 }),
 ];
 
-const open = async (path = "/portal/bookings", routes: Record<string, any> = {}, shop: Record<string, any> = {}) => {
+// `web`: the browser's history (as the app has), which knows the entry behind
+// the current one; the memory history of the other tests doesn't.
+const open = async (path = "/portal/bookings", routes: Record<string, any> = {}, shop: Record<string, any> = {}, web = false) => {
   saveLogin({ id: "u1", role: "client", shop_id: "s1", client_id: "c1" });
   const server = fakeServer({
     "GET /api/v1/portal/appointments": { body: LIST },
     "GET /api/v1/shop": { body: { id: "s1", name: "Pure", phone: "2410555555", address: "Παπαναστασίου 1", cancellation_note: "Δωρεάν ακύρωση έως 24 ώρες πριν.", ...shop } },
     ...routes,
   });
-  const router = blankRouter([
+  const screens = [
     { path: "/portal/bookings", component: BookingsView },
     { path: "/portal/bookings/:id", component: BookingsView },
-  ]);
+  ];
+  const router = web
+    ? createRouter({ history: createWebHistory(), routes: [...screens, { path: "/:rest(.*)*", component: { render: () => h("div") } }] })
+    : blankRouter(screens);
   await router.push(path);
   mountScreen(defineComponent({ render: () => h(RouterView) }), { router });
   await settle();
@@ -149,5 +154,37 @@ describe("BH8 inside the shop's notice period", () => {
     expect(one("detail-cancel")).toBeNull();
     expect(one("detail-reschedule")).toBeNull();
     expect(one("too-late")!.textContent).toContain(el.portal.actions.errors.too_late);
+  });
+});
+
+describe("BH9 closing the details steps back", () => {
+  const closeSheet = async () => {
+    document.querySelector<HTMLElement>(".p-drawer-close-button")!.click();
+    await settle();
+  };
+  // Closing must not add a history entry, or the phone's Back reopens the
+  // booking instead of leaving Bookings (seen on the phone in step 7.7).
+  test("opened from the list: closing goes back to it, and Back then leaves Bookings", async () => {
+    window.history.replaceState(null, "", "/");
+    const { router } = await open("/portal/home", {}, {}, true);
+    await router.push("/portal/bookings");
+    await router.push("/portal/bookings/later");
+    await settle();
+    const before = window.history.length;
+    await closeSheet();
+    await new Promise((r) => setTimeout(r, 50));
+    await settle();
+    expect(router.currentRoute.value.path).toBe("/portal/bookings");
+    expect(one("booking-detail")).toBeNull();
+    expect(window.history.state.forward).toBe("/portal/bookings/later");
+    expect(window.history.length).toBe(before);
+  });
+  test("opened from a link: closing shows the list in its place", async () => {
+    window.history.replaceState(null, "", "/");
+    const { router } = await open("/portal/bookings/later", {}, {}, true);
+    const before = window.history.length;
+    await closeSheet();
+    expect(router.currentRoute.value.path).toBe("/portal/bookings");
+    expect(window.history.length).toBe(before);
   });
 });

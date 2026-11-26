@@ -50,7 +50,7 @@
       </ul>
     </template>
 
-    <BookingDetailSheet :booking="selected" @close="router.push({ path: '/portal/bookings', query: route.query })" />
+    <BookingDetailSheet :booking="selected" @close="closeDetail" />
   </div>
 </template>
 
@@ -87,6 +87,15 @@ const tab = computed({
 const upcoming = computed(() => [...bookings.upcoming, ...bookings.cancelledUpcoming].sort((a, b) => a.start_time.localeCompare(b.start_time)));
 const past = computed(() => bookings.past);
 const selected = computed(() => (route.params.id ? bookings.byId(String(route.params.id)) : undefined));
+// Closing a booking's details steps back to the list when the list opened
+// them, so the next Back (the phone's button too) leaves Bookings instead of
+// reopening the booking. Opened from a link or a notification, there's no
+// list behind: the details are replaced by it.
+const closeDetail = () => {
+  const back = router.options.history.state.back;
+  if (typeof back === "string" && /^\/portal\/bookings(\?|$)/.test(back)) router.back();
+  else router.replace({ path: "/portal/bookings", query: route.query });
+};
 const monthShort = (iso: string) => new Date(iso).toLocaleDateString(locale.value === "el" ? "el-GR" : "en-GB", { month: "short" });
 
 onMounted(() => {

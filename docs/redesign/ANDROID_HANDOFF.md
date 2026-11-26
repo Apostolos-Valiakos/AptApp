@@ -185,6 +185,26 @@ Run `npm run app:sync`, then `cd android && ./gradlew assembleDebug`, then insta
 
 Record the results in the step's commit message or a short note in this file.
 
+**Results (26 Nov 2026, Pixel emulator, Android 16, debug build against a local test
+server and a throwaway copy of the database):**
+
+| # | Result |
+|---|--------|
+| 1 | Pass. Login page first, then Home. |
+| 2 | Pass after a fix. Booking and the done sheet worked. "Add to calendar" never reached the phone's calendar: on Android the plugin reads the calendars to find the default one, so write-only access fails. It now asks for read and write. |
+| 3 | Pass. "Turn on reminders" brings Android's prompt; the reminder is set an hour before the booking. Exact alarms aren't allowed, so it is inexact (may fire a few minutes late). A test notification shows the shop's icon and colour. |
+| 4 | Pass. The pass goes to full brightness and back. In airplane mode the bookings and the pass still show, with the offline notice. |
+| 5 | Pass. Moving moves the reminder; cancelling removes it; the server has both changes. |
+| 6 | Not checked (left out on purpose). |
+| 7 | Pass after fixes. Status bar: Android 15+ draws the page under it and ignores its colour, so its icons now follow the page (dark on cream, light in dark mode, light over the pass). Back button: closing a booking's details used to add a history entry, so Back reopened the booking; it now steps back. |
+| 8 | Pass. Turning it on asks for the fingerprint; a cold start asks before the login is restored; cancelling leads to the login page, and the next start asks again. |
+| 9 | Pass. `/app/...` paths land on the portal's Home; links to `/portal/...` open the right screen. App Link verification waits for the release key (7.8). |
+
+Noticed, not changed:
+- Times show in the phone's time zone; on a phone not set to Greek time, bookings, reminders and calendar entries are shifted. The web portal does the same.
+- After a cancelled fingerprint prompt, the login page has no "try the fingerprint again".
+- The offline notice follows Android's own internet check; on a network Android marks as limited, it shows even when the server is reachable.
+
 ### Step 7.8 — Release build (when the owner is ready)
 
 - **Signing key:** create one with `keytool`. Keep it and its passwords **out of git** (a

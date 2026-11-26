@@ -20,7 +20,7 @@ const plugins = vi.hoisted(() => ({
     checkExactNotificationSetting: vi.fn(),
   },
   PushNotifications: { checkPermissions: vi.fn(), register: vi.fn(), unregister: vi.fn(), addListener: vi.fn() },
-  CapacitorCalendar: { requestWriteOnlyCalendarAccess: vi.fn(), createEvent: vi.fn() },
+  CapacitorCalendar: { requestFullCalendarAccess: vi.fn(), requestWriteOnlyCalendarAccess: vi.fn(), createEvent: vi.fn() },
   Share: { share: vi.fn() },
   AppLauncher: { openUrl: vi.fn() },
   ScreenBrightness: { getBrightness: vi.fn(), setBrightness: vi.fn() },
@@ -236,16 +236,19 @@ describe("NT4 announcements (FCM): only in a build with Firebase", () => {
 
 describe("NT5 add to calendar", () => {
   const event = { uid: "b1", title: "Holistic · Pure", start: new Date(2027, 2, 10, 10), end: new Date(2027, 2, 10, 11), location: "Λάρισα", description: "" };
-  test("native: into the phone's calendar after asking", async () => {
+  // Android's createEvent reads the calendars to find the default one, so
+  // write-only access is not enough there: it asks for read and write.
+  test("native: into the phone's calendar after asking for read and write access", async () => {
     native.on = true;
-    plugins.CapacitorCalendar.requestWriteOnlyCalendarAccess.mockResolvedValue({ result: "granted" });
+    plugins.CapacitorCalendar.requestFullCalendarAccess.mockResolvedValue({ result: "granted" });
     plugins.CapacitorCalendar.createEvent.mockResolvedValue({ id: "1" });
     expect(await useCalendarSync().add(event)).toBe(true);
     expect(plugins.CapacitorCalendar.createEvent.mock.calls[0][0]).toMatchObject({ title: "Holistic · Pure", startDate: event.start.getTime(), endDate: event.end.getTime(), location: "Λάρισα" });
+    expect(plugins.CapacitorCalendar.requestWriteOnlyCalendarAccess).not.toHaveBeenCalled();
   });
   test("native, access refused: false, so the caller offers another way", async () => {
     native.on = true;
-    plugins.CapacitorCalendar.requestWriteOnlyCalendarAccess.mockResolvedValue({ result: "denied" });
+    plugins.CapacitorCalendar.requestFullCalendarAccess.mockResolvedValue({ result: "denied" });
     expect(await useCalendarSync().add(event)).toBe(false);
     expect(plugins.CapacitorCalendar.createEvent).not.toHaveBeenCalled();
   });
@@ -362,15 +365,30 @@ describe("NT10 links, the back button and the app's frame", () => {
     expect(router.currentRoute.value.path).toBe("/portal/wallet");
   });
 
-  test("the status bar: the shop's colour with readable icons, dark in dark mode", () => {
-    expect(barFor(false, "#8B6F4E")).toEqual({ background: "#8B6F4E", style: "DARK" });
-    expect(barFor(false, "#f5e9a0")).toEqual({ background: "#f5e9a0", style: "LIGHT" });
-    expect(barFor(true, "#f5e9a0").style).toBe("DARK");
+  // Android 15+ draws the page under the status bar (its colour is ignored),
+  // so the icons must read on the page: dark icons on the cream page, light
+  // ones in dark mode, whatever the shop's colour (white icons on cream were
+  // seen on the phone in step 7.7).
+  test("the status bar: the page's colour with icons that read on it, in light and dark", () => {
+    expect(barFor(false)).toEqual({ background: "#faf7f2", style: "LIGHT" });
+    expect(barFor(true)).toEqual({ background: "#110e0b", style: "DARK" });
     native.on = true;
     useNativeChrome().applyTheme(false, "#8B6F4E");
     useNativeChrome().hideSplash();
-    expect(plugins.StatusBar.setBackgroundColor).toHaveBeenCalledWith({ color: "#8B6F4E" });
+    expect(plugins.StatusBar.setStyle).toHaveBeenCalledWith({ style: "LIGHT" });
+    expect(plugins.StatusBar.setBackgroundColor).toHaveBeenCalledWith({ color: "#faf7f2" });
     expect(plugins.SplashScreen.hide).toHaveBeenCalled();
+    useNativeChrome().applyTheme(true, "#8B6F4E");
+    expect(plugins.StatusBar.setStyle).toHaveBeenLastCalledWith({ style: "DARK" });
+  });
+
+  // The pass is the shop's colour edge to edge, under the status bar too.
+  test("over a full-screen colour (the pass): icons that read on that colour", () => {
+    native.on = true;
+    useNativeChrome().iconsOver("#1060c0");
+    expect(plugins.StatusBar.setStyle).toHaveBeenLastCalledWith({ style: "DARK" });
+    useNativeChrome().iconsOver("#f5e9a0");
+    expect(plugins.StatusBar.setStyle).toHaveBeenLastCalledWith({ style: "LIGHT" });
   });
 
   test("web: the page's theme-color instead, no native calls", () => {

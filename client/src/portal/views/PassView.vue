@@ -27,6 +27,9 @@ import { usePortalWalletStore } from "../stores/wallet";
 import { usePortalShopStore } from "../stores/shop";
 import { useFeedback } from "../composables/useFeedback";
 import { useBrightness } from "../native/useBrightness";
+import { useNativeChrome } from "../native/useNativeChrome";
+import { useThemeStore } from "../../stores/themes";
+import { DARK_CLASS } from "../composables/usePortalTheme";
 
 const { t } = useI18n();
 const router = useRouter();
@@ -40,11 +43,19 @@ const close = () => (window.history.length > 1 ? router.back() : router.push("/p
 // In the app, the screen at full brightness while the pass is open, so the
 // shop's scanner reads it; back to what it was after.
 const brightness = useBrightness();
-onUnmounted(() => void brightness.restore());
+// The pass fills the screen with the shop's colour, under the status bar too:
+// icons that read on it while it's open, the page's own after.
+const chrome = useNativeChrome();
+const themeStore = useThemeStore();
+onUnmounted(() => {
+  void brightness.restore();
+  chrome.applyTheme(document.documentElement.classList.contains(DARK_CLASS), themeStore.primaryColor);
+});
 
 onMounted(() => {
   useFeedback().tick();
   void brightness.boost();
+  chrome.iconsOver(themeStore.primaryColor);
   shop.load();
   wallet.load(auth.clientId);
 });
