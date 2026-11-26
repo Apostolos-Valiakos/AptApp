@@ -41,6 +41,37 @@ describe("the Android app's identity", () => {
     expect(vars).toMatch(/targetSdkVersion = 36/);
   });
 
+  it("asks for what the native features need: notifications, exact reminders, vibration, fingerprint, calendar", () => {
+    const manifest = read("android/app/src/main/AndroidManifest.xml");
+    for (const permission of ["INTERNET", "POST_NOTIFICATIONS", "SCHEDULE_EXACT_ALARM", "VIBRATE", "USE_BIOMETRIC", "READ_CALENDAR", "WRITE_CALENDAR"]) {
+      expect(manifest).toContain(`<uses-permission android:name="android.permission.${permission}" />`);
+    }
+  });
+
+  it("App Links: verified links to the portal on purespabooking.gr open in the app", () => {
+    const manifest = read("android/app/src/main/AndroidManifest.xml");
+    const filter = manifest.match(/<intent-filter android:autoVerify="true">[\s\S]*?<\/intent-filter>/)?.[0] || "";
+    expect(filter).toContain('android:name="android.intent.action.VIEW"');
+    expect(filter).toContain('android:name="android.intent.category.BROWSABLE"');
+    expect(filter).toMatch(/android:scheme="https" android:host="purespabooking\.gr" android:pathPrefix="\/portal"/);
+  });
+
+  it("notifications: a white small icon and the accent colour #8B6F4E, as capacitor.config.ts names them", () => {
+    expect(config.plugins?.LocalNotifications).toMatchObject({ smallIcon: "ic_stat_icon", iconColor: "#8B6F4E" });
+    const icon = read("android/app/src/main/res/drawable/ic_stat_icon.xml");
+    expect(icon).toContain('android:fillColor="#FFFFFFFF"');
+    expect(read("android/app/src/main/res/values/colors.xml")).toContain('<color name="notification_accent">#8B6F4E</color>');
+    const manifest = read("android/app/src/main/AndroidManifest.xml");
+    expect(manifest).toContain('android:resource="@drawable/ic_stat_icon"');
+    expect(manifest).toContain('android:resource="@color/notification_accent"');
+  });
+
+  it("starts at version 1 / 1.0.0", () => {
+    const gradle = read("android/app/build.gradle");
+    expect(gradle).toMatch(/versionCode 1(?!\d)/);
+    expect(gradle).toMatch(/versionName "1\.0\.0"/);
+  });
+
   it("Android only for now: no iOS project", () => {
     expect(fs.existsSync(path.join(ROOT, "ios"))).toBe(false);
     const pkg = JSON.parse(read("package.json"));

@@ -17,6 +17,7 @@ const plugins = vi.hoisted(() => ({
     cancel: vi.fn(),
     schedule: vi.fn(),
     addListener: vi.fn(),
+    checkExactNotificationSetting: vi.fn(),
   },
   PushNotifications: { checkPermissions: vi.fn(), register: vi.fn(), unregister: vi.fn(), addListener: vi.fn() },
   CapacitorCalendar: { requestWriteOnlyCalendarAccess: vi.fn(), createEvent: vi.fn() },
@@ -137,6 +138,16 @@ describe("NT3 reminders on the phone", () => {
     const [n] = scheduled();
     expect(n).toMatchObject({ id: reminderId("b1", 60), actionTypeId: "appt", extra: { kind: "reminder", bookingId: "b1", url: "/portal/bookings/b1" } });
     expect(n.body).not.toContain("Holistic"); // no treatment names
+  });
+
+  test("exact times when Android allows them, a little late otherwise, never the settings screen", async () => {
+    native.on = true;
+    setOffsets([60]);
+    plugins.LocalNotifications.checkExactNotificationSetting.mockResolvedValue({ exact_alarm: "granted" });
+    await useReminders().syncAll([booking("b1", 3)]);
+    plugins.LocalNotifications.checkExactNotificationSetting.mockResolvedValue({ exact_alarm: "denied" });
+    await useReminders().syncAll([booking("b1", 3)]);
+    expect(scheduled().map((n: any) => n.isExactNotification)).toEqual([true, false]);
   });
 
   test("re-syncing replaces them: a cancelled booking's reminders go", async () => {

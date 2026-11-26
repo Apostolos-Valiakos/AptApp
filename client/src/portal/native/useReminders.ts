@@ -142,6 +142,12 @@ export const useReminders = () => {
     if (stale.length) await quietly(() => LocalNotifications.cancel({ notifications: stale.map((n) => ({ id: n.id })) }));
     if (!plan.length) return;
     const byId = new Map(bookings.map((b) => [b.id, b]));
+    // Exact times only when Android allows them (SCHEDULE_EXACT_ALARM, off by
+    // default from Android 14); otherwise a few minutes late, as the handoff
+    // allows. Asking for exact without the permission would open the system's
+    // "Alarms & reminders" settings on every sync.
+    const exactSetting = await quietly(() => LocalNotifications.checkExactNotificationSetting());
+    const exact = exactSetting?.exact_alarm === "granted";
     await quietly(() =>
       LocalNotifications.schedule({
         notifications: plan.map((r) => ({
@@ -153,6 +159,7 @@ export const useReminders = () => {
             shop: shop.name,
           }),
           schedule: { at: r.at, allowWhileIdle: true },
+          isExactNotification: exact,
           actionTypeId: REMINDER_ACTION_TYPE,
           smallIcon: "ic_stat_icon",
           extra: { kind: "reminder", bookingId: r.bookingId, url: `/portal/bookings/${r.bookingId}` },

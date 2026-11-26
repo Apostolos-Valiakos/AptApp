@@ -22,6 +22,17 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- App Links: links to the portal on the shop's site open here
+                 instead of the browser, once the server's
+                 /.well-known/assetlinks.json vouches for the signing key
+                 (ANDROID_APP_SHA256). The app routes them (useDeepLinks). -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="purespabooking.gr" android:pathPrefix="/portal" />
+            </intent-filter>
+
         </activity>
 
         <provider
@@ -33,9 +44,28 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
+
+        <!-- Shop announcements (Firebase, once the owner adds the keys) look
+             like the phone's own reminders: the white icon, the accent colour. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_icon" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/notification_accent" />
     </application>
 
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Reminders and announcements (Android 13+ asks; the app asks after the first booking). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Reminders on time; if the client refuses, Android delivers them a little late instead. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- "Unlock with fingerprint" in Profile → Security. -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <!-- "Add to calendar" puts the booking straight into the phone's calendar. -->
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
 </manifest>

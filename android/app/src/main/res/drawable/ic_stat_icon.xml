@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The small notification icon: white on transparent, as Android requires
+     (it tints it with the accent colour). A drop, for the spa; replace it with
+     a white silhouette of the logo through Android Studio's Image Asset tool
+     (type "Notification Icons", name ic_stat_icon) if the owner prefers. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,2.5C9.2,6.2 6,10.2 6,14.2a6,6 0,0 0,12 0C18,10.2 14.8,6.2 12,2.5zM9.6,14.6a2.6,2.6 0,0 0,2.4 2.6v1.6a4.2,4.2 0,0 1,-4 -4.2z" />
+</vector>

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The accent behind notification icons (Pure's bronze, as in capacitor.config.ts). -->
+    <color name="notification_accent">#8B6F4E</color>
+</resources>
