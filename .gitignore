@@ -24,10 +24,10 @@ scripts/seed_dummy_schedule.js
 # Mutation testing (npm run test:mutation)
 .stryker-tmp/
 /reports/
-
 # The Android app (docs/redesign/ANDROID_HANDOFF.md): its web build, and keys that never go in git.
 client/dist-portal/
 android/app/google-services.json
 *.keystore
 *.jks
 keystore.properties
+

@@ -11,7 +11,8 @@ const SRC = path.resolve(__dirname, "../../client/src");
 const read = (rel: string) => fs.readFileSync(path.join(SRC, rel), "utf8");
 const files = (dir: string): string[] =>
   fs.readdirSync(path.join(SRC, dir), { withFileTypes: true }).flatMap((e) => {
-    const rel = path.join(dir, e.name);
+    // Forward slashes, as the lists below use, on Windows too (path.join would give "\").
+    const rel = path.posix.join(dir, e.name);
     return e.isDirectory() ? files(rel) : /\.(vue|ts)$/.test(e.name) ? [rel] : [];
   });
 
