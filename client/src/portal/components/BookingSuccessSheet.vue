@@ -3,13 +3,13 @@
        check, what was booked, Add to calendar, Share, Done. -->
   <Dialog :visible="!!success.bookingId" modal :closable="false" :showHeader="false" :style="{ width: '420px', maxWidth: '94vw' }" @update:visible="(v) => !v && success.close()">
     <div class="text-center space-y-3 pt-6" data-testid="booking-success">
-      <span class="mx-auto w-16 h-16 rounded-full bg-[var(--p-primary-color)] text-[var(--p-primary-contrast-color)] flex items-center justify-center">
-        <i class="pi pi-check text-2xl"></i>
+      <!-- As on the prototype: a green check, the serif title, the booking. -->
+      <span class="mx-auto w-[88px] h-[88px] rounded-full bg-[#e6f2ea] text-[#3f7d58] flex items-center justify-center">
+        <i class="pi pi-check !text-[40px]"></i>
       </span>
-      <h2 class="portal-display text-2xl">{{ success.kind === "moved" ? t("portal.actions.moved") : t("portal.actions.booked") }}</h2>
+      <h2 class="font-[family-name:var(--portal-font-display,_Georgia)] font-medium text-[28px] pt-2">{{ success.kind === "moved" ? t("portal.actions.moved") : t("portal.actions.booked") }}</h2>
       <template v-if="booking">
-        <p class="font-semibold">{{ serviceNames(booking) }}</p>
-        <p class="opacity-70">{{ formatDate(booking.start_time, locale, "weekdayTime") }}<span v-if="staffNames(booking)"> · {{ staffNames(booking) }}</span></p>
+        <p class="opacity-75 text-[15px]">{{ serviceNames(booking) }} · {{ formatDate(booking.start_time, locale, "weekdayTime") }}<span v-if="staffNames(booking)"> · {{ staffNames(booking) }}</span></p>
       </template>
       <!-- In the app, after the first booking: one line on why, then Android's
            own permission prompt (reminders and the shop's announcements). -->
@@ -17,11 +17,11 @@
         <p>{{ t("portal.v2.native.remindersAsk") }}</p>
         <Button :label="t('portal.v2.native.remindersOn')" icon="pi pi-bell" size="small" outlined data-testid="reminders-allow" @click="allowReminders" />
       </div>
-      <div class="flex flex-col gap-2 pt-3">
-        <Button v-if="booking" :label="t('portal.v2.actions.addToCalendar')" icon="pi pi-calendar-plus" outlined @click="extras.addToCalendar(booking)" />
-        <Button v-if="booking" :label="t('portal.v2.actions.share')" icon="pi pi-share-alt" text @click="extras.share(booking)" />
-        <Button :label="t('portal.v2.actions.done')" data-testid="success-done" @click="success.close()" />
+      <div v-if="booking" class="flex gap-2 pt-3">
+        <button type="button" class="flex-1 inline-flex items-center justify-center gap-2 min-h-[46px] px-3 rounded-[14px] font-semibold text-[15px] pp-soft-btn" @click="extras.addToCalendar(booking)"><i class="pi pi-calendar-plus"></i>{{ t("portal.v2.actions.addToCalendar") }}</button>
+        <button type="button" class="flex-1 inline-flex items-center justify-center gap-2 min-h-[46px] px-3 rounded-[14px] font-semibold text-[15px] pp-soft-btn" @click="extras.share(booking)"><i class="pi pi-share-alt"></i>{{ t("portal.v2.actions.share") }}</button>
       </div>
+      <Button :label="t('portal.v2.actions.done')" class="w-full !min-h-[46px] !rounded-[14px] !font-semibold" data-testid="success-done" @click="success.close()" />
     </div>
   </Dialog>
 </template>

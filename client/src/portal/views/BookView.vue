@@ -1,101 +1,111 @@
 <template>
-  <!-- Book (REDESIGN_SPEC.md §5.2) in three steps with a summary bar that
-       stays in reach; also moving a booking (/portal/book/reschedule/:id). -->
-  <div class="p-4 space-y-5" :class="{ 'pb-40': flow.state.service }" data-testid="book">
-    <div class="flex items-center gap-3">
-      <Button v-if="flow.state.step > 1 && !(flow.state.step === 2 && flow.state.moving)" icon="pi pi-arrow-left" text rounded :aria-label="t('portal.book.back')" @click="flow.back" />
-      <h1 class="portal-display portal-h2">{{ flow.state.moving ? t("portal.v2.book.moveTitle") : t("portal.v2.book.title") }}</h1>
+  <!-- Book (REDESIGN_SPEC.md §5.2, client-portal-prototype.html) in three
+       steps with a summary bar that stays in reach; also moving a booking
+       (/portal/book/reschedule/:id). -->
+  <div class="px-4 pt-2 pb-4 space-y-4" :class="{ 'pb-40': flow.state.service }" data-testid="book">
+    <div class="flex gap-1.5 mt-1.5" aria-hidden="true">
+      <div v-for="n in 3" :key="n" class="flex-1 h-1 rounded" :class="n <= flow.state.step ? 'bg-[var(--pp-primary)]' : 'bg-[var(--portal-border)]'"></div>
     </div>
+    <div v-if="flow.state.moving" class="flex items-center gap-2 px-3.5 py-2.5 rounded-[14px] bg-[var(--pp-warn-bg)] text-[var(--pp-warn)] text-[13.5px]" data-testid="moving-from">
+      <i class="pi pi-arrow-right-arrow-left"></i>{{ t("portal.v2.book.movingFrom", { when: formatDate(flow.state.moving.start_time, locale, "weekdayTime") }) }}
+    </div>
+    <div class="flex items-center gap-2">
+      <button v-if="flow.state.step > 1 && !(flow.state.step === 2 && flow.state.moving)" type="button" class="w-10 h-10 -ml-2 rounded-xl grid place-items-center" :aria-label="t('portal.book.back')" @click="flow.back"><i class="pi pi-arrow-left"></i></button>
+      <h1 class="pp-h1 !text-[26px]">{{ stepTitle }}</h1>
+    </div>
+    <p v-if="flow.state.step === 2 && flow.state.service" class="pp-sub !-mt-2">{{ flow.state.service.name }} · {{ flow.state.service.duration_minutes }}′</p>
 
     <div v-if="flow.state.loadingServices" class="space-y-3" aria-busy="true">
       <Skeleton v-for="i in 3" :key="i" height="4.5rem" class="!rounded-[20px]" />
     </div>
 
     <!-- K14: the shop takes no online bookings. -->
-    <section v-else-if="flow.state.disabled" class="portal-card p-6 text-center space-y-3" data-testid="book-disabled">
+    <section v-else-if="flow.state.disabled" class="pp-card p-6 text-center space-y-3" data-testid="book-disabled">
       <i class="pi pi-info-circle text-3xl opacity-50"></i>
       <p>{{ t("portal.book.disabled") }}</p>
-      <a v-if="extras.callUrl()" :href="extras.callUrl()" class="p-button p-component"><i class="pi pi-phone mr-2"></i>{{ t("portal.v2.home.callUs") }}</a>
+      <a v-if="extras.callUrl()" :href="extras.callUrl()" class="pp-btn pp-btn-primary"><i class="pi pi-phone"></i>{{ t("portal.v2.home.callUs") }}</a>
     </section>
 
-    <section v-else-if="flow.state.error" class="portal-card p-6 text-center space-y-3" data-testid="book-error">
+    <section v-else-if="flow.state.error" class="pp-card p-6 text-center space-y-3" data-testid="book-error">
       <p>{{ t(`portal.actions.errors.${flow.state.error}`) }}</p>
-      <a v-if="extras.callUrl()" :href="extras.callUrl()" class="p-button p-component"><i class="pi pi-phone mr-2"></i>{{ t("portal.v2.home.callUs") }}</a>
+      <a v-if="extras.callUrl()" :href="extras.callUrl()" class="pp-btn pp-btn-primary"><i class="pi pi-phone"></i>{{ t("portal.v2.home.callUs") }}</a>
     </section>
 
     <template v-else>
-      <p v-if="flow.state.moving" class="portal-caption" data-testid="moving-from">
-        {{ t("portal.v2.book.movingFrom", { when: formatDate(flow.state.moving.start_time, locale, "weekdayTime") }) }}
-      </p>
-
       <!-- Step 1: the treatment. -->
       <template v-if="flow.state.step === 1">
-        <button v-if="shop.aiEnabled" type="button" class="portal-card w-full p-4 flex items-center gap-3 text-left portal-target" data-testid="ask-assistant" @click="assistant.open(t('portal.v2.book.askPrompt'))">
-          <i class="pi pi-sparkles text-xl text-[var(--p-primary-color)]"></i>
+        <button v-if="shop.aiEnabled" type="button" class="pp-card w-full p-4 flex items-center gap-3.5 text-left" data-testid="ask-assistant" @click="assistant.open(t('portal.v2.book.askPrompt'))">
+          <span class="pp-icon"><i class="pi pi-sparkles"></i></span>
           <span class="flex-1">
-            <span class="block font-semibold">{{ t("portal.v2.book.askTitle") }}</span>
-            <span class="portal-caption">{{ t("portal.v2.book.askText") }}</span>
+            <b class="block">{{ t("portal.v2.book.askTitle") }}</b>
+            <span class="pp-small pp-muted">{{ t("portal.v2.book.askText") }}</span>
           </span>
-          <i class="pi pi-chevron-right opacity-40"></i>
+          <i class="pi pi-angle-right pp-muted"></i>
         </button>
         <IconField v-if="flow.services.value.length > 6">
           <InputIcon class="pi pi-search" />
-          <InputText v-model="search" :placeholder="t('portal.v2.book.search')" class="w-full" />
+          <InputText v-model="search" :placeholder="t('portal.v2.book.search')" class="w-full !rounded-[14px]" />
         </IconField>
-        <div v-if="!flow.services.value.length" class="portal-caption text-center py-6">{{ t("portal.book.noServices") }}</div>
-        <div v-for="group in groups" :key="group.label" class="space-y-2">
-          <h2 v-if="groups.length > 1" class="portal-micro font-semibold uppercase tracking-wider px-1 pt-2">{{ group.label }}</h2>
+        <!-- The categories as chips, each one scrolling to its treatments. -->
+        <div v-if="groups.length > 1" class="pp-hscroll -mx-4 px-4" data-testid="category-chips">
+          <button v-for="(group, i) in groups" :key="group.label" type="button" class="pp-chip" :class="{ on: activeGroup === i }" @click="jumpTo(i)">
+            <i class="pi" :class="iconFor(group.label)"></i>{{ group.label }}
+          </button>
+        </div>
+        <div v-if="!flow.services.value.length" class="pp-sub text-center py-6">{{ t("portal.book.noServices") }}</div>
+        <div v-for="(group, i) in groups" :key="group.label" :ref="(el) => setGroupEl(i, el)" class="space-y-2.5 scroll-mt-20">
+          <h2 v-if="groups.length > 1" class="text-xs font-semibold uppercase tracking-[.08em] text-[var(--pp-faint)] pt-2">{{ group.label }}</h2>
           <button
             v-for="svc in group.items"
             :key="svc.id"
             type="button"
-            class="portal-card w-full p-4 flex items-center gap-3 text-left portal-target"
+            class="pp-card w-full p-4 flex items-center gap-3.5 text-left"
             data-testid="service-option"
             @click="flow.chooseService(svc)"
           >
-            <span class="w-1.5 self-stretch rounded-full" :style="{ background: svc.color_code || 'var(--p-primary-300)' }"></span>
+            <span class="pp-icon"><i class="pi" :class="iconFor(`${svc.category || ''} ${svc.name}`)"></i></span>
             <span class="flex-1 min-w-0">
-              <span class="block font-semibold">{{ svc.name }}</span>
-              <span class="portal-caption">{{ formatDuration(svc.duration_minutes, t) }} · {{ formatMoney(svc.price) }}</span>
+              <b class="block leading-snug">{{ svc.name }}</b>
+              <span class="pp-small pp-muted">{{ svc.duration_minutes }}′</span>
             </span>
-            <i class="pi pi-chevron-right opacity-40"></i>
+            <b class="tabular-nums">{{ formatMoney(svc.price) }}</b>
           </button>
         </div>
       </template>
 
       <!-- Step 2: therapist and time. -->
       <template v-else-if="flow.state.step === 2">
-        <div class="flex gap-2 overflow-x-auto -mx-4 px-4 pb-1" role="radiogroup" :aria-label="t('portal.book.stepStaff')" data-testid="staff-chips">
+        <div class="pp-hscroll -mx-4 px-4" role="radiogroup" :aria-label="t('portal.book.stepStaff')" data-testid="staff-chips">
           <button
             v-for="choice in staffChoices"
             :key="choice.id"
             type="button"
             role="radio"
             :aria-checked="flow.state.staffChoice === choice.id"
-            class="portal-target flex-shrink-0 px-4 rounded-full border text-sm font-medium"
-            :class="flow.state.staffChoice === choice.id ? 'bg-[var(--p-primary-color)] text-[var(--p-primary-contrast-color)] border-transparent' : 'border-[var(--portal-border)]'"
+            class="pp-chip"
+            :class="{ on: flow.state.staffChoice === choice.id }"
             @click="flow.setStaff(choice.id)"
           >
-            {{ choice.name }}
+            <i v-if="choice.id === ANYONE" class="pi pi-users"></i>{{ choice.name }}
           </button>
         </div>
 
-        <div class="flex gap-2 overflow-x-auto -mx-4 px-4 pb-1" data-testid="date-strip">
+        <div class="pp-hscroll -mx-4 px-4" data-testid="date-strip">
           <button
             v-for="d in flow.days.value"
             :key="d.date"
             type="button"
-            class="flex-shrink-0 w-14 py-2 rounded-2xl flex flex-col items-center gap-1 border"
-            :class="flow.state.date === d.date ? 'bg-[var(--p-primary-color)] text-[var(--p-primary-contrast-color)] border-transparent' : 'border-[var(--portal-border)]'"
+            class="w-[58px] pt-2.5 pb-2 rounded-2xl flex flex-col items-center gap-0.5 border"
+            :class="[flow.state.date === d.date ? 'bg-[var(--pp-primary)] text-[var(--pp-on-primary)] border-[var(--pp-primary)]' : 'bg-[var(--portal-card)] border-[var(--portal-border)]', { 'opacity-40': d.count === 0 && flow.state.date !== d.date }]"
             :aria-pressed="flow.state.date === d.date"
             :aria-label="`${formatDate(d.date, locale, 'weekdayDayMonth')}: ${t('portal.v2.book.freeCount', { n: d.count }, d.count)}`"
             :data-date="d.date"
             @click="flow.setDate(d.date)"
           >
-            <span class="text-[11px] uppercase opacity-80">{{ weekday(d.date) }}</span>
-            <span class="text-lg font-semibold leading-none">{{ Number(d.date.slice(8)) }}</span>
-            <span class="flex gap-0.5 h-1.5" :data-dots="dots(d.count)">
-              <span v-for="i in dots(d.count)" :key="i" class="w-1.5 h-1.5 rounded-full" :class="flow.state.date === d.date ? 'bg-[var(--p-primary-contrast-color)]' : 'bg-[var(--p-primary-color)]'"></span>
+            <span class="text-[11px] uppercase" :class="flow.state.date === d.date ? 'opacity-85' : 'pp-muted'">{{ weekday(d.date) }}</span>
+            <b class="text-lg leading-tight">{{ Number(d.date.slice(8)) }}</b>
+            <span class="flex gap-0.5 h-1.5 mt-0.5" :data-dots="dots(d.count)">
+              <i v-for="i in dots(d.count)" :key="i" class="w-[5px] h-[5px] rounded-full bg-current opacity-50"></i>
             </span>
           </button>
         </div>
@@ -103,20 +113,20 @@
         <div v-if="flow.state.loadingSlots" class="grid grid-cols-4 gap-2" aria-busy="true">
           <Skeleton v-for="i in 8" :key="i" height="2.75rem" />
         </div>
-        <p v-else-if="!flow.slots.value.length" class="portal-caption text-center py-6" data-testid="no-slots">{{ t("portal.book.noSlots") }}</p>
+        <p v-else-if="!flow.slots.value.length" class="pp-sub text-center py-6" data-testid="no-slots">{{ t("portal.book.noSlots") }}</p>
         <div v-else class="space-y-4" data-testid="slots">
           <div v-for="part in dayParts" :key="part.key">
-            <h3 class="portal-micro font-semibold uppercase tracking-wider mb-2">
+            <h3 class="text-xs font-semibold uppercase tracking-[.08em] text-[var(--pp-faint)] mb-2">
               {{ t(`portal.v2.book.${part.key}`) }}
               <span v-if="part.slots.length <= 3" class="normal-case tracking-normal font-normal">· {{ t("portal.v2.book.left", { n: part.slots.length }, part.slots.length) }}</span>
             </h3>
-            <div class="grid grid-cols-4 gap-2">
+            <div class="grid grid-cols-[repeat(auto-fill,minmax(76px,1fr))] gap-2">
               <button
                 v-for="s in part.slots"
                 :key="s.start_time"
                 type="button"
-                class="portal-target rounded-xl border text-sm font-medium tabular-nums"
-                :class="flow.state.slot?.start_time === s.start_time ? 'bg-[var(--p-primary-color)] text-[var(--p-primary-contrast-color)] border-transparent' : 'border-[var(--portal-border)]'"
+                class="py-3 rounded-xl border font-semibold tabular-nums"
+                :class="flow.state.slot?.start_time === s.start_time ? 'bg-[var(--pp-primary)] text-[var(--pp-on-primary)] border-[var(--pp-primary)]' : 'bg-[var(--portal-card)] border-[var(--portal-border)]'"
                 :aria-pressed="flow.state.slot?.start_time === s.start_time"
                 data-testid="slot"
                 @click="flow.pickSlot(s)"
@@ -133,44 +143,36 @@
 
       <!-- Step 3: confirm. -->
       <template v-else>
-        <section class="portal-card p-4 space-y-2 text-sm" data-testid="book-summary">
-          <div class="flex justify-between gap-3"><span class="opacity-70">{{ t("portal.book.summaryService") }}</span><span class="font-medium text-right">{{ flow.state.service?.name }}</span></div>
-          <div class="flex justify-between gap-3"><span class="opacity-70">{{ t("portal.book.summaryStaff") }}</span><span class="font-medium text-right" data-testid="summary-staff">{{ flow.state.slot?.staff_name }}</span></div>
-          <div class="flex justify-between gap-3"><span class="opacity-70">{{ t("portal.book.summaryWhen") }}</span><span class="font-medium text-right">{{ slotWhen }}</span></div>
-          <div class="flex justify-between gap-3"><span class="opacity-70">{{ t("portal.book.summaryDuration") }}</span><span class="font-medium">{{ formatDuration(flow.state.service?.duration_minutes || 0, t) }}</span></div>
-          <div class="flex justify-between gap-3"><span class="opacity-70">{{ t("portal.book.summaryPrice") }}</span><span class="font-medium">{{ formatMoney(flow.state.service?.price) }}</span></div>
+        <section class="pp-card p-[18px] space-y-3.5" data-testid="book-summary">
+          <div class="flex items-center gap-3">
+            <span class="pp-icon"><i class="pi" :class="iconFor(`${flow.state.service?.category || ''} ${flow.state.service?.name || ''}`)"></i></span>
+            <div class="flex-1 min-w-0">
+              <b class="block">{{ flow.state.service?.name }}</b>
+              <span class="pp-small pp-muted">{{ formatDuration(flow.state.service?.duration_minutes || 0, t) }} · <span data-testid="summary-staff">{{ flow.state.slot?.staff_name }}</span></span>
+            </div>
+            <b class="tabular-nums">{{ formatMoney(flow.state.service?.price) }}</b>
+          </div>
+          <div class="grid grid-cols-[26px_1fr] gap-x-2 gap-y-2.5 text-[14.5px]">
+            <i class="pi pi-calendar text-[var(--pp-primary)] mt-0.5"></i><span>{{ slotWhen }}</span>
+            <template v-if="shop.shop?.address"><i class="pi pi-map-marker text-[var(--pp-primary)] mt-0.5"></i><span>{{ shop.name }}, {{ shop.shop.address }}</span></template>
+          </div>
+          <Textarea v-if="!flow.state.moving" v-model="flow.state.notes" rows="2" autoResize class="w-full !rounded-xl" maxlength="500" :placeholder="t('portal.book.notes')" :aria-label="t('portal.book.notes')" />
+          <p v-if="shop.shop?.cancellation_note" class="pp-small pp-muted whitespace-pre-line" data-testid="cancellation-note"><i class="pi pi-info-circle mr-1"></i>{{ shop.shop.cancellation_note }}</p>
         </section>
-        <label v-if="!flow.state.moving" class="block space-y-1">
-          <span class="portal-caption">{{ t("portal.book.notes") }}</span>
-          <Textarea v-model="flow.state.notes" rows="3" autoResize class="w-full" maxlength="500" />
-        </label>
-        <Message v-if="shop.shop?.cancellation_note" severity="secondary" :closable="false" data-testid="cancellation-note">
-          <span class="whitespace-pre-line">{{ shop.shop.cancellation_note }}</span>
-        </Message>
       </template>
     </template>
 
     <!-- The summary bar (P5): what's chosen and the one next step. -->
-    <div v-if="flow.state.service && !flow.state.disabled && !flow.state.error" class="fixed inset-x-0 z-30 px-4" :class="wide ? 'bottom-4' : 'bottom-[calc(64px+env(safe-area-inset-bottom))]'" data-testid="summary-bar">
-      <div class="max-w-3xl mx-auto portal-card-raised p-3 flex items-center gap-3">
-        <div class="flex-1 min-w-0 text-sm">
-          <p class="font-semibold truncate">{{ flow.state.service.name }}</p>
-          <p class="portal-caption truncate">{{ flow.state.slot ? slotWhen : t("portal.v2.book.pickTime") }} · {{ formatMoney(flow.state.service.price) }}</p>
+    <div v-if="flow.state.service && !flow.state.disabled && !flow.state.error" class="fixed inset-x-0 z-30 px-3" :class="wide ? 'bottom-4' : 'bottom-[calc(76px+env(safe-area-inset-bottom))]'" data-testid="summary-bar">
+      <div class="max-w-3xl mx-auto rounded-[20px] bg-[var(--portal-card)] border border-[var(--portal-border)] shadow-[var(--portal-shadow-3)] py-3 pr-3 pl-4 flex items-center gap-3">
+        <div class="flex-1 min-w-0">
+          <b class="block text-sm truncate">{{ flow.state.service.name }}</b>
+          <p class="pp-small pp-muted truncate">{{ flow.state.slot ? slotWhen : t("portal.v2.book.pickTime") }} · {{ formatMoney(flow.state.service.price) }}</p>
         </div>
-        <Button
-          v-if="flow.state.step === 2"
-          :label="t('portal.v2.book.continue')"
-          :disabled="!flow.state.slot"
-          data-testid="continue"
-          @click="flow.state.step = 3"
-        />
-        <Button
-          v-else-if="flow.state.step === 3"
-          :label="flow.state.moving ? t('portal.v2.book.move') : t('portal.v2.book.book')"
-          :loading="flow.state.submitting"
-          data-testid="submit"
-          @click="flow.submit"
-        />
+        <button v-if="flow.state.step === 2" type="button" class="pp-btn pp-btn-primary" :disabled="!flow.state.slot" data-testid="continue" @click="flow.state.step = 3">{{ t("portal.v2.book.continue") }}</button>
+        <button v-else-if="flow.state.step === 3" type="button" class="pp-btn pp-btn-primary" :disabled="flow.state.submitting" data-testid="submit" @click="flow.submit">
+          <i class="pi" :class="flow.state.submitting ? 'pi-spin pi-spinner' : 'pi-check'"></i>{{ flow.state.moving ? t("portal.v2.book.move") : t("portal.v2.book.book") }}
+        </button>
       </div>
     </div>
   </div>
@@ -179,11 +181,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import Button from "primevue/button";
 import IconField from "primevue/iconfield";
 import InputIcon from "primevue/inputicon";
 import InputText from "primevue/inputtext";
-import Message from "primevue/message";
 import Skeleton from "primevue/skeleton";
 import Textarea from "primevue/textarea";
 import { clockTime, formatDate, formatDuration, formatMoney } from "../../utils/format";
@@ -208,6 +208,27 @@ const groups = computed(() => {
   const list = q ? flow.services.value.filter((s) => foldText(s.name).includes(q)) : flow.services.value;
   return groupServicesByCategory(list, t("services.table.uncategorized"));
 });
+const stepTitle = computed(() => [t("portal.v2.book.chooseService"), t("portal.v2.book.chooseTime"), t("portal.v2.book.confirmTitle")][flow.state.step - 1]);
+
+// An icon for a treatment from its category and name, as on the prototype.
+const ICONS: [RegExp, string][] = [
+  [/σάουνα|sauna|χαμάμ|hammam/i, "pi-sun"],
+  [/laser|αποτρίχωση/i, "pi-bolt"],
+  [/πρόσωπ|face|facial|glow|lash|brow|βλεφαρ|φρυδ/i, "pi-sparkles"],
+  [/μασάζ|massage|holistic|stones|therapy|θεραπεία/i, "pi-heart"],
+];
+const iconFor = (text: string) => ICONS.find(([re]) => re.test(text))?.[1] || "pi-star";
+
+// Category chips: pressing one scrolls to its treatments.
+const groupEls: HTMLElement[] = [];
+const setGroupEl = (i: number, el: unknown) => {
+  if (el instanceof HTMLElement) groupEls[i] = el;
+};
+const activeGroup = ref(0);
+const jumpTo = (i: number) => {
+  activeGroup.value = i;
+  groupEls[i]?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+};
 const staffChoices = computed(() => [{ id: ANYONE, name: t("portal.v2.home.anyone") }, ...flow.staff.value.map((m) => ({ id: m.id, name: m.name }))]);
 
 // Dots under a day: none, a few (1–3 free times) or many.

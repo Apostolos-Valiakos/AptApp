@@ -42,7 +42,7 @@ describe("PS1 five places on a phone", () => {
       el.portal.nav.home, el.portal.nav.bookings, el.portal.nav.book, el.portal.nav.wallet, el.portal.nav.profile,
     ]);
     expect(tabs.map((a) => a.getAttribute("href"))).toEqual(["/portal/home", "/portal/bookings", "/portal/book", "/portal/wallet", "/portal/profile"]);
-    expect(tabs[2].querySelector(".rounded-full")).not.toBeNull();
+    expect(tabs[2].querySelector(".portal-tab-book")).not.toBeNull();
     expect(tabs[0].getAttribute("aria-current")).toBe("page");
     expect(byTestId("portal-rail")).toBeNull();
   });

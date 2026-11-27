@@ -1,6 +1,7 @@
-// The client portal's theme (docs/redesign/REDESIGN_SPEC.md §4): Aura with
-// warm surfaces, rounder corners and a visible focus ring. White-label: the
-// shop's own colour is the primary; Pure's bronze is only the default.
+// The client portal's theme (docs/redesign/REDESIGN_SPEC.md §4,
+// client-portal-prototype.html): Aura with warm surfaces, rounder corners and
+// a visible focus ring, always in Pure's bronze (lighter in the dark), whatever
+// colour a shop has set for the staff app: the owner's choice.
 import Aura from "@primevue/themes/aura";
 import { definePreset, palette } from "@primeuix/themes";
 import { DEFAULT_PRIMARY } from "../../theme/appPreset";
@@ -19,8 +20,12 @@ export const textOn = (hex: string) => {
   return contrast(luminance(ok), 1) >= contrast(luminance(ok), luminance(DARK)) ? "#ffffff" : DARK;
 };
 
-export const portalPreset = (primaryHex: string = DEFAULT_PRIMARY) =>
-  definePreset(Aura, {
+export const PORTAL_PRIMARY = DEFAULT_PRIMARY;
+export const PORTAL_PRIMARY_DARK = "#c49a6c";
+
+export const portalPreset = () => {
+  const primaryHex = PORTAL_PRIMARY;
+  return definePreset(Aura, {
     // Outlined and text buttons write in the shop's colour: a darker shade of
     // it (a lighter one in the dark), so a pale colour still reads.
     components: {
@@ -51,10 +56,11 @@ export const portalPreset = (primaryHex: string = DEFAULT_PRIMARY) =>
             0: "#ffffff", 50: "#f4eee6", 100: "#e2d8cc", 200: "#c6b8a8", 300: "#a08f7c", 400: "#7a6b5b",
             500: "#5a4e42", 600: "#423930", 700: "#302a23", 800: "#231e19", 900: "#1a1612", 950: "#110e0b",
           },
-          primary: { color: primaryHex, contrastColor: textOn(primaryHex), hoverColor: "{primary.400}", activeColor: "{primary.300}" },
+          primary: { color: PORTAL_PRIMARY_DARK, contrastColor: "#1a1612", hoverColor: "#d6ae84", activeColor: "#d6ae84" },
           text: { color: "{surface.50}", mutedColor: "{surface.300}" },
           content: { background: "{surface.900}", borderColor: "{surface.700}" },
         },
       },
     },
   });
+};

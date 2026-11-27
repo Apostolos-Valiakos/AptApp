@@ -1,12 +1,11 @@
 // Puts the portal's look on while the portal shell is open and takes it off
-// when it closes: the portal preset in the shop's colour, and the client's
+// when it closes: the portal preset (always Pure's bronze), and the client's
 // light / dark choice (N11). The staff app never runs this, so its own theme
 // and its always-light screens are untouched.
 import { onMounted, onUnmounted, ref, watch } from "vue";
 import { usePreset } from "@primeuix/themes";
-import { useThemeStore } from "../../stores/themes";
 import { appPreset } from "../../theme/appPreset";
-import { portalPreset } from "../theme/portalPreset";
+import { portalPreset, PORTAL_PRIMARY } from "../theme/portalPreset";
 import { useNativeChrome } from "../native/useNativeChrome";
 
 export type Appearance = "system" | "light" | "dark";
@@ -51,23 +50,21 @@ export const useAppearance = () => ({
 });
 
 export const usePortalTheme = () => {
-  const themeStore = useThemeStore();
   const media = typeof window.matchMedia === "function" ? window.matchMedia("(prefers-color-scheme: dark)") : null;
 
   const chrome = useNativeChrome();
   const isDark = () => appearance.value === "dark" || (appearance.value === "system" && !!media?.matches);
-  // The app's status bar (or the browser's theme-color) follows the scheme and the shop's colour.
-  const applyChrome = () => chrome.applyTheme(isDark(), themeStore.primaryColor);
+  // The app's status bar (or the browser's theme-color) follows the scheme.
+  const applyChrome = () => chrome.applyTheme(isDark(), PORTAL_PRIMARY);
   const applyScheme = () => {
     document.documentElement.classList.toggle(DARK_CLASS, isDark());
     applyChrome();
   };
   const applyPreset = () => {
-    usePreset(portalPreset(themeStore.primaryColor));
+    usePreset(portalPreset());
     applyChrome();
   };
 
-  const stopColour = watch(() => themeStore.primaryColor, applyPreset);
   const stopScheme = watch(appearance, applyScheme);
 
   onMounted(() => {
@@ -76,7 +73,6 @@ export const usePortalTheme = () => {
     media?.addEventListener?.("change", applyScheme);
   });
   onUnmounted(() => {
-    stopColour();
     stopScheme();
     media?.removeEventListener?.("change", applyScheme);
     document.documentElement.classList.remove(DARK_CLASS);

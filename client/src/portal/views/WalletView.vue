@@ -1,47 +1,59 @@
 <template>
-  <!-- Wallet (REDESIGN_SPEC.md §5.4): the check-in pass, the membership and
-       the visit packages, together. -->
-  <div class="p-4 space-y-5">
-    <h1 class="portal-display portal-h2">{{ t("portal.nav.wallet") }}</h1>
+  <!-- Wallet (REDESIGN_SPEC.md §5.4, client-portal-prototype.html): the
+       check-in pass, the membership and the visit packages, together. -->
+  <div class="px-4 pt-2 pb-4">
+    <h1 class="pp-h1 mb-3.5">{{ t("portal.nav.wallet") }}</h1>
 
-    <router-link to="/portal/wallet/pass" class="block rounded-[var(--portal-radius-card)] p-5 text-[var(--p-primary-contrast-color)] shadow-[var(--portal-shadow-2)] bg-[var(--p-primary-color)] portal-target" data-testid="pass-card">
-      <div class="flex items-center justify-between gap-4">
+    <router-link to="/portal/wallet/pass" class="pp-card block overflow-hidden" data-testid="pass-card">
+      <div class="bg-[var(--pp-primary)] text-[var(--pp-on-primary)] px-5 py-[18px] flex items-center justify-between gap-4">
         <div class="min-w-0">
-          <p class="text-xs uppercase tracking-widest opacity-80">{{ shop.name }}</p>
-          <p class="portal-display text-2xl mt-1 truncate">{{ clientName }}</p>
-          <p v-if="wallet.membership" class="text-sm opacity-90 mt-1">{{ t("portal.v2.home.member", { tier: wallet.membership.tier_name }) }}</p>
+          <div class="pp-small opacity-85">{{ shop.name || t("portal.v2.wallet.member") }}</div>
+          <div class="portal-display !font-medium text-[22px] truncate">{{ clientName }}</div>
+          <div v-if="wallet.membership" class="pp-small opacity-90">{{ t("portal.v2.home.member", { tier: wallet.membership.tier_name }) }}</div>
         </div>
-        <span class="w-14 h-14 rounded-xl bg-white/20 flex items-center justify-center"><i class="pi pi-qrcode text-2xl"></i></span>
+        <i class="pi pi-qrcode text-[26px]"></i>
       </div>
-      <p class="text-sm mt-4 opacity-90">{{ t("portal.v2.wallet.openPass") }}</p>
+      <div class="flex items-center gap-3 px-[18px] py-3.5">
+        <span class="flex-1 pp-small pp-muted">{{ t("portal.v2.wallet.showAtDesk") }}</span>
+        <b class="text-[var(--portal-accent-text)] text-sm">{{ t("portal.v2.actions.pass") }} <i class="pi pi-angle-right text-xs"></i></b>
+      </div>
     </router-link>
 
-    <section class="space-y-2" data-testid="membership">
-      <h2 class="portal-display portal-h3 px-1">{{ t("portal.membership.title") }}</h2>
-      <div class="portal-card p-4 space-y-2">
+    <section data-testid="membership">
+      <h2 class="pp-h2">{{ t("portal.membership.title") }}</h2>
+      <div class="pp-card p-4">
         <template v-if="wallet.membership">
-          <div class="flex items-center justify-between gap-3">
-            <span class="font-semibold text-[var(--portal-accent-text)]">{{ wallet.membership.tier_name }}</span>
-            <span class="portal-caption">{{ t("portal.membership.renewsOn", { date: formatDate(wallet.membership.current_period_end, locale) }) }}</span>
+          <div class="flex items-center gap-4">
+            <span class="pp-icon"><i class="pi pi-crown"></i></span>
+            <div class="flex-1 min-w-0">
+              <b class="block">{{ wallet.membership.tier_name }}</b>
+              <span class="pp-small pp-muted">{{ t("portal.v2.home.renews", { date: formatDate(wallet.membership.current_period_end, locale, "dayMonth") }) }}</span>
+            </div>
+            <span class="pp-chip pp-chip-status pp-chip-ok">{{ t("portal.v2.wallet.active") }}</span>
           </div>
-          <div v-for="u in wallet.usage" :key="u.service_id" class="flex justify-between text-sm">
-            <span>{{ u.service_name }}</span>
-            <span class="font-medium tabular-nums">{{ u.quota_per_month === null ? `${u.used_this_month} / ∞` : `${u.used_this_month} / ${u.quota_per_month}` }}</span>
+          <div v-if="wallet.usage.length" class="mt-3 pt-3 border-t border-[var(--portal-border)] space-y-1.5">
+            <div v-for="u in wallet.usage" :key="u.service_id" class="flex justify-between text-sm">
+              <span>{{ u.service_name }}</span>
+              <span class="font-medium tabular-nums">{{ u.quota_per_month === null ? `${u.used_this_month} / ∞` : `${u.used_this_month} / ${u.quota_per_month}` }}</span>
+            </div>
           </div>
         </template>
-        <p v-else class="portal-caption">{{ t("portal.membership.none") }}</p>
+        <p v-else class="pp-small pp-muted">{{ t("portal.membership.none") }}</p>
       </div>
     </section>
 
-    <section class="space-y-2" data-testid="packages">
-      <h2 class="portal-display portal-h3 px-1">{{ t("packages.portalTitle") }}</h2>
-      <p v-if="!wallet.packages.length" class="portal-card p-4 portal-caption">{{ t("packages.card.none") }}</p>
-      <div v-for="p in wallet.packages" :key="p.id" class="portal-card p-4 flex items-center gap-4" :class="{ 'opacity-60': p.state !== 'active' }">
-        <PackageRing :used="p.used" :total="p.total_visits" :size="56" :label="t('portal.v2.home.visitsLeft', { left: p.remaining, total: p.total_visits })" />
-        <div class="min-w-0 flex-1">
-          <p class="font-semibold truncate">{{ p.name }}</p>
-          <p class="portal-caption">{{ t("portal.v2.home.visitsLeft", { left: p.remaining, total: p.total_visits }) }}</p>
-          <p class="portal-micro">{{ p.expires_at ? `${t("packages.card.expires")}: ${formatDate(p.expires_at, locale, "short")}` : t("packages.neverExpires") }}</p>
+    <section data-testid="packages">
+      <h2 class="pp-h2">{{ t("packages.portalTitle") }}</h2>
+      <p v-if="!wallet.packages.length" class="pp-card p-4 pp-small pp-muted">{{ t("packages.card.none") }}</p>
+      <div class="space-y-3">
+        <div v-for="p in wallet.packages" :key="p.id" class="pp-card p-4 flex items-center gap-4" :class="{ 'opacity-60': p.state !== 'active' }">
+          <span class="pp-ring" :style="{ '--p': p.total_visits > 0 ? Math.round((p.remaining / p.total_visits) * 100) : 0 }" role="img" :aria-label="t('portal.v2.home.visitsLeft', { left: p.remaining, total: p.total_visits })"><span>{{ p.remaining }}/{{ p.total_visits }}</span></span>
+          <div class="min-w-0 flex-1">
+            <b class="block truncate">{{ p.name }}</b>
+            <span class="block pp-small pp-muted">{{ t("portal.v2.home.visitsLeft", { left: p.remaining, total: p.total_visits }) }}</span>
+            <span class="block text-xs pp-muted">{{ p.expires_at ? t("portal.v2.wallet.expires", { date: formatDate(p.expires_at, locale, "short") }) : t("packages.neverExpires") }}</span>
+          </div>
+          <router-link v-if="p.state === 'active'" to="/portal/book" class="pp-btn pp-btn-soft !min-h-[40px] !px-3.5 !text-sm">{{ t("portal.v2.wallet.book") }}</router-link>
         </div>
       </div>
     </section>
@@ -53,7 +65,6 @@ import { computed, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { formatDate } from "../../utils/format";
 import { useAuthStore } from "../../stores/auth";
-import PackageRing from "../components/PackageRing.vue";
 import { usePortalWalletStore } from "../stores/wallet";
 import { usePortalShopStore } from "../stores/shop";
 

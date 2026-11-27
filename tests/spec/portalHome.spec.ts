@@ -1,7 +1,7 @@
 // The redesigned Home (REDESIGN_SPEC.md §5.1): the "Up Next" card in each of
 // its states (UN1–UN5), "Book again" (BA1–BA2), and the kept features K1, K12
 // and K13 on the new screen.
-import { describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import HomeView from "../../client/src/portal/views/HomeView.vue";
 import { upNext, bookAgainPairs } from "../../client/src/portal/utils/upNext";
 import type { PortalBooking } from "../../client/src/portal/stores/bookings";
@@ -110,7 +110,7 @@ describe("K1 the next appointment (on the new Home)", () => {
 describe("BA2 Book again on Home", () => {
   test("opens Book on the same treatment and therapist", async () => {
     await open({ list: [booking(-60 * 24 * 3, { id: "past" }, new Date())] });
-    const link = document.querySelector<HTMLAnchorElement>('[data-testid="book-again"] a')!;
+    const link = document.querySelector<HTMLAnchorElement>('[data-testid="book-again"] a[href^="/portal/book?"]')!;
     expect(link.getAttribute("href")).toBe("/portal/book?service=svc1&staff=st1");
     expect(link.textContent).toContain(el.portal.v2.home.sameAsLast);
   });
@@ -127,6 +127,15 @@ describe("K12, K13 and the wallet on the new Home", () => {
 });
 
 describe("UN6 'How was it?' after today's visit (N10)", () => {
+  // A visit that ended two hours ago is "today's" only after 2 a.m.: the clock
+  // is set to mid-afternoon so the test doesn't fail when run after midnight.
+  // Only Date is faked; the screens' timers keep running.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 10, 27, 15, 0));
+  });
+  afterEach(() => vi.useRealTimers());
+
   test("five stars opens the shop's review page; the visit is marked as asked", async () => {
     const opened: string[] = [];
     const original = window.open;

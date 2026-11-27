@@ -1,86 +1,93 @@
 <template>
-  <!-- Profile (REDESIGN_SPEC.md §5.5): account, notifications, appearance,
-       language, activity and logging out. -->
-  <div class="p-4 space-y-5">
-    <h1 class="portal-display portal-h2">{{ t("portal.nav.profile") }}</h1>
-
-    <section class="portal-card divide-y divide-[var(--portal-border)]" data-testid="account">
-      <button type="button" class="w-full p-4 flex items-center gap-3 text-left portal-target" data-testid="edit-account" @click="openAccount">
-        <span class="w-11 h-11 rounded-full bg-[var(--p-primary-100)] text-[var(--portal-accent-text)] flex items-center justify-center font-semibold">{{ initials }}</span>
-        <span class="flex-1 min-w-0">
-          <span class="block font-semibold truncate">{{ fullName }}</span>
-          <span class="portal-caption truncate block">{{ wallet.client?.email || wallet.client?.phone }}</span>
-        </span>
-        <i class="pi pi-chevron-right opacity-40"></i>
-      </button>
-      <button type="button" class="w-full p-4 flex items-center gap-3 text-left portal-target" data-testid="edit-password" @click="passwordOpen = true">
-        <i class="pi pi-lock w-11 text-center opacity-70"></i>
-        <span class="flex-1">{{ t("portal.more.changePassword") }}</span>
-        <i class="pi pi-chevron-right opacity-40"></i>
-      </button>
-    </section>
-
-    <section class="space-y-2">
-      <h2 class="portal-micro font-semibold uppercase tracking-wider px-1">{{ t("portal.v2.profile.notifications") }}</h2>
-      <div class="portal-card divide-y divide-[var(--portal-border)]">
-        <label class="p-4 flex items-center gap-3">
-          <span class="flex-1">
-            <span class="block">{{ t("portal.more.emailReminders") }}</span>
-            <span class="portal-caption">{{ t("portal.more.emailRemindersNote") }}</span>
-          </span>
-          <ToggleSwitch v-model="receiveEmails" data-testid="email-reminders" @update:modelValue="saveNotifications" />
-        </label>
-        <div v-if="pushAvailable" class="p-4 flex items-center gap-3">
-          <span class="flex-1">{{ t("portal.notifications.title") }}</span>
-          <Button v-if="pushPermission !== 'granted'" :label="t('portal.notifications.button')" size="small" outlined @click="enablePush" />
-          <i v-else class="pi pi-check text-green-600"></i>
-        </div>
-        <div class="p-4 space-y-2" data-testid="reminder-timing">
-          <span class="block">{{ t("portal.v2.profile.remindMe") }}</span>
-          <div class="flex gap-2">
-            <ToggleButton
-              v-for="o in REMINDER_CHOICES"
-              :key="`${o}-${redraw}`"
-              :modelValue="offsets.includes(o)"
-              :onLabel="t(`portal.v2.profile.before.${o}`)"
-              :offLabel="t(`portal.v2.profile.before.${o}`)"
-              class="flex-1"
-              :data-offset="o"
-              @update:modelValue="(on: boolean) => toggleOffset(o, on)"
-            />
-          </div>
-        </div>
-        <button type="button" class="w-full p-4 flex items-center gap-3 text-left portal-target" data-testid="open-activity" @click="activity.open">
-          <span class="flex-1">{{ t("portal.v2.profile.activity") }}</span>
-          <Badge v-if="activity.unreadCount.value" :value="activity.unreadCount.value" />
-          <i class="pi pi-chevron-right opacity-40"></i>
-        </button>
+  <!-- Profile (REDESIGN_SPEC.md §5.5, client-portal-prototype.html): who,
+       account, security, notifications, appearance, language, logging out. -->
+  <div class="px-4 pt-2 pb-4">
+    <div class="flex items-center gap-3.5 mt-2 mb-[18px]" data-testid="account">
+      <span class="pp-avatar !w-14 !h-14 !text-xl">{{ initials }}</span>
+      <div class="min-w-0">
+        <div class="portal-display !font-medium text-[22px] leading-tight truncate">{{ fullName }}</div>
+        <div class="pp-small pp-muted truncate">{{ [wallet.client?.email, wallet.client?.phone].filter(Boolean).join(" · ") }}</div>
       </div>
+    </div>
+
+    <h2 class="pp-h2 !mt-2">{{ t("portal.v2.profile.account") }}</h2>
+    <section class="pp-card overflow-hidden">
+      <button type="button" class="pp-set-row" data-testid="edit-account" @click="openAccount">
+        <span class="pp-set-icon"><i class="pi pi-user"></i></span><span class="flex-1">{{ t("portal.v2.profile.info") }}</span><i class="pi pi-angle-right pp-muted"></i>
+      </button>
+      <button type="button" class="pp-set-row" data-testid="edit-password" @click="passwordOpen = true">
+        <span class="pp-set-icon"><i class="pi pi-key"></i></span><span class="flex-1">{{ t("portal.v2.profile.password") }}</span><i class="pi pi-angle-right pp-muted"></i>
+      </button>
     </section>
 
     <!-- The Android app only, on a phone with a fingerprint (or face) enrolled. -->
-    <section v-if="biometric.available.value" class="space-y-2" data-testid="security">
-      <h2 class="portal-micro font-semibold uppercase tracking-wider px-1">{{ t("portal.v2.native.security") }}</h2>
-      <div class="portal-card flex items-center justify-between gap-3 p-4">
-        <label for="biometric-unlock" class="min-w-0">
-          <span class="block font-medium">{{ t("portal.v2.native.unlockToggle") }}</span>
-          <span class="block text-sm opacity-70">{{ t("portal.v2.native.unlockNote") }}</span>
+    <template v-if="biometric.available.value">
+      <h2 class="pp-h2">{{ t("portal.v2.native.security") }}</h2>
+      <section class="pp-card overflow-hidden" data-testid="security">
+        <label class="pp-set-row cursor-pointer" data-testid="biometric-unlock">
+          <span class="pp-set-icon"><i class="pi pi-shield"></i></span>
+          <span class="flex-1 min-w-0">
+            <span class="block">{{ t("portal.v2.native.unlockToggle") }}</span>
+            <span class="block pp-small pp-muted">{{ t("portal.v2.native.unlockNote") }}</span>
+          </span>
+          <input type="checkbox" role="switch" class="sr-only" :checked="biometric.enabled.value" @change="toggleBiometric(($event.target as HTMLInputElement).checked)" />
+          <span class="pp-toggle" :class="{ on: biometric.enabled.value }" aria-hidden="true"></span>
         </label>
-        <ToggleSwitch inputId="biometric-unlock" :modelValue="biometric.enabled.value" data-testid="biometric-unlock" @update:modelValue="toggleBiometric" />
+      </section>
+    </template>
+
+    <h2 class="pp-h2">{{ t("portal.v2.profile.notifications") }}</h2>
+    <section class="pp-card overflow-hidden">
+      <!-- In the app: the phone's own notifications (reminders and the shop's
+           announcements); on the web, web push where the browser has it.
+           Once allowed, only the phone's or browser's settings turn it off. -->
+      <div v-if="native || pushAvailable" class="pp-set-row" data-testid="push-row">
+        <span class="pp-set-icon"><i class="pi pi-bell"></i></span>
+        <span class="flex-1">{{ t("portal.v2.profile.push") }}</span>
+        <button v-if="!pushOn" type="button" role="switch" aria-checked="false" class="pp-toggle" :aria-label="t('portal.v2.profile.push')" @click="turnOnPush"></button>
+        <span v-else class="pp-toggle on" role="switch" aria-checked="true" :aria-label="t('portal.v2.profile.push')"></span>
       </div>
+      <label class="pp-set-row cursor-pointer" data-testid="email-reminders">
+        <span class="pp-set-icon"><i class="pi pi-envelope"></i></span>
+        <span class="flex-1">{{ t("portal.v2.profile.email") }}</span>
+        <input v-model="receiveEmails" type="checkbox" role="switch" class="sr-only" @change="saveNotifications" />
+        <span class="pp-toggle" :class="{ on: receiveEmails }" aria-hidden="true"></span>
+      </label>
+      <div class="pp-set-row" data-testid="reminder-timing">
+        <span class="pp-set-icon"><i class="pi pi-clock"></i></span>
+        <span class="flex-1">{{ t("portal.v2.profile.remindMe") }}</span>
+        <span class="flex gap-1.5">
+          <button
+            v-for="o in REMINDER_CHOICES"
+            :key="o"
+            type="button"
+            class="pp-chip !font-semibold"
+            :aria-pressed="offsets.includes(o)"
+            :aria-label="t(`portal.v2.profile.before.${o}`)"
+            :data-offset="o"
+            @click="toggleOffset(o, !offsets.includes(o))"
+          >{{ t(`portal.v2.profile.chip.${o}`) }}</button>
+        </span>
+      </div>
+      <button type="button" class="pp-set-row" data-testid="open-activity" @click="activity.open">
+        <span class="pp-set-icon"><i class="pi pi-history"></i></span>
+        <span class="flex-1">{{ t("portal.v2.profile.activity") }}</span>
+        <span v-if="activity.unreadCount.value" class="min-w-5 h-5 px-1.5 rounded-full bg-[var(--pp-danger)] text-white text-[11px] font-bold grid place-items-center">{{ activity.unreadCount.value }}</span>
+        <i class="pi pi-angle-right pp-muted"></i>
+      </button>
     </section>
 
-    <section class="space-y-2">
-      <h2 class="portal-micro font-semibold uppercase tracking-wider px-1">{{ t("portal.v2.profile.appearance") }}</h2>
-      <SelectButton :modelValue="appearance" :options="appearances" optionLabel="label" optionValue="value" :allowEmpty="false" class="w-full" data-testid="appearance" @update:modelValue="setAppearance" />
-    </section>
+    <h2 class="pp-h2">{{ t("portal.v2.profile.appearance") }}</h2>
+    <div class="pp-segmented" role="group" data-testid="appearance">
+      <button v-for="a in appearances" :key="a.value" type="button" :aria-pressed="appearance === a.value" @click="setAppearance(a.value)">{{ a.label }}</button>
+    </div>
 
-    <section class="space-y-2">
-      <h2 class="portal-micro font-semibold uppercase tracking-wider px-1">{{ t("portal.nav.language") }}</h2>
-      <SelectButton :modelValue="locale" :options="languages" optionLabel="label" optionValue="value" :allowEmpty="false" class="w-full" data-testid="language" @update:modelValue="switchLanguage" />
-    </section>
+    <h2 class="pp-h2 !mt-3.5">{{ t("portal.v2.profile.language") }}</h2>
+    <div class="pp-segmented" role="group" data-testid="language">
+      <button v-for="l in languages" :key="l.value" type="button" :aria-pressed="locale === l.value" @click="switchLanguage(l.value)">{{ l.label }}</button>
+    </div>
 
-    <Button :label="t('portal.more.logout')" icon="pi pi-sign-out" severity="secondary" outlined class="w-full" data-testid="logout" @click="logout" />
+    <button type="button" class="pp-btn pp-btn-ghost w-full mt-5 !text-[var(--pp-danger)]" data-testid="logout" @click="logout"><i class="pi pi-sign-out"></i>{{ t("portal.v2.profile.logout") }}</button>
 
     <Dialog v-model:visible="accountOpen" modal :header="t('portal.more.myInformation')" :style="{ width: '440px', maxWidth: '94vw' }">
       <form class="space-y-3" data-testid="account-form" @submit.prevent="saveAccount">
@@ -118,14 +125,10 @@
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
-import Badge from "primevue/badge";
 import Button from "primevue/button";
 import Dialog from "primevue/dialog";
 import InputText from "primevue/inputtext";
 import Password from "primevue/password";
-import SelectButton from "primevue/selectbutton";
-import ToggleSwitch from "primevue/toggleswitch";
-import ToggleButton from "primevue/togglebutton";
 import { api, withMessage } from "../../api/http";
 import { setLocale } from "../../i18n";
 import { passwordOk } from "../../utils/password";
@@ -136,6 +139,9 @@ import { useAppearance, type Appearance } from "../composables/usePortalTheme";
 import { usePortalNotifications } from "../composables/usePortalNotifications";
 import { forgetPortal } from "../logout";
 import { useBiometricUnlock } from "../native/useSecureSession";
+import { isNative } from "../native/platform";
+import { useReminders } from "../native/useReminders";
+import { usePush } from "../native/usePush";
 import { usePortalWalletStore } from "../stores/wallet";
 import { usePortalShopStore } from "../stores/shop";
 
@@ -149,6 +155,13 @@ const activity = usePortalNotifications({ watchPushes: false });
 const { appearance, setAppearance } = useAppearance();
 const { isSupported, availableHere, permission: pushPermission, enable: enablePush } = usePushNotifications();
 const pushAvailable = computed(() => isSupported && availableHere);
+const native = isNative();
+const reminders = useReminders();
+const pushOn = computed(() => (native ? reminders.permission.value === "granted" : pushPermission.value === "granted"));
+const turnOnPush = async () => {
+  if (!native) return enablePush();
+  if (await reminders.requestPermission()) void usePush().register(router);
+};
 
 const fullName = computed(() => [wallet.client?.first_name, wallet.client?.last_name].filter(Boolean).join(" "));
 const initials = computed(() => [wallet.client?.first_name, wallet.client?.last_name].map((n) => n?.[0] || "").join(""));
@@ -223,7 +236,6 @@ watch(() => wallet.client?.receive_emails, (v) => (receiveEmails.value = v ?? tr
 // no choice of their own, the shop's time is shown as chosen.
 const REMINDER_CHOICES = [1440, 120, 60] as const;
 const offsets = ref<number[]>([]);
-const redraw = ref(0);
 watch(
   () => [wallet.client?.reminder_offsets_minutes, shop.shop?.reminder_hours_before] as const,
   ([own, shopHours]) => (offsets.value = own?.length ? [...own] : [Number(shopHours ?? 24) * 60].filter((m) => (REMINDER_CHOICES as readonly number[]).includes(m))),
@@ -231,9 +243,8 @@ watch(
 );
 const toggleOffset = async (minutes: number, on: boolean) => {
   const next = on ? [...offsets.value, minutes] : offsets.value.filter((m) => m !== minutes);
-  // At least one reminder: the button that was pressed is drawn back on (it
-  // keeps its own pressed state).
-  if (!next.length) return void redraw.value++;
+  // At least one reminder stays on.
+  if (!next.length) return;
   const previous = offsets.value;
   offsets.value = next;
   try {
@@ -241,7 +252,6 @@ const toggleOffset = async (minutes: number, on: boolean) => {
     if (wallet.client) wallet.client.reminder_offsets_minutes = next;
   } catch {
     offsets.value = previous;
-    redraw.value++;
     notify.error(t("portal.toast.failed"));
   }
 };
@@ -269,6 +279,7 @@ const logout = async () => {
 
 onMounted(() => {
   void biometric.check();
+  if (native) void reminders.readPermission();
   shop.load();
   wallet.load(auth.clientId);
 });

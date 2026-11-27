@@ -29,6 +29,10 @@ const DATE_STYLES = {
   short: { day: "2-digit", month: "short", year: "numeric" },
   /** 21 Οκτ */
   dayMonth: { day: "numeric", month: "short" },
+  /** Τρί 21 Οκτ */
+  weekdayShort: { weekday: "short", day: "numeric", month: "short" },
+  /** Παρασκευή 27 Νοεμβρίου */
+  weekdayLong: { weekday: "long", day: "numeric", month: "long" },
   /** Τρίτη 21 Οκτ */
   weekdayDayMonth: { weekday: "long", day: "numeric", month: "short" },
   /** Οκτώβριος 2026 */

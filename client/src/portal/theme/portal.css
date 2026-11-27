@@ -1,8 +1,9 @@
 /* The portal's type, radii and elevation (docs/redesign/REDESIGN_SPEC.md §4).
    Scoped to .portal-shell so nothing here reaches the staff app. Colours come
-   from the portal preset's tokens, so they follow the shop's colour and dark
+   from the portal preset's tokens (Pure's bronze), so they follow dark
    mode by themselves. */
 @import "@fontsource/noto-serif-display/400.css";
+@import "@fontsource/noto-serif-display/500.css";
 @import "@fontsource/noto-serif-display/600.css";
 
 .portal-shell {
@@ -18,9 +19,9 @@
   --portal-border: var(--p-content-border-color);
   --portal-text: var(--p-text-color);
   --portal-muted: var(--p-text-muted-color);
-  /* Text in the shop's colour: dark enough on light surfaces (WCAG AA even
-     for a pale shop colour), light enough on dark ones. */
-  --portal-accent-text: var(--p-primary-800);
+  /* Text in the bronze, as on the prototype: its darker shade on light
+     surfaces (readable at small sizes), the light one in the dark. */
+  --portal-accent-text: #765c3f;
 
   background: var(--portal-bg);
   color: var(--portal-text);
@@ -31,7 +32,7 @@
 /* In the dark, borders instead of shadows (shadows vanish on dark surfaces). */
 .my-app-dark .portal-shell {
   --portal-bg: var(--p-surface-950);
-  --portal-accent-text: var(--p-primary-300);
+  --portal-accent-text: #c49a6c;
   --portal-shadow-1: 0 0 0 1px var(--p-surface-700);
   --portal-shadow-2: 0 0 0 1px var(--p-surface-700);
   --portal-shadow-3: 0 0 0 1px var(--p-surface-600);
@@ -65,3 +66,119 @@
   min-height: 44px;
   min-width: 44px;
 }
+
+/* ---------- The prototype's building blocks (docs/redesign/client-portal-prototype.html) ---------- */
+.portal-shell {
+  --pp-primary: var(--p-primary-color);
+  --pp-on-primary: var(--p-primary-contrast-color);
+  --pp-primary-600: #765c3f;
+  --pp-primary-100: #efe6da;
+  --pp-primary-50: #f8f3ec;
+  --pp-surface-2: #f4eee6;
+  --pp-faint: #9a8f84;
+  --pp-success: #3f7d58; --pp-success-bg: #e6f2ea;
+  --pp-warn: #a3581b; --pp-warn-bg: #fbeee2;
+  --pp-danger: #b3402e; --pp-danger-bg: #f9e6e2;
+}
+.my-app-dark .portal-shell {
+  --pp-primary-600: #d6ae84;
+  --pp-primary-100: #3a2e23;
+  --pp-primary-50: #2a2119;
+  --pp-surface-2: #2b241e;
+  --pp-faint: #a08f7c;
+  --pp-success: #7cc79a; --pp-success-bg: #1f2f25;
+  --pp-warn: #f0b27a; --pp-warn-bg: #352418;
+  --pp-danger: #f08a78; --pp-danger-bg: #3a1f1a;
+}
+.portal-shell .pp-card { background: var(--portal-card); border: 1px solid var(--portal-border); border-radius: var(--portal-radius-card); box-shadow: var(--portal-shadow-1); }
+.portal-shell .pp-h1 { font-family: var(--portal-font-display); font-weight: 500; letter-spacing: -0.01em; font-size: 30px; line-height: 1.15; }
+.portal-shell .pp-h2 { font-family: var(--portal-font-display); font-weight: 500; letter-spacing: -0.01em; font-size: 21px; margin: 26px 0 12px; display: flex; justify-content: space-between; align-items: baseline; }
+.portal-shell .pp-h2 a, .portal-shell .pp-h2 button { font-family: system-ui, -apple-system, Roboto, sans-serif; font-size: 13px; font-weight: 600; color: var(--portal-accent-text); }
+.portal-shell .pp-sub { color: var(--portal-muted); font-size: 14px; }
+.portal-shell .pp-small { font-size: 13px; }
+.portal-shell .pp-muted { color: var(--portal-muted); }
+.portal-shell .pp-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 46px; padding: 0 18px; border-radius: var(--portal-radius-button); font-weight: 600; font-size: 15px; transition: transform .08s, background .15s; }
+.portal-shell .pp-btn:active { transform: scale(.98); }
+.portal-shell .pp-btn:disabled { opacity: .5; }
+.portal-shell .pp-btn-primary { background: var(--pp-primary); color: var(--pp-on-primary); }
+.portal-shell .pp-btn-soft { background: var(--pp-primary-50); color: var(--pp-primary-600); border: 1px solid var(--pp-primary-100); }
+.portal-shell .pp-btn-ghost { color: var(--portal-text); border: 1px solid var(--portal-border); background: var(--portal-card); }
+.portal-shell .pp-btn-danger { background: var(--pp-danger); color: #fff; }
+.portal-shell .pp-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; font-size: 13px; font-weight: 500; background: var(--pp-surface-2); color: var(--portal-muted); white-space: nowrap; }
+.portal-shell .pp-chip.on, .portal-shell .pp-chip[aria-pressed="true"] { background: var(--pp-primary); color: var(--pp-on-primary); }
+.portal-shell .pp-chip-status { font-size: 12px; padding: 4px 10px; font-weight: 600; }
+.portal-shell .pp-chip-ok { background: var(--pp-success-bg); color: var(--pp-success); }
+.portal-shell .pp-chip-warn { background: var(--pp-warn-bg); color: var(--pp-warn); }
+.portal-shell .pp-chip-danger { background: var(--pp-danger-bg); color: var(--pp-danger); }
+.portal-shell .pp-hscroll { display: flex; gap: 12px; overflow-x: auto; padding: 2px 2px 8px; scrollbar-width: none; scroll-snap-type: x mandatory; }
+.portal-shell .pp-hscroll::-webkit-scrollbar { display: none; }
+.portal-shell .pp-hscroll > * { scroll-snap-align: start; flex: none; }
+.portal-shell .pp-avatar { width: 34px; height: 34px; border-radius: 50%; background: var(--pp-primary-100); color: var(--pp-primary-600); display: grid; place-items: center; font-weight: 700; font-size: 13px; flex: none; }
+.portal-shell .pp-icon { width: 46px; height: 46px; border-radius: 14px; background: var(--pp-primary-50); color: var(--pp-primary); display: grid; place-items: center; font-size: 19px; flex: none; }
+.portal-shell .pp-ring { width: 58px; height: 58px; border-radius: 50%; background: conic-gradient(var(--pp-primary) calc(var(--p) * 1%), var(--pp-surface-2) 0); display: grid; place-items: center; flex: none; }
+.portal-shell .pp-ring span { width: 44px; height: 44px; border-radius: 50%; background: var(--portal-card); display: grid; place-items: center; font-size: 12.5px; font-weight: 700; }
+
+/* Up Next */
+.portal-shell .pp-upnext { position: relative; overflow: hidden; padding: 20px; border-radius: 24px; background: linear-gradient(140deg, var(--pp-primary) 0%, var(--pp-primary-600) 100%); color: var(--pp-on-primary); box-shadow: var(--portal-shadow-2); }
+.my-app-dark .portal-shell .pp-upnext { background: linear-gradient(140deg, #8b6f4e 0%, #5f4a33 100%); color: #fff; }
+.portal-shell .pp-upnext::after { content: ""; position: absolute; right: -60px; top: -60px; width: 200px; height: 200px; border-radius: 50%; background: rgb(255 255 255 / .08); pointer-events: none; }
+.portal-shell .pp-upnext .pp-label { font-size: 12px; text-transform: uppercase; letter-spacing: .1em; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.portal-shell .pp-upnext .pp-label > span:first-child { opacity: .85; }
+.portal-shell .pp-upnext .pp-when { font-family: var(--portal-font-display); font-weight: 500; font-size: 26px; margin: 10px 0 2px; line-height: 1.2; }
+.portal-shell .pp-upnext .pp-what { opacity: .92; font-size: 14.5px; }
+.portal-shell .pp-pill { background: rgb(255 255 255 / .18); padding: 4px 10px; border-radius: 999px; font-size: 11.5px; letter-spacing: 0; text-transform: none; white-space: nowrap; font-weight: 600; }
+.portal-shell .pp-countdown { display: flex; gap: 8px; margin: 16px 0; }
+.portal-shell .pp-countdown div { flex: 1; text-align: center; padding: 8px 0; border-radius: 12px; background: rgb(255 255 255 / .14); }
+.portal-shell .pp-countdown b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
+.portal-shell .pp-countdown span { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; opacity: .85; }
+.portal-shell .pp-upnext-actions { display: flex; gap: 8px; flex-wrap: wrap; position: relative; z-index: 1; }
+.portal-shell .pp-btn-on { background: #fff; color: #5f4a33; }
+.portal-shell .pp-btn-glass { background: rgb(255 255 255 / .16); color: inherit; min-height: 40px; padding: 0 12px; font-size: 13.5px; }
+
+/* Lists */
+.portal-shell .pp-list-item { width: 100%; display: flex; gap: 14px; align-items: center; padding: 14px 16px; text-align: left; }
+.portal-shell .pp-list-item + .pp-list-item { border-top: 1px solid var(--portal-border); }
+.portal-shell .pp-datebox { width: 50px; height: 54px; border-radius: 14px; background: var(--pp-primary-50); color: var(--pp-primary-600); display: flex; flex-direction: column; align-items: center; justify-content: center; flex: none; }
+.portal-shell .pp-datebox b { font-size: 19px; line-height: 1; }
+.portal-shell .pp-datebox span { font-size: 10.5px; text-transform: uppercase; font-weight: 600; margin-top: 3px; }
+.portal-shell .pp-segmented { display: flex; padding: 4px; border-radius: 14px; background: var(--pp-surface-2); }
+.portal-shell .pp-segmented button { flex: 1; padding: 9px; border-radius: 11px; font-weight: 600; font-size: 14px; color: var(--portal-muted); }
+.portal-shell .pp-segmented button.on, .portal-shell .pp-segmented button[aria-pressed="true"] { background: var(--portal-card); color: var(--portal-text); box-shadow: var(--portal-shadow-1); }
+
+/* Settings rows */
+.portal-shell .pp-set-row { display: flex; align-items: center; gap: 14px; padding: 14px 16px; width: 100%; text-align: left; }
+.portal-shell .pp-set-row + .pp-set-row { border-top: 1px solid var(--portal-border); }
+.portal-shell .pp-set-icon { width: 34px; height: 34px; border-radius: 10px; background: var(--pp-primary-50); color: var(--pp-primary); display: grid; place-items: center; font-size: 15px; flex: none; }
+.portal-shell .pp-toggle { width: 50px; height: 30px; border-radius: 999px; background: var(--portal-border); position: relative; transition: background .2s; flex: none; }
+.portal-shell .pp-toggle::after { content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / .2); transition: transform .2s; }
+.portal-shell .pp-toggle.on { background: var(--pp-success); }
+.portal-shell .pp-toggle.on::after { transform: translateX(20px); }
+
+/* The booking's sheet (a Drawer, drawn outside .portal-shell). */
+.pp-actions-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.pp-action { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 12px 4px; border-radius: 16px; background: #f4eee6; font-size: 12.5px; font-weight: 600; color: var(--p-text-color); text-align: center; min-height: 64px; }
+.my-app-dark .pp-action { background: #2b241e; }
+.pp-action i { font-size: 18px; color: var(--p-primary-color); }
+.pp-action.danger, .pp-action.danger i { color: #b3402e; }
+.my-app-dark .pp-action.danger, .my-app-dark .pp-action.danger i { color: #f08a78; }
+.pp-kv { display: grid; grid-template-columns: 26px 1fr; gap: 10px 8px; align-items: start; font-size: 14.5px; }
+.pp-kv > i { color: var(--p-primary-color); margin-top: 3px; }
+.pp-status { display: inline-flex; font-size: 12px; padding: 4px 10px; font-weight: 600; border-radius: 999px; }
+.pp-status.ok { background: #e6f2ea; color: #3f7d58; }
+.pp-status.warn { background: #fbeee2; color: #a3581b; }
+.pp-status.danger { background: #f9e6e2; color: #b3402e; }
+.pp-status.plain { background: #f4eee6; color: #6f604f; }
+.my-app-dark .pp-status.ok { background: #1f2f25; color: #7cc79a; }
+.my-app-dark .pp-status.warn { background: #352418; color: #f0b27a; }
+.my-app-dark .pp-status.danger { background: #3a1f1a; color: #f08a78; }
+.my-app-dark .pp-status.plain { background: #2b241e; color: #c6b8a8; }
+.pp-map { height: 110px; border-radius: 16px; position: relative; overflow: hidden; display: block; background:
+  linear-gradient(90deg, transparent 47%, var(--p-content-border-color) 47%, var(--p-content-border-color) 53%, transparent 53%),
+  linear-gradient(0deg, transparent 60%, var(--p-content-border-color) 60%, var(--p-content-border-color) 64%, transparent 64%),
+  linear-gradient(35deg, transparent 30%, var(--p-surface-100) 30%, var(--p-surface-100) 70%, transparent 70%), #f8f3ec; }
+.my-app-dark .pp-map { background-color: #2a2119; }
+.pp-map .pi { position: absolute; left: 50%; top: 45%; transform: translate(-50%, -100%); color: var(--p-primary-color); font-size: 30px; }
+.portal-shell ul.pp-card > li + li { border-top: 1px solid var(--portal-border); }
+/* Soft buttons in dialogs, which are drawn outside .portal-shell. */
+.pp-soft-btn { background: #f8f3ec; color: #765c3f; border: 1px solid #efe6da; }
+.my-app-dark .pp-soft-btn { background: #2a2119; color: #d6ae84; border-color: #3a2e23; }

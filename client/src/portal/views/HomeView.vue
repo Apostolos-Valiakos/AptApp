@@ -1,72 +1,79 @@
 <template>
-  <!-- Home (REDESIGN_SPEC.md §5.1): a greeting, Up Next, Book again, the
-       wallet strip, the contest while one runs and a way to call. -->
-  <div class="p-4 space-y-6">
-    <h1 class="portal-display portal-h2" data-testid="greeting">{{ greeting }}</h1>
+  <!-- Home (REDESIGN_SPEC.md §5.1, client-portal-prototype.html): the date
+       and a greeting, Up Next, Book again, the wallet, the contest while one
+       runs, and Call / Directions. -->
+  <div class="px-4 pt-1 pb-4">
+    <p class="pp-sub mt-1.5" data-testid="today">{{ formatDate(now, locale, "weekdayLong") }}</p>
+    <h1 class="pp-h1 mt-1.5 mb-1" data-testid="greeting">{{ greeting }}</h1>
 
-    <OfflineBanner :stale="bookings.failed && bookings.list.length > 0" />
+    <OfflineBanner class="mt-3" :stale="bookings.failed && bookings.list.length > 0" />
 
-    <div v-if="!bookings.loaded && !bookings.list.length" class="portal-card p-5 space-y-3" aria-busy="true">
+    <div v-if="!bookings.loaded && !bookings.list.length" class="pp-card p-5 space-y-3 mt-[18px]" aria-busy="true">
       <Skeleton width="40%" /><Skeleton width="70%" height="1.5rem" /><Skeleton width="50%" />
     </div>
-    <UpNextCard v-else-if="next" :state="next" />
-    <section v-else class="portal-card p-6 text-center space-y-3" data-testid="home-empty">
-      <i class="pi pi-sparkles text-3xl text-[var(--p-primary-color)]"></i>
-      <h2 class="portal-display portal-h3">{{ t("portal.v2.home.emptyTitle") }}</h2>
+    <UpNextCard v-else-if="next" :state="next" class="mt-[18px]" />
+    <section v-else class="pp-upnext mt-[18px]" data-testid="home-empty">
+      <div class="pp-label"><span>{{ t("portal.v2.upNext.label") }}</span></div>
+      <div class="pp-when">{{ t("portal.v2.home.emptyTitle") }}</div>
       <template v-if="shop.shop?.self_booking_enabled !== false">
-        <p class="portal-caption">{{ t("portal.v2.home.emptyText") }}</p>
-        <router-link to="/portal/book" class="p-button p-component">{{ t("portal.v2.home.emptyBook") }}</router-link>
+        <p class="pp-what">{{ t("portal.v2.home.emptyText") }}</p>
+        <router-link to="/portal/book" class="pp-btn pp-btn-on mt-4 relative z-[1]"><i class="pi pi-plus"></i>{{ t("portal.v2.home.emptyBook") }}</router-link>
       </template>
-      <a v-else-if="extras.callUrl()" :href="extras.callUrl()" class="p-button p-component"><i class="pi pi-phone mr-2"></i>{{ t("portal.v2.home.callUs") }}</a>
+      <a v-else-if="extras.callUrl()" :href="extras.callUrl()" class="pp-btn pp-btn-on mt-4 relative z-[1]"><i class="pi pi-phone"></i>{{ t("portal.v2.home.callUs") }}</a>
     </section>
 
-    <section v-if="showPushCard" class="portal-card p-4 flex items-center gap-3">
-      <i class="pi pi-bell text-[var(--portal-accent-text)]"></i>
+    <section v-if="showPushCard" class="pp-card p-4 flex items-center gap-3 mt-4">
+      <span class="pp-icon"><i class="pi pi-bell"></i></span>
       <div class="flex-1 min-w-0">
         <p class="font-semibold text-sm">{{ t("portal.notifications.title") }}</p>
-        <p class="portal-caption">{{ t("portal.notifications.subtitle") }}</p>
+        <p class="pp-small pp-muted">{{ t("portal.notifications.subtitle") }}</p>
       </div>
-      <Button :label="t('portal.notifications.button')" size="small" @click="enablePush" />
+      <button type="button" class="pp-btn pp-btn-soft !min-h-[40px] !px-3 text-sm" @click="enablePush">{{ t("portal.notifications.button") }}</button>
     </section>
 
     <BookAgainCarousel :past="bookings.past" />
 
-    <section v-if="wallet.activePackages.length || wallet.membership" class="space-y-2" data-testid="wallet-strip">
-      <h3 class="portal-display portal-h3 px-1">{{ t("portal.v2.home.wallet") }}</h3>
-      <router-link to="/portal/wallet" class="portal-card p-4 flex items-center gap-4 portal-target">
-        <template v-for="p in wallet.activePackages.slice(0, 2)" :key="p.id">
-          <PackageRing :used="p.used" :total="p.total_visits" :label="t('portal.v2.home.visitsLeft', { left: p.remaining, total: p.total_visits })" />
-          <div class="min-w-0">
-            <p class="font-semibold text-sm truncate">{{ p.name }}</p>
-            <p class="portal-caption">{{ t("portal.v2.home.visitsLeft", { left: p.remaining, total: p.total_visits }) }}</p>
-          </div>
-        </template>
-        <div v-if="wallet.membership" class="min-w-0">
-          <p class="font-semibold text-sm">{{ t("portal.v2.home.member", { tier: wallet.membership.tier_name }) }}</p>
-          <p class="portal-caption">{{ t("portal.membership.renewsOn", { date: formatDate(wallet.membership.current_period_end, locale) }) }}</p>
+    <section v-if="wallet.activePackages.length || wallet.membership" data-testid="wallet-strip">
+      <h2 class="pp-h2">{{ t("portal.v2.home.wallet") }} <router-link to="/portal/wallet">{{ t("portal.v2.home.seeAll") }}</router-link></h2>
+      <div class="space-y-3">
+        <div v-for="p in wallet.activePackages.slice(0, 2)" :key="p.id" class="pp-card p-4 flex items-center gap-4">
+          <span class="pp-ring" :style="{ '--p': ringShare(p) }" role="img" :aria-label="t('portal.v2.home.visitsLeft', { left: p.remaining, total: p.total_visits })"><span>{{ p.remaining }}/{{ p.total_visits }}</span></span>
+          <router-link to="/portal/wallet" class="flex-1 min-w-0">
+            <b class="block truncate">{{ t("portal.v2.home.package", { name: p.name }) }}</b>
+            <span class="pp-small pp-muted">{{ t("portal.v2.home.visitsRemaining", { n: p.remaining }, p.remaining) }}</span>
+          </router-link>
+          <router-link to="/portal/wallet/pass" class="pp-btn pp-btn-soft !min-h-[40px] !px-3.5" :aria-label="t('portal.v2.actions.pass')"><i class="pi pi-qrcode"></i></router-link>
         </div>
-      </router-link>
-    </section>
-
-    <section v-if="contest" class="portal-card overflow-hidden" data-testid="contest">
-      <img v-if="contest.image_url" :src="contest.image_url" alt="" class="w-full h-32 object-cover" />
-      <div class="p-4">
-        <p class="portal-micro font-semibold uppercase tracking-wide text-[var(--portal-accent-text)]"><i class="pi pi-trophy mr-1"></i>{{ t("portal.contestLabel") }}</p>
-        <h3 class="font-semibold mt-1">{{ contest.name }}</h3>
-        <p v-if="contest.description" class="portal-caption mt-1">{{ contest.description }}</p>
+        <router-link v-if="wallet.membership" to="/portal/wallet" class="pp-card p-4 flex items-center gap-4">
+          <span class="pp-icon"><i class="pi pi-crown"></i></span>
+          <span class="flex-1 min-w-0">
+            <b class="block">{{ t("portal.v2.home.member", { tier: wallet.membership.tier_name }) }}</b>
+            <span class="pp-small pp-muted">{{ t("portal.v2.home.renews", { date: formatDate(wallet.membership.current_period_end, locale, "dayMonth") }) }}</span>
+          </span>
+          <i class="pi pi-angle-right pp-muted"></i>
+        </router-link>
       </div>
     </section>
 
-    <a v-if="extras.callUrl()" :href="extras.callUrl()" class="portal-target inline-flex items-center gap-2 px-4 rounded-full border border-[var(--portal-border)] text-sm font-medium">
-      <i class="pi pi-phone"></i>{{ t("portal.v2.home.callUs") }}
-    </a>
+    <section v-if="contest" class="pp-card p-4 flex items-center gap-3.5 mt-3.5 bg-gradient-to-r from-[var(--pp-primary-50)] to-[var(--portal-card)]" data-testid="contest">
+      <img v-if="contest.image_url" :src="contest.image_url" alt="" class="w-[46px] h-[46px] rounded-[14px] object-cover flex-none" />
+      <span v-else class="pp-icon"><i class="pi pi-gift"></i></span>
+      <div class="flex-1 min-w-0">
+        <b class="block">{{ contest.name }}</b>
+        <p v-if="contest.description" class="pp-small pp-muted">{{ contest.description }}</p>
+      </div>
+    </section>
+
+    <div v-if="extras.callUrl() || shop.shop?.address" class="flex gap-2 mt-3.5">
+      <a v-if="extras.callUrl()" :href="extras.callUrl()" class="pp-btn pp-btn-ghost flex-1"><i class="pi pi-phone"></i>{{ t("portal.v2.actions.call") }}</a>
+      <a v-if="shop.shop?.address" :href="extras.directionsUrl()" target="_blank" rel="noopener" class="pp-btn pp-btn-ghost flex-1" @click="extras.openDirections($event)"><i class="pi pi-map-marker"></i>{{ t("portal.v2.actions.directions") }}</a>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import Button from "primevue/button";
 import Skeleton from "primevue/skeleton";
 import { api } from "../../api/http";
 import { formatDate } from "../../utils/format";
@@ -75,7 +82,6 @@ import { usePushNotifications } from "../../composables/usePushNotifications";
 import UpNextCard from "../components/UpNextCard.vue";
 import OfflineBanner from "../components/OfflineBanner.vue";
 import BookAgainCarousel from "../components/BookAgainCarousel.vue";
-import PackageRing from "../components/PackageRing.vue";
 import { usePortalBookingsStore } from "../stores/bookings";
 import { usePortalWalletStore } from "../stores/wallet";
 import { usePortalShopStore } from "../stores/shop";
@@ -95,6 +101,8 @@ const { isSupported, availableHere, permission, enable: enablePush } = usePushNo
 const showPushCard = computed(() => isSupported && availableHere && permission.value !== "granted");
 
 const next = computed(() => upNext(bookings.list, now.value));
+// The share of visits left, for the ring (as on the prototype).
+const ringShare = (p: { remaining: number; total_visits: number }) => (p.total_visits > 0 ? Math.round((p.remaining / p.total_visits) * 100) : 0);
 
 const greeting = computed(() => {
   const name = wallet.client?.first_name;

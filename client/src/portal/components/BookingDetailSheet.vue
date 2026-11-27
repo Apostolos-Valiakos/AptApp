@@ -1,38 +1,45 @@
 <template>
-  <!-- One booking in full (N3): when, where, with whom, what it costs and
-       what was paid, with everything that can be done with it. A sheet from
-       the bottom on a phone, a panel from the side on a desktop. -->
-  <Drawer :visible="!!booking" :position="wide ? 'right' : 'bottom'" :header="booking ? serviceNames(booking) : ''" :class="wide ? '!w-[420px]' : '!h-auto max-h-[90vh]'" :dt="wide ? undefined : { root: { borderRadius: '28px 28px 0 0' } }" @update:visible="(v) => !v && emit('close')">
+  <!-- One booking in full (N3, client-portal-prototype.html): when, with
+       whom, where, what it costs and what was paid, and everything that can be
+       done with it. A sheet from the bottom on a phone, a panel from the side
+       on a desktop. -->
+  <Drawer :visible="!!booking" :position="wide ? 'right' : 'bottom'" :class="wide ? '!w-[420px]' : '!h-auto max-h-[90vh]'" :dt="wide ? undefined : { root: { borderRadius: '28px 28px 0 0' } }" @update:visible="(v) => !v && emit('close')">
+    <template #header>
+      <span class="font-[family-name:var(--portal-font-display,_Georgia)] font-medium text-[22px] leading-tight">{{ booking ? serviceNames(booking) : "" }}</span>
+    </template>
     <div v-if="booking" class="space-y-4" data-testid="booking-detail">
-      <div class="flex items-center gap-2 flex-wrap">
-        <Tag :value="t(`common.status.${statusKey(booking.status)}`)" :severity="booking.status === 'cancelled' ? 'danger' : booking.status === 'confirmed' || booking.status === 'completed' ? 'success' : 'secondary'" rounded />
+      <span class="pp-status" :class="statusTone">{{ statusLabel }}</span>
+      <div class="pp-kv">
+        <i class="pi pi-calendar"></i><span>{{ formatDate(booking.start_time, locale, "weekdayLong") }} · {{ clockTime(booking.start_time) }}–{{ clockTime(booking.end_time) }}</span>
+        <template v-if="staffNames(booking)"><i class="pi pi-user"></i><span>{{ staffNames(booking) }}</span></template>
+        <i class="pi pi-euro"></i>
+        <span class="flex gap-3 flex-wrap">
+          <span class="tabular-nums">{{ formatMoney(booking.total) }}</span>
+          <!-- Only what was actually paid, as the staff see it. -->
+          <span v-if="booking.paid > 0" class="opacity-80">{{ t("common.paid") }}: <PaidAmount :paid="booking.paid" :total="booking.total" onlyPaid /></span>
+        </span>
+        <template v-if="booking.booking_notes"><i class="pi pi-comment"></i><span class="whitespace-pre-line">{{ booking.booking_notes }}</span></template>
       </div>
-      <dl class="space-y-3 text-sm">
-        <div class="flex gap-3"><dt class="w-6"><i class="pi pi-clock opacity-60"></i></dt><dd>{{ formatDate(booking.start_time, locale, "weekdayTime") }} – {{ clockTime(booking.end_time) }}</dd></div>
-        <div v-if="staffNames(booking)" class="flex gap-3"><dt class="w-6"><i class="pi pi-user opacity-60"></i></dt><dd>{{ staffNames(booking) }}</dd></div>
-        <div v-if="shop.shop?.address" class="flex gap-3"><dt class="w-6"><i class="pi pi-map-marker opacity-60"></i></dt><dd><a :href="extras.directionsUrl()" target="_blank" rel="noopener" @click="extras.openDirections($event)" class="underline">{{ shop.shop.address }}</a></dd></div>
-        <div class="flex gap-3"><dt class="w-6"><i class="pi pi-euro opacity-60"></i></dt>
-          <dd class="flex gap-3">
-            <span>{{ formatMoney(booking.total) }}</span>
-            <!-- Only what was actually paid, as the staff see it. -->
-            <span v-if="booking.paid > 0" class="opacity-80">{{ t("common.paid") }}: <PaidAmount :paid="booking.paid" :total="booking.total" onlyPaid /></span>
-          </dd>
-        </div>
-        <div v-if="booking.booking_notes" class="flex gap-3"><dt class="w-6"><i class="pi pi-comment opacity-60"></i></dt><dd class="whitespace-pre-line">{{ booking.booking_notes }}</dd></div>
-      </dl>
+      <a v-if="shop.shop?.address" :href="extras.directionsUrl()" target="_blank" rel="noopener" class="block" @click="extras.openDirections($event)">
+        <span class="pp-map" aria-hidden="true"><i class="pi pi-map-marker"></i></span>
+        <span class="block text-sm mt-2 opacity-80"><i class="pi pi-map-marker mr-1 text-[var(--p-primary-color)]"></i>{{ shop.shop.address }}</span>
+      </a>
 
-      <div v-if="upcoming" class="grid grid-cols-2 gap-2">
-        <Button v-if="needsConfirm" :label="t('portal.v2.actions.confirm')" icon="pi pi-check" class="col-span-2" :loading="working === 'confirm'" data-testid="detail-confirm" @click="confirm" />
-        <router-link v-if="changeable && booking.services.length === 1" :to="`/portal/book/reschedule/${booking.id}`" class="p-button p-button-outlined p-component justify-center" data-testid="detail-reschedule">{{ t("portal.v2.actions.reschedule") }}</router-link>
-        <Button :label="t('portal.v2.actions.addToCalendar')" icon="pi pi-calendar-plus" outlined @click="extras.addToCalendar(booking)" />
-        <Button :label="t('portal.v2.actions.share')" icon="pi pi-share-alt" outlined @click="extras.share(booking)" />
-        <a :href="extras.directionsUrl()" target="_blank" rel="noopener" @click="extras.openDirections($event)" class="p-button p-button-outlined p-component justify-center">{{ t("portal.v2.actions.directions") }}</a>
-        <a v-if="extras.callUrl()" :href="extras.callUrl()" class="p-button p-button-outlined p-component justify-center">{{ t("portal.v2.actions.call") }}</a>
-        <Button v-if="changeable" :label="t('portal.v2.actions.cancel')" severity="danger" text class="col-span-2" :loading="working === 'cancel'" data-testid="detail-cancel" @click="cancel" />
+      <template v-if="upcoming">
+        <Button v-if="needsConfirm" :label="t('portal.v2.actions.confirm')" icon="pi pi-check" class="w-full !min-h-[46px] !rounded-[14px] !font-semibold" :loading="working === 'confirm'" data-testid="detail-confirm" @click="confirm" />
+        <div class="pp-actions-grid">
+          <router-link to="/portal/wallet/pass" class="pp-action"><i class="pi pi-qrcode"></i>{{ t("portal.v2.actions.pass") }}</router-link>
+          <button type="button" class="pp-action" @click="extras.addToCalendar(booking)"><i class="pi pi-calendar-plus"></i>{{ t("portal.v2.actions.calendar") }}</button>
+          <a :href="extras.directionsUrl()" target="_blank" rel="noopener" class="pp-action" @click="extras.openDirections($event)"><i class="pi pi-directions"></i>{{ t("portal.v2.actions.directions") }}</a>
+          <router-link v-if="changeable && booking.services.length === 1" :to="`/portal/book/reschedule/${booking.id}`" class="pp-action" data-testid="detail-reschedule"><i class="pi pi-clock"></i>{{ t("portal.v2.actions.reschedule") }}</router-link>
+          <button type="button" class="pp-action" @click="extras.share(booking)"><i class="pi pi-share-alt"></i>{{ t("portal.v2.actions.share") }}</button>
+          <a v-if="extras.callUrl()" :href="extras.callUrl()" class="pp-action"><i class="pi pi-phone"></i>{{ t("portal.v2.actions.call") }}</a>
+          <button v-if="changeable" type="button" class="pp-action danger" :disabled="working === 'cancel'" data-testid="detail-cancel" @click="cancel"><i class="pi" :class="working === 'cancel' ? 'pi-spin pi-spinner' : 'pi-times-circle'"></i>{{ t("portal.v2.actions.cancel") }}</button>
+        </div>
         <!-- Inside the shop's notice period only the shop can change it. -->
-        <p v-else class="col-span-2 portal-caption text-center" data-testid="too-late">{{ t("portal.actions.errors.too_late") }}</p>
-      </div>
-      <router-link v-else-if="booking.status !== 'cancelled' && booking.services[0]" :to="{ path: '/portal/book', query: { service: booking.services[0].service_id, ...(booking.services[0].staff_id ? { staff: booking.services[0].staff_id } : {}) } }" class="p-button p-component w-full justify-center">{{ t("portal.v2.actions.bookAgain") }}</router-link>
+        <p v-if="!changeable" class="text-sm opacity-70 text-center" data-testid="too-late">{{ t("portal.actions.errors.too_late") }}</p>
+      </template>
+      <router-link v-else-if="booking.status !== 'cancelled' && booking.services[0]" :to="{ path: '/portal/book', query: { service: booking.services[0].service_id, ...(booking.services[0].staff_id ? { staff: booking.services[0].staff_id } : {}) } }" class="p-button p-component w-full justify-center !min-h-[46px] !rounded-[14px]"><i class="pi pi-replay mr-2"></i>{{ t("portal.v2.actions.bookAgain") }}</router-link>
     </div>
   </Drawer>
   <!-- The cancel question's box: nothing else in the portal draws one, and a
@@ -47,7 +54,6 @@ import { useConfirm } from "primevue/useconfirm";
 import Button from "primevue/button";
 import ConfirmDialog from "primevue/confirmdialog";
 import Drawer from "primevue/drawer";
-import Tag from "primevue/tag";
 import PaidAmount from "../../components/PaidAmount.vue";
 import { askConfirm } from "../../utils/confirm";
 import { statusKey } from "../../utils/appointmentStatus";
@@ -72,6 +78,16 @@ const working = ref<"" | "confirm" | "cancel">("");
 
 const upcoming = computed(() => !!props.booking && props.booking.status !== "cancelled" && new Date(props.booking.start_time).getTime() > Date.now());
 const changeable = computed(() => !!props.booking && shop.changeableOnline(props.booking.start_time));
+// The status as on the prototype: confirmed in green, waiting in orange.
+const statusTone = computed(() => {
+  const st = props.booking?.status;
+  if (st === "cancelled" || st === "no-show") return "danger";
+  if (st === "confirmed" || st === "completed") return "ok";
+  return upcoming.value && needsConfirm.value ? "warn" : "plain";
+});
+const statusLabel = computed(() =>
+  statusTone.value === "warn" ? t("portal.v2.upNext.needsConfirm") : t(`common.status.${statusKey(props.booking?.status || "")}`),
+);
 const needsConfirm = computed(() => !!props.booking && props.booking.status !== "confirmed" && props.booking.payment_status !== "paid");
 
 const confirm = async () => {

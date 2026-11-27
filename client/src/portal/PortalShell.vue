@@ -23,9 +23,14 @@
     </nav>
 
     <div class="flex-1 min-w-0 flex flex-col">
-      <header class="sticky top-0 z-40 bg-[var(--portal-bg)]/90 backdrop-blur border-b border-[var(--portal-border)] pt-[env(safe-area-inset-top)]">
-        <div class="h-14 px-4 flex items-center justify-between gap-2 max-w-3xl w-full mx-auto">
-          <span class="portal-display text-lg truncate">{{ wide ? "" : shop.name }}</span>
+      <header class="sticky top-0 z-40 bg-[var(--portal-bg)]/90 backdrop-blur pt-[env(safe-area-inset-top)]" :class="{ 'border-b border-[var(--portal-border)]': wide }">
+        <div class="h-[52px] px-4 flex items-center justify-between gap-2 max-w-3xl w-full mx-auto">
+          <span v-if="!wide" class="flex items-center gap-2.5 min-w-0 font-semibold text-[15px]" data-testid="portal-brand">
+            <!-- The app's own logo (the hands mark on bronze), as in the launcher. -->
+            <img :src="APP_LOGO" alt="" class="w-8 h-8 rounded-[10px] flex-none" />
+            <span class="truncate">{{ shop.name }}</span>
+          </span>
+          <span v-else></span>
           <div class="flex items-center gap-1 flex-shrink-0">
             <button
               v-if="shop.aiEnabled"
@@ -61,22 +66,26 @@
       <div class="flex-1 min-h-0"><AiChat /></div>
     </aside>
 
-    <nav v-if="!wide" class="fixed bottom-0 inset-x-0 z-40 bg-[var(--portal-card)] border-t border-[var(--portal-border)] pb-[env(safe-area-inset-bottom)]" :aria-label="t('portal.nav.main')" data-testid="portal-tabs">
-      <div class="max-w-3xl mx-auto grid grid-cols-5 items-end px-1">
+    <nav v-if="!wide" class="fixed bottom-0 inset-x-0 z-40 bg-[color-mix(in_srgb,var(--portal-card)_88%,transparent)] backdrop-blur-lg border-t border-[var(--portal-border)] pb-[env(safe-area-inset-bottom)]" :aria-label="t('portal.nav.main')" data-testid="portal-tabs">
+      <div class="max-w-3xl mx-auto grid grid-cols-5 items-end px-2.5 pt-2 pb-1.5">
         <router-link
           v-for="tab in tabs"
           :key="tab.to"
           :to="tab.to"
-          class="flex flex-col items-center gap-0.5 py-2 text-[11px] font-medium min-h-[56px] justify-end"
-          :class="isActive(tab) ? 'text-[var(--portal-accent-text)]' : tab.raised ? '' : 'opacity-60'"
+          class="flex flex-col items-center gap-[3px] py-1 text-[10.5px] font-semibold min-h-[48px] justify-end"
+          :class="isActive(tab) && !tab.raised ? 'text-[var(--pp-primary)]' : 'text-[var(--pp-faint)]'"
           :aria-current="isActive(tab) ? 'page' : undefined"
         >
-          <span
-            v-if="tab.raised"
-            class="w-14 h-14 -mt-6 mb-0.5 rounded-full bg-[var(--p-primary-color)] text-[var(--p-primary-contrast-color)] flex items-center justify-center shadow-[var(--portal-shadow-2)]"
-          ><i :class="tab.icon" class="text-xl"></i></span>
-          <i v-else :class="tab.icon" class="text-lg"></i>
-          {{ t(tab.label) }}
+          <!-- Book: the raised square in the middle, its name for screen readers only. -->
+          <template v-if="tab.raised">
+            <span class="portal-tab-book w-14 h-14 -mt-[22px] rounded-[18px] bg-[var(--pp-primary)] text-[var(--pp-on-primary)] grid place-items-center shadow-[var(--portal-shadow-2)]"><i :class="tab.icon" class="text-[22px]"></i></span>
+            <span class="sr-only">{{ t(tab.label) }}</span>
+          </template>
+          <!-- The selected place: bronze, with a soft bronze pill behind its icon. -->
+          <template v-else>
+            <span class="w-14 h-7 rounded-full grid place-items-center transition-colors" :class="isActive(tab) ? 'bg-[var(--pp-primary-100)]' : ''"><i :class="tab.icon" class="text-[19px]"></i></span>
+            <span :class="isActive(tab) ? 'font-bold' : ''">{{ t(tab.label) }}</span>
+          </template>
         </router-link>
       </div>
     </nav>
@@ -132,6 +141,8 @@ const tabs: Tab[] = [
   { to: "/portal/wallet", label: "portal.nav.wallet", icon: "pi pi-wallet" },
   { to: "/portal/profile", label: "portal.nav.profile", icon: "pi pi-user" },
 ];
+// A public file (client/public/icons), kept as a plain URL rather than a bundled import.
+const APP_LOGO = "/icons/icon-192.png";
 const LANGUAGES = [
   { label: "EL", value: "el" },
   { label: "EN", value: "en" },

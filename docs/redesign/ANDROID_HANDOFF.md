@@ -14,7 +14,7 @@ left is **phase 7: the native app, Android only**.
 | Topic | Decision |
 |---|---|
 | Platform | **Android now, iOS later.** Don't add `@capacitor/ios` or an `ios/` folder. |
-| App id | **`com.purespaexperience.app`**: one app for every shop, white-labelled after login (each shop's colour, name and logo come from `/shop`). |
+| App id | **`com.purespaexperience.app`**: one app for every shop, each shop's name comes from `/shop` after login; the colours are always Pure's bronze. |
 | App name | `Pure Spa Experience` (change only if the owner says so) |
 | Capacitor | **Upgrade 7.6.5 → 8.** Every plugin on its Capacitor-8 line (check each one's `peerDependencies` before installing). |
 | What the app contains | **The client portal only**: login, signup and `/portal/*`. Staff and admin screens must not be in the APK (spec §6.2). The web keeps serving the full app from `client/dist`. |
@@ -138,7 +138,7 @@ List the new file in CLAUDE.md's "run by hand" list.
 | `useBrightness` | screen-brightness plugin on its Capacitor-8 line: `boost()` on open, `restore()` on close | `client/src/portal/views/PassView.vue` |
 | `useNetwork` | `@capacitor/network` | `client/src/portal/composables/useNetwork.ts` (the offline banner) |
 | `useDeepLinks` | `@capacitor/app` `appUrlOpen` → router; the Android **back button** goes back / closes sheets | `client/src/portal/main.ts` |
-| `useNativeChrome` | `@capacitor/status-bar` (colour and style follow light/dark and the shop's colour), `@capacitor/splash-screen` hidden after first paint | `client/src/portal/composables/usePortalTheme.ts` |
+| `useNativeChrome` | `@capacitor/status-bar` (icons follow light/dark), `@capacitor/splash-screen` hidden after first paint | `client/src/portal/composables/usePortalTheme.ts` |
 | `useBiometricUnlock` + secure storage | biometric-auth plugin (Capacitor-8 line) + a secure-storage plugin | see 7.5 |
 
 **Tests:**

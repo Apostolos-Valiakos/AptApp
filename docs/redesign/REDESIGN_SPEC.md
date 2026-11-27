@@ -147,9 +147,10 @@ Nothing existing is dropped silently. Each row needs a ✔ / ✘ from you.
 ## 4. Theme evolution (PrimeVue 4.5.0, styled, Aura)
 
 Principles: **no global `pt`**; Aura semantic tokens; component-level `:dt` for the few portal-specific
-components; scoped `<style>`; PrimeVue components stay auto-imported. **The portal is white-label:**
-the shop's primary colour (from `/shop`, `stores/themes.ts`) stays the source of `primary`; Pure's
-bronze `#8B6F4E` is only the default.
+components; scoped `<style>`; PrimeVue components stay auto-imported. **The portal is always in Pure's
+bronze** `#8B6F4E` (`#c49a6c` in the dark), whatever colour a shop set for the staff app: changed
+on the owner's request in Nov 2026 (it used to take the shop's colour). Names and logos still come
+from `/shop`.
 
 ### Portal preset (applied by the portal shell only)
 
@@ -246,7 +247,7 @@ export const portalPreset = (primaryHex = "#8B6F4E") =>
 
 ### 5.4 Wallet & check-in pass
 
-- **Pass** (P2, N4): full-screen card in the shop's colour, client name, membership tier, large QR
+- **Pass** (P2, N4): a white card with a bronze header, client name, membership tier, large QR
   (`qr_token`, error-correction M, quiet zone), "Show this at reception". Opening it sets brightness to
   100 % and restores it on close; it works offline (cached token).
 - **Membership** card (K6) with renewal date; **Packages** (K7) with rings and expiry.

@@ -17,10 +17,9 @@ import "../assets/tailwind.css";
 import App from "../App.vue";
 import { createPortalRouter } from "./router";
 import { installSessionRecovery } from "../utils/sessionRecovery";
-import { useThemeStore } from "../stores/themes";
 import { i18n, savedLocale, setLocale } from "../i18n";
 import { elDatePickerNames } from "../i18n/datePicker";
-import { portalPreset } from "./theme/portalPreset";
+import { portalPreset, PORTAL_PRIMARY } from "./theme/portalPreset";
 import { setOutsidePortalPreset } from "./composables/usePortalTheme";
 import { useDeepLinks } from "./native/useDeepLinks";
 import { useNativeChrome } from "./native/useNativeChrome";
@@ -49,13 +48,9 @@ const start = async () => {
     (token) => void (token && auth.isClient ? saveSession(token, auth.user) : !token && dropSession()),
   );
 
-  // The shop's colour when a client is already signed in (at most 3 s: with
-  // no connection the app must still open, offline).
-  const themeStore = useThemeStore();
-  await Promise.race([themeStore.fetchAndApplyTheme(), new Promise((r) => setTimeout(r, 3000))]);
-  // The portal's look everywhere, the login page included, in the shop's
-  // colour once known.
-  const preset = portalPreset(themeStore.primaryColor);
+  // The portal's look everywhere, the login page included: always Pure's
+  // bronze, so there's no shop colour to wait for before the first screen.
+  const preset = portalPreset();
   setOutsidePortalPreset(preset);
 
   const router = createPortalRouter();
@@ -87,10 +82,10 @@ const start = async () => {
   useDeepLinks().install(router);
   app.mount("#app");
 
-  // The status bar in the shop's colour from the start, and the splash
+  // The status bar matching the page from the start, and the splash
   // screen gone once the first screen is drawn.
   const chrome = useNativeChrome();
-  chrome.applyTheme(false, themeStore.primaryColor);
+  chrome.applyTheme(false, PORTAL_PRIMARY);
   requestAnimationFrame(() => chrome.hideSplash());
 };
 

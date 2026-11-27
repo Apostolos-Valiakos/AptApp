@@ -1,4 +1,4 @@
-// The portal's own look: its preset in the shop's colour while the portal is
+// The portal's own look: its preset (always Pure's bronze) while the portal is
 // open, the staff app's preset back once it closes, and the client's light /
 // dark choice. PT1–PT3.
 import { afterEach, describe, expect, test, vi } from "vitest";
@@ -28,17 +28,20 @@ afterEach(() => {
   document.documentElement.classList.remove(DARK_CLASS);
 });
 
-describe("PT1 white-label", () => {
-  test("the portal's primary is the shop's colour, and follows it when it changes", async () => {
+describe("PT1 always Pure's bronze", () => {
+  // Changed on the owner's request (Nov 2026): the portal no longer takes the
+  // shop's colour; it stays in the prototype's bronze, lighter in the dark.
+  test("the portal's primary is the bronze whatever the shop's colour, and stays so when it changes", async () => {
     darkMedia(false);
     useThemeStore().primaryColor = "#2E6B5E";
     open();
     await settle();
-    expect(primary500()).toBe(palette("#2E6B5E")[500]);
+    expect(primary500()).toBe(palette("#8B6F4E")[500]);
     expect((Theme.getPreset() as any).semantic.colorScheme.light.surface[50]).toBe("#faf7f2");
+    expect((Theme.getPreset() as any).semantic.colorScheme.dark.primary.color).toBe("#c49a6c");
     useThemeStore().primaryColor = "#7A3B69";
     await nextTick();
-    expect(primary500()).toBe(palette("#7A3B69")[500]);
+    expect(primary500()).toBe(palette("#8B6F4E")[500]);
   });
 
   test("leaving the portal puts the staff app's theme back", async () => {
