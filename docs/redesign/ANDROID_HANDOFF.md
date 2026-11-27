@@ -203,7 +203,8 @@ server and a throwaway copy of the database):**
 Noticed, not changed:
 - Times show in the phone's time zone; on a phone not set to Greek time, bookings, reminders and calendar entries are shifted. The web portal does the same.
 - After a cancelled fingerprint prompt, the login page has no "try the fingerprint again".
-- The offline notice follows Android's own internet check; on a network Android marks as limited, it shows even when the server is reachable.
+
+Fixed later: the offline notice used to follow Android's own internet check, so on a network Android marks as limited (Wi-Fi that blocks Google's check) it covered bookings that had just loaded. It now shows when there is no network at all, or when a load fails.
 
 ### Step 7.8 — Release build (when the owner is ready)
 

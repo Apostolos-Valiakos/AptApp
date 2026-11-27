@@ -310,11 +310,25 @@ describe("NT9 online or not", () => {
   const Probe = defineComponent({ setup: () => useNetwork(), render: () => h("div") });
   test("native: from @capacitor/network, following changes", async () => {
     native.on = true;
-    plugins.Network.getStatus.mockResolvedValue({ connected: false });
+    plugins.Network.getStatus.mockResolvedValue({ connected: false, connectionType: "none" });
     const w = mount(Probe);
     await settle();
     expect((w.vm as any).online).toBe(false);
-    plugins.Network.addListener.mock.calls[0][1]({ connected: true });
+    plugins.Network.addListener.mock.calls[0][1]({ connected: true, connectionType: "wifi" });
+    expect((w.vm as any).online).toBe(true);
+    plugins.Network.addListener.mock.calls[0][1]({ connected: false, connectionType: "none" });
+    expect((w.vm as any).online).toBe(false);
+    w.unmount();
+  });
+  test("native: a network Android hasn't validated still counts as online", async () => {
+    // Wi-Fi that blocks Google's connectivity check still reaches the shop:
+    // no "no connection" banner over bookings that just loaded.
+    native.on = true;
+    plugins.Network.getStatus.mockResolvedValue({ connected: false, connectionType: "wifi" });
+    const w = mount(Probe);
+    await settle();
+    expect((w.vm as any).online).toBe(true);
+    plugins.Network.addListener.mock.calls[0][1]({ connected: false, connectionType: "cellular" });
     expect((w.vm as any).online).toBe(true);
     w.unmount();
   });
